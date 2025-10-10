@@ -20,10 +20,8 @@ public abstract class Engine
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
+    protected readonly SceneManager SceneManager;
     private readonly Renderer _renderer;
-
-    protected readonly List<GameObject> Scene = new List<GameObject>();
-    protected Camera MainCamera { get; private set; }
 
     protected Engine(string windowTitle)
     {
@@ -42,6 +40,7 @@ public abstract class Engine
         // Initialize systems
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
+        SceneManager = new SceneManager();
         _renderer = new Renderer(_graphicsDevice);
 
         RegisterEngineComponents();
@@ -117,28 +116,7 @@ public abstract class Engine
 
     private void Start()
     {
-        foreach (var gameObject in Scene)
-        {
-            var camera = gameObject.GetComponent<Camera>();
-            if (camera != null)
-            {
-                MainCamera = camera;
-            }
-
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                script.Start();
-            }
-        }
-
-        if (MainCamera == null)
-        {
-            Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
-            var go = new GameObject("Default Camera");
-            go.Transform.Position = new Vector3(0, 1, 3);
-            MainCamera = go.AddComponent(new Camera());
-            Scene.Add(go);
-        }
+        SceneManager.Start();
     }
 
     protected GraphicsDevice GetGraphicsDevice() => _graphicsDevice;
@@ -147,28 +125,23 @@ public abstract class Engine
 
     protected virtual void Update(float deltaTime)
     {
-        foreach (var gameObject in Scene)
-        {
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                script.Update(deltaTime);
-            }
-        }
+        SceneManager.Update(deltaTime);
     }
 
     private void Draw()
     {
-        if (MainCamera == null) return;
+        var mainCamera = SceneManager.MainCamera;
+        if (mainCamera == null) return;
 
-        Matrix4x4 view = MainCamera.GetViewMatrix();
-        Matrix4x4 projection = MainCamera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height);
+        Matrix4x4 view = mainCamera.GetViewMatrix();
+        Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height);
 
         _commandList.Begin();
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
-        _renderer.RenderScene(_commandList, view, projection, Scene);
+        _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
 
         _commandList.End();
         _graphicsDevice.SubmitCommands(_commandList);
@@ -177,7 +150,7 @@ public abstract class Engine
 
     private void DisposeResources()
     {
-        foreach (var gameObject in Scene)
+        foreach (var gameObject in SceneManager.GameObjects)
         {
             gameObject.GetComponent<MeshRenderer>()?.Dispose();
         }

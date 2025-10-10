@@ -32,9 +32,9 @@ public class Game : Engine
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
         SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
 
-        // Load the scene from the file
+        // Load the scene from the file and populate the SceneManager
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
-        Scene.AddRange(loadedObjects);
+        SceneManager.SetScene(loadedObjects);
     }
 
     protected override void Update(float deltaTime)
