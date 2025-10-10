@@ -1,3 +1,36 @@
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Camera.cs">
+using System;
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public class Camera : Component
+{
+    public float FieldOfView { get; set; } = 60.0f; // in degrees
+    public float NearClipPlane { get; set; } = 0.1f;
+    public float FarClipPlane { get; set; } = 100.0f;
+
+    public Matrix4x4 GetViewMatrix()
+    {
+        // Assumes camera looks along its local -Z axis
+        var transform = GameObject.Transform;
+        var lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
+        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        return Matrix4x4.CreateLookAt(transform.Position, lookAt, up);
+    }
+
+    public Matrix4x4 GetProjectionMatrix(float aspectRatio)
+    {
+        return Matrix4x4.CreatePerspectiveFieldOfView(
+            FieldOfView * (MathF.PI / 180.0f),
+            aspectRatio,
+            NearClipPlane,
+            FarClipPlane);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component.cs">
 using System.Diagnostics;
 using System.Numerics;
@@ -48,6 +81,7 @@ public abstract class Engine
     protected readonly SceneLoader SceneLoader;
 
     protected readonly List<GameObject> Scene = new List<GameObject>();
+    protected Camera MainCamera { get; private set; }
 
     protected Engine(string windowTitle)
     {
@@ -96,6 +130,8 @@ public abstract class Engine
             }
             return null;
         });
+
+        SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
     }
 
     public void Run()
@@ -104,9 +140,14 @@ public abstract class Engine
         Start();
         _stopwatch.Start();
 
+        Sdl2Native.SDL_SetRelativeMouseMode(true);
+        _window.PumpEvents(); // Pump once to flush initial mouse position.
+
         while (_window.Exists)
         {
-            _window.PumpEvents();
+            InputSnapshot snapshot = _window.PumpEvents();
+            Input.UpdateSnapshot(snapshot);
+
             if (!_window.Exists) break;
 
             float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
@@ -123,10 +164,25 @@ public abstract class Engine
     {
         foreach (var gameObject in Scene)
         {
+            var camera = gameObject.GetComponent<Camera>();
+            if (camera != null)
+            {
+                MainCamera = camera;
+            }
+
             foreach (var script in gameObject.GetComponents<Script>())
             {
                 script.Start();
             }
+        }
+
+        if (MainCamera == null)
+        {
+            Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
+            var go = new GameObject("Default Camera");
+            go.Transform.Position = new Vector3(0, 1, 3);
+            MainCamera = go.AddComponent(new Camera());
+            Scene.Add(go);
         }
     }
 
@@ -179,9 +235,10 @@ public abstract class Engine
 
     private void Draw()
     {
-        Matrix4x4 view = Matrix4x4.CreateLookAt(new Vector3(0, 1, 3), Vector3.Zero, Vector3.UnitY);
-        Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
-            1.0f, (float)_window.Width / _window.Height, 0.5f, 10f);
+        if (MainCamera == null) return;
+
+        Matrix4x4 view = MainCamera.GetViewMatrix();
+        Matrix4x4 projection = MainCamera.GetProjectionMatrix((float)_window.Width / _window.Height);
 
         _commandList.Begin();
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
@@ -283,6 +340,52 @@ public class GameObject
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Input.cs">
+using System.Collections.Generic;
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public static class Input
+{
+    private static readonly HashSet<Key> _pressedKeys = new();
+    private static bool _firstMouseUpdate = true;
+
+    public static Vector2 MouseDelta { get; private set; }
+
+    internal static void UpdateSnapshot(InputSnapshot snapshot)
+    {
+        foreach (var keyEvent in snapshot.KeyEvents)
+        {
+            if (keyEvent.Down)
+            {
+                _pressedKeys.Add(keyEvent.Key);
+            }
+            else
+            {
+                _pressedKeys.Remove(keyEvent.Key);
+            }
+        }
+
+        if (_firstMouseUpdate)
+        {
+            MouseDelta = Vector2.Zero;
+            _firstMouseUpdate = false;
+        }
+        else
+        {
+            MouseDelta = snapshot.MousePosition;
+        }
+    }
+
+    public static bool IsKeyDown(Key key)
+    {
+        return _pressedKeys.Contains(key);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Mesh.cs">
 using System.Numerics;
 using Veldrid;
@@ -304,14 +407,14 @@ public class Mesh
     {
         VertexPositionColor[] vertices =
         {
-            new(new Vector3(-0.5f, +0.5f, -0.5f), RgbaFloat.Red),
-            new(new Vector3(+0.5f, +0.5f, -0.5f), RgbaFloat.Green),
-            new(new Vector3(+0.5f, -0.5f, -0.5f), RgbaFloat.Blue),
-            new(new Vector3(-0.5f, -0.5f, -0.5f), RgbaFloat.Yellow),
-            new(new Vector3(-0.5f, +0.5f, +0.5f), RgbaFloat.Cyan),
-            new(new Vector3(+0.5f, +0.5f, +0.5f), new RgbaFloat(1, 0, 1, 1)), // Magenta
-            new(new Vector3(+0.5f, -0.5f, +0.5f), RgbaFloat.White),
-            new(new Vector3(-0.5f, -0.5f, +0.5f), RgbaFloat.Grey)
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.Red),
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.Green),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.Blue),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.Yellow),
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.Cyan),
+            new(new(+0.5f, +0.5f, +0.5f), new RgbaFloat(1, 0, 1, 1)), // Magenta
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White),
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.Grey)
         };
 
         ushort[] indices =
@@ -677,6 +780,7 @@ public class Game : Engine
 
         // Register custom components that the scene can use
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
+        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
 
         // Load the scene from the file
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
@@ -687,6 +791,68 @@ public class Game : Engine
     {
         // The base engine Update now handles calling Update on all Scripts
         base.Update(deltaTime);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\PlayerController.cs">
+using Cherris;
+using System;
+using System.Numerics;
+using Veldrid;
+
+namespace Apexverse
+{
+    public class PlayerController : Script
+    {
+        public float Speed { get; set; } = 3.0f;
+        public float MouseSensitivity { get; set; } = 0.002f;
+
+        private float _yaw;
+        private float _pitch;
+
+        public override void Update(float deltaTime)
+        {
+            // --- Mouse Look ---
+            Vector2 mouseDelta = Input.MouseDelta;
+            _yaw -= mouseDelta.X * MouseSensitivity;
+            _pitch -= mouseDelta.Y * MouseSensitivity;
+
+            // Clamp the pitch to prevent the camera from flipping upside down
+            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+            // Update rotation from yaw and pitch
+            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
+                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+
+            // --- Keyboard Movement ---
+            var moveDirection = Vector3.Zero;
+
+            if (Input.IsKeyDown(Key.W))
+            {
+                moveDirection -= Vector3.UnitZ;
+            }
+            if (Input.IsKeyDown(Key.S))
+            {
+                moveDirection += Vector3.UnitZ;
+            }
+            if (Input.IsKeyDown(Key.A))
+            {
+                moveDirection -= Vector3.UnitX;
+            }
+            if (Input.IsKeyDown(Key.D))
+            {
+                moveDirection += Vector3.UnitX;
+            }
+
+            if (moveDirection != Vector3.Zero)
+            {
+                moveDirection = Vector3.Normalize(moveDirection);
+                // Transform the local direction vector by the object's new rotation to get world direction
+                var worldDirection = Vector3.Transform(moveDirection, GameObject.Transform.Rotation);
+                GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+            }
+        }
     }
 }
 </file>
@@ -706,11 +872,20 @@ class Program
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
 GameObjects:
+  - Name: Player
+    Components:
+      Transform:
+        Position: [0, 1, 3] # Start at a good vantage point
+        Rotation: [0, 0, 0] # Looking forward (towards -Z)
+        Scale: [1, 1, 1]
+      PlayerController:
+      Camera:
+
   - Name: SpinningCube
     Components:
       Transform:
         Position: [0, 0, 0]
-        Rotation: [0, 0, 0] # Euler Angles (in degrees)
+        Rotation: [0, 0, 0]
         Scale: [1, 1, 1]
       MeshRenderer:
         Mesh: Cube
@@ -719,9 +894,9 @@ GameObjects:
   - Name: StaticCube
     Components:
       Transform:
-        Position: [1.5, 0, 0]
+        Position: [2.5, 0, 0]
         Rotation: [0, 45, 0]
-        Scale: [0.5, 0.5, 0.5]
+        Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
 </file>
