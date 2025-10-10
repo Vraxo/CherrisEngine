@@ -12,12 +12,10 @@ namespace Cherris;
 
 public abstract class Engine
 {
-    private readonly Sdl2Window _window;
+    private readonly GameWindow _gameWindow;
     private readonly GraphicsDevice _graphicsDevice;
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
-    private bool _escapePressedLastFrame = false;
-    private Vector2 _windowCenter;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
@@ -29,15 +27,7 @@ public abstract class Engine
 
     protected Engine(string windowTitle)
     {
-        WindowCreateInfo windowCI = new WindowCreateInfo
-        {
-            X = 100,
-            Y = 100,
-            WindowWidth = 960,
-            WindowHeight = 540,
-            WindowTitle = windowTitle
-        };
-        _window = VeldridStartup.CreateWindow(ref windowCI);
+        _gameWindow = new GameWindow(windowTitle, 960, 540);
 
         GraphicsDeviceOptions options = new GraphicsDeviceOptions
         {
@@ -45,7 +35,7 @@ public abstract class Engine
             PreferDepthRangeZeroToOne = true,
             SwapchainDepthFormat = PixelFormat.R16_UNorm
         };
-        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_window, options);
+        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_gameWindow.SdlWindow, options);
         _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
         _stopwatch = new Stopwatch();
 
@@ -109,47 +99,17 @@ public abstract class Engine
         Start();
         _stopwatch.Start();
 
-        _windowCenter = new Vector2(_window.Width / 2f, _window.Height / 2f);
-
-        // Replaced Sdl2Native.SDL_SetRelativeMouseMode with manual cursor management.
-        Input.IsMouseLocked = true;
-        Sdl2Native.SDL_ShowCursor(0); // Hide cursor.
-        // Center mouse initially and pump events to clear the warp event from the queue.
-        Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-        _window.PumpEvents();
-
-        while (_window.Exists)
+        while (_gameWindow.Exists)
         {
-            InputSnapshot snapshot = _window.PumpEvents();
-            Input.UpdateSnapshot(snapshot, _windowCenter);
+            _gameWindow.ProcessEvents();
 
-            // Toggle mouse lock state on Escape key press
-            bool isEscapeDown = Input.IsKeyDown(Key.Escape);
-            if (isEscapeDown && !_escapePressedLastFrame)
-            {
-                Input.IsMouseLocked = !Input.IsMouseLocked;
-                Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
-                if (Input.IsMouseLocked)
-                {
-                    // When re-locking, center mouse immediately to prepare for next frame's input.
-                    Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-                }
-            }
-            _escapePressedLastFrame = isEscapeDown;
-
-            if (!_window.Exists) break;
+            if (!_gameWindow.Exists) break;
 
             float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
             _stopwatch.Restart();
 
             Update(deltaTime);
             Draw();
-
-            // If the mouse is locked, re-center it for the next frame's delta calculation.
-            if (Input.IsMouseLocked)
-            {
-                Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-            }
         }
 
         DisposeResources();
@@ -201,7 +161,7 @@ public abstract class Engine
         if (MainCamera == null) return;
 
         Matrix4x4 view = MainCamera.GetViewMatrix();
-        Matrix4x4 projection = MainCamera.GetProjectionMatrix((float)_window.Width / _window.Height);
+        Matrix4x4 projection = MainCamera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height);
 
         _commandList.Begin();
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
