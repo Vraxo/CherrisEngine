@@ -85,7 +85,8 @@ public class ResourceManager
 
     private Skybox LoadSkyboxFromFile(string name)
     {
-        string[] faceSuffixes = { "_px", "_nx", "_py", "_ny", "_pz", "_nz" };
+        // The order corresponds to the cubemap array layers: +X, -X, +Y, -Y, +Z, -Z
+        string[] faceSuffixes = { "_right", "_left", "_top", "_bottom", "_back", "_front" };
         string[] facePaths = new string[6];
 
         for (int i = 0; i < 6; i++)

@@ -29,22 +29,22 @@
     <None Update="Assets\Scene.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\sky\night_nx.png">
+    <None Update="Assets\sky\day_back.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\sky\night_ny.png">
+    <None Update="Assets\sky\day_bottom.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\sky\night_nz.png">
+    <None Update="Assets\sky\day_front.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\sky\night_px.png">
+    <None Update="Assets\sky\day_left.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\sky\night_py.png">
+    <None Update="Assets\sky\day_right.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\sky\night_pz.png">
+    <None Update="Assets\sky\day_top.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

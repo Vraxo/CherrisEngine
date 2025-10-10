@@ -3,8 +3,8 @@ GameObjects:
     Components:
       Skybox:
         # NOTE: This requires 6 images in your Assets folder, named like:
-        # Assets/sky/night_px.png, ..._nx.png, ..._py.png, ..._ny.png, ..._pz.png, ..._nz.png
-        CubeMap: sky/night
+        # Assets/sky/night_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
+        CubeMap: sky/day
 
   - Name: Player
     Components:
