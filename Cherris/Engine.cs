@@ -15,6 +15,7 @@ public abstract class Engine
     private readonly GraphicsDevice _graphicsDevice;
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
+    private bool _escapePressedLastFrame = false;
 
     // Engine-level resources
     private DeviceBuffer _mvpBuffer;
@@ -86,12 +87,22 @@ public abstract class Engine
         _stopwatch.Start();
 
         Sdl2Native.SDL_SetRelativeMouseMode(true);
+        Input.IsMouseLocked = true;
         _window.PumpEvents(); // Pump once to flush initial mouse position.
 
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
             Input.UpdateSnapshot(snapshot);
+
+            // Toggle mouse lock state on Escape key press
+            bool isEscapeDown = Input.IsKeyDown(Key.Escape);
+            if (isEscapeDown && !_escapePressedLastFrame)
+            {
+                Input.IsMouseLocked = !Input.IsMouseLocked;
+                Sdl2Native.SDL_SetRelativeMouseMode(Input.IsMouseLocked);
+            }
+            _escapePressedLastFrame = isEscapeDown;
 
             if (!_window.Exists) break;
 
