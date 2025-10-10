@@ -134,7 +134,7 @@ public class ResourceManager
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
         Veldrid.Texture cubemap = factory.CreateTexture(TextureDescription.Texture2D(
             (uint)firstImage.Width, (uint)firstImage.Height, 1, 6, // arrayLayers must be 6 for a cubemap
-            PixelFormat.R8_G8_B8_A8_UNorm_SRgb, // Use sRGB for correct sampling
+            PixelFormat.R8_G8_B8_A8_UNorm, // Revert to UNorm to match previous brightness
             TextureUsage.Cubemap | TextureUsage.Sampled));
 
         for (uint i = 0; i < 6; i++)
