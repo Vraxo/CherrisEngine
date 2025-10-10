@@ -1,9 +1,18 @@
 GameObjects:
+  - Name: Player
+    Components:
+      Transform:
+        Position: [0, 1, 3] # Start at a good vantage point
+        Rotation: [0, 0, 0] # Looking forward (towards -Z)
+        Scale: [1, 1, 1]
+      PlayerController:
+      Camera:
+
   - Name: SpinningCube
     Components:
       Transform:
         Position: [0, 0, 0]
-        Rotation: [0, 0, 0] # Euler Angles (in degrees)
+        Rotation: [0, 0, 0]
         Scale: [1, 1, 1]
       MeshRenderer:
         Mesh: Cube
@@ -12,8 +21,8 @@ GameObjects:
   - Name: StaticCube
     Components:
       Transform:
-        Position: [1.5, 0, 0]
+        Position: [2.5, 0, 0]
         Rotation: [0, 45, 0]
-        Scale: [0.5, 0.5, 0.5]
+        Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube

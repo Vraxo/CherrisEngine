@@ -26,6 +26,7 @@ public abstract class Engine
     protected readonly SceneLoader SceneLoader;
 
     protected readonly List<GameObject> Scene = new List<GameObject>();
+    protected Camera MainCamera { get; private set; }
 
     protected Engine(string windowTitle)
     {
@@ -74,6 +75,8 @@ public abstract class Engine
             }
             return null;
         });
+
+        SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
     }
 
     public void Run()
@@ -84,7 +87,9 @@ public abstract class Engine
 
         while (_window.Exists)
         {
-            _window.PumpEvents();
+            InputSnapshot snapshot = _window.PumpEvents();
+            Input.UpdateSnapshot(snapshot.KeyEvents);
+
             if (!_window.Exists) break;
 
             float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
@@ -101,10 +106,25 @@ public abstract class Engine
     {
         foreach (var gameObject in Scene)
         {
+            var camera = gameObject.GetComponent<Camera>();
+            if (camera != null)
+            {
+                MainCamera = camera;
+            }
+
             foreach (var script in gameObject.GetComponents<Script>())
             {
                 script.Start();
             }
+        }
+
+        if (MainCamera == null)
+        {
+            Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
+            var go = new GameObject("Default Camera");
+            go.Transform.Position = new Vector3(0, 1, 3);
+            MainCamera = go.AddComponent(new Camera());
+            Scene.Add(go);
         }
     }
 
@@ -157,9 +177,10 @@ public abstract class Engine
 
     private void Draw()
     {
-        Matrix4x4 view = Matrix4x4.CreateLookAt(new Vector3(0, 1, 3), Vector3.Zero, Vector3.UnitY);
-        Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
-            1.0f, (float)_window.Width / _window.Height, 0.5f, 10f);
+        if (MainCamera == null) return;
+
+        Matrix4x4 view = MainCamera.GetViewMatrix();
+        Matrix4x4 projection = MainCamera.GetProjectionMatrix((float)_window.Width / _window.Height);
 
         _commandList.Begin();
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);

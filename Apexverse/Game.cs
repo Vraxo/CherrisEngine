@@ -30,6 +30,7 @@ public class Game : Engine
 
         // Register custom components that the scene can use
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
+        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
 
         // Load the scene from the file
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
