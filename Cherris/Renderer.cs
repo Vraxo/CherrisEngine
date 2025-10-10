@@ -28,7 +28,7 @@ public class Renderer
     public Sampler Sampler { get; }
 
 
-    public Renderer(GraphicsDevice gd, TextureSampleCount msaaSampleCount)
+    public Renderer(GraphicsDevice gd)
     {
         _graphicsDevice = gd;
         ResourceFactory factory = gd.ResourceFactory;
@@ -69,12 +69,6 @@ public class Renderer
 
         (Shader vs, Shader fs) = LoadShaders(factory);
 
-        var swapchainOutputDesc = gd.SwapchainFramebuffer.OutputDescription;
-        var msaaOutputDesc = new OutputDescription(
-            swapchainOutputDesc.DepthAttachment,
-            swapchainOutputDesc.ColorAttachments,
-            msaaSampleCount);
-
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -85,13 +79,13 @@ public class Renderer
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { mvpLayout, TextureLayout, MaterialLayout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = msaaOutputDesc
+            Outputs = gd.SwapchainFramebuffer.OutputDescription
         });
 
-        CreateSkyboxResources(gd, vertexLayout, msaaOutputDesc);
+        CreateSkyboxResources(gd, vertexLayout);
     }
 
-    private void CreateSkyboxResources(GraphicsDevice gd, VertexLayoutDescription vertexLayout, OutputDescription msaaOutputDesc)
+    private void CreateSkyboxResources(GraphicsDevice gd, VertexLayoutDescription vertexLayout)
     {
         ResourceFactory factory = gd.ResourceFactory;
 
@@ -126,7 +120,7 @@ public class Renderer
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { skyboxVpLayout, _skyboxTextureLayout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = msaaOutputDesc
+            Outputs = gd.SwapchainFramebuffer.OutputDescription
         });
     }
 
