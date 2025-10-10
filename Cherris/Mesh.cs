@@ -40,4 +40,26 @@ public class Mesh
 
         return new Mesh(vertices, indices);
     }
+
+    public static Mesh CreatePlane(float size)
+    {
+        float halfSize = size * 0.5f;
+        var darkGrey = new RgbaFloat(0.25f, 0.25f, 0.25f, 1.0f);
+        VertexPositionColor[] vertices =
+        {
+            new(new(-halfSize, 0, +halfSize), darkGrey), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), darkGrey), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), darkGrey), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), darkGrey)  // 3 (bottom-left)
+        };
+
+        // Reversed winding order to be visible with existing pipeline state.
+        // The original order (0,1,2) was being culled.
+        ushort[] indices =
+        {
+            0,2,1, 0,3,2
+        };
+
+        return new Mesh(vertices, indices);
+    }
 }

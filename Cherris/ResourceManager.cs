@@ -19,6 +19,9 @@ public class ResourceManager
         // For now, we pre-load our procedural cube.
         var cubeMesh = Mesh.CreateCube();
         _meshes.Add("Cube", cubeMesh);
+
+        var planeMesh = Mesh.CreatePlane(20f);
+        _meshes.Add("Plane", planeMesh);
     }
 
     public Mesh GetMesh(string name)

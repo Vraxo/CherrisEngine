@@ -26,3 +26,12 @@ GameObjects:
         Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
+        
+  - Name: GroundPlane
+    Components:
+      Transform:
+        Position: [0, -0.75, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Plane
