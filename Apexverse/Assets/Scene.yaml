@@ -1,23 +1,19 @@
 GameObjects:
   - Name: SpinningCube
     Components:
-      - Type: Transform
-        Properties:
-          Position: [0, 0, 0]
-          Rotation: [0, 0, 0] # Euler Angles (in degrees)
-          Scale: [1, 1, 1]
-      - Type: MeshRenderer
-        Properties:
-          Mesh: Cube
-      - Type: Spinner
+      Transform:
+        Position: [0, 0, 0]
+        Rotation: [0, 0, 0] # Euler Angles (in degrees)
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Cube
+      Spinner:
 
   - Name: StaticCube
     Components:
-      - Type: Transform
-        Properties:
-          Position: [1.5, 0, 0]
-          Rotation: [0, 45, 0]
-          Scale: [0.5, 0.5, 0.5]
-      - Type: MeshRenderer
-        Properties:
-          Mesh: Cube
+      Transform:
+        Position: [1.5, 0, 0]
+        Rotation: [0, 45, 0]
+        Scale: [0.5, 0.5, 0.5]
+      MeshRenderer:
+        Mesh: Cube

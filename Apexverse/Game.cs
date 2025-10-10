@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Cherris;
 
@@ -30,20 +31,6 @@ public class Game : Engine
         // Register custom components that the scene can use
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
 
-        // --- Update factory to handle new property format ---
-        SceneLoader.RegisterComponentFactory("MeshRenderer", (componentData) =>
-        {
-            if (componentData.Properties != null && componentData.Properties.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
-            {
-                Mesh mesh = ResourceManager.GetMesh(meshName);
-                if (mesh != null)
-                {
-                    return new MeshRenderer(mesh, GetGraphicsDevice());
-                }
-            }
-            return null;
-        });
-
         // Load the scene from the file
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
         Scene.AddRange(loadedObjects);
@@ -51,7 +38,7 @@ public class Game : Engine
 
     protected override void Update(float deltaTime)
     {
-        // The base engine Update now handles calling Update on all ScriptableComponents
+        // The base engine Update now handles calling Update on all Scripts
         base.Update(deltaTime);
     }
 }

@@ -14,15 +14,25 @@ public class SceneLoader
 {
     private readonly ResourceManager _resourceManager;
     private readonly GraphicsDevice _graphicsDevice;
-    private readonly Dictionary<string, Func<ComponentData, Component>> _componentFactories = new();
+    private readonly Dictionary<string, Func<object, Component>> _componentFactories = new();
+    private readonly IDeserializer _deserializer;
+    private readonly ISerializer _serializer;
 
     public SceneLoader(ResourceManager resourceManager, GraphicsDevice graphicsDevice)
     {
         _resourceManager = resourceManager;
         _graphicsDevice = graphicsDevice;
+
+        _deserializer = new DeserializerBuilder()
+            .WithNamingConvention(PascalCaseNamingConvention.Instance)
+            .WithTypeConverter(new Vector3YamlTypeConverter())
+            .Build();
+
+        // A serializer is needed for our new, efficient conversion method.
+        _serializer = new SerializerBuilder().Build();
     }
 
-    public void RegisterComponentFactory(string typeName, Func<ComponentData, Component> factory)
+    public void RegisterComponentFactory(string typeName, Func<object, Component> factory)
     {
         _componentFactories[typeName] = factory;
     }
@@ -32,48 +42,38 @@ public class SceneLoader
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
 
-        var deserializer = new DeserializerBuilder()
-            .WithNamingConvention(PascalCaseNamingConvention.Instance)
-            .WithTypeConverter(new Vector3YamlTypeConverter())
-            .Build();
-
-        var sceneData = deserializer.Deserialize<SceneData>(input);
+        var sceneData = _deserializer.Deserialize<SceneData>(input);
 
         foreach (var goData in sceneData.GameObjects)
         {
             var go = new GameObject(goData.Name);
 
-            // --- Transform is now treated as a component in the data ---
-            // Find the transform component data first, as it's required to exist.
-            var transformDataComponent = goData.Components?.FirstOrDefault(c => c.Type == "Transform");
-            if (transformDataComponent != null)
+            if (goData.Components == null)
             {
-                // We need to re-serialize and deserialize this specific part to get it into our TransformData class.
-                // This is a common technique when dealing with loosely typed dictionaries from deserializers.
-                var serializer = new SerializerBuilder().Build();
-                var yaml = serializer.Serialize(transformDataComponent.Properties);
+                sceneObjects.Add(go);
+                continue;
+            }
 
-                // --- FIX: The new DeserializerBuilder must also know about the Vector3 converter ---
-                var transformDeserializer = new DeserializerBuilder()
-                    .WithTypeConverter(new Vector3YamlTypeConverter())
-                    .Build();
-                var transformData = transformDeserializer.Deserialize<TransformData>(yaml);
+            // Find and apply the Transform first, as it's fundamental.
+            if (goData.Components.TryGetValue("Transform", out var transformProperties))
+            {
+                // This is the new, efficient way. We avoid creating strings by passing the
+                // object graph directly from the serializer to the deserializer.
+                var yaml = _serializer.Serialize(transformProperties);
+                var transformData = _deserializer.Deserialize<TransformData>(yaml);
 
                 go.Transform.Position = transformData.Position;
                 go.Transform.Scale = transformData.Scale;
 
-                // Convert Euler angles (degrees) to Quaternion
                 var rotRadians = transformData.Rotation * (MathF.PI / 180.0f);
                 go.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
             }
 
             // Create and add all other components
-            if (goData.Components != null)
+            foreach (var componentKvp in goData.Components)
             {
-                foreach (var componentData in goData.Components.Where(c => c.Type != "Transform"))
-                {
-                    AddComponent(go, componentData);
-                }
+                if (componentKvp.Key == "Transform") continue;
+                AddComponent(go, componentKvp.Key, componentKvp.Value);
             }
 
             sceneObjects.Add(go);
@@ -82,11 +82,11 @@ public class SceneLoader
         return sceneObjects;
     }
 
-    private void AddComponent(GameObject go, ComponentData componentData)
+    private void AddComponent(GameObject go, string componentType, object properties)
     {
-        if (_componentFactories.TryGetValue(componentData.Type, out var factory))
+        if (_componentFactories.TryGetValue(componentType, out var factory))
         {
-            var component = factory(componentData);
+            var component = factory(properties);
             if (component != null)
             {
                 go.AddComponent(component);
@@ -94,7 +94,7 @@ public class SceneLoader
         }
         else
         {
-            Console.WriteLine($"[SceneLoader] Warning: No factory registered for component type '{componentData.Type}'.");
+            Console.WriteLine($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
         }
     }
 }

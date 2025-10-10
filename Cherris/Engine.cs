@@ -60,9 +60,11 @@ public abstract class Engine
 
     private void RegisterEngineComponents()
     {
-        SceneLoader.RegisterComponentFactory("MeshRenderer", (componentData) =>
+        SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (componentData.Properties != null && componentData.Properties.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
+            if (properties is not Dictionary<object, object> propsDict) return null;
+
+            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
             {
                 Mesh mesh = ResourceManager.GetMesh(meshName);
                 if (mesh != null)

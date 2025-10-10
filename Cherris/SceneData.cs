@@ -16,7 +16,8 @@ public class SceneData
 public class GameObjectData
 {
     public string Name { get; set; }
-    public List<ComponentData> Components { get; set; }
+    // This is now a map of component names to their properties.
+    public Dictionary<string, object> Components { get; set; }
 }
 
 public class TransformData
@@ -24,12 +25,4 @@ public class TransformData
     public Vector3 Position { get; set; } = Vector3.Zero;
     public Vector3 Rotation { get; set; } = Vector3.Zero; // Stored as Euler angles in YAML
     public Vector3 Scale { get; set; } = Vector3.One;
-}
-
-public class ComponentData
-{
-    public string Type { get; set; }
-    // By using object, YamlDotNet can deserialize nested structures
-    // like dictionaries or even full classes.
-    public Dictionary<string, object> Properties { get; set; }
 }
