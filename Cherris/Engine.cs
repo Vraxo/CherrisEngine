@@ -16,6 +16,7 @@ public abstract class Engine
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
     private bool _escapePressedLastFrame = false;
+    private Vector2 _windowCenter;
 
     // Engine-level resources
     private DeviceBuffer _mvpBuffer;
@@ -86,21 +87,31 @@ public abstract class Engine
         Start();
         _stopwatch.Start();
 
-        Sdl2Native.SDL_SetRelativeMouseMode(true);
+        _windowCenter = new Vector2(_window.Width / 2f, _window.Height / 2f);
+
+        // Replaced Sdl2Native.SDL_SetRelativeMouseMode with manual cursor management.
         Input.IsMouseLocked = true;
-        _window.PumpEvents(); // Pump once to flush initial mouse position.
+        Sdl2Native.SDL_ShowCursor(0); // Hide cursor.
+        // Center mouse initially and pump events to clear the warp event from the queue.
+        Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+        _window.PumpEvents();
 
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
-            Input.UpdateSnapshot(snapshot);
+            Input.UpdateSnapshot(snapshot, _windowCenter);
 
             // Toggle mouse lock state on Escape key press
             bool isEscapeDown = Input.IsKeyDown(Key.Escape);
             if (isEscapeDown && !_escapePressedLastFrame)
             {
                 Input.IsMouseLocked = !Input.IsMouseLocked;
-                Sdl2Native.SDL_SetRelativeMouseMode(Input.IsMouseLocked);
+                Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
+                if (Input.IsMouseLocked)
+                {
+                    // When re-locking, center mouse immediately to prepare for next frame's input.
+                    Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+                }
             }
             _escapePressedLastFrame = isEscapeDown;
 
@@ -111,6 +122,12 @@ public abstract class Engine
 
             Update(deltaTime);
             Draw();
+
+            // If the mouse is locked, re-center it for the next frame's delta calculation.
+            if (Input.IsMouseLocked)
+            {
+                Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+            }
         }
 
         DisposeResources();

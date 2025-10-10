@@ -70,6 +70,7 @@ public abstract class Engine
     private readonly GraphicsDevice _graphicsDevice;
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
+    private bool _escapePressedLastFrame = false;
 
     // Engine-level resources
     private DeviceBuffer _mvpBuffer;
@@ -141,12 +142,22 @@ public abstract class Engine
         _stopwatch.Start();
 
         Sdl2Native.SDL_SetRelativeMouseMode(true);
+        Input.IsMouseLocked = true;
         _window.PumpEvents(); // Pump once to flush initial mouse position.
 
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
             Input.UpdateSnapshot(snapshot);
+
+            // Toggle mouse lock state on Escape key press
+            bool isEscapeDown = Input.IsKeyDown(Key.Escape);
+            if (isEscapeDown && !_escapePressedLastFrame)
+            {
+                Input.IsMouseLocked = !Input.IsMouseLocked;
+                Sdl2Native.SDL_SetRelativeMouseMode(Input.IsMouseLocked);
+            }
+            _escapePressedLastFrame = isEscapeDown;
 
             if (!_window.Exists) break;
 
@@ -350,8 +361,10 @@ namespace Cherris;
 public static class Input
 {
     private static readonly HashSet<Key> _pressedKeys = new();
+    private static Vector2 _lastMousePosition;
     private static bool _firstMouseUpdate = true;
 
+    public static bool IsMouseLocked { get; internal set; } = true;
     public static Vector2 MouseDelta { get; private set; }
 
     internal static void UpdateSnapshot(InputSnapshot snapshot)
@@ -368,14 +381,28 @@ public static class Input
             }
         }
 
-        if (_firstMouseUpdate)
+        if (!IsMouseLocked)
         {
             MouseDelta = Vector2.Zero;
+            // When the mouse is unlocked and then re-locked, we need to treat
+            // the next update as the first one to avoid a sudden camera jump.
+            _firstMouseUpdate = true;
+            return;
+        }
+
+        if (_firstMouseUpdate)
+        {
+            // On the first frame (or after being re-locked), we can't calculate a delta.
+            // So we store the initial position and report zero delta.
+            MouseDelta = Vector2.Zero;
+            _lastMousePosition = snapshot.MousePosition;
             _firstMouseUpdate = false;
         }
         else
         {
-            MouseDelta = snapshot.MousePosition;
+            // The delta is the difference between the current and last mouse positions.
+            MouseDelta = snapshot.MousePosition - _lastMousePosition;
+            _lastMousePosition = snapshot.MousePosition;
         }
     }
 

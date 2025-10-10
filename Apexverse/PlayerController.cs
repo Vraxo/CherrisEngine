@@ -8,7 +8,7 @@ namespace Apexverse
     public class PlayerController : Script
     {
         public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.002f;
+        public float MouseSensitivity { get; set; } = 0.00015f;
 
         private float _yaw;
         private float _pitch;
