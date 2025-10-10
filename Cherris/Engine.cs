@@ -150,10 +150,7 @@ public abstract class Engine
 
     private void DisposeResources()
     {
-        foreach (var gameObject in SceneManager.GameObjects)
-        {
-            gameObject.GetComponent<MeshRenderer>()?.Dispose();
-        }
+        SceneManager.Dispose();
         _renderer.Dispose();
         ResourceManager.Dispose();
         _commandList.Dispose();
