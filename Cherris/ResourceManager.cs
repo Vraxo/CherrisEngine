@@ -118,6 +118,11 @@ public class ResourceManager
 
 
         var firstImage = faceImages[0];
+        if (firstImage.Width != firstImage.Height)
+        {
+            Console.WriteLine($"[ResourceManager] Error: Skybox face textures must be square. Texture '{facePaths[0]}' has dimensions {firstImage.Width}x{firstImage.Height}.");
+            return null;
+        }
         if (faceImages.Any(img => img.Width != firstImage.Width || img.Height != firstImage.Height))
         {
             Console.WriteLine("[ResourceManager] Error: All faces of a skybox must have the same dimensions.");
@@ -126,7 +131,7 @@ public class ResourceManager
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
         Veldrid.Texture cubemap = factory.CreateTexture(TextureDescription.Texture2D(
-            (uint)firstImage.Width, (uint)firstImage.Height, 1, 1,
+            (uint)firstImage.Width, (uint)firstImage.Height, 1, 6, // arrayLayers must be 6 for a cubemap
             PixelFormat.R8_G8_B8_A8_UNorm,
             TextureUsage.Cubemap | TextureUsage.Sampled));
 
