@@ -21,7 +21,7 @@
 
   <ItemGroup>
     <None Update="Assets\Asphalt.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="Assets\crate.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

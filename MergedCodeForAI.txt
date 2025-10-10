@@ -71,11 +71,14 @@ public abstract class Engine
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
     private bool _escapePressedLastFrame = false;
+    private Vector2 _windowCenter;
 
     // Engine-level resources
     private DeviceBuffer _mvpBuffer;
     private Pipeline _pipeline;
     private ResourceSet _mvpResourceSet;
+    private ResourceLayout _textureLayout;
+    private Sampler _sampler;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
@@ -121,15 +124,27 @@ public abstract class Engine
         {
             if (properties is not Dictionary<object, object> propsDict) return null;
 
+            Mesh mesh = null;
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
             {
-                Mesh mesh = ResourceManager.GetMesh(meshName);
-                if (mesh != null)
-                {
-                    return new MeshRenderer(mesh, _graphicsDevice);
-                }
+                mesh = ResourceManager.GetMesh(meshName);
             }
-            return null;
+            if (mesh == null) return null;
+
+            Texture texture;
+            if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
+            {
+                texture = ResourceManager.GetTexture(textureName);
+            }
+            else
+            {
+                // Use a default white texture if none is specified
+                texture = ResourceManager.GetTexture("White");
+            }
+            if (texture == null) return null;
+
+
+            return new MeshRenderer(mesh, _graphicsDevice, _textureLayout, _sampler, texture);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
@@ -141,21 +156,31 @@ public abstract class Engine
         Start();
         _stopwatch.Start();
 
-        Sdl2Native.SDL_SetRelativeMouseMode(true);
+        _windowCenter = new Vector2(_window.Width / 2f, _window.Height / 2f);
+
+        // Replaced Sdl2Native.SDL_SetRelativeMouseMode with manual cursor management.
         Input.IsMouseLocked = true;
-        _window.PumpEvents(); // Pump once to flush initial mouse position.
+        Sdl2Native.SDL_ShowCursor(0); // Hide cursor.
+        // Center mouse initially and pump events to clear the warp event from the queue.
+        Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+        _window.PumpEvents();
 
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
-            Input.UpdateSnapshot(snapshot);
+            Input.UpdateSnapshot(snapshot, _windowCenter);
 
             // Toggle mouse lock state on Escape key press
             bool isEscapeDown = Input.IsKeyDown(Key.Escape);
             if (isEscapeDown && !_escapePressedLastFrame)
             {
                 Input.IsMouseLocked = !Input.IsMouseLocked;
-                Sdl2Native.SDL_SetRelativeMouseMode(Input.IsMouseLocked);
+                Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
+                if (Input.IsMouseLocked)
+                {
+                    // When re-locking, center mouse immediately to prepare for next frame's input.
+                    Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+                }
             }
             _escapePressedLastFrame = isEscapeDown;
 
@@ -166,6 +191,12 @@ public abstract class Engine
 
             Update(deltaTime);
             Draw();
+
+            // If the mouse is locked, re-center it for the next frame's delta calculation.
+            if (Input.IsMouseLocked)
+            {
+                Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+            }
         }
 
         DisposeResources();
@@ -220,11 +251,29 @@ public abstract class Engine
 
         VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4));
+            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
+            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
 
         ResourceLayout mvpLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        _textureLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+        _sampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Wrap,
+            AddressModeV = SamplerAddressMode.Wrap,
+            AddressModeW = SamplerAddressMode.Wrap,
+            Filter = SamplerFilter.Anisotropic,
+            MaximumAnisotropy = 16,
+            LodBias = 0,
+            MinimumLod = 0,
+            MaximumLod = uint.MaxValue
+        });
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
 
@@ -238,7 +287,7 @@ public abstract class Engine
             RasterizerState = new RasterizerStateDescription(
                 FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout },
+            ResourceLayouts = new[] { mvpLayout, _textureLayout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
             Outputs = _graphicsDevice.SwapchainFramebuffer.OutputDescription
         });
@@ -278,15 +327,34 @@ public abstract class Engine
                 #version 450
                 layout(location = 0) in vec3 Position;
                 layout(location = 1) in vec4 Color;
+                layout(location = 2) in vec2 TexCoord;
+
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+
                 layout(location = 0) out vec4 fsin_Color;
-                void main() { gl_Position = mvp * vec4(Position, 1); fsin_Color = Color; }";
+                layout(location = 1) out vec2 fsin_TexCoord;
+
+                void main() 
+                { 
+                    gl_Position = mvp * vec4(Position, 1); 
+                    fsin_Color = Color; 
+                    fsin_TexCoord = TexCoord;
+                }";
 
         const string fragmentCode = @"
                 #version 450
                 layout(location = 0) in vec4 fsin_Color;
+                layout(location = 1) in vec2 fsin_TexCoord;
+
+                layout(set = 1, binding = 0) uniform texture2D SourceTexture;
+                layout(set = 1, binding = 1) uniform sampler SourceSampler;
+
                 layout(location = 0) out vec4 fsout_Color;
-                void main() { fsout_Color = fsin_Color; }";
+
+                void main() 
+                { 
+                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
             ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
@@ -304,6 +372,8 @@ public abstract class Engine
             gameObject.GetComponent<MeshRenderer>()?.Dispose();
         }
         _pipeline.Dispose();
+        _textureLayout.Dispose();
+        _sampler.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
         ResourceManager.Dispose();
@@ -361,13 +431,12 @@ namespace Cherris;
 public static class Input
 {
     private static readonly HashSet<Key> _pressedKeys = new();
-    private static Vector2 _lastMousePosition;
     private static bool _firstMouseUpdate = true;
 
     public static bool IsMouseLocked { get; internal set; } = true;
     public static Vector2 MouseDelta { get; private set; }
 
-    internal static void UpdateSnapshot(InputSnapshot snapshot)
+    internal static void UpdateSnapshot(InputSnapshot snapshot, Vector2 windowCenter)
     {
         foreach (var keyEvent in snapshot.KeyEvents)
         {
@@ -392,17 +461,18 @@ public static class Input
 
         if (_firstMouseUpdate)
         {
-            // On the first frame (or after being re-locked), we can't calculate a delta.
-            // So we store the initial position and report zero delta.
+            // On the first frame after being locked, we ignore the delta
+            // to avoid a jump from the cursor's unlocked position. The cursor
+            // will be warped to the center by the Engine, and subsequent deltas
+            // will be correct.
             MouseDelta = Vector2.Zero;
-            _lastMousePosition = snapshot.MousePosition;
             _firstMouseUpdate = false;
         }
         else
         {
-            // The delta is the difference between the current and last mouse positions.
-            MouseDelta = snapshot.MousePosition - _lastMousePosition;
-            _lastMousePosition = snapshot.MousePosition;
+            // The delta is the difference between the current mouse position
+            // and the center of the screen (where it was warped to last frame).
+            MouseDelta = snapshot.MousePosition - windowCenter;
         }
     }
 
@@ -421,10 +491,10 @@ namespace Cherris;
 
 public class Mesh
 {
-    public VertexPositionColor[] Vertices { get; }
+    public Vertex[] Vertices { get; }
     public ushort[] Indices { get; }
 
-    public Mesh(VertexPositionColor[] vertices, ushort[] indices)
+    public Mesh(Vertex[] vertices, ushort[] indices)
     {
         Vertices = vertices;
         Indices = indices;
@@ -432,26 +502,80 @@ public class Mesh
 
     public static Mesh CreateCube()
     {
-        VertexPositionColor[] vertices =
+        Vertex[] vertices =
         {
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.Red),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.Green),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.Blue),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.Yellow),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.Cyan),
-            new(new(+0.5f, +0.5f, +0.5f), new RgbaFloat(1, 0, 1, 1)), // Magenta
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.Grey)
+            // Top
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
+            // Bottom
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+            // Left
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+            // Right
+            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
+            // Front
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
+            // Back
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
         };
+
+        // This cube is colored via vertex colors for demonstration.
+        // Let's re-color them now that they are not white.
+        var magenta = new RgbaFloat(1, 0, 1, 1);
+        vertices[0].Color = RgbaFloat.Red; vertices[1].Color = RgbaFloat.Red; vertices[2].Color = RgbaFloat.Red; vertices[3].Color = RgbaFloat.Red;
+        vertices[4].Color = RgbaFloat.Green; vertices[5].Color = RgbaFloat.Green; vertices[6].Color = RgbaFloat.Green; vertices[7].Color = RgbaFloat.Green;
+        vertices[8].Color = RgbaFloat.Blue; vertices[9].Color = RgbaFloat.Blue; vertices[10].Color = RgbaFloat.Blue; vertices[11].Color = RgbaFloat.Blue;
+        vertices[12].Color = RgbaFloat.Yellow; vertices[13].Color = RgbaFloat.Yellow; vertices[14].Color = RgbaFloat.Yellow; vertices[15].Color = RgbaFloat.Yellow;
+        vertices[16].Color = RgbaFloat.Cyan; vertices[17].Color = RgbaFloat.Cyan; vertices[18].Color = RgbaFloat.Cyan; vertices[19].Color = RgbaFloat.Cyan;
+        vertices[20].Color = magenta; vertices[21].Color = magenta; vertices[22].Color = magenta; vertices[23].Color = magenta;
+
 
         ushort[] indices =
         {
-            0,1,2, 0,2,3, // Front
-            4,5,1, 4,1,0, // Top
-            7,6,5, 7,5,4, // Back
-            3,2,6, 3,6,7, // Bottom
-            4,0,3, 4,3,7, // Left
-            1,5,6, 1,6,2  // Right
+            0,1,2, 0,2,3,
+            4,5,6, 4,6,7,
+            8,9,10, 8,10,11,
+            12,13,14, 12,14,15,
+            16,17,18, 16,18,19,
+            20,21,22, 20,22,23,
+        };
+
+        return new Mesh(vertices, indices);
+    }
+
+    public static Mesh CreatePlane(float size)
+    {
+        float halfSize = size * 0.5f;
+        Vertex[] vertices =
+        {
+            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(size, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(size, size)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, size))  // 3 (bottom-left)
+        };
+
+        // Reversed winding order to be visible with existing pipeline state.
+        // The original order (0,1,2) was being culled.
+        ushort[] indices =
+        {
+            0,2,1, 0,3,2
         };
 
         return new Mesh(vertices, indices);
@@ -469,13 +593,14 @@ public class MeshRenderer : Component
     private readonly DeviceBuffer _vertexBuffer;
     private readonly DeviceBuffer _indexBuffer;
     private readonly uint _indexCount;
+    private readonly ResourceSet _textureResourceSet;
 
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd)
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, Sampler sampler, Texture texture)
     {
         ResourceFactory factory = gd.ResourceFactory;
 
         _vertexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(VertexPositionColor.SizeInBytes * mesh.Vertices.Length),
+            (uint)(Vertex.SizeInBytes * mesh.Vertices.Length),
             BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, mesh.Vertices);
 
@@ -485,6 +610,11 @@ public class MeshRenderer : Component
         gd.UpdateBuffer(_indexBuffer, 0, mesh.Indices);
 
         _indexCount = (uint)mesh.Indices.Length;
+
+        _textureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+            textureLayout,
+            texture.VeldridTextureView,
+            sampler));
     }
 
     public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
@@ -493,6 +623,7 @@ public class MeshRenderer : Component
         cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
         cl.SetPipeline(pipeline);
         cl.SetGraphicsResourceSet(0, mvpResourceSet);
+        cl.SetGraphicsResourceSet(1, _textureResourceSet);
 
         cl.DrawIndexed(
             indexCount: _indexCount,
@@ -506,12 +637,15 @@ public class MeshRenderer : Component
     {
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
+        _textureResourceSet.Dispose();
     }
 }
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResourceManager.cs">
+using System;
 using System.Collections.Generic;
+using System.IO;
 using Veldrid;
 
 namespace Cherris;
@@ -519,7 +653,9 @@ namespace Cherris;
 public class ResourceManager
 {
     private readonly Dictionary<string, Mesh> _meshes = new Dictionary<string, Mesh>();
+    private readonly Dictionary<string, Texture> _textures = new Dictionary<string, Texture>();
     private readonly GraphicsDevice _graphicsDevice;
+    private const string AssetRootPath = "Assets";
 
     public ResourceManager(GraphicsDevice gd)
     {
@@ -528,10 +664,17 @@ public class ResourceManager
 
     public void LoadInitialAssets()
     {
-        // In a real engine, this would load from files (e.g. .obj, .fbx)
-        // For now, we pre-load our procedural cube.
+        // Meshes
         var cubeMesh = Mesh.CreateCube();
         _meshes.Add("Cube", cubeMesh);
+
+        var planeMesh = Mesh.CreatePlane(20f);
+        _meshes.Add("Plane", planeMesh);
+
+        // Textures
+        // Create a default white texture for untextured objects or if a texture fails to load.
+        var white = CreateWhiteTexture("White");
+        _textures.Add("White", white);
     }
 
     public Mesh GetMesh(string name)
@@ -539,10 +682,83 @@ public class ResourceManager
         return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
     }
 
+    public Texture GetTexture(string name)
+    {
+        if (_textures.TryGetValue(name, out var texture))
+        {
+            return texture;
+        }
+
+        // Texture not in cache, try to load it from file by searching the asset directory.
+        string filePath = FindTextureFile(name);
+
+        if (filePath != null)
+        {
+            var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, filePath);
+            if (loadedTexture != null)
+            {
+                _textures.Add(name, loadedTexture);
+                return loadedTexture;
+            }
+        }
+
+        // Fallback to the default white texture if loading fails or file doesn't exist.
+        Console.WriteLine($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
+        return _textures["White"];
+    }
+
+    private string FindTextureFile(string name)
+    {
+        if (!Directory.Exists(AssetRootPath))
+        {
+            return null;
+        }
+
+        // We'll check for a few common extensions.
+        string[] extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+        foreach (var ext in extensions)
+        {
+            // Search for "name.ext" in the root asset directory and all subdirectories.
+            try
+            {
+                var files = Directory.GetFiles(AssetRootPath, name + ext, SearchOption.AllDirectories);
+                if (files.Length > 0)
+                {
+                    if (files.Length > 1)
+                    {
+                        Console.WriteLine($"[ResourceManager] Warning: Found multiple files for texture '{name}'. Using '{files[0]}'.");
+                    }
+                    return files[0]; // Return the first match.
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ResourceManager] Error while searching for textures: {e.Message}");
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Texture CreateWhiteTexture(string name)
+    {
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+        Veldrid.Texture veldridTexture = factory.CreateTexture(TextureDescription.Texture2D(
+            1, 1, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
+
+        byte[] pixelData = { 255, 255, 255, 255 };
+        _graphicsDevice.UpdateTexture(veldridTexture, pixelData, 0, 0, 0, 1, 1, 1, 0, 0);
+
+        TextureView textureView = factory.CreateTextureView(veldridTexture);
+        return new Texture(veldridTexture, textureView);
+    }
+
     public void Dispose()
     {
-        // Meshes don't have GPU resources, so nothing to dispose here yet.
-        // If we had textures, etc., we would dispose them here.
+        foreach (var texture in _textures.Values)
+        {
+            texture.Dispose();
+        }
     }
 }
 </file>
@@ -680,6 +896,100 @@ public class SceneLoader
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Texture.cs">
+using System;
+using Veldrid;
+
+namespace Cherris;
+
+public class Texture : IDisposable
+{
+    public Veldrid.Texture VeldridTexture { get; }
+    public TextureView VeldridTextureView { get; }
+
+    public Texture(Veldrid.Texture texture, TextureView textureView)
+    {
+        VeldridTexture = texture;
+        VeldridTextureView = textureView;
+    }
+
+    public void Dispose()
+    {
+        VeldridTextureView.Dispose();
+        VeldridTexture.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\TextureLoader.cs">
+using StbImageSharp;
+using System;
+using System.IO;
+using Veldrid;
+
+namespace Cherris;
+
+public static class TextureLoader
+{
+    public static Texture LoadTextureFromFile(GraphicsDevice gd, string path)
+    {
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"[TextureLoader] Error: Texture file not found at '{path}'");
+            return null;
+        }
+
+        ImageResult imageResult;
+        try
+        {
+            // Load the image from file and flip it vertically.
+            // Most image formats store data top-to-bottom, but GPUs expect it bottom-to-top.
+            StbImage.stbi_set_flip_vertically_on_load(1);
+            using (var stream = File.OpenRead(path))
+            {
+                imageResult = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[TextureLoader] Error loading texture: {e.Message}");
+            return null;
+        }
+
+        ResourceFactory factory = gd.ResourceFactory;
+
+        uint mipLevels = (uint)Math.Floor(Math.Log(Math.Max(imageResult.Width, imageResult.Height), 2)) + 1;
+
+        Veldrid.Texture veldridTexture = factory.CreateTexture(TextureDescription.Texture2D(
+            (uint)imageResult.Width,
+            (uint)imageResult.Height,
+            mipLevels,
+            1,
+            PixelFormat.R8_G8_B8_A8_UNorm,
+            TextureUsage.Sampled | TextureUsage.GenerateMipmaps));
+
+        // Copy the pixel data to the Veldrid texture.
+        gd.UpdateTexture(
+            veldridTexture,
+            imageResult.Data,
+            0, 0, 0,
+            (uint)imageResult.Width, (uint)imageResult.Height, 1,
+            0, 0);
+
+        CommandList cl = factory.CreateCommandList();
+        cl.Begin();
+        cl.GenerateMipmaps(veldridTexture);
+        cl.End();
+        gd.SubmitCommands(cl);
+        gd.WaitForIdle(); // Ensure the GPU has finished generating before the texture is used.
+        cl.Dispose();
+
+        TextureView textureView = factory.CreateTextureView(veldridTexture);
+        return new Texture(veldridTexture, textureView);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Transform.cs">
 using System.Numerics;
 
@@ -749,6 +1059,29 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         emitter.Emit(new Scalar(vector.Y.ToString(CultureInfo.InvariantCulture)));
         emitter.Emit(new Scalar(vector.Z.ToString(CultureInfo.InvariantCulture)));
         emitter.Emit(new SequenceEnd());
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vertex.cs">
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public struct Vertex
+{
+    public Vector3 Position;
+    public RgbaFloat Color;
+    public Vector2 TexCoord;
+
+    public const uint SizeInBytes = 12 + 16 + 8; // 36
+
+    public Vertex(Vector3 position, RgbaFloat color, Vector2 texCoord)
+    {
+        Position = position;
+        Color = color;
+        TexCoord = texCoord;
     }
 }
 </file>
@@ -833,7 +1166,7 @@ namespace Apexverse
     public class PlayerController : Script
     {
         public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.002f;
+        public float MouseSensitivity { get; set; } = 0.00015f;
 
         private float _yaw;
         private float _pitch;
@@ -875,8 +1208,12 @@ namespace Apexverse
             if (moveDirection != Vector3.Zero)
             {
                 moveDirection = Vector3.Normalize(moveDirection);
-                // Transform the local direction vector by the object's new rotation to get world direction
-                var worldDirection = Vector3.Transform(moveDirection, GameObject.Transform.Rotation);
+
+                // Create a rotation that only includes the horizontal (yaw) component.
+                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+                // Transform the local direction vector by the horizontal-only rotation.
+                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
                 GameObject.Transform.Position += worldDirection * Speed * deltaTime;
             }
         }
@@ -916,6 +1253,7 @@ GameObjects:
         Scale: [1, 1, 1]
       MeshRenderer:
         Mesh: Cube
+        Texture: crate
       Spinner:
 
   - Name: StaticCube
@@ -926,5 +1264,16 @@ GameObjects:
         Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
+        Texture: crate
+        
+  - Name: GroundPlane
+    Components:
+      Transform:
+        Position: [0, -0.75, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Plane
+        Texture: Asphalt
 </file>
 

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
@@ -23,6 +24,7 @@ public abstract class Engine
     private Pipeline _pipeline;
     private ResourceSet _mvpResourceSet;
     private ResourceLayout _textureLayout;
+    private ResourceLayout _materialLayout;
     private Sampler _sampler;
 
     // Engine Systems
@@ -88,8 +90,22 @@ public abstract class Engine
             }
             if (texture == null) return null;
 
+            Vector2 textureTiling = Vector2.One;
+            if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
+            {
+                try
+                {
+                    textureTiling = new Vector2(
+                        Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Engine] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
+                }
+            }
 
-            return new MeshRenderer(mesh, _graphicsDevice, _textureLayout, _sampler, texture);
+            return new MeshRenderer(mesh, _graphicsDevice, _textureLayout, _materialLayout, _sampler, texture, textureTiling);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
@@ -208,6 +224,10 @@ public abstract class Engine
                 new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
 
+        _materialLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
         _sampler = factory.CreateSampler(new SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,
@@ -232,7 +252,7 @@ public abstract class Engine
             RasterizerState = new RasterizerStateDescription(
                 FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout, _textureLayout },
+            ResourceLayouts = new[] { mvpLayout, _textureLayout, _materialLayout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
             Outputs = _graphicsDevice.SwapchainFramebuffer.OutputDescription
         });
@@ -275,6 +295,7 @@ public abstract class Engine
                 layout(location = 2) in vec2 TexCoord;
 
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
 
                 layout(location = 0) out vec4 fsin_Color;
                 layout(location = 1) out vec2 fsin_TexCoord;
@@ -283,7 +304,7 @@ public abstract class Engine
                 { 
                     gl_Position = mvp * vec4(Position, 1); 
                     fsin_Color = Color; 
-                    fsin_TexCoord = TexCoord;
+                    fsin_TexCoord = TexCoord * TextureTiling.xy;
                 }";
 
         const string fragmentCode = @"
@@ -318,6 +339,7 @@ public abstract class Engine
         }
         _pipeline.Dispose();
         _textureLayout.Dispose();
+        _materialLayout.Dispose();
         _sampler.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();

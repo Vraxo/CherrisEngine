@@ -80,9 +80,9 @@ public class Mesh
         Vertex[] vertices =
         {
             new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(size, 0)), // 1 (top-right)
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(size, size)), // 2 (bottom-right)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, size))  // 3 (bottom-left)
+            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
         };
 
         // Reversed winding order to be visible with existing pipeline state.
