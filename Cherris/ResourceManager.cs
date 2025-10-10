@@ -1,14 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using StbImageSharp;
 using Veldrid;
 
 namespace Cherris;
 
 public class ResourceManager
 {
-    private readonly Dictionary<string, Mesh> _meshes = new Dictionary<string, Mesh>();
-    private readonly Dictionary<string, Texture> _textures = new Dictionary<string, Texture>();
+    private readonly Dictionary<string, Mesh> _meshes = new();
+    private readonly Dictionary<string, Texture> _textures = new();
+    private readonly Dictionary<string, Skybox> _skyboxes = new();
     private readonly GraphicsDevice _graphicsDevice;
     private const string AssetRootPath = "Assets";
 
@@ -62,6 +65,82 @@ public class ResourceManager
         return _textures["White"];
     }
 
+    public Skybox GetSkybox(string name)
+    {
+        if (_skyboxes.TryGetValue(name, out var skybox))
+        {
+            return skybox;
+        }
+
+        var loadedSkybox = LoadSkyboxFromFile(name);
+        if (loadedSkybox != null)
+        {
+            _skyboxes.Add(name, loadedSkybox);
+            return loadedSkybox;
+        }
+
+        Console.WriteLine($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
+        return null;
+    }
+
+    private Skybox LoadSkyboxFromFile(string name)
+    {
+        string[] faceSuffixes = { "_px", "_nx", "_py", "_ny", "_pz", "_nz" };
+        string[] facePaths = new string[6];
+
+        for (int i = 0; i < 6; i++)
+        {
+            var path = FindTextureFile(name + faceSuffixes[i]);
+            if (path == null)
+            {
+                Console.WriteLine($"[ResourceManager] Could not find face '{name}{faceSuffixes[i]}' for skybox.");
+                return null;
+            }
+            facePaths[i] = path;
+        }
+
+        ImageResult[] faceImages = new ImageResult[6];
+        try
+        {
+            StbImage.stbi_set_flip_vertically_on_load(0);
+            for (int i = 0; i < 6; i++)
+            {
+                using (var stream = File.OpenRead(facePaths[i]))
+                {
+                    faceImages[i] = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                }
+            }
+        }
+        finally
+        {
+            StbImage.stbi_set_flip_vertically_on_load(1);
+        }
+
+
+        var firstImage = faceImages[0];
+        if (faceImages.Any(img => img.Width != firstImage.Width || img.Height != firstImage.Height))
+        {
+            Console.WriteLine("[ResourceManager] Error: All faces of a skybox must have the same dimensions.");
+            return null;
+        }
+
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+        Veldrid.Texture cubemap = factory.CreateTexture(TextureDescription.Texture2D(
+            (uint)firstImage.Width, (uint)firstImage.Height, 1, 1,
+            PixelFormat.R8_G8_B8_A8_UNorm,
+            TextureUsage.Cubemap | TextureUsage.Sampled));
+
+        for (uint i = 0; i < 6; i++)
+        {
+            var img = faceImages[i];
+            _graphicsDevice.UpdateTexture(cubemap, img.Data, 0, 0, 0, (uint)img.Width, (uint)img.Height, 1, 0, i);
+        }
+
+        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
+        var texture = new Texture(cubemap, textureView);
+        return new Skybox(texture);
+    }
+
     private string FindTextureFile(string name)
     {
         if (!Directory.Exists(AssetRootPath))
@@ -113,6 +192,11 @@ public class ResourceManager
         foreach (var texture in _textures.Values)
         {
             texture.Dispose();
+        }
+
+        foreach (var skybox in _skyboxes.Values)
+        {
+            skybox.Dispose();
         }
     }
 }

@@ -14,22 +14,29 @@ public class SceneManager
     private readonly List<GameObject> _gameObjects = new();
 
     public Camera MainCamera { get; private set; }
+    public Skybox Skybox { get; private set; }
     public IEnumerable<GameObject> GameObjects => _gameObjects;
 
     public void SetScene(List<GameObject> gameObjects)
     {
         _gameObjects.Clear();
         _gameObjects.AddRange(gameObjects);
+        MainCamera = null;
+        Skybox = null;
     }
 
     public void Start()
     {
         foreach (var gameObject in _gameObjects)
         {
-            var camera = gameObject.GetComponent<Camera>();
-            if (camera != null)
+            if (MainCamera == null)
             {
-                MainCamera = camera;
+                MainCamera = gameObject.GetComponent<Camera>();
+            }
+
+            if (Skybox == null)
+            {
+                Skybox = gameObject.GetComponent<Skybox>();
             }
 
             foreach (var script in gameObject.GetComponents<Script>())

@@ -90,6 +90,17 @@ public abstract class Engine
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
+
+        SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
+        {
+            if (properties is not Dictionary<object, object> propsDict) return null;
+
+            if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
+            {
+                return ResourceManager.GetSkybox(cubemapName);
+            }
+            return null;
+        });
     }
 
     public void Run()
@@ -134,12 +145,18 @@ public abstract class Engine
         if (mainCamera == null) return;
 
         Matrix4x4 view = mainCamera.GetViewMatrix();
-        Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height);
+        Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / (float)_gameWindow.Height);
 
         _commandList.Begin();
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
+
+        var skybox = SceneManager.Skybox;
+        if (skybox != null)
+        {
+            _renderer.RenderSkybox(_commandList, skybox, view, projection);
+        }
 
         _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
 

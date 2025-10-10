@@ -56,6 +56,7 @@ public abstract class Script : Component
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
@@ -66,38 +67,20 @@ namespace Cherris;
 
 public abstract class Engine
 {
-    private readonly Sdl2Window _window;
+    private readonly GameWindow _gameWindow;
     private readonly GraphicsDevice _graphicsDevice;
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
-    private bool _escapePressedLastFrame = false;
-    private Vector2 _windowCenter;
-
-    // Engine-level resources
-    private DeviceBuffer _mvpBuffer;
-    private Pipeline _pipeline;
-    private ResourceSet _mvpResourceSet;
-    private ResourceLayout _textureLayout;
-    private Sampler _sampler;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
-
-    protected readonly List<GameObject> Scene = new List<GameObject>();
-    protected Camera MainCamera { get; private set; }
+    protected readonly SceneManager SceneManager;
+    private readonly Renderer _renderer;
 
     protected Engine(string windowTitle)
     {
-        WindowCreateInfo windowCI = new WindowCreateInfo
-        {
-            X = 100,
-            Y = 100,
-            WindowWidth = 960,
-            WindowHeight = 540,
-            WindowTitle = windowTitle
-        };
-        _window = VeldridStartup.CreateWindow(ref windowCI);
+        _gameWindow = new GameWindow(windowTitle, 960, 540);
 
         GraphicsDeviceOptions options = new GraphicsDeviceOptions
         {
@@ -105,17 +88,17 @@ public abstract class Engine
             PreferDepthRangeZeroToOne = true,
             SwapchainDepthFormat = PixelFormat.R16_UNorm
         };
-        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_window, options);
+        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_gameWindow.SdlWindow, options);
         _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
         _stopwatch = new Stopwatch();
 
         // Initialize systems
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
+        SceneManager = new SceneManager();
+        _renderer = new Renderer(_graphicsDevice);
 
         RegisterEngineComponents();
-
-        CreateGlobalResources();
     }
 
     private void RegisterEngineComponents()
@@ -143,8 +126,22 @@ public abstract class Engine
             }
             if (texture == null) return null;
 
+            Vector2 textureTiling = Vector2.One;
+            if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
+            {
+                try
+                {
+                    textureTiling = new Vector2(
+                        Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Engine] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
+                }
+            }
 
-            return new MeshRenderer(mesh, _graphicsDevice, _textureLayout, _sampler, texture);
+            return new MeshRenderer(mesh, _graphicsDevice, _renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler, texture, textureTiling);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
@@ -156,47 +153,17 @@ public abstract class Engine
         Start();
         _stopwatch.Start();
 
-        _windowCenter = new Vector2(_window.Width / 2f, _window.Height / 2f);
-
-        // Replaced Sdl2Native.SDL_SetRelativeMouseMode with manual cursor management.
-        Input.IsMouseLocked = true;
-        Sdl2Native.SDL_ShowCursor(0); // Hide cursor.
-        // Center mouse initially and pump events to clear the warp event from the queue.
-        Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-        _window.PumpEvents();
-
-        while (_window.Exists)
+        while (_gameWindow.Exists)
         {
-            InputSnapshot snapshot = _window.PumpEvents();
-            Input.UpdateSnapshot(snapshot, _windowCenter);
+            _gameWindow.ProcessEvents();
 
-            // Toggle mouse lock state on Escape key press
-            bool isEscapeDown = Input.IsKeyDown(Key.Escape);
-            if (isEscapeDown && !_escapePressedLastFrame)
-            {
-                Input.IsMouseLocked = !Input.IsMouseLocked;
-                Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
-                if (Input.IsMouseLocked)
-                {
-                    // When re-locking, center mouse immediately to prepare for next frame's input.
-                    Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-                }
-            }
-            _escapePressedLastFrame = isEscapeDown;
-
-            if (!_window.Exists) break;
+            if (!_gameWindow.Exists) break;
 
             float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
             _stopwatch.Restart();
 
             Update(deltaTime);
             Draw();
-
-            // If the mouse is locked, re-center it for the next frame's delta calculation.
-            if (Input.IsMouseLocked)
-            {
-                Sdl2Native.SDL_WarpMouseInWindow(_window.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-            }
         }
 
         DisposeResources();
@@ -204,28 +171,7 @@ public abstract class Engine
 
     private void Start()
     {
-        foreach (var gameObject in Scene)
-        {
-            var camera = gameObject.GetComponent<Camera>();
-            if (camera != null)
-            {
-                MainCamera = camera;
-            }
-
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                script.Start();
-            }
-        }
-
-        if (MainCamera == null)
-        {
-            Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
-            var go = new GameObject("Default Camera");
-            go.Transform.Position = new Vector3(0, 1, 3);
-            MainCamera = go.AddComponent(new Camera());
-            Scene.Add(go);
-        }
+        SceneManager.Start();
     }
 
     protected GraphicsDevice GetGraphicsDevice() => _graphicsDevice;
@@ -234,148 +180,33 @@ public abstract class Engine
 
     protected virtual void Update(float deltaTime)
     {
-        foreach (var gameObject in Scene)
-        {
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                script.Update(deltaTime);
-            }
-        }
-    }
-
-    private void CreateGlobalResources()
-    {
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-
-        _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
-
-        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
-            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
-            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
-
-        ResourceLayout mvpLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
-
-        _textureLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
-
-        _sampler = factory.CreateSampler(new SamplerDescription
-        {
-            AddressModeU = SamplerAddressMode.Wrap,
-            AddressModeV = SamplerAddressMode.Wrap,
-            AddressModeW = SamplerAddressMode.Wrap,
-            Filter = SamplerFilter.Anisotropic,
-            MaximumAnisotropy = 16,
-            LodBias = 0,
-            MinimumLod = 0,
-            MaximumLod = uint.MaxValue
-        });
-
-        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
-
-        (Shader vs, Shader fs) = LoadShaders(factory);
-
-        _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
-        {
-            BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(
-                true, true, ComparisonKind.LessEqual),
-            RasterizerState = new RasterizerStateDescription(
-                FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
-            PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout, _textureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = _graphicsDevice.SwapchainFramebuffer.OutputDescription
-        });
+        SceneManager.Update(deltaTime);
     }
 
     private void Draw()
     {
-        if (MainCamera == null) return;
+        var mainCamera = SceneManager.MainCamera;
+        if (mainCamera == null) return;
 
-        Matrix4x4 view = MainCamera.GetViewMatrix();
-        Matrix4x4 projection = MainCamera.GetProjectionMatrix((float)_window.Width / _window.Height);
+        Matrix4x4 view = mainCamera.GetViewMatrix();
+        Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height);
 
         _commandList.Begin();
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
-        foreach (var gameObject in Scene)
-        {
-            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer == null) continue;
-
-            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
-            _commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
-
-            meshRenderer.Render(_commandList, _pipeline, _mvpResourceSet);
-        }
+        _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
 
         _commandList.End();
         _graphicsDevice.SubmitCommands(_commandList);
         _graphicsDevice.SwapBuffers();
     }
 
-    private (Shader, Shader) LoadShaders(ResourceFactory factory)
-    {
-        const string vertexCode = @"
-                #version 450
-                layout(location = 0) in vec3 Position;
-                layout(location = 1) in vec4 Color;
-                layout(location = 2) in vec2 TexCoord;
-
-                layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
-
-                layout(location = 0) out vec4 fsin_Color;
-                layout(location = 1) out vec2 fsin_TexCoord;
-
-                void main() 
-                { 
-                    gl_Position = mvp * vec4(Position, 1); 
-                    fsin_Color = Color; 
-                    fsin_TexCoord = TexCoord;
-                }";
-
-        const string fragmentCode = @"
-                #version 450
-                layout(location = 0) in vec4 fsin_Color;
-                layout(location = 1) in vec2 fsin_TexCoord;
-
-                layout(set = 1, binding = 0) uniform texture2D SourceTexture;
-                layout(set = 1, binding = 1) uniform sampler SourceSampler;
-
-                layout(location = 0) out vec4 fsout_Color;
-
-                void main() 
-                { 
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
-                }";
-
-        ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
-        ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
-
-        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
-        return (shaders[0], shaders[1]);
-    }
-
     private void DisposeResources()
     {
-        foreach (var gameObject in Scene)
-        {
-            gameObject.GetComponent<MeshRenderer>()?.Dispose();
-        }
-        _pipeline.Dispose();
-        _textureLayout.Dispose();
-        _sampler.Dispose();
-        _mvpResourceSet.Dispose();
-        _mvpBuffer.Dispose();
+        SceneManager.Dispose();
+        _renderer.Dispose();
         ResourceManager.Dispose();
         _commandList.Dispose();
         _graphicsDevice.Dispose();
@@ -417,6 +248,72 @@ public class GameObject
     public IEnumerable<T> GetComponents<T>() where T : Component
     {
         return _components.OfType<T>();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameWindow.cs">
+using System.Numerics;
+using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+
+namespace Cherris;
+
+public class GameWindow
+{
+    public Sdl2Window SdlWindow { get; }
+    private readonly Vector2 _windowCenter;
+    private bool _escapePressedLastFrame = false;
+
+    public bool Exists => SdlWindow.Exists;
+    public float Width => SdlWindow.Width;
+    public float Height => SdlWindow.Height;
+
+    public GameWindow(string title, int width, int height)
+    {
+        WindowCreateInfo windowCI = new WindowCreateInfo
+        {
+            X = 100,
+            Y = 100,
+            WindowWidth = width,
+            WindowHeight = height,
+            WindowTitle = title
+        };
+        SdlWindow = VeldridStartup.CreateWindow(ref windowCI);
+        _windowCenter = new Vector2(SdlWindow.Width / 2f, SdlWindow.Height / 2f);
+
+        // Initial mouse setup
+        Input.IsMouseLocked = true;
+        Sdl2Native.SDL_ShowCursor(0);
+        Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+        SdlWindow.PumpEvents(); // Pump once to clear the warp event
+    }
+
+    public void ProcessEvents()
+    {
+        InputSnapshot snapshot = SdlWindow.PumpEvents();
+        Input.UpdateSnapshot(snapshot, _windowCenter);
+
+        // Toggle mouse lock state on Escape key press
+        bool isEscapeDown = Input.IsKeyDown(Key.Escape);
+        if (isEscapeDown && !_escapePressedLastFrame)
+        {
+            Input.IsMouseLocked = !Input.IsMouseLocked;
+            Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
+            if (Input.IsMouseLocked)
+            {
+                // When re-locking, center mouse immediately.
+                Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+            }
+        }
+        _escapePressedLastFrame = isEscapeDown;
+
+        // If mouse is locked, re-center it for next frame's delta calculation.
+        if (Input.IsMouseLocked && SdlWindow.Exists)
+        {
+            Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+        }
     }
 }
 </file>
@@ -566,9 +463,9 @@ public class Mesh
         Vertex[] vertices =
         {
             new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(size, 0)), // 1 (top-right)
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(size, size)), // 2 (bottom-right)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, size))  // 3 (bottom-left)
+            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
         };
 
         // Reversed winding order to be visible with existing pipeline state.
@@ -584,6 +481,7 @@ public class Mesh
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\MeshRenderer.cs">
+using System.Numerics;
 using Veldrid;
 
 namespace Cherris;
@@ -594,8 +492,10 @@ public class MeshRenderer : Component
     private readonly DeviceBuffer _indexBuffer;
     private readonly uint _indexCount;
     private readonly ResourceSet _textureResourceSet;
+    private readonly DeviceBuffer _materialPropertiesBuffer;
+    private readonly ResourceSet _materialResourceSet;
 
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, Sampler sampler, Texture texture)
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
     {
         ResourceFactory factory = gd.ResourceFactory;
 
@@ -615,6 +515,14 @@ public class MeshRenderer : Component
             textureLayout,
             texture.VeldridTextureView,
             sampler));
+
+        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
+        var materialData = new Vector4(textureTiling.X, textureTiling.Y, 0, 0);
+        gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
+
+        _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+            materialLayout,
+            _materialPropertiesBuffer));
     }
 
     public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
@@ -624,6 +532,7 @@ public class MeshRenderer : Component
         cl.SetPipeline(pipeline);
         cl.SetGraphicsResourceSet(0, mvpResourceSet);
         cl.SetGraphicsResourceSet(1, _textureResourceSet);
+        cl.SetGraphicsResourceSet(2, _materialResourceSet);
 
         cl.DrawIndexed(
             indexCount: _indexCount,
@@ -638,6 +547,152 @@ public class MeshRenderer : Component
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
         _textureResourceSet.Dispose();
+        _materialPropertiesBuffer.Dispose();
+        _materialResourceSet.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Renderer.cs">
+using System.Collections.Generic;
+using System.Numerics;
+using Veldrid;
+using Veldrid.SPIRV;
+
+namespace Cherris;
+
+public class Renderer
+{
+    private readonly DeviceBuffer _mvpBuffer;
+    private readonly Pipeline _pipeline;
+    private readonly ResourceSet _mvpResourceSet;
+
+    public ResourceLayout TextureLayout { get; }
+    public ResourceLayout MaterialLayout { get; }
+    public Sampler Sampler { get; }
+
+
+    public Renderer(GraphicsDevice gd)
+    {
+        ResourceFactory factory = gd.ResourceFactory;
+
+        _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
+
+        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
+            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
+            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
+            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
+
+        ResourceLayout mvpLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        TextureLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+        MaterialLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        Sampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Wrap,
+            AddressModeV = SamplerAddressMode.Wrap,
+            AddressModeW = SamplerAddressMode.Wrap,
+            Filter = SamplerFilter.Anisotropic,
+            MaximumAnisotropy = 16,
+            LodBias = 0,
+            MinimumLod = 0,
+            MaximumLod = uint.MaxValue
+        });
+
+        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
+
+        (Shader vs, Shader fs) = LoadShaders(factory);
+
+        _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            BlendState = BlendStateDescription.SingleOverrideBlend,
+            DepthStencilState = new DepthStencilStateDescription(
+                true, true, ComparisonKind.LessEqual),
+            RasterizerState = new RasterizerStateDescription(
+                FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleList,
+            ResourceLayouts = new[] { mvpLayout, TextureLayout, MaterialLayout },
+            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            Outputs = gd.SwapchainFramebuffer.OutputDescription
+        });
+    }
+
+    public void RenderScene(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    {
+        foreach (var gameObject in scene)
+        {
+            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+            if (meshRenderer == null) continue;
+
+            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
+            commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
+
+            meshRenderer.Render(commandList, _pipeline, _mvpResourceSet);
+        }
+    }
+
+    private (Shader, Shader) LoadShaders(ResourceFactory factory)
+    {
+        const string vertexCode = @"
+                #version 450
+                layout(location = 0) in vec3 Position;
+                layout(location = 1) in vec4 Color;
+                layout(location = 2) in vec2 TexCoord;
+
+                layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
+
+                layout(location = 0) out vec4 fsin_Color;
+                layout(location = 1) out vec2 fsin_TexCoord;
+
+                void main() 
+                { 
+                    gl_Position = mvp * vec4(Position, 1); 
+                    fsin_Color = Color; 
+                    fsin_TexCoord = TexCoord * TextureTiling.xy;
+                }";
+
+        const string fragmentCode = @"
+                #version 450
+                layout(location = 0) in vec4 fsin_Color;
+                layout(location = 1) in vec2 fsin_TexCoord;
+
+                layout(set = 1, binding = 0) uniform texture2D SourceTexture;
+                layout(set = 1, binding = 1) uniform sampler SourceSampler;
+
+                layout(location = 0) out vec4 fsout_Color;
+
+                void main() 
+                { 
+                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                }";
+
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
+        return (shaders[0], shaders[1]);
+    }
+
+    public void Dispose()
+    {
+        _pipeline.Dispose();
+        TextureLayout.Dispose();
+        MaterialLayout.Dispose();
+        Sampler.Dispose();
+        _mvpResourceSet.Dispose();
+        _mvpBuffer.Dispose();
     }
 }
 </file>
@@ -896,6 +951,78 @@ public class SceneLoader
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneManager.cs">
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.Numerics;
+using Newtonsoft.Json.Linq;
+using Veldrid.StartupUtilities;
+using Veldrid;
+
+namespace Cherris;
+
+public class SceneManager
+{
+    private readonly List<GameObject> _gameObjects = new();
+
+    public Camera MainCamera { get; private set; }
+    public IEnumerable<GameObject> GameObjects => _gameObjects;
+
+    public void SetScene(List<GameObject> gameObjects)
+    {
+        _gameObjects.Clear();
+        _gameObjects.AddRange(gameObjects);
+    }
+
+    public void Start()
+    {
+        foreach (var gameObject in _gameObjects)
+        {
+            var camera = gameObject.GetComponent<Camera>();
+            if (camera != null)
+            {
+                MainCamera = camera;
+            }
+
+            foreach (var script in gameObject.GetComponents<Script>())
+            {
+                script.Start();
+            }
+        }
+
+        if (MainCamera == null)
+        {
+            Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
+            var go = new GameObject("Default Camera");
+            go.Transform.Position = new Vector3(0, 1, 3);
+            MainCamera = go.AddComponent(new Camera());
+            _gameObjects.Add(go);
+        }
+    }
+
+    public void Update(float deltaTime)
+    {
+        foreach (var gameObject in _gameObjects)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
+            {
+                script.Update(deltaTime);
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var gameObject in _gameObjects)
+        {
+            gameObject.GetComponent<MeshRenderer>()?.Dispose();
+        }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Texture.cs">
 using System;
 using Veldrid;
@@ -1142,9 +1269,9 @@ public class Game : Engine
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
         SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
 
-        // Load the scene from the file
+        // Load the scene from the file and populate the SceneManager
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
-        Scene.AddRange(loadedObjects);
+        SceneManager.SetScene(loadedObjects);
     }
 
     protected override void Update(float deltaTime)
@@ -1275,5 +1402,6 @@ GameObjects:
       MeshRenderer:
         Mesh: Plane
         Texture: Asphalt
+        TextureTiling: [1, 1]
 </file>
 

@@ -1,4 +1,11 @@
 GameObjects:
+  - Name: SkyboxContainer
+    Components:
+      Skybox:
+        # NOTE: This requires 6 images in your Assets folder, named like:
+        # Assets/sky/night_px.png, ..._nx.png, ..._py.png, ..._ny.png, ..._pz.png, ..._nz.png
+        CubeMap: sky/night
+
   - Name: Player
     Components:
       Transform:
