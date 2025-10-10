@@ -17,12 +17,6 @@ public abstract class Engine
     private readonly CommandList _commandList;
     private readonly Stopwatch _stopwatch;
 
-    // MSAA resources
-    private Veldrid.Texture _msaaColorTexture;
-    private Veldrid.Texture _msaaDepthTexture;
-    private Framebuffer _msaaFramebuffer;
-    private TextureSampleCount _sampleCount;
-
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
@@ -43,17 +37,11 @@ public abstract class Engine
         _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
         _stopwatch = new Stopwatch();
 
-        // Determine sample count for MSAA
-        _sampleCount = GetSupportedSampleCount();
-
         // Initialize systems
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
         SceneManager = new SceneManager();
-        _renderer = new Renderer(_graphicsDevice, _sampleCount);
-
-        CreateMsaaResources();
-        _gameWindow.SdlWindow.Resized += HandleWindowResize;
+        _renderer = new Renderer(_graphicsDevice);
 
         RegisterEngineComponents();
     }
@@ -115,62 +103,6 @@ public abstract class Engine
         });
     }
 
-    private TextureSampleCount GetSupportedSampleCount()
-    {
-        // We check for the highest supported count, but cap it at 4x for a good balance
-        // of quality and performance. More can be exposed as a setting later.
-        var pixelFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
-        TextureSampleCount maxSamples = _graphicsDevice.GetSampleCountLimit(pixelFormat, false);
-
-        if (maxSamples >= TextureSampleCount.Count4) return TextureSampleCount.Count4;
-        if (maxSamples >= TextureSampleCount.Count2) return TextureSampleCount.Count2;
-        return TextureSampleCount.Count1;
-    }
-
-    private void CreateMsaaResources()
-    {
-        // Dispose old resources if they exist. This is important for window resizing.
-        _msaaColorTexture?.Dispose();
-        _msaaDepthTexture?.Dispose();
-        _msaaFramebuffer?.Dispose();
-
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        uint width = (uint)_gameWindow.Width;
-        uint height = (uint)_gameWindow.Height;
-
-        var pixelFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
-        var depthFormat = _graphicsDevice.SwapchainFramebuffer.DepthTarget.Value.Target.Format;
-
-        TextureDescription msaaColorDesc = TextureDescription.Texture2D(
-            width, height, 1, 1,
-            pixelFormat,
-            TextureUsage.RenderTarget | TextureUsage.Sampled,
-            _sampleCount);
-        _msaaColorTexture = factory.CreateTexture(msaaColorDesc);
-
-        TextureDescription msaaDepthDesc = TextureDescription.Texture2D(
-            width, height, 1, 1,
-            depthFormat,
-            TextureUsage.DepthStencil,
-            _sampleCount);
-        _msaaDepthTexture = factory.CreateTexture(msaaDepthDesc);
-
-        _msaaFramebuffer = factory.CreateFramebuffer(new FramebufferDescription
-        {
-            ColorTargets = new[] { new FramebufferAttachmentDescription(_msaaColorTexture, 0) },
-            DepthTarget = new FramebufferAttachmentDescription(_msaaDepthTexture, 0)
-        });
-    }
-
-    private void HandleWindowResize()
-    {
-        // This resizes the swapchain.
-        _graphicsDevice.ResizeMainWindow((uint)_gameWindow.Width, (uint)_gameWindow.Height);
-
-        // Now we need to recreate our MSAA resources with the new size.
-        CreateMsaaResources();
-    }
-
     public void Run()
     {
         LoadContent();
@@ -216,7 +148,7 @@ public abstract class Engine
         Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / (float)_gameWindow.Height);
 
         _commandList.Begin();
-        _commandList.SetFramebuffer(_msaaFramebuffer); // Render to our offscreen MSAA framebuffer
+        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
@@ -228,9 +160,6 @@ public abstract class Engine
 
         _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
 
-        // After rendering the scene to the MSAA framebuffer, resolve it to the main swapchain.
-        _commandList.ResolveTexture(_msaaColorTexture, _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target);
-
         _commandList.End();
         _graphicsDevice.SubmitCommands(_commandList);
         _graphicsDevice.SwapBuffers();
@@ -238,18 +167,10 @@ public abstract class Engine
 
     private void DisposeResources()
     {
-        _gameWindow.SdlWindow.Resized -= HandleWindowResize;
-
         SceneManager.Dispose();
         _renderer.Dispose();
         ResourceManager.Dispose();
         _commandList.Dispose();
-
-        // Dispose MSAA resources
-        _msaaColorTexture.Dispose();
-        _msaaDepthTexture.Dispose();
-        _msaaFramebuffer.Dispose();
-
         _graphicsDevice.Dispose();
     }
 }
