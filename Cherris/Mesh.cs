@@ -77,13 +77,12 @@ public class Mesh
     public static Mesh CreatePlane(float size)
     {
         float halfSize = size * 0.5f;
-        var darkGrey = new RgbaFloat(0.25f, 0.25f, 0.25f, 1.0f);
         Vertex[] vertices =
         {
-            new(new(-halfSize, 0, +halfSize), darkGrey, new(0, 0)), // 0 (top-left)
-            new(new(+halfSize, 0, +halfSize), darkGrey, new(size, 0)), // 1 (top-right)
-            new(new(+halfSize, 0, -halfSize), darkGrey, new(size, size)), // 2 (bottom-right)
-            new(new(-halfSize, 0, -halfSize), darkGrey, new(0, size))  // 3 (bottom-left)
+            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(size, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(size, size)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, size))  // 3 (bottom-left)
         };
 
         // Reversed winding order to be visible with existing pipeline state.

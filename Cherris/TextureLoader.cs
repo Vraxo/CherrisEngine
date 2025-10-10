@@ -33,13 +33,16 @@ public static class TextureLoader
         }
 
         ResourceFactory factory = gd.ResourceFactory;
+
+        uint mipLevels = (uint)Math.Floor(Math.Log(Math.Max(imageResult.Width, imageResult.Height), 2)) + 1;
+
         Veldrid.Texture veldridTexture = factory.CreateTexture(TextureDescription.Texture2D(
             (uint)imageResult.Width,
             (uint)imageResult.Height,
-            1,
+            mipLevels,
             1,
             PixelFormat.R8_G8_B8_A8_UNorm,
-            TextureUsage.Sampled));
+            TextureUsage.Sampled | TextureUsage.GenerateMipmaps));
 
         // Copy the pixel data to the Veldrid texture.
         gd.UpdateTexture(
@@ -48,6 +51,14 @@ public static class TextureLoader
             0, 0, 0,
             (uint)imageResult.Width, (uint)imageResult.Height, 1,
             0, 0);
+
+        CommandList cl = factory.CreateCommandList();
+        cl.Begin();
+        cl.GenerateMipmaps(veldridTexture);
+        cl.End();
+        gd.SubmitCommands(cl);
+        gd.WaitForIdle(); // Ensure the GPU has finished generating before the texture is used.
+        cl.Dispose();
 
         TextureView textureView = factory.CreateTextureView(veldridTexture);
         return new Texture(veldridTexture, textureView);

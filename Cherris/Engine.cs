@@ -208,7 +208,17 @@ public abstract class Engine
                 new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
 
-        _sampler = factory.CreateSampler(SamplerDescription.Linear);
+        _sampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Wrap,
+            AddressModeV = SamplerAddressMode.Wrap,
+            AddressModeW = SamplerAddressMode.Wrap,
+            Filter = SamplerFilter.Anisotropic,
+            MaximumAnisotropy = 16,
+            LodBias = 0,
+            MinimumLod = 0,
+            MaximumLod = uint.MaxValue
+        });
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
 
