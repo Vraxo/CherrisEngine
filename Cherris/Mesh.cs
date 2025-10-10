@@ -50,17 +50,6 @@ public class Mesh
             new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
         };
 
-        // This cube is colored via vertex colors for demonstration.
-        // Let's re-color them now that they are not white.
-        var magenta = new RgbaFloat(1, 0, 1, 1);
-        vertices[0].Color = RgbaFloat.Red; vertices[1].Color = RgbaFloat.Red; vertices[2].Color = RgbaFloat.Red; vertices[3].Color = RgbaFloat.Red;
-        vertices[4].Color = RgbaFloat.Green; vertices[5].Color = RgbaFloat.Green; vertices[6].Color = RgbaFloat.Green; vertices[7].Color = RgbaFloat.Green;
-        vertices[8].Color = RgbaFloat.Blue; vertices[9].Color = RgbaFloat.Blue; vertices[10].Color = RgbaFloat.Blue; vertices[11].Color = RgbaFloat.Blue;
-        vertices[12].Color = RgbaFloat.Yellow; vertices[13].Color = RgbaFloat.Yellow; vertices[14].Color = RgbaFloat.Yellow; vertices[15].Color = RgbaFloat.Yellow;
-        vertices[16].Color = RgbaFloat.Cyan; vertices[17].Color = RgbaFloat.Cyan; vertices[18].Color = RgbaFloat.Cyan; vertices[19].Color = RgbaFloat.Cyan;
-        vertices[20].Color = magenta; vertices[21].Color = magenta; vertices[22].Color = magenta; vertices[23].Color = magenta;
-
-
         ushort[] indices =
         {
             0,1,2, 0,2,3,
