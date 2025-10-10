@@ -16,6 +16,7 @@ GameObjects:
         Scale: [1, 1, 1]
       MeshRenderer:
         Mesh: Cube
+        Texture: crate
       Spinner:
 
   - Name: StaticCube
@@ -26,6 +27,7 @@ GameObjects:
         Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
+        Texture: crate
         
   - Name: GroundPlane
     Components:
@@ -35,4 +37,4 @@ GameObjects:
         Scale: [1, 1, 1]
       MeshRenderer:
         Mesh: Plane
-        Texture: Checkerboard
+        Texture: Asphalt

@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using Veldrid;
 
 namespace Cherris;
@@ -8,6 +10,7 @@ public class ResourceManager
     private readonly Dictionary<string, Mesh> _meshes = new Dictionary<string, Mesh>();
     private readonly Dictionary<string, Texture> _textures = new Dictionary<string, Texture>();
     private readonly GraphicsDevice _graphicsDevice;
+    private const string AssetRootPath = "Assets";
 
     public ResourceManager(GraphicsDevice gd)
     {
@@ -24,9 +27,7 @@ public class ResourceManager
         _meshes.Add("Plane", planeMesh);
 
         // Textures
-        var checkerboard = CreateCheckerboardTexture("Checkerboard", 256, 16);
-        _textures.Add("Checkerboard", checkerboard);
-
+        // Create a default white texture for untextured objects or if a texture fails to load.
         var white = CreateWhiteTexture("White");
         _textures.Add("White", white);
     }
@@ -38,7 +39,60 @@ public class ResourceManager
 
     public Texture GetTexture(string name)
     {
-        return _textures.TryGetValue(name, out var texture) ? texture : null;
+        if (_textures.TryGetValue(name, out var texture))
+        {
+            return texture;
+        }
+
+        // Texture not in cache, try to load it from file by searching the asset directory.
+        string filePath = FindTextureFile(name);
+
+        if (filePath != null)
+        {
+            var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, filePath);
+            if (loadedTexture != null)
+            {
+                _textures.Add(name, loadedTexture);
+                return loadedTexture;
+            }
+        }
+
+        // Fallback to the default white texture if loading fails or file doesn't exist.
+        Console.WriteLine($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
+        return _textures["White"];
+    }
+
+    private string FindTextureFile(string name)
+    {
+        if (!Directory.Exists(AssetRootPath))
+        {
+            return null;
+        }
+
+        // We'll check for a few common extensions.
+        string[] extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+        foreach (var ext in extensions)
+        {
+            // Search for "name.ext" in the root asset directory and all subdirectories.
+            try
+            {
+                var files = Directory.GetFiles(AssetRootPath, name + ext, SearchOption.AllDirectories);
+                if (files.Length > 0)
+                {
+                    if (files.Length > 1)
+                    {
+                        Console.WriteLine($"[ResourceManager] Warning: Found multiple files for texture '{name}'. Using '{files[0]}'.");
+                    }
+                    return files[0]; // Return the first match.
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ResourceManager] Error while searching for textures: {e.Message}");
+                return null;
+            }
+        }
+        return null;
     }
 
     private Texture CreateWhiteTexture(string name)
@@ -49,39 +103,6 @@ public class ResourceManager
 
         byte[] pixelData = { 255, 255, 255, 255 };
         _graphicsDevice.UpdateTexture(veldridTexture, pixelData, 0, 0, 0, 1, 1, 1, 0, 0);
-
-        TextureView textureView = factory.CreateTextureView(veldridTexture);
-        return new Texture(veldridTexture, textureView);
-    }
-
-    private Texture CreateCheckerboardTexture(string name, uint size, uint squares)
-    {
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        Veldrid.Texture veldridTexture = factory.CreateTexture(TextureDescription.Texture2D(
-            size, size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
-
-        var pixelData = new byte[size * size * 4];
-        uint squareSize = size / squares;
-
-        for (uint y = 0; y < size; y++)
-        {
-            for (uint x = 0; x < size; x++)
-            {
-                int index = (int)(y * size + x) * 4;
-                uint squareX = x / squareSize;
-                uint squareY = y / squareSize;
-
-                bool isWhite = (squareX % 2 == 0) == (squareY % 2 == 0);
-                byte color = isWhite ? (byte)255 : (byte)100;
-
-                pixelData[index] = color;
-                pixelData[index + 1] = color;
-                pixelData[index + 2] = color;
-                pixelData[index + 3] = 255;
-            }
-        }
-
-        _graphicsDevice.UpdateTexture(veldridTexture, pixelData, 0, 0, 0, size, size, 1, 0, 0);
 
         TextureView textureView = factory.CreateTextureView(veldridTexture);
         return new Texture(veldridTexture, textureView);
