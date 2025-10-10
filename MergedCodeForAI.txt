@@ -1,0 +1,648 @@
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component.cs">
+namespace Cherris;
+
+public abstract class Component
+{
+    public GameObject GameObject { get; internal set; }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Engine.cs">
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Numerics;
+using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.SPIRV;
+using Veldrid.StartupUtilities;
+
+namespace Cherris;
+
+public abstract class Engine
+{
+    private readonly Sdl2Window _window;
+    private readonly GraphicsDevice _graphicsDevice;
+    private readonly CommandList _commandList;
+    private readonly Stopwatch _stopwatch;
+
+    // Engine-level resources
+    private DeviceBuffer _mvpBuffer;
+    private Pipeline _pipeline;
+    private ResourceSet _mvpResourceSet;
+
+    // Engine Systems
+    protected readonly ResourceManager ResourceManager;
+    protected readonly SceneLoader SceneLoader;
+
+    protected readonly List<GameObject> Scene = new List<GameObject>();
+
+    protected Engine(string windowTitle)
+    {
+        WindowCreateInfo windowCI = new WindowCreateInfo
+        {
+            X = 100,
+            Y = 100,
+            WindowWidth = 960,
+            WindowHeight = 540,
+            WindowTitle = windowTitle
+        };
+        _window = VeldridStartup.CreateWindow(ref windowCI);
+
+        GraphicsDeviceOptions options = new GraphicsDeviceOptions
+        {
+            PreferStandardClipSpaceYDirection = true,
+            PreferDepthRangeZeroToOne = true,
+            SwapchainDepthFormat = PixelFormat.R16_UNorm
+        };
+        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_window, options);
+        _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
+        _stopwatch = new Stopwatch();
+
+        // Initialize systems
+        ResourceManager = new ResourceManager(_graphicsDevice);
+        SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
+
+        CreateGlobalResources();
+    }
+
+    public void Run()
+    {
+        LoadContent();
+        _stopwatch.Start();
+
+        while (_window.Exists)
+        {
+            _window.PumpEvents();
+            if (!_window.Exists) break;
+
+            float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
+            _stopwatch.Restart();
+
+            Update(deltaTime);
+            Draw();
+        }
+
+        DisposeResources();
+    }
+
+    protected GraphicsDevice GetGraphicsDevice() => _graphicsDevice;
+
+    protected abstract void LoadContent();
+
+    protected virtual void Update(float deltaTime) { }
+
+    private void CreateGlobalResources()
+    {
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+        _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
+
+        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
+            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
+            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4));
+
+        ResourceLayout mvpLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
+
+        (Shader vs, Shader fs) = LoadShaders(factory);
+
+        _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            BlendState = BlendStateDescription.SingleOverrideBlend,
+            DepthStencilState = new DepthStencilStateDescription(
+                true, true, ComparisonKind.LessEqual),
+            RasterizerState = new RasterizerStateDescription(
+                FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleList,
+            ResourceLayouts = new[] { mvpLayout },
+            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            Outputs = _graphicsDevice.SwapchainFramebuffer.OutputDescription
+        });
+    }
+
+    private void Draw()
+    {
+        Matrix4x4 view = Matrix4x4.CreateLookAt(new Vector3(0, 1, 3), Vector3.Zero, Vector3.UnitY);
+        Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
+            1.0f, (float)_window.Width / _window.Height, 0.5f, 10f);
+
+        _commandList.Begin();
+        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+        _commandList.ClearColorTarget(0, RgbaFloat.Black);
+        _commandList.ClearDepthStencil(1f);
+
+        foreach (var gameObject in Scene)
+        {
+            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+            if (meshRenderer == null) continue;
+
+            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
+            _commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
+
+            meshRenderer.Render(_commandList, _pipeline, _mvpResourceSet);
+        }
+
+        _commandList.End();
+        _graphicsDevice.SubmitCommands(_commandList);
+        _graphicsDevice.SwapBuffers();
+    }
+
+    private (Shader, Shader) LoadShaders(ResourceFactory factory)
+    {
+        const string vertexCode = @"
+                #version 450
+                layout(location = 0) in vec3 Position;
+                layout(location = 1) in vec4 Color;
+                layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+                layout(location = 0) out vec4 fsin_Color;
+                void main() { gl_Position = mvp * vec4(Position, 1); fsin_Color = Color; }";
+
+        const string fragmentCode = @"
+                #version 450
+                layout(location = 0) in vec4 fsin_Color;
+                layout(location = 0) out vec4 fsout_Color;
+                void main() { fsout_Color = fsin_Color; }";
+
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
+        return (shaders[0], shaders[1]);
+    }
+
+    private void DisposeResources()
+    {
+        foreach (var gameObject in Scene)
+        {
+            gameObject.GetComponent<MeshRenderer>()?.Dispose();
+        }
+        _pipeline.Dispose();
+        _mvpResourceSet.Dispose();
+        _mvpBuffer.Dispose();
+        ResourceManager.Dispose();
+        _commandList.Dispose();
+        _graphicsDevice.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameObject.cs">
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Cherris;
+
+public class GameObject
+{
+    public string Name { get; }
+    public Transform Transform { get; }
+    private readonly List<Component> _components = new List<Component>();
+
+    public GameObject(string name = "GameObject")
+    {
+        Name = name;
+        Transform = new Transform();
+    }
+
+    public T AddComponent<T>(T component) where T : Component
+    {
+        component.GameObject = this;
+        _components.Add(component);
+        return component;
+    }
+
+    public T GetComponent<T>() where T : Component
+    {
+        return _components.OfType<T>().FirstOrDefault();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Mesh.cs">
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public class Mesh
+{
+    public VertexPositionColor[] Vertices { get; }
+    public ushort[] Indices { get; }
+
+    public Mesh(VertexPositionColor[] vertices, ushort[] indices)
+    {
+        Vertices = vertices;
+        Indices = indices;
+    }
+
+    public static Mesh CreateCube()
+    {
+        VertexPositionColor[] vertices =
+        {
+            new(new Vector3(-0.5f, +0.5f, -0.5f), RgbaFloat.Red),
+            new(new Vector3(+0.5f, +0.5f, -0.5f), RgbaFloat.Green),
+            new(new Vector3(+0.5f, -0.5f, -0.5f), RgbaFloat.Blue),
+            new(new Vector3(-0.5f, -0.5f, -0.5f), RgbaFloat.Yellow),
+            new(new Vector3(-0.5f, +0.5f, +0.5f), RgbaFloat.Cyan),
+            new(new Vector3(+0.5f, +0.5f, +0.5f), new RgbaFloat(1, 0, 1, 1)), // Magenta
+            new(new Vector3(+0.5f, -0.5f, +0.5f), RgbaFloat.White),
+            new(new Vector3(-0.5f, -0.5f, +0.5f), RgbaFloat.Grey)
+        };
+
+        ushort[] indices =
+        {
+            0,1,2, 0,2,3, // Front
+            4,5,1, 4,1,0, // Top
+            7,6,5, 7,5,4, // Back
+            3,2,6, 3,6,7, // Bottom
+            4,0,3, 4,3,7, // Left
+            1,5,6, 1,6,2  // Right
+        };
+
+        return new Mesh(vertices, indices);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\MeshRenderer.cs">
+using Veldrid;
+
+namespace Cherris;
+
+public class MeshRenderer : Component
+{
+    private readonly DeviceBuffer _vertexBuffer;
+    private readonly DeviceBuffer _indexBuffer;
+    private readonly uint _indexCount;
+
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd)
+    {
+        ResourceFactory factory = gd.ResourceFactory;
+
+        _vertexBuffer = factory.CreateBuffer(new BufferDescription(
+            (uint)(VertexPositionColor.SizeInBytes * mesh.Vertices.Length),
+            BufferUsage.VertexBuffer));
+        gd.UpdateBuffer(_vertexBuffer, 0, mesh.Vertices);
+
+        _indexBuffer = factory.CreateBuffer(new BufferDescription(
+            (uint)(sizeof(ushort) * mesh.Indices.Length),
+            BufferUsage.IndexBuffer));
+        gd.UpdateBuffer(_indexBuffer, 0, mesh.Indices);
+
+        _indexCount = (uint)mesh.Indices.Length;
+    }
+
+    public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
+    {
+        cl.SetVertexBuffer(0, _vertexBuffer);
+        cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
+        cl.SetPipeline(pipeline);
+        cl.SetGraphicsResourceSet(0, mvpResourceSet);
+
+        cl.DrawIndexed(
+            indexCount: _indexCount,
+            instanceCount: 1,
+            indexStart: 0,
+            vertexOffset: 0,
+            instanceStart: 0);
+    }
+
+    public void Dispose()
+    {
+        _vertexBuffer.Dispose();
+        _indexBuffer.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResourceManager.cs">
+using System.Collections.Generic;
+using Veldrid;
+
+namespace Cherris;
+
+public class ResourceManager
+{
+    private readonly Dictionary<string, Mesh> _meshes = new Dictionary<string, Mesh>();
+    private readonly GraphicsDevice _graphicsDevice;
+
+    public ResourceManager(GraphicsDevice gd)
+    {
+        _graphicsDevice = gd;
+    }
+
+    public void LoadInitialAssets()
+    {
+        // In a real engine, this would load from files (e.g. .obj, .fbx)
+        // For now, we pre-load our procedural cube.
+        var cubeMesh = Mesh.CreateCube();
+        _meshes.Add("Cube", cubeMesh);
+    }
+
+    public Mesh GetMesh(string name)
+    {
+        return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
+    }
+
+    public void Dispose()
+    {
+        // Meshes don't have GPU resources, so nothing to dispose here yet.
+        // If we had textures, etc., we would dispose them here.
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneData.cs">
+using System.Collections.Generic;
+using System.Numerics;
+
+// These classes are dumb data containers that perfectly match the YAML structure.
+// YamlDotNet deserializes the file into these, and then our SceneLoader
+// uses this information to build the actual GameObjects.
+
+namespace Cherris;
+
+public class SceneData
+{
+    public List<GameObjectData> GameObjects { get; set; }
+}
+
+public class GameObjectData
+{
+    public string Name { get; set; }
+    public TransformData Transform { get; set; }
+    public List<ComponentData> Components { get; set; }
+}
+
+public class TransformData
+{
+    public Vector3 Position { get; set; }
+    public Vector3 Rotation { get; set; } // Stored as Euler angles in YAML
+    public Vector3 Scale { get; set; }
+}
+
+public class ComponentData
+{
+    public string Type { get; set; }
+    public Dictionary<string, string> Properties { get; set; }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneLoader.cs">
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Numerics;
+using Veldrid;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+
+namespace Cherris;
+
+public class SceneLoader
+{
+    private readonly ResourceManager _resourceManager;
+    private readonly GraphicsDevice _graphicsDevice;
+
+    public SceneLoader(ResourceManager resourceManager, GraphicsDevice graphicsDevice)
+    {
+        _resourceManager = resourceManager;
+        _graphicsDevice = graphicsDevice;
+    }
+
+    public List<GameObject> LoadScene(string filePath)
+    {
+        var sceneObjects = new List<GameObject>();
+        var input = new StringReader(File.ReadAllText(filePath));
+
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(PascalCaseNamingConvention.Instance)
+            // --- MODIFICATION: Register our custom converter ---
+            .WithTypeConverter(new Vector3YamlTypeConverter())
+            .Build();
+
+        var sceneData = deserializer.Deserialize<SceneData>(input);
+
+        foreach (var goData in sceneData.GameObjects)
+        {
+            var go = new GameObject(goData.Name);
+
+            // Set Transform
+            go.Transform.Position = goData.Transform.Position;
+            go.Transform.Scale = goData.Transform.Scale;
+
+            // Convert Euler angles (degrees) to Quaternion
+            var rotRadians = goData.Transform.Rotation * (MathF.PI / 180.0f);
+            go.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
+
+            // Create and add components
+            foreach (var componentData in goData.Components)
+            {
+                AddComponent(go, componentData);
+            }
+
+            sceneObjects.Add(go);
+        }
+
+        return sceneObjects;
+    }
+
+    private void AddComponent(GameObject go, ComponentData componentData)
+    {
+        switch (componentData.Type)
+        {
+            case "MeshRenderer":
+                string meshName = componentData.Properties["Mesh"];
+                Mesh mesh = _resourceManager.GetMesh(meshName);
+                if (mesh != null)
+                {
+                    var renderer = new MeshRenderer(mesh, _graphicsDevice);
+                    go.AddComponent(renderer);
+                }
+                break;
+                // Add cases for other components here in the future
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Transform.cs">
+using System.Numerics;
+
+namespace Cherris;
+
+public class Transform
+{
+    public Vector3 Position { get; set; }
+    public Quaternion Rotation { get; set; }
+    public Vector3 Scale { get; set; }
+
+    public Transform()
+    {
+        Position = Vector3.Zero;
+        Rotation = Quaternion.Identity;
+        Scale = Vector3.One;
+    }
+
+    public Matrix4x4 GetModelMatrix()
+    {
+        // The order of operations is important: scale, then rotate, then translate.
+        return Matrix4x4.CreateScale(Scale) *
+               Matrix4x4.CreateFromQuaternion(Rotation) *
+               Matrix4x4.CreateTranslation(Position);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vector3YamlTypeConverter.cs">
+using System;
+using System.Globalization;
+using System.Numerics;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
+using YamlDotNet.Serialization;
+
+namespace Cherris;
+
+public class Vector3YamlTypeConverter : IYamlTypeConverter
+{
+    public bool Accepts(Type type)
+    {
+        return type == typeof(Vector3);
+    }
+
+    // --- MODIFICATION: Added 'ObjectDeserializer' parameter to match the interface ---
+    public object ReadYaml(IParser parser, Type type, ObjectDeserializer nestedObjectDeserializer)
+    {
+        // We are expecting a sequence (e.g., [x, y, z])
+        var sequence = parser.Consume<SequenceStart>();
+
+        var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        var z = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+
+        parser.Consume<SequenceEnd>();
+
+        return new Vector3(x, y, z);
+    }
+
+    // --- MODIFICATION: Added 'ObjectSerializer' parameter to match the interface ---
+    public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
+    {
+        var vector = (Vector3)value;
+        emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow));
+        emitter.Emit(new Scalar(vector.X.ToString(CultureInfo.InvariantCulture)));
+        emitter.Emit(new Scalar(vector.Y.ToString(CultureInfo.InvariantCulture)));
+        emitter.Emit(new Scalar(vector.Z.ToString(CultureInfo.InvariantCulture)));
+        emitter.Emit(new SequenceEnd());
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\VertexPositionColor.cs">
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public struct VertexPositionColor
+{
+    public Vector3 Position;
+    public RgbaFloat Color;
+
+    public const uint SizeInBytes = 28;
+
+    public VertexPositionColor(Vector3 position, RgbaFloat color)
+    {
+        Position = position;
+        Color = color;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
+using System.Numerics;
+using Cherris;
+
+namespace Apexverse;
+
+public class Game : Engine
+{
+    private GameObject _spinningCube;
+    private float _totalTime;
+
+    public Game() : base("Veldrid Engine Demo")
+    {
+    }
+
+    protected override void LoadContent()
+    {
+        // Pre-load assets that the scene will need
+        ResourceManager.LoadInitialAssets();
+
+        // Load the scene from the file
+        var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
+        Scene.AddRange(loadedObjects);
+
+        // Find the cube we want to animate
+        _spinningCube = Scene.FirstOrDefault(go => go.Name == "SpinningCube");
+    }
+
+    protected override void Update(float deltaTime)
+    {
+        base.Update(deltaTime);
+
+        _totalTime += deltaTime;
+
+        // Update the spinning cube's transform
+        if (_spinningCube != null)
+        {
+            _spinningCube.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Program.cs">
+namespace Apexverse;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        var game = new Game();
+        game.Run();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
+GameObjects:
+  - Name: SpinningCube
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0] # Euler Angles (in degrees)
+      Scale: [1, 1, 1]
+    Components:
+      - Type: MeshRenderer
+        Properties:
+          Mesh: Cube
+
+  - Name: StaticCube
+    Transform:
+      Position: [1.5, 0, 0]
+      Rotation: [0, 45, 0]
+      Scale: [0.5, 0.5, 0.5]
+    Components:
+      - Type: MeshRenderer
+        Properties:
+          Mesh: Cube
+</file>
+

@@ -14,11 +14,11 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         return type == typeof(Vector3);
     }
 
-    // --- MODIFICATION: Added 'ObjectDeserializer' parameter to match the interface ---
+    // The nestedObjectDeserializer parameter is required by the interface, even if unused here.
     public object ReadYaml(IParser parser, Type type, ObjectDeserializer nestedObjectDeserializer)
     {
         // We are expecting a sequence (e.g., [x, y, z])
-        var sequence = parser.Consume<SequenceStart>();
+        parser.Consume<SequenceStart>();
 
         var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
         var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
@@ -29,7 +29,7 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         return new Vector3(x, y, z);
     }
 
-    // --- MODIFICATION: Added 'ObjectSerializer' parameter to match the interface ---
+    // The nestedObjectSerializer parameter is required by the interface, even if unused here.
     public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
     {
         var vector = (Vector3)value;

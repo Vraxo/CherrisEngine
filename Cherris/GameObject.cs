@@ -27,4 +27,9 @@ public class GameObject
     {
         return _components.OfType<T>().FirstOrDefault();
     }
+
+    public IEnumerable<T> GetComponents<T>() where T : Component
+    {
+        return _components.OfType<T>();
+    }
 }

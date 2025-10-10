@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using Veldrid;
@@ -52,12 +53,31 @@ public abstract class Engine
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
 
+        RegisterEngineComponents();
+
         CreateGlobalResources();
+    }
+
+    private void RegisterEngineComponents()
+    {
+        SceneLoader.RegisterComponentFactory("MeshRenderer", (componentData) =>
+        {
+            if (componentData.Properties != null && componentData.Properties.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
+            {
+                Mesh mesh = ResourceManager.GetMesh(meshName);
+                if (mesh != null)
+                {
+                    return new MeshRenderer(mesh, _graphicsDevice);
+                }
+            }
+            return null;
+        });
     }
 
     public void Run()
     {
         LoadContent();
+        Start();
         _stopwatch.Start();
 
         while (_window.Exists)
@@ -75,11 +95,31 @@ public abstract class Engine
         DisposeResources();
     }
 
+    private void Start()
+    {
+        foreach (var gameObject in Scene)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
+            {
+                script.Start();
+            }
+        }
+    }
+
     protected GraphicsDevice GetGraphicsDevice() => _graphicsDevice;
 
     protected abstract void LoadContent();
 
-    protected virtual void Update(float deltaTime) { }
+    protected virtual void Update(float deltaTime)
+    {
+        foreach (var gameObject in Scene)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
+            {
+                script.Update(deltaTime);
+            }
+        }
+    }
 
     private void CreateGlobalResources()
     {
