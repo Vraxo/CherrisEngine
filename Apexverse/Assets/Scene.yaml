@@ -35,3 +35,4 @@ GameObjects:
         Scale: [1, 1, 1]
       MeshRenderer:
         Mesh: Plane
+        Texture: Checkerboard
