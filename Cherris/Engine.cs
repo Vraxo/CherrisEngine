@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
+using System.Reflection;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.SPIRV;
@@ -193,6 +194,7 @@ public abstract class Engine
 
         // Render to MSAA framebuffer.
         _commandList.SetFramebuffer(_msaaFramebuffer);
+        _commandList.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
@@ -206,6 +208,7 @@ public abstract class Engine
 
         // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
         _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+        _commandList.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
         _commandList.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
         _renderer.ResolveMSAA(_commandList, _msaaColorView);
 
@@ -214,44 +217,120 @@ public abstract class Engine
         _graphicsDevice.SwapBuffers();
     }
 
-    private void OnWindowResized()
+private void OnWindowResized()
+{
+    _graphicsDevice.ResizeMainWindow((uint)_gameWindow.Width, (uint)_gameWindow.Height);
+
+    // Get the swapchain color format
+    PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
+    PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+
+    // Dispose old MSAA targets and framebuffer
+    _msaaColorView?.Dispose();
+    _msaaColorTarget?.Dispose();
+    _msaaDepthTarget?.Dispose();
+    _msaaFramebuffer?.Dispose();
+
+    uint width = (uint)_gameWindow.Width;
+    uint height = (uint)_gameWindow.Height;
+
+    _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+        width, height, 1, 1, colorFormat,
+        TextureUsage.RenderTarget | TextureUsage.Sampled,
+        sampleCount: _msaaSampleCount));
+
+    _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+        width, height, 1, 1, PixelFormat.R16_UNorm,
+        TextureUsage.DepthStencil,
+        sampleCount: _msaaSampleCount));
+
+    _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
+        _msaaDepthTarget, _msaaColorTarget));
+
+    _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+
+    // Recreate renderer with new MSAA framebuffer
+    _renderer?.Dispose();
+    _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer);
+
+    // --- CRITICAL: Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler ---
+    // Best-effort: handle common patterns (GetComponent<T>() or Components collection) using reflection so you don't need to edit SceneManager/GameObject.
+    if (SceneManager?.GameObjects != null)
     {
-        _graphicsDevice.ResizeMainWindow((uint)_gameWindow.Width, (uint)_gameWindow.Height);
+        foreach (var go in SceneManager.GameObjects)
+        {
+            if (go == null) continue;
 
-        // Get the swapchain color format
-        PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
-        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+            bool handled = false;
+            var goType = go.GetType();
 
-        // Recreate MSAA targets.
-        _msaaColorView?.Dispose();
-        _msaaColorTarget?.Dispose();
-        _msaaDepthTarget?.Dispose();
-        _msaaFramebuffer?.Dispose();
+            // 1) Try GetComponent<MeshRenderer>() pattern (generic method)
+            var methods = goType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            foreach (var mi in methods)
+            {
+                if (mi.Name == "GetComponent" && mi.IsGenericMethodDefinition && mi.GetParameters().Length == 0)
+                {
+                    try
+                    {
+                        var generic = mi.MakeGenericMethod(typeof(MeshRenderer));
+                        var result = generic.Invoke(go, null);
+                        if (result is MeshRenderer mr)
+                        {
+                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
+                            handled = true;
+                        }
+                    }
+                    catch
+                    {
+                        // ignore reflection exceptions and try other approaches
+                    }
+                    break;
+                }
+            }
 
-        uint width = (uint)_gameWindow.Width;
-        uint height = (uint)_gameWindow.Height;
+            if (handled) continue;
 
-        _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            width, height, 1, 1, colorFormat,
-            TextureUsage.RenderTarget | TextureUsage.Sampled,
-            sampleCount: _msaaSampleCount));
+            // 2) Try a Components property/field that is enumerable
+            PropertyInfo compsProp = goType.GetProperty("Components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                ?? goType.GetProperty("components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (compsProp != null)
+            {
+                var compsObj = compsProp.GetValue(go);
+                if (compsObj is System.Collections.IEnumerable compsEnum)
+                {
+                    foreach (var c in compsEnum)
+                    {
+                        if (c is MeshRenderer mr)
+                        {
+                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
+                        }
+                    }
+                    continue;
+                }
+            }
 
-        _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            width, height, 1, 1, PixelFormat.R16_UNorm,
-            TextureUsage.DepthStencil,
-            sampleCount: _msaaSampleCount));
+            FieldInfo compsField = goType.GetField("Components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                             ?? goType.GetField("components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (compsField != null)
+            {
+                var compsObj = compsField.GetValue(go);
+                if (compsObj is System.Collections.IEnumerable compsEnum)
+                {
+                    foreach (var c in compsEnum)
+                    {
+                        if (c is MeshRenderer mr)
+                        {
+                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
+                        }
+                    }
+                }
+            }
 
-        _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
-            _msaaDepthTarget, _msaaColorTarget));
-
-        _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
-
-        // Recreate renderer with new MSAA framebuffer
-        _renderer?.Dispose();
-        _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer);
+            // If neither approach worked, you likely need to add an explicit method to SceneManager to re-initialize render-dependent resources.
+        }
     }
-
-    private void DisposeResources()
+}
+private void DisposeResources()
     {
         SceneManager.Dispose();
         _renderer.Dispose();
