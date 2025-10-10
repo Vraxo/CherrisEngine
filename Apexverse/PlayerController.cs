@@ -50,8 +50,12 @@ namespace Apexverse
             if (moveDirection != Vector3.Zero)
             {
                 moveDirection = Vector3.Normalize(moveDirection);
-                // Transform the local direction vector by the object's new rotation to get world direction
-                var worldDirection = Vector3.Transform(moveDirection, GameObject.Transform.Rotation);
+
+                // Create a rotation that only includes the horizontal (yaw) component.
+                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+                // Transform the local direction vector by the horizontal-only rotation.
+                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
                 GameObject.Transform.Position += worldDirection * Speed * deltaTime;
             }
         }
