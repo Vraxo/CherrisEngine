@@ -1,11 +1,10 @@
-﻿namespace VeldridCube
+﻿namespace Apexverse;
+
+class Program
 {
-    class Program
+    static void Main(string[] args)
     {
-        static void Main(string[] args)
-        {
-            var game = new VeldridCubeGame();
-            game.Run();
-        }
+        var game = new VeldridCubeGame();
+        game.Run();
     }
 }
