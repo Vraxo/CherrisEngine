@@ -1,13 +1,26 @@
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component.cs">
+using System.Diagnostics;
+using System.Numerics;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+using Veldrid;
+
 namespace Cherris;
 
 public abstract class Component
 {
     public GameObject GameObject { get; internal set; }
 }
+
+public abstract class Script : Component
+{
+    public virtual void Start() { }
+    public virtual void Update(float deltaTime) { }
+}
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Engine.cs">
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
@@ -62,12 +75,33 @@ public abstract class Engine
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
 
+        RegisterEngineComponents();
+
         CreateGlobalResources();
+    }
+
+    private void RegisterEngineComponents()
+    {
+        SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
+        {
+            if (properties is not Dictionary<object, object> propsDict) return null;
+
+            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
+            {
+                Mesh mesh = ResourceManager.GetMesh(meshName);
+                if (mesh != null)
+                {
+                    return new MeshRenderer(mesh, _graphicsDevice);
+                }
+            }
+            return null;
+        });
     }
 
     public void Run()
     {
         LoadContent();
+        Start();
         _stopwatch.Start();
 
         while (_window.Exists)
@@ -85,11 +119,31 @@ public abstract class Engine
         DisposeResources();
     }
 
+    private void Start()
+    {
+        foreach (var gameObject in Scene)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
+            {
+                script.Start();
+            }
+        }
+    }
+
     protected GraphicsDevice GetGraphicsDevice() => _graphicsDevice;
 
     protected abstract void LoadContent();
 
-    protected virtual void Update(float deltaTime) { }
+    protected virtual void Update(float deltaTime)
+    {
+        foreach (var gameObject in Scene)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
+            {
+                script.Update(deltaTime);
+            }
+        }
+    }
 
     private void CreateGlobalResources()
     {
@@ -220,6 +274,11 @@ public class GameObject
     public T GetComponent<T>() where T : Component
     {
         return _components.OfType<T>().FirstOrDefault();
+    }
+
+    public IEnumerable<T> GetComponents<T>() where T : Component
+    {
+        return _components.OfType<T>();
     }
 }
 </file>
@@ -361,6 +420,7 @@ public class ResourceManager
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneData.cs">
 using System.Collections.Generic;
 using System.Numerics;
+using YamlDotNet.Serialization;
 
 // These classes are dumb data containers that perfectly match the YAML structure.
 // YamlDotNet deserializes the file into these, and then our SceneLoader
@@ -376,21 +436,15 @@ public class SceneData
 public class GameObjectData
 {
     public string Name { get; set; }
-    public TransformData Transform { get; set; }
-    public List<ComponentData> Components { get; set; }
+    // This is now a map of component names to their properties.
+    public Dictionary<string, object> Components { get; set; }
 }
 
 public class TransformData
 {
-    public Vector3 Position { get; set; }
-    public Vector3 Rotation { get; set; } // Stored as Euler angles in YAML
-    public Vector3 Scale { get; set; }
-}
-
-public class ComponentData
-{
-    public string Type { get; set; }
-    public Dictionary<string, string> Properties { get; set; }
+    public Vector3 Position { get; set; } = Vector3.Zero;
+    public Vector3 Rotation { get; set; } = Vector3.Zero; // Stored as Euler angles in YAML
+    public Vector3 Scale { get; set; } = Vector3.One;
 }
 </file>
 
@@ -398,8 +452,10 @@ public class ComponentData
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using Veldrid;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -409,11 +465,27 @@ public class SceneLoader
 {
     private readonly ResourceManager _resourceManager;
     private readonly GraphicsDevice _graphicsDevice;
+    private readonly Dictionary<string, Func<object, Component>> _componentFactories = new();
+    private readonly IDeserializer _deserializer;
+    private readonly ISerializer _serializer;
 
     public SceneLoader(ResourceManager resourceManager, GraphicsDevice graphicsDevice)
     {
         _resourceManager = resourceManager;
         _graphicsDevice = graphicsDevice;
+
+        _deserializer = new DeserializerBuilder()
+            .WithNamingConvention(PascalCaseNamingConvention.Instance)
+            .WithTypeConverter(new Vector3YamlTypeConverter())
+            .Build();
+
+        // A serializer is needed for our new, efficient conversion method.
+        _serializer = new SerializerBuilder().Build();
+    }
+
+    public void RegisterComponentFactory(string typeName, Func<object, Component> factory)
+    {
+        _componentFactories[typeName] = factory;
     }
 
     public List<GameObject> LoadScene(string filePath)
@@ -421,30 +493,38 @@ public class SceneLoader
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
 
-        var deserializer = new DeserializerBuilder()
-            .WithNamingConvention(PascalCaseNamingConvention.Instance)
-            // --- MODIFICATION: Register our custom converter ---
-            .WithTypeConverter(new Vector3YamlTypeConverter())
-            .Build();
-
-        var sceneData = deserializer.Deserialize<SceneData>(input);
+        var sceneData = _deserializer.Deserialize<SceneData>(input);
 
         foreach (var goData in sceneData.GameObjects)
         {
             var go = new GameObject(goData.Name);
 
-            // Set Transform
-            go.Transform.Position = goData.Transform.Position;
-            go.Transform.Scale = goData.Transform.Scale;
-
-            // Convert Euler angles (degrees) to Quaternion
-            var rotRadians = goData.Transform.Rotation * (MathF.PI / 180.0f);
-            go.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
-
-            // Create and add components
-            foreach (var componentData in goData.Components)
+            if (goData.Components == null)
             {
-                AddComponent(go, componentData);
+                sceneObjects.Add(go);
+                continue;
+            }
+
+            // Find and apply the Transform first, as it's fundamental.
+            if (goData.Components.TryGetValue("Transform", out var transformProperties))
+            {
+                // This is the new, efficient way. We avoid creating strings by passing the
+                // object graph directly from the serializer to the deserializer.
+                var yaml = _serializer.Serialize(transformProperties);
+                var transformData = _deserializer.Deserialize<TransformData>(yaml);
+
+                go.Transform.Position = transformData.Position;
+                go.Transform.Scale = transformData.Scale;
+
+                var rotRadians = transformData.Rotation * (MathF.PI / 180.0f);
+                go.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
+            }
+
+            // Create and add all other components
+            foreach (var componentKvp in goData.Components)
+            {
+                if (componentKvp.Key == "Transform") continue;
+                AddComponent(go, componentKvp.Key, componentKvp.Value);
             }
 
             sceneObjects.Add(go);
@@ -453,20 +533,19 @@ public class SceneLoader
         return sceneObjects;
     }
 
-    private void AddComponent(GameObject go, ComponentData componentData)
+    private void AddComponent(GameObject go, string componentType, object properties)
     {
-        switch (componentData.Type)
+        if (_componentFactories.TryGetValue(componentType, out var factory))
         {
-            case "MeshRenderer":
-                string meshName = componentData.Properties["Mesh"];
-                Mesh mesh = _resourceManager.GetMesh(meshName);
-                if (mesh != null)
-                {
-                    var renderer = new MeshRenderer(mesh, _graphicsDevice);
-                    go.AddComponent(renderer);
-                }
-                break;
-                // Add cases for other components here in the future
+            var component = factory(properties);
+            if (component != null)
+            {
+                go.AddComponent(component);
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
         }
     }
 }
@@ -517,11 +596,11 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         return type == typeof(Vector3);
     }
 
-    // --- MODIFICATION: Added 'ObjectDeserializer' parameter to match the interface ---
+    // The nestedObjectDeserializer parameter is required by the interface, even if unused here.
     public object ReadYaml(IParser parser, Type type, ObjectDeserializer nestedObjectDeserializer)
     {
         // We are expecting a sequence (e.g., [x, y, z])
-        var sequence = parser.Consume<SequenceStart>();
+        parser.Consume<SequenceStart>();
 
         var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
         var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
@@ -532,7 +611,7 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         return new Vector3(x, y, z);
     }
 
-    // --- MODIFICATION: Added 'ObjectSerializer' parameter to match the interface ---
+    // The nestedObjectSerializer parameter is required by the interface, even if unused here.
     public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
     {
         var vector = (Vector3)value;
@@ -567,16 +646,27 @@ public struct VertexPositionColor
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Cherris;
 
 namespace Apexverse;
 
-public class Game : Engine
+public class Spinner : Script
 {
-    private GameObject _spinningCube;
     private float _totalTime;
 
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
+    }
+}
+
+public class Game : Engine
+{
     public Game() : base("Veldrid Engine Demo")
     {
     }
@@ -586,26 +676,18 @@ public class Game : Engine
         // Pre-load assets that the scene will need
         ResourceManager.LoadInitialAssets();
 
+        // Register custom components that the scene can use
+        SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
+
         // Load the scene from the file
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
         Scene.AddRange(loadedObjects);
-
-        // Find the cube we want to animate
-        _spinningCube = Scene.FirstOrDefault(go => go.Name == "SpinningCube");
     }
 
     protected override void Update(float deltaTime)
     {
+        // The base engine Update now handles calling Update on all Scripts
         base.Update(deltaTime);
-
-        _totalTime += deltaTime;
-
-        // Update the spinning cube's transform
-        if (_spinningCube != null)
-        {
-            _spinningCube.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
-        }
     }
 }
 </file>
@@ -626,23 +708,22 @@ class Program
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
 GameObjects:
   - Name: SpinningCube
-    Transform:
-      Position: [0, 0, 0]
-      Rotation: [0, 0, 0] # Euler Angles (in degrees)
-      Scale: [1, 1, 1]
     Components:
-      - Type: MeshRenderer
-        Properties:
-          Mesh: Cube
+      Transform:
+        Position: [0, 0, 0]
+        Rotation: [0, 0, 0] # Euler Angles (in degrees)
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Cube
+      Spinner:
 
   - Name: StaticCube
-    Transform:
-      Position: [1.5, 0, 0]
-      Rotation: [0, 45, 0]
-      Scale: [0.5, 0.5, 0.5]
     Components:
-      - Type: MeshRenderer
-        Properties:
-          Mesh: Cube
+      Transform:
+        Position: [1.5, 0, 0]
+        Rotation: [0, 45, 0]
+        Scale: [0.5, 0.5, 0.5]
+      MeshRenderer:
+        Mesh: Cube
 </file>
 

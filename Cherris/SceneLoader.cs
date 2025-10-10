@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using Veldrid;
-using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -28,7 +26,9 @@ public class SceneLoader
             .WithTypeConverter(new Vector3YamlTypeConverter())
             .Build();
 
-        // A serializer is needed for our new, efficient conversion method.
+        // A serializer is used to re-serialize parts of the YAML object graph.
+        // This allows us to leverage the deserializer's type conversion capabilities
+        // (e.g., for Vector3) without writing manual, reflection-based conversion logic.
         _serializer = new SerializerBuilder().Build();
     }
 
@@ -42,38 +42,42 @@ public class SceneLoader
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
 
-        var sceneData = _deserializer.Deserialize<SceneData>(input);
+        // Instead of custom data classes, deserialize into a generic dictionary structure.
+        // This is more flexible and avoids a rigid coupling to the YAML file structure.
+        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
-        foreach (var goData in sceneData.GameObjects)
+        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            var go = new GameObject(goData.Name);
+            return sceneObjects; // Return empty list if no game objects are defined
+        }
 
-            if (goData.Components == null)
+        foreach (var goData in gameObjectDatas)
+        {
+            // Extract name, defaulting if not present.
+            string name = "GameObject";
+            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
+            {
+                name = goName;
+            }
+            var go = new GameObject(name);
+
+            if (!goData.TryGetValue("Components", out var componentsObj) || componentsObj is not Dictionary<object, object> componentsDict)
             {
                 sceneObjects.Add(go);
                 continue;
             }
 
             // Find and apply the Transform first, as it's fundamental.
-            if (goData.Components.TryGetValue("Transform", out var transformProperties))
+            if (componentsDict.TryGetValue("Transform", out var transformProperties))
             {
-                // This is the new, efficient way. We avoid creating strings by passing the
-                // object graph directly from the serializer to the deserializer.
-                var yaml = _serializer.Serialize(transformProperties);
-                var transformData = _deserializer.Deserialize<TransformData>(yaml);
-
-                go.Transform.Position = transformData.Position;
-                go.Transform.Scale = transformData.Scale;
-
-                var rotRadians = transformData.Rotation * (MathF.PI / 180.0f);
-                go.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
+                ApplyTransformProperties(go.Transform, transformProperties);
             }
 
             // Create and add all other components
-            foreach (var componentKvp in goData.Components)
+            foreach (var componentKvp in componentsDict)
             {
-                if (componentKvp.Key == "Transform") continue;
-                AddComponent(go, componentKvp.Key, componentKvp.Value);
+                if (componentKvp.Key as string == "Transform") continue;
+                AddComponent(go, componentKvp.Key as string, componentKvp.Value);
             }
 
             sceneObjects.Add(go);
@@ -82,8 +86,34 @@ public class SceneLoader
         return sceneObjects;
     }
 
+    private void ApplyTransformProperties(Transform transform, object properties)
+    {
+        // This is a pragmatic way to reuse our Vector3YamlTypeConverter without reflection.
+        // We serialize the properties object back to a YAML string and then
+        // deserialize it into a dictionary where we know the values will be Vector3.
+        var yaml = _serializer.Serialize(properties);
+        var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
+
+        if (props.TryGetValue("Position", out var pos))
+        {
+            transform.Position = pos;
+        }
+        if (props.TryGetValue("Scale", out var scale))
+        {
+            transform.Scale = scale;
+        }
+        if (props.TryGetValue("Rotation", out var rotDegrees))
+        {
+            // Convert Euler angles from degrees to radians for quaternion creation.
+            var rotRadians = rotDegrees * (MathF.PI / 180.0f);
+            transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
+        }
+    }
+
     private void AddComponent(GameObject go, string componentType, object properties)
     {
+        if (string.IsNullOrEmpty(componentType)) return;
+
         if (_componentFactories.TryGetValue(componentType, out var factory))
         {
             var component = factory(properties);
