@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Numerics;
 using Veldrid;
 
 namespace Cherris;
@@ -6,10 +7,13 @@ namespace Cherris;
 public static class Input
 {
     private static readonly HashSet<Key> _pressedKeys = new();
+    private static bool _firstMouseUpdate = true;
 
-    internal static void UpdateSnapshot(IReadOnlyList<KeyEvent> keyEvents)
+    public static Vector2 MouseDelta { get; private set; }
+
+    internal static void UpdateSnapshot(InputSnapshot snapshot)
     {
-        foreach (var keyEvent in keyEvents)
+        foreach (var keyEvent in snapshot.KeyEvents)
         {
             if (keyEvent.Down)
             {
@@ -19,6 +23,16 @@ public static class Input
             {
                 _pressedKeys.Remove(keyEvent.Key);
             }
+        }
+
+        if (_firstMouseUpdate)
+        {
+            MouseDelta = Vector2.Zero;
+            _firstMouseUpdate = false;
+        }
+        else
+        {
+            MouseDelta = snapshot.MousePosition;
         }
     }
 

@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using System;
 using System.Numerics;
 using Veldrid;
 
@@ -7,33 +8,50 @@ namespace Apexverse
     public class PlayerController : Script
     {
         public float Speed { get; set; } = 3.0f;
+        public float MouseSensitivity { get; set; } = 0.002f;
+
+        private float _yaw;
+        private float _pitch;
 
         public override void Update(float deltaTime)
         {
-            var direction = Vector3.Zero;
+            // --- Mouse Look ---
+            Vector2 mouseDelta = Input.MouseDelta;
+            _yaw -= mouseDelta.X * MouseSensitivity;
+            _pitch -= mouseDelta.Y * MouseSensitivity;
+
+            // Clamp the pitch to prevent the camera from flipping upside down
+            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+            // Update rotation from yaw and pitch
+            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
+                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+
+            // --- Keyboard Movement ---
+            var moveDirection = Vector3.Zero;
 
             if (Input.IsKeyDown(Key.W))
             {
-                direction -= Vector3.UnitZ;
+                moveDirection -= Vector3.UnitZ;
             }
             if (Input.IsKeyDown(Key.S))
             {
-                direction += Vector3.UnitZ;
+                moveDirection += Vector3.UnitZ;
             }
             if (Input.IsKeyDown(Key.A))
             {
-                direction -= Vector3.UnitX;
+                moveDirection -= Vector3.UnitX;
             }
             if (Input.IsKeyDown(Key.D))
             {
-                direction += Vector3.UnitX;
+                moveDirection += Vector3.UnitX;
             }
 
-            if (direction != Vector3.Zero)
+            if (moveDirection != Vector3.Zero)
             {
-                direction = Vector3.Normalize(direction);
-                // The direction is local. Transform it to world space by the object's rotation.
-                var worldDirection = Vector3.Transform(direction, GameObject.Transform.Rotation);
+                moveDirection = Vector3.Normalize(moveDirection);
+                // Transform the local direction vector by the object's new rotation to get world direction
+                var worldDirection = Vector3.Transform(moveDirection, GameObject.Transform.Rotation);
                 GameObject.Transform.Position += worldDirection * Speed * deltaTime;
             }
         }

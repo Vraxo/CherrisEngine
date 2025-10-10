@@ -18,14 +18,14 @@ public class Mesh
     {
         VertexPositionColor[] vertices =
         {
-            new(new Vector3(-0.5f, +0.5f, -0.5f), RgbaFloat.Red),
-            new(new Vector3(+0.5f, +0.5f, -0.5f), RgbaFloat.Green),
-            new(new Vector3(+0.5f, -0.5f, -0.5f), RgbaFloat.Blue),
-            new(new Vector3(-0.5f, -0.5f, -0.5f), RgbaFloat.Yellow),
-            new(new Vector3(-0.5f, +0.5f, +0.5f), RgbaFloat.Cyan),
-            new(new Vector3(+0.5f, +0.5f, +0.5f), new RgbaFloat(1, 0, 1, 1)), // Magenta
-            new(new Vector3(+0.5f, -0.5f, +0.5f), RgbaFloat.White),
-            new(new Vector3(-0.5f, -0.5f, +0.5f), RgbaFloat.Grey)
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.Red),
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.Green),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.Blue),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.Yellow),
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.Cyan),
+            new(new(+0.5f, +0.5f, +0.5f), new RgbaFloat(1, 0, 1, 1)), // Magenta
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White),
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.Grey)
         };
 
         ushort[] indices =

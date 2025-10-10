@@ -85,10 +85,13 @@ public abstract class Engine
         Start();
         _stopwatch.Start();
 
+        Sdl2Native.SDL_SetRelativeMouseMode(true);
+        _window.PumpEvents(); // Pump once to flush initial mouse position.
+
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
-            Input.UpdateSnapshot(snapshot.KeyEvents);
+            Input.UpdateSnapshot(snapshot);
 
             if (!_window.Exists) break;
 
