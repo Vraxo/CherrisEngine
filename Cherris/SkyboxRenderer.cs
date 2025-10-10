@@ -18,7 +18,7 @@ public class SkyboxRenderer
     private readonly uint _skyboxIndexCount;
     private readonly Dictionary<Texture, ResourceSet> _skyboxTextureSets = new();
 
-    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout, Framebuffer framebuffer)
+    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout, Framebuffer framebuffer) // Changed gd.SwapchainFramebuffer to framebuffer
     {
         _graphicsDevice = gd;
         _sampler = sampler;
@@ -55,7 +55,7 @@ public class SkyboxRenderer
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { skyboxVpLayout, _skyboxTextureLayout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = framebuffer.OutputDescription
+            Outputs = framebuffer.OutputDescription // Use the passed framebuffer's OutputDescription
         });
     }
 

@@ -21,7 +21,13 @@ public abstract class Engine
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;
-    private readonly Renderer _renderer;
+    private Renderer _renderer; // Removed readonly
+
+    private Framebuffer _msaaFramebuffer;
+    private Veldrid.Texture _msaaColorTarget;
+    private Veldrid.Texture _msaaDepthTarget;
+    private TextureView _msaaColorView;
+    private readonly TextureSampleCount _msaaSampleCount = TextureSampleCount.Count4; // Or Count8 for stronger AA.
 
     protected Engine(string windowTitle)
     {
@@ -37,13 +43,49 @@ public abstract class Engine
         _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
         _stopwatch = new Stopwatch();
 
-        // Initialize systems
+        // Get the swapchain color format
+        PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
+        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+
+        // Create MSAA framebuffer
+        uint width = _graphicsDevice.SwapchainFramebuffer.Width;
+        uint height = _graphicsDevice.SwapchainFramebuffer.Height;
+
+        _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            width, height, 1, 1, colorFormat, // Use non-sRGB format for correct MSAA
+            TextureUsage.RenderTarget | TextureUsage.Sampled,
+            sampleCount: _msaaSampleCount));
+
+        _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            width, height, 1, 1, PixelFormat.R16_UNorm, // Match your SwapchainDepthFormat.
+            TextureUsage.DepthStencil,
+            sampleCount: _msaaSampleCount));
+
+        _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
+            _msaaDepthTarget, _msaaColorTarget));
+
+        _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+
+        // Initialize systems after MSAA creation
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
         SceneManager = new SceneManager();
-        _renderer = new Renderer(_graphicsDevice);
+        _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer); // Pass both framebuffers
+
+        // Subscribe to resize event
+        _gameWindow.SdlWindow.Resized += OnWindowResized;
 
         RegisterEngineComponents();
+    }
+
+    private static PixelFormat GetNonSrgbFormat(PixelFormat format)
+    {
+        return format switch
+        {
+            PixelFormat.B8_G8_R8_A8_UNorm_SRgb => PixelFormat.B8_G8_R8_A8_UNorm,
+            PixelFormat.R8_G8_B8_A8_UNorm_SRgb => PixelFormat.R8_G8_B8_A8_UNorm,
+            _ => format
+        };
     }
 
     private void RegisterEngineComponents()
@@ -148,7 +190,9 @@ public abstract class Engine
         Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / (float)_gameWindow.Height);
 
         _commandList.Begin();
-        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+
+        // Render to MSAA framebuffer.
+        _commandList.SetFramebuffer(_msaaFramebuffer);
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
@@ -160,9 +204,51 @@ public abstract class Engine
 
         _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
 
+        // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
+        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+        _commandList.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
+        _renderer.ResolveMSAA(_commandList, _msaaColorView);
+
         _commandList.End();
         _graphicsDevice.SubmitCommands(_commandList);
         _graphicsDevice.SwapBuffers();
+    }
+
+    private void OnWindowResized()
+    {
+        _graphicsDevice.ResizeMainWindow((uint)_gameWindow.Width, (uint)_gameWindow.Height);
+
+        // Get the swapchain color format
+        PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
+        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+
+        // Recreate MSAA targets.
+        _msaaColorView?.Dispose();
+        _msaaColorTarget?.Dispose();
+        _msaaDepthTarget?.Dispose();
+        _msaaFramebuffer?.Dispose();
+
+        uint width = (uint)_gameWindow.Width;
+        uint height = (uint)_gameWindow.Height;
+
+        _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            width, height, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled,
+            sampleCount: _msaaSampleCount));
+
+        _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            width, height, 1, 1, PixelFormat.R16_UNorm,
+            TextureUsage.DepthStencil,
+            sampleCount: _msaaSampleCount));
+
+        _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
+            _msaaDepthTarget, _msaaColorTarget));
+
+        _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+
+        // Recreate renderer with new MSAA framebuffer
+        _renderer?.Dispose();
+        _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer);
     }
 
     private void DisposeResources()
@@ -171,6 +257,10 @@ public abstract class Engine
         _renderer.Dispose();
         ResourceManager.Dispose();
         _commandList.Dispose();
+        _msaaColorView?.Dispose();
+        _msaaColorTarget?.Dispose();
+        _msaaDepthTarget?.Dispose();
+        _msaaFramebuffer?.Dispose();
         _graphicsDevice.Dispose();
     }
 }

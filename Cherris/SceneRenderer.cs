@@ -14,7 +14,7 @@ public class SceneRenderer
     public ResourceLayout TextureLayout { get; }
     public ResourceLayout MaterialLayout { get; }
 
-    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout, Framebuffer framebuffer, Sampler sampler)
+    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout, Framebuffer framebuffer, Sampler sampler) // Changed gd.SwapchainFramebuffer to framebuffer
     {
         ResourceFactory factory = gd.ResourceFactory;
 

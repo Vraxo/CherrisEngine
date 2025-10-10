@@ -8,14 +8,14 @@ public class Renderer
 {
     private readonly SceneRenderer _sceneRenderer;
     private readonly SkyboxRenderer _skyboxRenderer;
+    private readonly ResolveRenderer _resolveRenderer;
     private readonly Sampler _sampler;
 
     public ResourceLayout TextureLayout => _sceneRenderer.TextureLayout;
     public ResourceLayout MaterialLayout => _sceneRenderer.MaterialLayout;
     public Sampler Sampler => _sampler;
 
-
-    public Renderer(GraphicsDevice gd)
+    public Renderer(GraphicsDevice gd, Framebuffer msaaFramebuffer, Framebuffer swapchainFramebuffer)
     {
         ResourceFactory factory = gd.ResourceFactory;
 
@@ -36,8 +36,9 @@ public class Renderer
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout, gd.SwapchainFramebuffer, _sampler);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, gd.SwapchainFramebuffer);
+        _sceneRenderer = new SceneRenderer(gd, vertexLayout, msaaFramebuffer, _sampler);
+        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, msaaFramebuffer);
+        _resolveRenderer = new ResolveRenderer(gd, swapchainFramebuffer);
     }
 
     public void RenderSkybox(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
@@ -50,10 +51,16 @@ public class Renderer
         _sceneRenderer.Render(commandList, view, projection, scene);
     }
 
+    public void ResolveMSAA(CommandList commandList, TextureView msaaColorView)
+    {
+        _resolveRenderer.Render(commandList, msaaColorView);
+    }
+
     public void Dispose()
     {
         _sceneRenderer.Dispose();
         _skyboxRenderer.Dispose();
+        _resolveRenderer.Dispose();
         _sampler.Dispose();
     }
 }

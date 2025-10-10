@@ -41,7 +41,7 @@ public static class TextureLoader
             (uint)imageResult.Height,
             mipLevels,
             1,
-            PixelFormat.R8_G8_B8_A8_UNorm,
+            PixelFormat.R8_G8_B8_A8_UNorm_SRgb, // Use sRGB for correct gamma
             TextureUsage.Sampled | TextureUsage.GenerateMipmaps));
 
         // Copy the pixel data to the Veldrid texture.
