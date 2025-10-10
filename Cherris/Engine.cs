@@ -19,17 +19,10 @@ public abstract class Engine
     private bool _escapePressedLastFrame = false;
     private Vector2 _windowCenter;
 
-    // Engine-level resources
-    private DeviceBuffer _mvpBuffer;
-    private Pipeline _pipeline;
-    private ResourceSet _mvpResourceSet;
-    private ResourceLayout _textureLayout;
-    private ResourceLayout _materialLayout;
-    private Sampler _sampler;
-
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
+    private readonly Renderer _renderer;
 
     protected readonly List<GameObject> Scene = new List<GameObject>();
     protected Camera MainCamera { get; private set; }
@@ -59,10 +52,9 @@ public abstract class Engine
         // Initialize systems
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
+        _renderer = new Renderer(_graphicsDevice);
 
         RegisterEngineComponents();
-
-        CreateGlobalResources();
     }
 
     private void RegisterEngineComponents()
@@ -105,7 +97,7 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, _graphicsDevice, _textureLayout, _materialLayout, _sampler, texture, textureTiling);
+            return new MeshRenderer(mesh, _graphicsDevice, _renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler, texture, textureTiling);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
@@ -204,60 +196,6 @@ public abstract class Engine
         }
     }
 
-    private void CreateGlobalResources()
-    {
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-
-        _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
-
-        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
-            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
-            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
-
-        ResourceLayout mvpLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
-
-        _textureLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
-
-        _materialLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
-
-        _sampler = factory.CreateSampler(new SamplerDescription
-        {
-            AddressModeU = SamplerAddressMode.Wrap,
-            AddressModeV = SamplerAddressMode.Wrap,
-            AddressModeW = SamplerAddressMode.Wrap,
-            Filter = SamplerFilter.Anisotropic,
-            MaximumAnisotropy = 16,
-            LodBias = 0,
-            MinimumLod = 0,
-            MaximumLod = uint.MaxValue
-        });
-
-        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
-
-        (Shader vs, Shader fs) = LoadShaders(factory);
-
-        _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
-        {
-            BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(
-                true, true, ComparisonKind.LessEqual),
-            RasterizerState = new RasterizerStateDescription(
-                FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
-            PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout, _textureLayout, _materialLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = _graphicsDevice.SwapchainFramebuffer.OutputDescription
-        });
-    }
-
     private void Draw()
     {
         if (MainCamera == null) return;
@@ -270,65 +208,11 @@ public abstract class Engine
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
-        foreach (var gameObject in Scene)
-        {
-            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer == null) continue;
-
-            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
-            _commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
-
-            meshRenderer.Render(_commandList, _pipeline, _mvpResourceSet);
-        }
+        _renderer.RenderScene(_commandList, view, projection, Scene);
 
         _commandList.End();
         _graphicsDevice.SubmitCommands(_commandList);
         _graphicsDevice.SwapBuffers();
-    }
-
-    private (Shader, Shader) LoadShaders(ResourceFactory factory)
-    {
-        const string vertexCode = @"
-                #version 450
-                layout(location = 0) in vec3 Position;
-                layout(location = 1) in vec4 Color;
-                layout(location = 2) in vec2 TexCoord;
-
-                layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
-                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
-
-                layout(location = 0) out vec4 fsin_Color;
-                layout(location = 1) out vec2 fsin_TexCoord;
-
-                void main() 
-                { 
-                    gl_Position = mvp * vec4(Position, 1); 
-                    fsin_Color = Color; 
-                    fsin_TexCoord = TexCoord * TextureTiling.xy;
-                }";
-
-        const string fragmentCode = @"
-                #version 450
-                layout(location = 0) in vec4 fsin_Color;
-                layout(location = 1) in vec2 fsin_TexCoord;
-
-                layout(set = 1, binding = 0) uniform texture2D SourceTexture;
-                layout(set = 1, binding = 1) uniform sampler SourceSampler;
-
-                layout(location = 0) out vec4 fsout_Color;
-
-                void main() 
-                { 
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
-                }";
-
-        ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
-        ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
-
-        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
-        return (shaders[0], shaders[1]);
     }
 
     private void DisposeResources()
@@ -337,12 +221,7 @@ public abstract class Engine
         {
             gameObject.GetComponent<MeshRenderer>()?.Dispose();
         }
-        _pipeline.Dispose();
-        _textureLayout.Dispose();
-        _materialLayout.Dispose();
-        _sampler.Dispose();
-        _mvpResourceSet.Dispose();
-        _mvpBuffer.Dispose();
+        _renderer.Dispose();
         ResourceManager.Dispose();
         _commandList.Dispose();
         _graphicsDevice.Dispose();
