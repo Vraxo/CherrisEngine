@@ -93,6 +93,9 @@ public abstract class Engine
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
+    private bool _snapshotsEnabled;
+    private bool _f12PressedLastFrame;
+
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
@@ -236,6 +239,14 @@ public abstract class Engine
     {
         _lastDeltaTime = deltaTime;
 
+        bool isF12Down = Input.IsKeyDown(Key.F12);
+        if (isF12Down && !_f12PressedLastFrame)
+        {
+            _snapshotsEnabled = !_snapshotsEnabled;
+            Console.WriteLine($"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. Press F12 to toggle.");
+        }
+        _f12PressedLastFrame = isF12Down;
+
         if (Mode == EngineMode.Editor)
         {
             _editorController?.Update(deltaTime);
@@ -339,12 +350,15 @@ public abstract class Engine
 
     private void Draw()
     {
-        _snapshotTimer += _lastDeltaTime;
-        if (_snapshotTimer >= SnapshotInterval)
+        if (_snapshotsEnabled)
         {
-            _snapshotTimer -= SnapshotInterval;
-            string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
-            _renderer.RequestSnapshot(path);
+            _snapshotTimer += _lastDeltaTime;
+            if (_snapshotTimer >= SnapshotInterval)
+            {
+                _snapshotTimer -= SnapshotInterval;
+                string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
+                _renderer.RequestSnapshot(path);
+            }
         }
 
         _renderer.RenderFrame(
