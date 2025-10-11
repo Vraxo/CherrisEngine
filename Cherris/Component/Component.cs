@@ -1,4 +1,10 @@
-﻿namespace Cherris;
+﻿using System.Diagnostics;
+using System.Numerics;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+using Veldrid;
+
+namespace Cherris;
 
 public abstract class Component
 {

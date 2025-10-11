@@ -99,51 +99,19 @@ public class Mesh
     public static Mesh CreatePlane(float size)
     {
         float halfSize = size * 0.5f;
-        // Give the plane a tiny thickness so the inverted hull outline technique works.
-        float thickness = 0.001f;
-
         Vertex[] vertices =
         {
-            // Top face (Y = 0)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1)),
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)),
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)),
-            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)),
-            // Bottom face (Y = -thickness)
-            new(new(-halfSize, -thickness, -halfSize), RgbaFloat.White, new(0, 1)),
-            new(new(+halfSize, -thickness, -halfSize), RgbaFloat.White, new(1, 1)),
-            new(new(+halfSize, -thickness, +halfSize), RgbaFloat.White, new(1, 0)),
-            new(new(-halfSize, -thickness, +halfSize), RgbaFloat.White, new(0, 0)),
-            // Front face (+Z)
-            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)),
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)),
-            new(new(+halfSize, -thickness, +halfSize), RgbaFloat.White, new(1, 1)),
-            new(new(-halfSize, -thickness, +halfSize), RgbaFloat.White, new(0, 1)),
-            // Back face (-Z)
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(0, 0)),
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(1, 0)),
-            new(new(-halfSize, -thickness, -halfSize), RgbaFloat.White, new(1, 1)),
-            new(new(+halfSize, -thickness, -halfSize), RgbaFloat.White, new(0, 1)),
-            // Left face (-X)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 0)),
-            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)),
-            new(new(-halfSize, -thickness, +halfSize), RgbaFloat.White, new(1, 1)),
-            new(new(-halfSize, -thickness, -halfSize), RgbaFloat.White, new(0, 1)),
-            // Right face (+X)
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)),
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 0)),
-            new(new(+halfSize, -thickness, -halfSize), RgbaFloat.White, new(1, 1)),
-            new(new(+halfSize, -thickness, +halfSize), RgbaFloat.White, new(0, 1)),
+            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
         };
 
+        // Reversed winding order to be visible with existing pipeline state.
+        // The original order (0,1,2) was being culled.
         ushort[] indices =
         {
-            0,1,2,   0,2,3,   // Top
-            4,5,6,   4,6,7,   // Bottom
-            8,9,10,  8,10,11, // Front
-            12,13,14, 12,14,15, // Back
-            16,17,18, 16,18,19, // Left
-            20,21,22, 20,22,23  // Right
+            0,2,1, 0,3,2
         };
 
         return new Mesh(vertices, indices);
