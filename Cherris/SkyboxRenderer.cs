@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -60,7 +59,6 @@ public class SkyboxRenderer
         _skyboxPipeline?.Dispose();
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
-        var sw = Stopwatch.StartNew();
         _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -71,8 +69,6 @@ public class SkyboxRenderer
             ShaderSet = new([_vertexLayout], [_vertexShader, _fragmentShader]),
             Outputs = framebuffer.OutputDescription
         });
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] SkyboxRenderer pipeline created in {sw.ElapsedMilliseconds}ms");
     }
 
     public void Render(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
@@ -136,7 +132,17 @@ public class SkyboxRenderer
                 fsout_Color = texture(samplerCube(SourceCubeMap, SourceSampler), fsin_TexCoord);
             }";
 
-        Shader[] shaders = ShaderHelper.LoadFromGlsl(factory, vertexCode, fragmentCode);
+        ShaderDescription vertexShaderDesc = new(
+            ShaderStages.Vertex,
+            Encoding.UTF8.GetBytes(vertexCode),
+            "main");
+
+        ShaderDescription fragmentShaderDesc = new(
+            ShaderStages.Fragment,
+            Encoding.UTF8.GetBytes(fragmentCode), 
+            "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
     }
 

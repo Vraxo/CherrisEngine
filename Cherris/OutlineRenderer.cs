@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
-using Newtonsoft.Json.Linq;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -46,19 +44,19 @@ public class OutlineRenderer : IDisposable
             new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
             new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
         };
-        _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+        _vertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
-        _screenSizeBuffer = factory.CreateBuffer(new Veldrid.BufferDescription(16, BufferUsage.UniformBuffer));
+        _screenSizeBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
 
         uint propertiesBufferSize;
         unsafe
         {
             propertiesBufferSize = (uint)sizeof(PropertiesBufferData);
         }
-        _propertiesBuffer = factory.CreateBuffer(new Veldrid.BufferDescription(propertiesBufferSize, BufferUsage.UniformBuffer));
+        _propertiesBuffer = factory.CreateBuffer(new BufferDescription(propertiesBufferSize, BufferUsage.UniformBuffer));
 
-        _clampSampler = factory.CreateSampler(new Veldrid.SamplerDescription
+        _clampSampler = factory.CreateSampler(new SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Clamp,
             AddressModeV = SamplerAddressMode.Clamp,
@@ -85,8 +83,6 @@ public class OutlineRenderer : IDisposable
     {
         _pipeline?.Dispose();
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
-
-        var sw = Stopwatch.StartNew();
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend, // The shader handles compositing (scene + glow), so we just overwrite.
@@ -97,8 +93,6 @@ public class OutlineRenderer : IDisposable
             ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) }, new[] { _vertexShader, _fragmentShader }),
             Outputs = targetFramebuffer.OutputDescription
         });
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] OutlineRenderer pipeline created in {sw.ElapsedMilliseconds}ms");
     }
 
     public void CreateResources(TextureView sceneView, TextureView idView)
@@ -231,7 +225,9 @@ public class OutlineRenderer : IDisposable
                 fsout_Color = sceneColor;
             }";
 
-        Shader[] shaders = ShaderHelper.LoadFromGlsl(factory, vertexCode, fragmentCode);
+        Shader[] shaders = factory.CreateFromSpirv(
+            new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertexCode), "main"),
+            new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragmentCode), "main"));
         return (shaders[0], shaders[1]);
     }
 

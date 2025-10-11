@@ -37,7 +37,6 @@ public class GraphicsManager : IDisposable
 
         GraphicsDeviceOptions options = new GraphicsDeviceOptions
         {
-            Debug = false, // This is the critical change. Disables slow validation layers.
             PreferStandardClipSpaceYDirection = true,
             PreferDepthRangeZeroToOne = true,
             SwapchainDepthFormat = PixelFormat.R16_UNorm

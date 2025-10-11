@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Numerics;
+﻿using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -48,8 +47,6 @@ public class ResolveRenderer
     {
         _pipeline?.Dispose();
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
-
-        var sw = Stopwatch.StartNew();
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -60,8 +57,6 @@ public class ResolveRenderer
             ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
             Outputs = targetFramebuffer.OutputDescription
         });
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] ResolveRenderer pipeline created in {sw.ElapsedMilliseconds}ms");
     }
 
     public void Render(CommandList commandList, TextureView msaaColorView)
@@ -108,7 +103,12 @@ void main()
     fsout_Color = color / 4.0;
 }";
 
-        Shader[] shaders = ShaderHelper.LoadFromGlsl(factory, vertexCode, fragmentCode);
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
     }
 

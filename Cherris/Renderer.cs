@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -66,30 +65,12 @@ public class Renderer : IDisposable
             MaximumLod = uint.MaxValue
         });
 
-        var sw = Stopwatch.StartNew();
         _sceneRenderer = new SceneRenderer(gd, vertexLayout);
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] SceneRenderer created in {sw.ElapsedMilliseconds}ms");
-        sw.Restart();
-
         _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] SkyboxRenderer created in {sw.ElapsedMilliseconds}ms");
-        sw.Restart();
-
         _resolveRenderer = new ResolveRenderer(gd);
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] ResolveRenderer created in {sw.ElapsedMilliseconds}ms");
-        sw.Restart();
-
         _outlineRenderer = new OutlineRenderer(gd);
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] OutlineRenderer created in {sw.ElapsedMilliseconds}ms");
-        sw.Restart();
 
         OnWindowResized();
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] Initial OnWindowResized (pipeline creation) took {sw.ElapsedMilliseconds}ms");
     }
 
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, IReadOnlyList<OutlineProfile> activeProfiles, float windowWidth, float windowHeight)

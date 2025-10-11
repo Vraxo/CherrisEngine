@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using Veldrid;
@@ -71,8 +70,6 @@ public class SceneRenderer
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
-        var sw = Stopwatch.StartNew();
-
         // Pipeline for standard objects.
         var mainDepthStencilState = new DepthStencilStateDescription(
             depthTestEnabled: true,
@@ -107,9 +104,6 @@ public class SceneRenderer
             ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _idVertexShader, _idFragmentShader }),
             Outputs = idFramebuffer.OutputDescription
         });
-
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] SceneRenderer pipelines created in {sw.ElapsedMilliseconds}ms");
     }
 
     public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
@@ -209,7 +203,12 @@ public class SceneRenderer
                     fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
                 }";
 
-        Shader[] shaders = ShaderHelper.LoadFromGlsl(factory, vertexCode, fragmentCode);
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
     }
 
@@ -235,7 +234,12 @@ public class SceneRenderer
                     fsout_Color = IdColor;
                 }";
 
-        Shader[] shaders = ShaderHelper.LoadFromGlsl(factory, vertexCode, fragmentCode);
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
     }
 

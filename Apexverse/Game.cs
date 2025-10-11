@@ -1,5 +1,4 @@
 ﻿using Cherris;
-using System.Diagnostics;
 
 namespace Apexverse;
 
@@ -57,10 +56,5 @@ public class Game : Engine
     {
         // The base engine Update now handles calling Update on all Scripts
         base.Update(deltaTime);
-    }
-
-    public void Run(Stopwatch totalStartupTimer)
-    {
-        base.Run(totalStartupTimer);
     }
 }
