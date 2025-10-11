@@ -24,10 +24,11 @@ public class MeshRenderer : Component
         _texture = texture;
         _textureTiling = textureTiling;
 
-        CreateResources(textureLayout, materialLayout, sampler);
+        CreateDeviceBuffers();
+        CreateResourceSets(textureLayout, materialLayout, sampler);
     }
 
-    private void CreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+    private void CreateDeviceBuffers()
     {
         ResourceFactory factory = _gd.ResourceFactory;
 
@@ -42,6 +43,11 @@ public class MeshRenderer : Component
         _gd.UpdateBuffer(_indexBuffer, 0, _mesh.Indices);
 
         _indexCount = (uint)_mesh.Indices.Length;
+    }
+
+    private void CreateResourceSets(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+    {
+        ResourceFactory factory = _gd.ResourceFactory;
 
         _textureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
             textureLayout,
@@ -63,7 +69,7 @@ public class MeshRenderer : Component
         _materialResourceSet?.Dispose();
         _materialPropertiesBuffer?.Dispose();
 
-        CreateResources(textureLayout, materialLayout, sampler);
+        CreateResourceSets(textureLayout, materialLayout, sampler);
     }
 
     public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)

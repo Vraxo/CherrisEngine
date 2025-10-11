@@ -1,3 +1,51 @@
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\AssetFinder.cs">
+namespace Cherris;
+
+public static class AssetFinder
+{
+    private const string AssetRootPath = "Assets";
+    private static readonly string[] SupportedExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+
+    public static string? FindAssetPath(string assetName)
+    {
+        if (!Directory.Exists(AssetRootPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            string[] matchingFiles = GetMatchingFiles(assetName);
+
+            if (matchingFiles.Length > 1)
+            {
+                Console.WriteLine($"[AssetFinder] Warning: Found multiple files for asset '{assetName}'. Using '{matchingFiles[0]}'.");
+            }
+
+            return matchingFiles.FirstOrDefault();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[AssetFinder] Error while searching for assets: {e.Message}");
+            return null;
+        }
+    }
+
+    private static string[] GetMatchingFiles(string assetName)
+    {
+        return GetPotentialFilePaths(assetName).SelectMany(name =>
+        {
+            return Directory.GetFiles(AssetRootPath, name, SearchOption.AllDirectories);
+        }).ToArray();
+    }
+
+    private static IEnumerable<string> GetPotentialFilePaths(string assetName)
+    {
+        return SupportedExtensions.Select(ext => assetName + ext);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Camera.cs">
 using System;
 using System.Numerics;
@@ -55,78 +103,37 @@ public abstract class Script : Component
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Engine.cs">
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using System.Reflection;
 using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.SPIRV;
-using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
 public abstract class Engine
 {
     private readonly GameWindow _gameWindow;
-    private readonly GraphicsDevice _graphicsDevice;
-    private readonly CommandList _commandList;
-    private readonly Stopwatch _stopwatch;
+    private readonly GraphicsManager _graphicsManager;
+    private readonly GameLoop _gameLoop;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;
-    private Renderer _renderer; // Removed readonly
-
-    private Framebuffer _msaaFramebuffer;
-    private Veldrid.Texture _msaaColorTarget;
-    private Veldrid.Texture _msaaDepthTarget;
-    private TextureView _msaaColorView;
-    private readonly TextureSampleCount _msaaSampleCount = TextureSampleCount.Count4; // Or Count8 for stronger AA.
+    private readonly Renderer _renderer;
 
     protected Engine(string windowTitle)
     {
-        _gameWindow = new GameWindow(windowTitle, 960, 540);
+        _gameWindow = new(windowTitle, 960, 540);
+        _graphicsManager = new(_gameWindow.SdlWindow, TextureSampleCount.Count4);
 
-        GraphicsDeviceOptions options = new GraphicsDeviceOptions
-        {
-            PreferStandardClipSpaceYDirection = true,
-            PreferDepthRangeZeroToOne = true,
-            SwapchainDepthFormat = PixelFormat.R16_UNorm
-        };
-        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_gameWindow.SdlWindow, options);
-        _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
-        _stopwatch = new Stopwatch();
+        // Initialize systems
+        ResourceManager = new(_graphicsManager.GraphicsDevice);
+        SceneLoader = new(ResourceManager, _graphicsManager.GraphicsDevice);
+        SceneManager = new();
+        _renderer = new(_graphicsManager);
 
-        // Get the swapchain color format
-        PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
-        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
-
-        // Create MSAA framebuffer
-        uint width = _graphicsDevice.SwapchainFramebuffer.Width;
-        uint height = _graphicsDevice.SwapchainFramebuffer.Height;
-
-        _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            width, height, 1, 1, colorFormat, // Use non-sRGB format for correct MSAA
-            TextureUsage.RenderTarget | TextureUsage.Sampled,
-            sampleCount: _msaaSampleCount));
-
-        _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            width, height, 1, 1, PixelFormat.R16_UNorm, // Match your SwapchainDepthFormat.
-            TextureUsage.DepthStencil,
-            sampleCount: _msaaSampleCount));
-
-        _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
-            _msaaDepthTarget, _msaaColorTarget));
-
-        _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
-
-        // Initialize systems after MSAA creation
-        ResourceManager = new ResourceManager(_graphicsDevice);
-        SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
-        SceneManager = new SceneManager();
-        _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer); // Pass both framebuffers
+        // Game loop is created last, as it depends on the Update/Draw methods
+        _gameLoop = new(_gameWindow, Update, Draw);
 
         // Subscribe to resize event
         _gameWindow.SdlWindow.Resized += OnWindowResized;
@@ -134,30 +141,29 @@ public abstract class Engine
         RegisterEngineComponents();
     }
 
-    private static PixelFormat GetNonSrgbFormat(PixelFormat format)
-    {
-        return format switch
-        {
-            PixelFormat.B8_G8_R8_A8_UNorm_SRgb => PixelFormat.B8_G8_R8_A8_UNorm,
-            PixelFormat.R8_G8_B8_A8_UNorm_SRgb => PixelFormat.R8_G8_B8_A8_UNorm,
-            _ => format
-        };
-    }
-
     private void RegisterEngineComponents()
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return null;
+            }
 
-            Mesh mesh = null;
+            Mesh? mesh = null;
+
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
             {
                 mesh = ResourceManager.GetMesh(meshName);
             }
-            if (mesh == null) return null;
+
+            if (mesh is null)
+            {
+                return null;
+            }
 
             Texture texture;
+
             if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
             {
                 texture = ResourceManager.GetTexture(textureName);
@@ -167,9 +173,14 @@ public abstract class Engine
                 // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
             }
-            if (texture == null) return null;
+           
+            if (texture is null)
+            {
+                return null;
+            }
 
             Vector2 textureTiling = Vector2.One;
+
             if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
@@ -184,14 +195,24 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, _graphicsDevice, _renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler, texture, textureTiling);
+            return new MeshRenderer(
+                mesh,
+                _graphicsManager.GraphicsDevice,
+                _renderer.TextureLayout,
+                _renderer.MaterialLayout,
+                _renderer.Sampler,
+                texture,
+                textureTiling);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
 
         SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return null;
+            }
 
             if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
             {
@@ -205,21 +226,7 @@ public abstract class Engine
     {
         LoadContent();
         Start();
-        _stopwatch.Start();
-
-        while (_gameWindow.Exists)
-        {
-            _gameWindow.ProcessEvents();
-
-            if (!_gameWindow.Exists) break;
-
-            float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
-            _stopwatch.Restart();
-
-            Update(deltaTime);
-            Draw();
-        }
-
+        _gameLoop.Run();
         DisposeResources();
     }
 
@@ -228,7 +235,7 @@ public abstract class Engine
         SceneManager.Start();
     }
 
-    protected GraphicsDevice GetGraphicsDevice() => _graphicsDevice;
+    protected GraphicsDevice GetGraphicsDevice() => _graphicsManager.GraphicsDevice;
 
     protected abstract void LoadContent();
 
@@ -239,163 +246,81 @@ public abstract class Engine
 
     private void Draw()
     {
-        var mainCamera = SceneManager.MainCamera;
-        if (mainCamera == null) return;
-
-        Matrix4x4 view = mainCamera.GetViewMatrix();
-        Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / (float)_gameWindow.Height);
-
-        _commandList.Begin();
-
-        // Render to MSAA framebuffer.
-        _commandList.SetFramebuffer(_msaaFramebuffer);
-        _commandList.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
-        _commandList.ClearColorTarget(0, RgbaFloat.Black);
-        _commandList.ClearDepthStencil(1f);
-
-        var skybox = SceneManager.Skybox;
-        if (skybox != null)
-        {
-            _renderer.RenderSkybox(_commandList, skybox, view, projection);
-        }
-
-        _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
-
-        // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
-        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
-        _commandList.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
-        _commandList.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
-        _renderer.ResolveMSAA(_commandList, _msaaColorView);
-
-        _commandList.End();
-        _graphicsDevice.SubmitCommands(_commandList);
-        _graphicsDevice.SwapBuffers();
+        _renderer.RenderFrame(
+            SceneManager.MainCamera,
+            SceneManager.Skybox,
+            SceneManager.GameObjects,
+            _gameWindow.Width,
+            _gameWindow.Height);
     }
 
-private void OnWindowResized()
-{
-    _graphicsDevice.ResizeMainWindow((uint)_gameWindow.Width, (uint)_gameWindow.Height);
-
-    // Get the swapchain color format
-    PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
-    PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
-
-    // Dispose old MSAA targets and framebuffer
-    _msaaColorView?.Dispose();
-    _msaaColorTarget?.Dispose();
-    _msaaDepthTarget?.Dispose();
-    _msaaFramebuffer?.Dispose();
-
-    uint width = (uint)_gameWindow.Width;
-    uint height = (uint)_gameWindow.Height;
-
-    _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-        width, height, 1, 1, colorFormat,
-        TextureUsage.RenderTarget | TextureUsage.Sampled,
-        sampleCount: _msaaSampleCount));
-
-    _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-        width, height, 1, 1, PixelFormat.R16_UNorm,
-        TextureUsage.DepthStencil,
-        sampleCount: _msaaSampleCount));
-
-    _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
-        _msaaDepthTarget, _msaaColorTarget));
-
-    _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
-
-    // Recreate renderer with new MSAA framebuffer
-    _renderer?.Dispose();
-    _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer);
-
-    // --- CRITICAL: Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler ---
-    // Best-effort: handle common patterns (GetComponent<T>() or Components collection) using reflection so you don't need to edit SceneManager/GameObject.
-    if (SceneManager?.GameObjects != null)
+    private void OnWindowResized()
     {
-        foreach (var go in SceneManager.GameObjects)
+        _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
+        _renderer.OnWindowResized();
+
+        // Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler
+        if (SceneManager?.GameObjects is null)
         {
-            if (go == null) continue;
+            return;
+        }
 
-            bool handled = false;
-            var goType = go.GetType();
-
-            // 1) Try GetComponent<MeshRenderer>() pattern (generic method)
-            var methods = goType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            foreach (var mi in methods)
-            {
-                if (mi.Name == "GetComponent" && mi.IsGenericMethodDefinition && mi.GetParameters().Length == 0)
-                {
-                    try
-                    {
-                        var generic = mi.MakeGenericMethod(typeof(MeshRenderer));
-                        var result = generic.Invoke(go, null);
-                        if (result is MeshRenderer mr)
-                        {
-                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
-                            handled = true;
-                        }
-                    }
-                    catch
-                    {
-                        // ignore reflection exceptions and try other approaches
-                    }
-                    break;
-                }
-            }
-
-            if (handled) continue;
-
-            // 2) Try a Components property/field that is enumerable
-            PropertyInfo compsProp = goType.GetProperty("Components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                ?? goType.GetProperty("components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (compsProp != null)
-            {
-                var compsObj = compsProp.GetValue(go);
-                if (compsObj is System.Collections.IEnumerable compsEnum)
-                {
-                    foreach (var c in compsEnum)
-                    {
-                        if (c is MeshRenderer mr)
-                        {
-                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
-                        }
-                    }
-                    continue;
-                }
-            }
-
-            FieldInfo compsField = goType.GetField("Components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                             ?? goType.GetField("components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (compsField != null)
-            {
-                var compsObj = compsField.GetValue(go);
-                if (compsObj is System.Collections.IEnumerable compsEnum)
-                {
-                    foreach (var c in compsEnum)
-                    {
-                        if (c is MeshRenderer mr)
-                        {
-                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
-                        }
-                    }
-                }
-            }
-
-            // If neither approach worked, you likely need to add an explicit method to SceneManager to re-initialize render-dependent resources.
+        foreach (GameObject go in SceneManager.GameObjects)
+        {
+            var mr = go.GetComponent<MeshRenderer>();
+            mr?.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
         }
     }
-}
-private void DisposeResources()
+
+    private void DisposeResources()
     {
         SceneManager.Dispose();
         _renderer.Dispose();
         ResourceManager.Dispose();
-        _commandList.Dispose();
-        _msaaColorView?.Dispose();
-        _msaaColorTarget?.Dispose();
-        _msaaDepthTarget?.Dispose();
-        _msaaFramebuffer?.Dispose();
-        _graphicsDevice.Dispose();
+        _graphicsManager.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameLoop.cs">
+using System.Diagnostics;
+
+namespace Cherris;
+
+public class GameLoop
+{
+    private readonly GameWindow _gameWindow;
+    private readonly Action<float> _updateAction;
+    private readonly Action _drawAction;
+    private readonly Stopwatch _stopwatch;
+
+    public GameLoop(GameWindow gameWindow, Action<float> updateAction, Action drawAction)
+    {
+        _gameWindow = gameWindow;
+        _updateAction = updateAction;
+        _drawAction = drawAction;
+        _stopwatch = new();
+    }
+
+    public void Run()
+    {
+        _stopwatch.Start();
+        
+        while (_gameWindow.Exists)
+        {
+            _gameWindow.ProcessEvents();
+
+            if (!_gameWindow.Exists)
+            {
+                break;
+            }
+
+            float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
+            _stopwatch.Restart();
+
+            _updateAction(deltaTime);
+            _drawAction();
+        }
     }
 }
 </file>
@@ -504,7 +429,101 @@ public class GameWindow
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GraphicsManager.cs">
+using System;
+using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+
+namespace Cherris;
+
+public class GraphicsManager : IDisposable
+{
+    public GraphicsDevice GraphicsDevice { get; }
+    public CommandList CommandList { get; }
+
+    public Framebuffer MsaaFramebuffer { get; private set; }
+    private Veldrid.Texture _msaaColorTarget;
+    private Veldrid.Texture _msaaDepthTarget;
+    public TextureView MsaaColorView { get; private set; }
+
+    public Framebuffer SwapchainFramebuffer => GraphicsDevice.SwapchainFramebuffer;
+
+    private readonly TextureSampleCount _msaaSampleCount;
+
+    public GraphicsManager(Sdl2Window window, TextureSampleCount msaaSampleCount = TextureSampleCount.Count4)
+    {
+        _msaaSampleCount = msaaSampleCount;
+
+        GraphicsDeviceOptions options = new GraphicsDeviceOptions
+        {
+            PreferStandardClipSpaceYDirection = true,
+            PreferDepthRangeZeroToOne = true,
+            SwapchainDepthFormat = PixelFormat.R16_UNorm
+        };
+        GraphicsDevice = VeldridStartup.CreateGraphicsDevice(window, options);
+        CommandList = GraphicsDevice.ResourceFactory.CreateCommandList();
+
+        CreateMsaaTargets((int)window.Width, (int)window.Height);
+    }
+
+    public void Resize(int width, int height)
+    {
+        GraphicsDevice.ResizeMainWindow((uint)width, (uint)height);
+        DisposeMsaaTargets();
+        CreateMsaaTargets(width, height);
+    }
+
+    private void CreateMsaaTargets(int width, int height)
+    {
+        PixelFormat swapchainFormat = SwapchainFramebuffer.ColorTargets[0].Target.Format;
+        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+
+        _msaaColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            (uint)width, (uint)height, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled,
+            sampleCount: _msaaSampleCount));
+
+        _msaaDepthTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            (uint)width, (uint)height, 1, 1, PixelFormat.R16_UNorm,
+            TextureUsage.DepthStencil,
+            sampleCount: _msaaSampleCount));
+
+        MsaaFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
+            _msaaDepthTarget, _msaaColorTarget));
+
+        MsaaColorView = GraphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+    }
+
+    private void DisposeMsaaTargets()
+    {
+        MsaaColorView?.Dispose();
+        _msaaColorTarget?.Dispose();
+        _msaaDepthTarget?.Dispose();
+        MsaaFramebuffer?.Dispose();
+    }
+
+    private static PixelFormat GetNonSrgbFormat(PixelFormat format)
+    {
+        return format switch
+        {
+            PixelFormat.B8_G8_R8_A8_UNorm_SRgb => PixelFormat.B8_G8_R8_A8_UNorm,
+            PixelFormat.R8_G8_B8_A8_UNorm_SRgb => PixelFormat.R8_G8_B8_A8_UNorm,
+            _ => format
+        };
+    }
+
+    public void Dispose()
+    {
+        DisposeMsaaTargets();
+        CommandList.Dispose();
+        GraphicsDevice.Dispose();
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Input.cs">
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Veldrid;
@@ -542,14 +561,19 @@ public static class Input
             return;
         }
 
-        if (_firstMouseUpdate)
+        // After re-locking, the mouse position from the OS can be stale for a frame or two.
+        // A valid, post-warp position will be very close to the center of the screen. We can
+        // reject any position far from the center as it is almost certainly stale data.
+        float distanceFromCenter = Vector2.Distance(snapshot.MousePosition, windowCenter);
+
+        // A large distance implies stale data. The _firstMouseUpdate check handles the guaranteed first frame.
+        bool isStaleData = distanceFromCenter > windowCenter.X * 0.9f;
+
+        if (_firstMouseUpdate || isStaleData)
         {
-            // On the first frame after being locked, we ignore the delta
-            // to avoid a jump from the cursor's unlocked position. The cursor
-            // will be warped to the center by the Engine, and subsequent deltas
-            // will be correct.
+            // On the first frame after being locked, or if we detect stale data, ignore the delta.
             MouseDelta = Vector2.Zero;
-            _firstMouseUpdate = false;
+            _firstMouseUpdate = false; // Consume the flag; the stale data check will protect subsequent frames.
         }
         else
         {
@@ -761,17 +785,25 @@ namespace Cherris;
 
 public class Renderer
 {
-    private readonly SceneRenderer _sceneRenderer;
-    private readonly SkyboxRenderer _skyboxRenderer;
-    private readonly ResolveRenderer _resolveRenderer;
-    private readonly Sampler _sampler;
+    private readonly GraphicsManager _graphicsManager;
+    private SceneRenderer _sceneRenderer;
+    private SkyboxRenderer _skyboxRenderer;
+    private ResolveRenderer _resolveRenderer;
+    private Sampler _sampler;
 
     public ResourceLayout TextureLayout => _sceneRenderer.TextureLayout;
     public ResourceLayout MaterialLayout => _sceneRenderer.MaterialLayout;
     public Sampler Sampler => _sampler;
 
-    public Renderer(GraphicsDevice gd, Framebuffer msaaFramebuffer, Framebuffer swapchainFramebuffer)
+    public Renderer(GraphicsManager graphicsManager)
     {
+        _graphicsManager = graphicsManager;
+        CreateResources();
+    }
+
+    private void CreateResources()
+    {
+        GraphicsDevice gd = _graphicsManager.GraphicsDevice;
         ResourceFactory factory = gd.ResourceFactory;
 
         VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
@@ -791,24 +823,55 @@ public class Renderer
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout, msaaFramebuffer, _sampler);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, msaaFramebuffer);
-        _resolveRenderer = new ResolveRenderer(gd, swapchainFramebuffer);
+        _sceneRenderer = new SceneRenderer(gd, vertexLayout, _graphicsManager.MsaaFramebuffer, _sampler);
+        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, _graphicsManager.MsaaFramebuffer);
+        _resolveRenderer = new ResolveRenderer(gd, _graphicsManager.SwapchainFramebuffer);
     }
 
-    public void RenderSkybox(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, float windowWidth, float windowHeight)
     {
-        _skyboxRenderer.Render(commandList, skybox, view, projection);
+        if (mainCamera is null) return;
+
+        Matrix4x4 view = mainCamera.GetViewMatrix();
+        Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
+
+        CommandList cl = _graphicsManager.CommandList;
+        cl.Begin();
+
+        // Render to MSAA framebuffer.
+        cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        cl.ClearColorTarget(0, RgbaFloat.Black);
+        cl.ClearDepthStencil(1f);
+
+        if (skybox is not null)
+        {
+            _skyboxRenderer.Render(cl, skybox, view, projection);
+        }
+
+        _sceneRenderer.Render(cl, view, projection, gameObjects);
+
+        // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
+        cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        cl.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
+        _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
+
+        cl.End();
+        _graphicsManager.GraphicsDevice.SubmitCommands(cl);
+        _graphicsManager.GraphicsDevice.SwapBuffers();
     }
 
-    public void RenderScene(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    public void OnWindowResized()
     {
-        _sceneRenderer.Render(commandList, view, projection, scene);
-    }
+        // Dispose old renderers
+        _sceneRenderer?.Dispose();
+        _skyboxRenderer?.Dispose();
+        _resolveRenderer?.Dispose();
+        _sampler?.Dispose();
 
-    public void ResolveMSAA(CommandList commandList, TextureView msaaColorView)
-    {
-        _resolveRenderer.Render(commandList, msaaColorView);
+        // Recreate them with the new framebuffer info from GraphicsManager
+        CreateResources();
     }
 
     public void Dispose()
@@ -940,9 +1003,6 @@ void main()
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResourceManager.cs">
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using StbImageSharp;
 using Veldrid;
 
 namespace Cherris;
@@ -953,7 +1013,6 @@ public class ResourceManager
     private readonly Dictionary<string, Texture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
     private readonly GraphicsDevice _graphicsDevice;
-    private const string AssetRootPath = "Assets";
 
     public ResourceManager(GraphicsDevice gd)
     {
@@ -988,12 +1047,12 @@ public class ResourceManager
         }
 
         // Texture not in cache, try to load it from file by searching the asset directory.
-        string filePath = FindTextureFile(name);
+        string? filePath = AssetFinder.FindAssetPath(name);
 
-        if (filePath != null)
+        if (filePath is not null)
         {
             var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, filePath);
-            if (loadedTexture != null)
+            if (loadedTexture is not null)
             {
                 _textures.Add(name, loadedTexture);
                 return loadedTexture;
@@ -1012,112 +1071,14 @@ public class ResourceManager
             return skybox;
         }
 
-        var loadedSkybox = LoadSkyboxFromFile(name);
-        if (loadedSkybox != null)
+        var loadedSkybox = SkyboxLoader.LoadSkybox(_graphicsDevice, name);
+        if (loadedSkybox is not null)
         {
             _skyboxes.Add(name, loadedSkybox);
             return loadedSkybox;
         }
 
         Console.WriteLine($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
-        return null;
-    }
-
-    private Skybox LoadSkyboxFromFile(string name)
-    {
-        // The order corresponds to the cubemap array layers: +X, -X, +Y, -Y, +Z, -Z
-        // This mapping is now consistent with most cubemap authoring tools.
-        string[] faceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
-        string[] facePaths = new string[6];
-
-        for (int i = 0; i < 6; i++)
-        {
-            var path = FindTextureFile(name + faceSuffixes[i]);
-            if (path == null)
-            {
-                Console.WriteLine($"[ResourceManager] Could not find face '{name}{faceSuffixes[i]}' for skybox.");
-                return null;
-            }
-            facePaths[i] = path;
-        }
-
-        ImageResult[] faceImages = new ImageResult[6];
-        try
-        {
-            StbImage.stbi_set_flip_vertically_on_load(0);
-            for (int i = 0; i < 6; i++)
-            {
-                using (var stream = File.OpenRead(facePaths[i]))
-                {
-                    faceImages[i] = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                }
-            }
-        }
-        finally
-        {
-            StbImage.stbi_set_flip_vertically_on_load(1);
-        }
-
-
-        var firstImage = faceImages[0];
-        if (firstImage.Width != firstImage.Height)
-        {
-            Console.WriteLine($"[ResourceManager] Error: Skybox face textures must be square. Texture '{facePaths[0]}' has dimensions {firstImage.Width}x{firstImage.Height}.");
-            return null;
-        }
-        if (faceImages.Any(img => img.Width != firstImage.Width || img.Height != firstImage.Height))
-        {
-            Console.WriteLine("[ResourceManager] Error: All faces of a skybox must have the same dimensions.");
-            return null;
-        }
-
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        Veldrid.Texture cubemap = factory.CreateTexture(TextureDescription.Texture2D(
-            (uint)firstImage.Width, (uint)firstImage.Height, 1, 6, // arrayLayers must be 6 for a cubemap
-            PixelFormat.R8_G8_B8_A8_UNorm, // Revert to UNorm to match previous brightness
-            TextureUsage.Cubemap | TextureUsage.Sampled));
-
-        for (uint i = 0; i < 6; i++)
-        {
-            var img = faceImages[i];
-            _graphicsDevice.UpdateTexture(cubemap, img.Data, 0, 0, 0, (uint)img.Width, (uint)img.Height, 1, 0, i);
-        }
-
-        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
-        var texture = new Texture(cubemap, textureView);
-        return new Skybox(texture);
-    }
-
-    private string FindTextureFile(string name)
-    {
-        if (!Directory.Exists(AssetRootPath))
-        {
-            return null;
-        }
-
-        // We'll check for a few common extensions.
-        string[] extensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
-        foreach (var ext in extensions)
-        {
-            // Search for "name.ext" in the root asset directory and all subdirectories.
-            try
-            {
-                var files = Directory.GetFiles(AssetRootPath, name + ext, SearchOption.AllDirectories);
-                if (files.Length > 0)
-                {
-                    if (files.Length > 1)
-                    {
-                        Console.WriteLine($"[ResourceManager] Warning: Found multiple files for texture '{name}'. Using '{files[0]}'.");
-                    }
-                    return files[0]; // Return the first match.
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"[ResourceManager] Error while searching for textures: {e.Message}");
-                return null;
-            }
-        }
         return null;
     }
 
@@ -1269,7 +1230,7 @@ public class SceneLoader
         if (_componentFactories.TryGetValue(componentType, out var factory))
         {
             var component = factory(properties);
-            if (component != null)
+            if (component is not null)
             {
                 go.AddComponent(component);
             }
@@ -1314,12 +1275,12 @@ public class SceneManager
     {
         foreach (var gameObject in _gameObjects)
         {
-            if (MainCamera == null)
+            if (MainCamera is null)
             {
                 MainCamera = gameObject.GetComponent<Camera>();
             }
 
-            if (Skybox == null)
+            if (Skybox is null)
             {
                 Skybox = gameObject.GetComponent<Skybox>();
             }
@@ -1330,7 +1291,7 @@ public class SceneManager
             }
         }
 
-        if (MainCamera == null)
+        if (MainCamera is null)
         {
             Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
             var go = new GameObject("Default Camera");
@@ -1420,7 +1381,7 @@ public class SceneRenderer
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer == null) continue;
+            if (meshRenderer is null) continue;
 
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
@@ -1502,6 +1463,145 @@ public class Skybox : Component
     public void Dispose()
     {
         CubeMapTexture.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxLoader.cs">
+using StbImageSharp;
+using Veldrid;
+
+namespace Cherris;
+
+public static class SkyboxLoader
+{
+    private static readonly string[] FaceSuffixes = ["_right", "_left", "_top", "_bottom", "_front", "_back"];
+
+    public static Skybox? LoadSkybox(GraphicsDevice gd, string name)
+    {
+        string[]? facePaths = FindFacePaths(name);
+        
+        if (facePaths is null)
+        {
+            return null;
+        }
+
+        ImageResult[]? faceImages = LoadFaceImages(facePaths);
+        
+        if (faceImages is null || !ValidateImageDimensions(faceImages, facePaths))
+        {
+            return null;
+        }
+
+        Texture cubemapTexture = CreateCubemapTexture(gd, faceImages);
+
+        return new(cubemapTexture);
+    }
+
+    private static string[]? FindFacePaths(string baseName)
+    {
+        string[] facePaths = new string[6];
+        
+        for (int i = 0; i < FaceSuffixes.Length; i++)
+        {
+            string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
+            
+            if (path is null)
+            {
+                Console.WriteLine($"[SkyboxLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
+                return null;
+            }
+
+            facePaths[i] = path;
+        }
+
+        return facePaths;
+    }
+
+    private static ImageResult[]? LoadFaceImages(string[] paths)
+    {
+        var images = new ImageResult[6];
+
+        try
+        {
+            StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps do not need flipping
+            
+            for (int i = 0; i < paths.Length; i++)
+            {
+                using var stream = File.OpenRead(paths[i]);
+                images[i] = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+            }
+
+            return images;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[SkyboxLoader] Error loading skybox images: {e.Message}");
+            return null;
+        }
+        finally
+        {
+            StbImage.stbi_set_flip_vertically_on_load(1); // Reset to default for other textures
+        }
+    }
+
+    private static bool ValidateImageDimensions(ImageResult[] images, string[] paths)
+    {
+        ImageResult firstImage = images[0];
+        
+        if (firstImage.Width != firstImage.Height)
+        {
+            Console.WriteLine(
+                $"[SkyboxLoader] Error: Skybox face texture is not square." +
+                $"Texture '{paths[0]}' has dimensions {firstImage.Width}x{firstImage.Height}.");
+
+            return false;
+        }
+
+        if (images.Any(img => img.Width != firstImage.Width || img.Height != firstImage.Height))
+        {
+            Console.WriteLine("[SkyboxLoader] Error: All faces of a skybox must have the same dimensions.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static Texture CreateCubemapTexture(GraphicsDevice gd, ImageResult[] images)
+    {
+        ImageResult firstImage = images[0];
+        ResourceFactory factory = gd.ResourceFactory;
+
+        TextureDescription textureDescription = TextureDescription.Texture2D(
+            (uint)firstImage.Width,
+            (uint)firstImage.Height,
+            1,
+            (uint)images.Length,
+            PixelFormat.R8_G8_B8_A8_UNorm,
+            TextureUsage.Cubemap | TextureUsage.Sampled);
+
+        Veldrid.Texture cubemap = factory.CreateTexture(textureDescription);
+
+        for (uint i = 0; i < images.Length; i++)
+        {
+            ImageResult img = images[i];
+            
+            gd.UpdateTexture(
+                cubemap,
+                img.Data,
+                0,
+                0,
+                0,
+                (uint)img.Width,
+                (uint)img.Height,
+                1,
+                0,
+                i);
+        }
+
+        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
+        
+        return new(cubemap, textureView);
     }
 }
 </file>
@@ -1865,24 +1965,9 @@ public struct VertexPositionColor
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
 using Cherris;
 
 namespace Apexverse;
-
-public class Spinner : Script
-{
-    private float _totalTime;
-
-    public override void Update(float deltaTime)
-    {
-        _totalTime += deltaTime;
-        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
-    }
-}
 
 public class Game : Engine
 {
@@ -1987,6 +2072,25 @@ class Program
     {
         var game = new Game();
         game.Run();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Spinner.cs">
+using System.Numerics;
+using Cherris;
+
+namespace Apexverse;
+
+public class Spinner : Script
+{
+    private float _totalTime;
+
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
 </file>
