@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using Apexverse;
 using Veldrid;
+using Vortice.Direct3D11;
 
 namespace Cherris;
 
@@ -87,8 +89,8 @@ public abstract class Engine
     private readonly GameWindow _gameWindow;
     private readonly GraphicsManager _graphicsManager;
     private readonly GameLoop _gameLoop;
-    private readonly EngineMode _mode;
     private GameObject _selectedGameObject;
+    private Script _editorController;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
@@ -96,10 +98,12 @@ public abstract class Engine
     protected readonly SceneManager SceneManager;
     private readonly Renderer _renderer;
 
+    protected EngineMode Mode { get; }
+
     protected Engine(string windowTitle, EngineMode mode = EngineMode.Game)
     {
-        _mode = mode;
-        _gameWindow = new(windowTitle, 960, 540, startWithMouseLocked: _mode == EngineMode.Game);
+        Mode = mode;
+        _gameWindow = new(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
         _graphicsManager = new(_gameWindow.SdlWindow, TextureSampleCount.Count4);
 
         // Initialize systems
@@ -202,13 +206,22 @@ public abstract class Engine
     {
         LoadContent();
         Start();
+        OnStart();
         _gameLoop.Run();
         DisposeResources();
     }
 
     private void Start()
     {
-        SceneManager.Start(_mode);
+        SceneManager.Start(Mode);
+    }
+
+    protected virtual void OnStart() { }
+
+    protected void RegisterEditorController(Script controller)
+    {
+        _editorController = controller;
+        _editorController.Start();
     }
 
     protected GraphicsDevice GetGraphicsDevice() => _graphicsManager.GraphicsDevice;
@@ -217,8 +230,9 @@ public abstract class Engine
 
     protected virtual void Update(float deltaTime)
     {
-        if (_mode == EngineMode.Editor)
+        if (Mode == EngineMode.Editor)
         {
+            _editorController?.Update(deltaTime);
             UpdateEditor(deltaTime);
         }
         else // Only run scripts in Game mode

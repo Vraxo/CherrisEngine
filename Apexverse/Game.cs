@@ -22,6 +22,25 @@ public class Game : Engine
         SceneManager.SetScene(loadedObjects);
     }
 
+    protected override void OnStart()
+    {
+        if (Mode == EngineMode.Editor && SceneManager.MainCamera?.GameObject != null)
+        {
+            var cameraGo = SceneManager.MainCamera.GameObject;
+
+            // If the scene camera is the player, remove its controller
+            // so it doesn't fight with the new editor controller.
+            var playerController = cameraGo.GetComponent<PlayerController>();
+            if (playerController != null)
+            {
+                cameraGo.RemoveComponent<PlayerController>();
+            }
+
+            var editorController = cameraGo.AddComponent(new EditorController());
+            RegisterEditorController(editorController);
+        }
+    }
+
     protected override void Update(float deltaTime)
     {
         // The base engine Update now handles calling Update on all Scripts
