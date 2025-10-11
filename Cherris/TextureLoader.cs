@@ -57,7 +57,7 @@ public static class TextureLoader
         cl.GenerateMipmaps(veldridTexture);
         cl.End();
         gd.SubmitCommands(cl);
-        gd.WaitForIdle(); // Ensure the GPU has finished generating before the texture is used.
+        // gd.WaitForIdle(); // This was causing a major synchronous stall during loading. It's safe to remove.
         cl.Dispose();
 
         TextureView textureView = factory.CreateTextureView(veldridTexture);
