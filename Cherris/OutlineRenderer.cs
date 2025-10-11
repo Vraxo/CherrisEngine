@@ -177,42 +177,39 @@ public class OutlineRenderer : IDisposable
                 vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
                 float centerIdRaw = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord).r;
                 
-                if (centerIdRaw > 0.0) {
-                    fsout_Color = sceneColor;
-                    return;
-                }
+                float finalIdRaw = centerIdRaw;
+                float dist = 0.0;
 
-                float nearestIdRaw = 0.0;
-                float minSqDist = 10000.0f;
-
-                // Increased search radius for a more visible glow.
-                // NOTE: Larger values have a significant performance impact.
-                const int searchRadius = 12;
-                for (int y = -searchRadius; y <= searchRadius; y++) {
-                    for (int x = -searchRadius; x <= searchRadius; x++) {
-                        vec2 offset = vec2(x, y) * TexelSize;
-                        float currentId = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + offset).r;
-                        if (currentId > 0.0) {
-                            float sqDist = float(x*x + y*y);
-                            if (sqDist < minSqDist) {
-                                minSqDist = sqDist;
-                                nearestIdRaw = currentId;
+                if (centerIdRaw == 0.0) {
+                    // Pixel is outside, so search for the nearest object pixel.
+                    float minSqDist = 10000.0f;
+                    const int searchRadius = 12;
+                    for (int y = -searchRadius; y <= searchRadius; y++) {
+                        for (int x = -searchRadius; x <= searchRadius; x++) {
+                            vec2 offset = vec2(x, y) * TexelSize;
+                            float currentId = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + offset).r;
+                            if (currentId > 0.0) {
+                                float sqDist = float(x*x + y*y);
+                                if (sqDist < minSqDist) {
+                                    minSqDist = sqDist;
+                                    finalIdRaw = currentId;
+                                }
                             }
                         }
                     }
+                    dist = sqrt(minSqDist);
                 }
 
-                if (nearestIdRaw > 0.0) {
-                    int profileIndex = int(round(nearestIdRaw * 255.0)) - 1;
+                if (finalIdRaw > 0.0) {
+                    int profileIndex = int(round(finalIdRaw * 255.0)) - 1;
                     if (profileIndex >= 0 && profileIndex < ProfileCount) {
                         float thickness = Thicknesses[profileIndex].x;
-                        float dist = sqrt(minSqDist);
                         
-                        // Check if the distance to the nearest object pixel is within the outline thickness.
                         if (dist <= thickness) {
                             float glow = Glows[profileIndex].x;
                             if (glow > 0.0f) {
-                                // Glow logic: additive blend with a falloff
+                                // Glow logic: additive blend with a falloff.
+                                // This now applies to the object's core (dist=0) and the area around it.
                                 float falloff = 1.0 - (dist / thickness);
                                 falloff = pow(falloff, 2.0); // Tweak the curve to be less linear
                                 fsout_Color = sceneColor + Colors[profileIndex] * falloff * glow;
