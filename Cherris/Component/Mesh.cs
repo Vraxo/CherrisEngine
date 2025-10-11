@@ -99,8 +99,9 @@ public class Mesh
     public static Mesh CreatePlane(float size)
     {
         float halfSize = size * 0.5f;
-        // Give the plane a tiny thickness so the inverted hull outline technique works.
-        float thickness = 0.001f;
+        // Give the plane enough thickness for the inverted hull outline to be visible.
+        // This is still visually flat but provides volume for scaling.
+        float thickness = 0.05f;
 
         Vertex[] vertices =
         {
