@@ -51,7 +51,7 @@ public class Renderer
 
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, float windowWidth, float windowHeight)
     {
-        if (mainCamera == null) return;
+        if (mainCamera is null) return;
 
         Matrix4x4 view = mainCamera.GetViewMatrix();
         Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
@@ -65,7 +65,7 @@ public class Renderer
         cl.ClearColorTarget(0, RgbaFloat.Black);
         cl.ClearDepthStencil(1f);
 
-        if (skybox != null)
+        if (skybox is not null)
         {
             _skyboxRenderer.Render(cl, skybox, view, projection);
         }

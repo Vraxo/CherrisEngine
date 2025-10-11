@@ -29,12 +29,12 @@ public class SceneManager
     {
         foreach (var gameObject in _gameObjects)
         {
-            if (MainCamera == null)
+            if (MainCamera is null)
             {
                 MainCamera = gameObject.GetComponent<Camera>();
             }
 
-            if (Skybox == null)
+            if (Skybox is null)
             {
                 Skybox = gameObject.GetComponent<Skybox>();
             }
@@ -45,7 +45,7 @@ public class SceneManager
             }
         }
 
-        if (MainCamera == null)
+        if (MainCamera is null)
         {
             Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
             var go = new GameObject("Default Camera");

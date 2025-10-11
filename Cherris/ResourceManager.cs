@@ -44,12 +44,12 @@ public class ResourceManager
         }
 
         // Texture not in cache, try to load it from file by searching the asset directory.
-        string filePath = AssetFinder.FindTextureFile(name);
+        string? filePath = AssetFinder.FindAssetPath(name);
 
-        if (filePath != null)
+        if (filePath is not null)
         {
             var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, filePath);
-            if (loadedTexture != null)
+            if (loadedTexture is not null)
             {
                 _textures.Add(name, loadedTexture);
                 return loadedTexture;
@@ -69,7 +69,7 @@ public class ResourceManager
         }
 
         var loadedSkybox = SkyboxLoader.LoadSkybox(_graphicsDevice, name);
-        if (loadedSkybox != null)
+        if (loadedSkybox is not null)
         {
             _skyboxes.Add(name, loadedSkybox);
             return loadedSkybox;

@@ -56,7 +56,7 @@ public class SceneRenderer
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer == null) continue;
+            if (meshRenderer is null) continue;
 
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);

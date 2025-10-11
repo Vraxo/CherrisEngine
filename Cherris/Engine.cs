@@ -20,17 +20,17 @@ public abstract class Engine
 
     protected Engine(string windowTitle)
     {
-        _gameWindow = new GameWindow(windowTitle, 960, 540);
-        _graphicsManager = new GraphicsManager(_gameWindow.SdlWindow, TextureSampleCount.Count4);
+        _gameWindow = new(windowTitle, 960, 540);
+        _graphicsManager = new(_gameWindow.SdlWindow, TextureSampleCount.Count4);
 
         // Initialize systems
-        ResourceManager = new ResourceManager(_graphicsManager.GraphicsDevice);
-        SceneLoader = new SceneLoader(ResourceManager, _graphicsManager.GraphicsDevice);
-        SceneManager = new SceneManager();
-        _renderer = new Renderer(_graphicsManager);
+        ResourceManager = new(_graphicsManager.GraphicsDevice);
+        SceneLoader = new(ResourceManager, _graphicsManager.GraphicsDevice);
+        SceneManager = new();
+        _renderer = new(_graphicsManager);
 
         // Game loop is created last, as it depends on the Update/Draw methods
-        _gameLoop = new GameLoop(_gameWindow, Update, Draw);
+        _gameLoop = new(_gameWindow, Update, Draw);
 
         // Subscribe to resize event
         _gameWindow.SdlWindow.Resized += OnWindowResized;
@@ -42,16 +42,25 @@ public abstract class Engine
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return null;
+            }
 
-            Mesh mesh = null;
+            Mesh? mesh = null;
+
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
             {
                 mesh = ResourceManager.GetMesh(meshName);
             }
-            if (mesh == null) return null;
+
+            if (mesh is null)
+            {
+                return null;
+            }
 
             Texture texture;
+
             if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
             {
                 texture = ResourceManager.GetTexture(textureName);
@@ -61,9 +70,14 @@ public abstract class Engine
                 // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
             }
-            if (texture == null) return null;
+           
+            if (texture is null)
+            {
+                return null;
+            }
 
             Vector2 textureTiling = Vector2.One;
+
             if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
@@ -78,14 +92,24 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, _graphicsManager.GraphicsDevice, _renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler, texture, textureTiling);
+            return new MeshRenderer(
+                mesh,
+                _graphicsManager.GraphicsDevice,
+                _renderer.TextureLayout,
+                _renderer.MaterialLayout,
+                _renderer.Sampler,
+                texture,
+                textureTiling);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
 
         SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return null;
+            }
 
             if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
             {
@@ -127,24 +151,21 @@ public abstract class Engine
             _gameWindow.Height);
     }
 
-
-
     private void OnWindowResized()
     {
         _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
         _renderer.OnWindowResized();
 
         // Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler
-        if (SceneManager?.GameObjects != null)
+        if (SceneManager?.GameObjects is null)
         {
-            foreach (var go in SceneManager.GameObjects)
-            {
-                var mr = go.GetComponent<MeshRenderer>();
-                if (mr != null)
-                {
-                    mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
-                }
-            }
+            return;
+        }
+
+        foreach (GameObject go in SceneManager.GameObjects)
+        {
+            var mr = go.GetComponent<MeshRenderer>();
+            mr?.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
         }
     }
 

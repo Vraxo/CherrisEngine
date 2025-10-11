@@ -117,7 +117,7 @@ public class SceneLoader
         if (_componentFactories.TryGetValue(componentType, out var factory))
         {
             var component = factory(properties);
-            if (component != null)
+            if (component is not null)
             {
                 go.AddComponent(component);
             }
