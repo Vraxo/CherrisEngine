@@ -16,6 +16,12 @@ public class GraphicsManager : IDisposable
     private Veldrid.Texture _msaaDepthTarget;
     public TextureView MsaaColorView { get; private set; }
 
+    // Object ID resources for post-processing
+    public Framebuffer IdFramebuffer { get; private set; }
+    private Veldrid.Texture _objectIdTarget;
+    private Veldrid.Texture _objectIdDepthTarget;
+    public TextureView ObjectIdView { get; private set; }
+
     // Final render target resources
     public Framebuffer FinalFramebuffer { get; private set; }
     public Veldrid.Texture FinalColorTarget { get; private set; }
@@ -69,6 +75,16 @@ public class GraphicsManager : IDisposable
 
         MsaaColorView = GraphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
 
+        // Object ID Target (No MSAA - we want crisp edges for detection)
+        _objectIdTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            (uint)width, (uint)height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm,
+            TextureUsage.RenderTarget | TextureUsage.Sampled));
+        _objectIdDepthTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            (uint)width, (uint)height, 1, 1, PixelFormat.D24_UNorm_S8_UInt,
+            TextureUsage.DepthStencil));
+        ObjectIdView = GraphicsDevice.ResourceFactory.CreateTextureView(_objectIdTarget);
+        IdFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_objectIdDepthTarget, _objectIdTarget));
+
         // Final Target
         FinalColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             (uint)width, (uint)height, 1, 1, colorFormat,
@@ -85,6 +101,11 @@ public class GraphicsManager : IDisposable
         _msaaColorTarget?.Dispose();
         _msaaDepthTarget?.Dispose();
         MsaaFramebuffer?.Dispose();
+
+        ObjectIdView?.Dispose();
+        _objectIdTarget?.Dispose();
+        _objectIdDepthTarget?.Dispose();
+        IdFramebuffer?.Dispose();
 
         FinalColorView?.Dispose();
         FinalColorTarget?.Dispose();

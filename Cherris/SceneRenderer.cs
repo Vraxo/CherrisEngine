@@ -16,10 +16,15 @@ public class SceneRenderer
     private readonly Shader _fragmentShader;
     private readonly ResourceLayout _mvpLayout;
 
-    // Outline rendering resources
-    private readonly Shader _outlineVertexShader;
-    private readonly Shader _outlineFragmentShader;
-    private Pipeline _outlinePipeline;
+    // ID Pass Resources
+    private readonly Shader _idVertexShader;
+    private readonly Shader _idFragmentShader;
+    private Pipeline _idPipeline;
+    private readonly ResourceLayout _idColorLayout;
+    private readonly DeviceBuffer _idColorBuffer;
+    private readonly ResourceSet _idColorResourceSet;
+    private static readonly RgbaFloat IdColorOutline = RgbaFloat.Red;
+    private static readonly RgbaFloat IdColorNormal = RgbaFloat.Black;
 
     public ResourceLayout TextureLayout { get; }
     public ResourceLayout MaterialLayout { get; }
@@ -47,32 +52,29 @@ public class SceneRenderer
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
+        // Create ID Pass resources
+        _idColorLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("IdColorBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+        _idColorBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+        _idColorResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_idColorLayout, _idColorBuffer));
+
         (_vertexShader, _fragmentShader) = LoadShaders(factory);
-        (_outlineVertexShader, _outlineFragmentShader) = LoadOutlineShaders(factory);
+        (_idVertexShader, _idFragmentShader) = LoadIdShaders(factory);
     }
 
-    public void SetFramebuffer(Framebuffer framebuffer)
+    public void SetFramebuffers(Framebuffer mainFramebuffer, Framebuffer idFramebuffer)
     {
         _pipeline?.Dispose();
-        _outlinePipeline?.Dispose();
+        _idPipeline?.Dispose();
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
-        // Pipeline for standard objects: writes to the stencil buffer.
+        // Pipeline for standard objects.
         var mainDepthStencilState = new DepthStencilStateDescription(
             depthTestEnabled: true,
             depthWriteEnabled: true,
-            comparisonKind: ComparisonKind.LessEqual,
-            stencilTestEnabled: true,
-            stencilFront: new StencilBehaviorDescription(
-                fail: StencilOperation.Keep,
-                pass: StencilOperation.Replace,
-                depthFail: StencilOperation.Keep,
-                comparison: ComparisonKind.Always),
-            stencilBack: new StencilBehaviorDescription(StencilOperation.Keep, StencilOperation.Keep, StencilOperation.Keep, ComparisonKind.Always),
-            stencilReadMask: 0xff,
-            stencilWriteMask: 0xff,
-            stencilReference: 1);
+            comparisonKind: ComparisonKind.LessEqual);
 
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -83,34 +85,24 @@ public class SceneRenderer
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { _mvpLayout, TextureLayout, MaterialLayout },
             ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
-            Outputs = framebuffer.OutputDescription
+            Outputs = mainFramebuffer.OutputDescription
         });
 
-        // Pipeline for outlines: tests against the stencil buffer.
-        var outlineDepthStencilState = new DepthStencilStateDescription(
+        // Pipeline for ID Pass.
+        var idDepthStencilState = new DepthStencilStateDescription(
             depthTestEnabled: true,
-            depthWriteEnabled: false,
-            comparisonKind: ComparisonKind.LessEqual,
-            stencilTestEnabled: true,
-            stencilFront: new StencilBehaviorDescription(
-                fail: StencilOperation.Keep,
-                pass: StencilOperation.Keep,
-                depthFail: StencilOperation.Keep,
-                comparison: ComparisonKind.NotEqual),
-            stencilBack: new StencilBehaviorDescription(StencilOperation.Keep, StencilOperation.Keep, StencilOperation.Keep, ComparisonKind.Always),
-            stencilReadMask: 0xff,
-            stencilWriteMask: 0x00,
-            stencilReference: 1);
+            depthWriteEnabled: true,
+            comparisonKind: ComparisonKind.LessEqual);
 
-        _outlinePipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        _idPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = outlineDepthStencilState,
-            RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            DepthStencilState = idDepthStencilState,
+            RasterizerState = new RasterizerStateDescription(FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { _mvpLayout },
-            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _outlineVertexShader, _outlineFragmentShader }),
-            Outputs = framebuffer.OutputDescription
+            ResourceLayouts = new[] { _mvpLayout, _idColorLayout },
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _idVertexShader, _idFragmentShader }),
+            Outputs = idFramebuffer.OutputDescription
         });
     }
 
@@ -128,27 +120,27 @@ public class SceneRenderer
         }
     }
 
-    public void RenderOutline(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, GameObject gameObject)
+    public void RenderIdPass(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, HashSet<GameObject> objectsToOutline)
     {
-        var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-        if (meshRenderer is null) return;
+        commandList.SetPipeline(_idPipeline);
 
-        var transform = gameObject.Transform;
+        foreach (var gameObject in scene)
+        {
+            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+            if (meshRenderer is null) continue;
 
-        const float outlineFactor = 1.05f;
-        var outlineModelMatrix =
-            Matrix4x4.CreateScale(transform.Scale * outlineFactor) *
-            Matrix4x4.CreateFromQuaternion(transform.Rotation) *
-            Matrix4x4.CreateTranslation(transform.Position);
+            var color = objectsToOutline.Contains(gameObject) ? IdColorOutline : IdColorNormal;
+            commandList.UpdateBuffer(_idColorBuffer, 0, color);
 
-        Matrix4x4 mvp = outlineModelMatrix * view * projection;
-        commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
+            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
+            commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
-        commandList.SetPipeline(_outlinePipeline);
-        commandList.SetVertexBuffer(0, meshRenderer.VertexBuffer);
-        commandList.SetIndexBuffer(meshRenderer.IndexBuffer, IndexFormat.UInt16);
-        commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
-        commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
+            commandList.SetVertexBuffer(0, meshRenderer.VertexBuffer);
+            commandList.SetIndexBuffer(meshRenderer.IndexBuffer, IndexFormat.UInt16);
+            commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
+            commandList.SetGraphicsResourceSet(1, _idColorResourceSet);
+            commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
+        }
     }
 
     private (Shader, Shader) LoadShaders(ResourceFactory factory)
@@ -196,16 +188,14 @@ public class SceneRenderer
         return (shaders[0], shaders[1]);
     }
 
-    private (Shader, Shader) LoadOutlineShaders(ResourceFactory factory)
+    private (Shader, Shader) LoadIdShaders(ResourceFactory factory)
     {
         const string vertexCode = @"
                 #version 450
                 layout(location = 0) in vec3 Position;
                 layout(location = 1) in vec4 Color;
                 layout(location = 2) in vec2 TexCoord;
-
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
-
                 void main() 
                 { 
                     gl_Position = mvp * vec4(Position, 1); 
@@ -213,11 +203,11 @@ public class SceneRenderer
 
         const string fragmentCode = @"
                 #version 450
+                layout(set = 1, binding = 0) uniform IdColorBuffer { vec4 IdColor; };
                 layout(location = 0) out vec4 fsout_Color;
-
                 void main() 
                 { 
-                    fsout_Color = vec4(1.0, 0.0, 0.0, 1.0); // Red
+                    fsout_Color = IdColor;
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
@@ -232,15 +222,18 @@ public class SceneRenderer
     public void Dispose()
     {
         _pipeline?.Dispose();
-        _outlinePipeline?.Dispose();
+        _idPipeline?.Dispose();
         _vertexShader.Dispose();
         _fragmentShader.Dispose();
-        _outlineVertexShader.Dispose();
-        _outlineFragmentShader.Dispose();
+        _idVertexShader.Dispose();
+        _idFragmentShader.Dispose();
         TextureLayout.Dispose();
         MaterialLayout.Dispose();
         _mvpLayout.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
+        _idColorLayout.Dispose();
+        _idColorResourceSet.Dispose();
+        _idColorBuffer.Dispose();
     }
 }
