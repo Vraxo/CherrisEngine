@@ -5,7 +5,7 @@ OutlineProfiles:
     Glow: 1.8 # Increased intensity slightly to compensate for smaller radius.
   - Name: Friendly
     Color: [0, 1, 1, 1] # Cyan
-    Thickness: 3.0
+    Thickness: 30.0
 
 GameObjects:
   - Name: SkyboxContainer
