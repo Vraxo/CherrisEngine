@@ -8,6 +8,8 @@ namespace Cherris;
 public static class Input
 {
     private static readonly HashSet<Key> _pressedKeys = new();
+    private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
+    private static readonly HashSet<MouseButton> _pressedMouseButtons = new();
 
     // This flag tracks whether we are waiting for the OS to process a mouse warp
     // that brings the cursor back to the center of the screen after re-locking.
@@ -15,9 +17,12 @@ public static class Input
 
     public static bool IsMouseLocked { get; internal set; } = true;
     public static Vector2 MouseDelta { get; private set; }
+    public static Vector2 MousePosition { get; private set; }
 
     internal static void UpdateSnapshot(InputSnapshot snapshot, Vector2 windowCenter)
     {
+        _justPressedMouseButtons.Clear();
+
         foreach (var keyEvent in snapshot.KeyEvents)
         {
             if (keyEvent.Down)
@@ -29,6 +34,23 @@ public static class Input
                 _pressedKeys.Remove(keyEvent.Key);
             }
         }
+
+        foreach (var mouseEvent in snapshot.MouseEvents)
+        {
+            if (mouseEvent.Down)
+            {
+                if (_pressedMouseButtons.Add(mouseEvent.MouseButton))
+                {
+                    _justPressedMouseButtons.Add(mouseEvent.MouseButton);
+                }
+            }
+            else
+            {
+                _pressedMouseButtons.Remove(mouseEvent.MouseButton);
+            }
+        }
+
+        MousePosition = snapshot.MousePosition;
 
         if (!IsMouseLocked)
         {
@@ -67,5 +89,10 @@ public static class Input
     public static bool IsKeyDown(Key key)
     {
         return _pressedKeys.Contains(key);
+    }
+
+    public static bool WasMouseButtonPressed(MouseButton button)
+    {
+        return _justPressedMouseButtons.Contains(button);
     }
 }

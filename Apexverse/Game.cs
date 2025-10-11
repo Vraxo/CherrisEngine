@@ -4,7 +4,7 @@ namespace Apexverse;
 
 public class Game : Engine
 {
-    public Game() : base("Veldrid Engine Demo")
+    public Game(EngineMode mode) : base("Veldrid Engine Demo", mode)
     {
     }
 

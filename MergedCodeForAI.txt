@@ -467,7 +467,10 @@ namespace Cherris;
 public static class Input
 {
     private static readonly HashSet<Key> _pressedKeys = new();
-    private static bool _firstMouseUpdate = true;
+
+    // This flag tracks whether we are waiting for the OS to process a mouse warp
+    // that brings the cursor back to the center of the screen after re-locking.
+    private static bool _awaitingMouseCentering;
 
     public static bool IsMouseLocked { get; internal set; } = true;
     public static Vector2 MouseDelta { get; private set; }
@@ -489,32 +492,35 @@ public static class Input
         if (!IsMouseLocked)
         {
             MouseDelta = Vector2.Zero;
-            // When the mouse is unlocked and then re-locked, we need to treat
-            // the next update as the first one to avoid a sudden camera jump.
-            _firstMouseUpdate = true;
+            // When the mouse is unlocked, we will need to confirm it has been
+            // centered again after it is re-locked.
+            _awaitingMouseCentering = true;
             return;
         }
 
-        // After re-locking, the mouse position from the OS can be stale for a frame or two.
-        // A valid, post-warp position will be very close to the center of the screen. We can
-        // reject any position far from the center as it is almost certainly stale data.
-        float distanceFromCenter = Vector2.Distance(snapshot.MousePosition, windowCenter);
+        // At this point, the mouse is locked.
 
-        // A large distance implies stale data. The _firstMouseUpdate check handles the guaranteed first frame.
-        bool isStaleData = distanceFromCenter > windowCenter.X * 0.9f;
+        if (_awaitingMouseCentering)
+        {
+            // Check if the mouse has been centered by the warp. A small tolerance is used.
+            float distanceFromCenter = Vector2.Distance(snapshot.MousePosition, windowCenter);
+            if (distanceFromCenter > 1.0f)
+            {
+                // The warp hasn't been processed by the OS yet. The mouse position is stale.
+                // We ignore the delta for this frame and wait for a centered position.
+                MouseDelta = Vector2.Zero;
+                return;
+            }
+            else
+            {
+                // The mouse is now centered. We can stop waiting.
+                _awaitingMouseCentering = false;
+            }
+        }
 
-        if (_firstMouseUpdate || isStaleData)
-        {
-            // On the first frame after being locked, or if we detect stale data, ignore the delta.
-            MouseDelta = Vector2.Zero;
-            _firstMouseUpdate = false; // Consume the flag; the stale data check will protect subsequent frames.
-        }
-        else
-        {
-            // The delta is the difference between the current mouse position
-            // and the center of the screen (where it was warped to last frame).
-            MouseDelta = snapshot.MousePosition - windowCenter;
-        }
+        // The delta is the difference between the current mouse position
+        // and the center of the screen (where it was warped to last frame).
+        MouseDelta = snapshot.MousePosition - windowCenter;
     }
 
     public static bool IsKeyDown(Key key)
@@ -1363,6 +1369,7 @@ public static class SkyboxLoader
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxRenderer.cs">
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -1403,13 +1410,13 @@ public class SkyboxRenderer
         _skyboxVpBuffer = factory.CreateBuffer(new BufferDescription(128, BufferUsage.UniformBuffer));
 
         _skyboxVpLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
+            new(
                 new ResourceLayoutElementDescription("ViewProjectionBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
         _skyboxTextureLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+            new(
+                new("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
 
         _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_skyboxVpLayout, _skyboxVpBuffer));
 
@@ -1424,11 +1431,11 @@ public class SkyboxRenderer
         _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
-            RasterizerState = new RasterizerStateDescription(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            DepthStencilState = new(true, false, ComparisonKind.LessEqual),
+            RasterizerState = new(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { _skyboxVpLayout, _skyboxTextureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
+            ResourceLayouts = [_skyboxVpLayout, _skyboxTextureLayout],
+            ShaderSet = new([_vertexLayout], [_vertexShader, _fragmentShader]),
             Outputs = framebuffer.OutputDescription
         });
     }
@@ -1443,10 +1450,11 @@ public class SkyboxRenderer
 
         if (!_skyboxTextureSets.TryGetValue(skybox.CubeMapTexture, out var textureSet))
         {
-            textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new(
                 _skyboxTextureLayout,
                 skybox.CubeMapTexture.VeldridTextureView,
                 _sampler));
+
             _skyboxTextureSets.Add(skybox.CubeMapTexture, textureSet);
         }
 
@@ -1493,10 +1501,15 @@ public class SkyboxRenderer
                 fsout_Color = texture(samplerCube(SourceCubeMap, SourceSampler), fsin_TexCoord);
             }";
 
-        ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
-        ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+        ShaderDescription vertexShaderDesc = new(
+            ShaderStages.Vertex,
+            Encoding.UTF8.GetBytes(vertexCode),
+            "main");
+
+        ShaderDescription fragmentShaderDesc = new(
+            ShaderStages.Fragment,
+            Encoding.UTF8.GetBytes(fragmentCode), 
+            "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
@@ -1513,7 +1526,8 @@ public class SkyboxRenderer
         _skyboxVpBuffer.Dispose();
         _skyboxVertexBuffer.Dispose();
         _skyboxIndexBuffer.Dispose();
-        foreach (var set in _skyboxTextureSets.Values)
+
+        foreach (ResourceSet set in _skyboxTextureSets.Values)
         {
             set.Dispose();
         }

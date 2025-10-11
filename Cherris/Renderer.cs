@@ -54,7 +54,7 @@ public class Renderer
         _resolveRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, float windowWidth, float windowHeight)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight)
     {
         if (mainCamera is null) return;
 
@@ -76,6 +76,11 @@ public class Renderer
         }
 
         _sceneRenderer.Render(cl, view, projection, gameObjects);
+
+        if (selectedObject is not null)
+        {
+            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject);
+        }
 
         // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);

@@ -12,6 +12,11 @@ public class MeshRenderer : Component
     private DeviceBuffer _materialPropertiesBuffer;
     private ResourceSet _materialResourceSet;
 
+    public Mesh Mesh => _mesh;
+    public DeviceBuffer VertexBuffer => _vertexBuffer;
+    public DeviceBuffer IndexBuffer => _indexBuffer;
+    public uint IndexCount => _indexCount;
+
     private readonly Mesh _mesh;
     private readonly Texture _texture;
     private readonly Vector2 _textureTiling;

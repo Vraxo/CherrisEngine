@@ -3,15 +3,48 @@ using Veldrid;
 
 namespace Cherris;
 
+public struct BoundingBox
+{
+    public Vector3 Min;
+    public Vector3 Max;
+
+    public BoundingBox(Vector3 min, Vector3 max)
+    {
+        Min = min;
+        Max = max;
+    }
+}
+
 public class Mesh
 {
     public Vertex[] Vertices { get; }
     public ushort[] Indices { get; }
+    public BoundingBox AABB { get; }
 
     public Mesh(Vertex[] vertices, ushort[] indices)
     {
         Vertices = vertices;
         Indices = indices;
+        AABB = CalculateAABB();
+    }
+
+    private BoundingBox CalculateAABB()
+    {
+        if (Vertices.Length == 0)
+        {
+            return new BoundingBox(Vector3.Zero, Vector3.Zero);
+        }
+
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+
+        foreach (var vertex in Vertices)
+        {
+            min = Vector3.Min(min, vertex.Position);
+            max = Vector3.Max(max, vertex.Position);
+        }
+
+        return new BoundingBox(min, max);
     }
 
     public static Mesh CreateCube()

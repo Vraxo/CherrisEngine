@@ -15,7 +15,7 @@ public class GameWindow
     public float Width => SdlWindow.Width;
     public float Height => SdlWindow.Height;
 
-    public GameWindow(string title, int width, int height)
+    public GameWindow(string title, int width, int height, bool startWithMouseLocked)
     {
         WindowCreateInfo windowCI = new WindowCreateInfo
         {
@@ -29,10 +29,13 @@ public class GameWindow
         _windowCenter = new Vector2(SdlWindow.Width / 2f, SdlWindow.Height / 2f);
 
         // Initial mouse setup
-        Input.IsMouseLocked = true;
-        Sdl2Native.SDL_ShowCursor(0);
-        Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-        SdlWindow.PumpEvents(); // Pump once to clear the warp event
+        Input.IsMouseLocked = startWithMouseLocked;
+        Sdl2Native.SDL_ShowCursor(startWithMouseLocked ? 0 : 1);
+        if (startWithMouseLocked)
+        {
+            Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+            SdlWindow.PumpEvents(); // Pump once to clear the warp event
+        }
     }
 
     public void ProcessEvents()
