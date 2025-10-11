@@ -219,7 +219,7 @@ public abstract class Engine
     {
         if (_mode == EngineMode.Editor)
         {
-            UpdateEditor();
+            UpdateEditor(deltaTime);
         }
         else // Only run scripts in Game mode
         {
@@ -227,38 +227,67 @@ public abstract class Engine
         }
     }
 
-    private void UpdateEditor()
+    private void UpdateEditor(float deltaTime)
     {
-        if (!Input.WasMouseButtonPressed(MouseButton.Left))
+        // --- Object Picking ---
+        if (Input.WasMouseButtonPressed(MouseButton.Left))
         {
-            return;
-        }
+            Ray ray = CreateRayFromMouse();
 
-        Ray ray = CreateRayFromMouse();
+            GameObject closestObject = null;
+            float closestDistance = float.MaxValue;
 
-        GameObject closestObject = null;
-        float closestDistance = float.MaxValue;
-
-        foreach (var go in SceneManager.GameObjects)
-        {
-            // Don't allow selecting the skybox container or the player/camera itself.
-            if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
-
-            var aabb = go.GetWorldSpaceAABB();
-            if (ray.Intersects(aabb, out float distance))
+            foreach (var go in SceneManager.GameObjects)
             {
-                if (distance < closestDistance)
+                // Don't allow selecting the skybox container or the player/camera itself.
+                if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
+
+                var aabb = go.GetWorldSpaceAABB();
+                if (ray.Intersects(aabb, out float distance))
                 {
-                    closestDistance = distance;
-                    closestObject = go;
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closestObject = go;
+                    }
                 }
+            }
+
+            _selectedGameObject = closestObject;
+            if (_selectedGameObject is not null)
+            {
+                Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
             }
         }
 
-        _selectedGameObject = closestObject;
+        // --- Object Movement ---
         if (_selectedGameObject is not null)
         {
-            Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
+            const float moveSpeed = 2.0f;
+            var moveDirection = Vector3.Zero;
+            bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
+
+            // Left/Right on X-axis
+            if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
+            if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
+
+            if (shiftHeld)
+            {
+                // Up/Down on Y-axis (vertical)
+                if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
+                if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
+            }
+            else
+            {
+                // Up/Down on Z-axis (depth)
+                if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
+                if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
+            }
+
+            if (moveDirection != Vector3.Zero)
+            {
+                _selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
+            }
         }
     }
 
