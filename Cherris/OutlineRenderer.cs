@@ -20,6 +20,7 @@ public class OutlineRenderer : IDisposable
 
         public fixed float Colors[MaxOutlineProfiles * 4];
         public fixed float Thicknesses[MaxOutlineProfiles * 4]; // Use float array for thickness, store in first component of each 'vec4'
+        public fixed float Glows[MaxOutlineProfiles * 4]; // Use float array for glow, store in first component of each 'vec4'
     }
 
     private readonly DeviceBuffer _vertexBuffer;
@@ -84,7 +85,7 @@ public class OutlineRenderer : IDisposable
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
-            BlendState = BlendStateDescription.SingleOverrideBlend,
+            BlendState = BlendStateDescription.SingleOverrideBlend, // The shader handles compositing (scene + glow), so we just overwrite.
             DepthStencilState = DepthStencilStateDescription.Disabled,
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
@@ -126,6 +127,9 @@ public class OutlineRenderer : IDisposable
 
             int thicknessIndex = i * 4;
             properties.Thicknesses[thicknessIndex] = profile.Thickness;
+
+            int glowIndex = i * 4;
+            properties.Glows[glowIndex] = profile.Glow;
         }
         cl.UpdateBuffer(_propertiesBuffer, 0, properties);
 
@@ -166,22 +170,24 @@ public class OutlineRenderer : IDisposable
                 uint _padding3;
                 vec4 Colors[16];
                 vec4 Thicknesses[16]; // Thickness is in the .x component
+                vec4 Glows[16];       // Glow is in the .x component
             };
 
             void main() {
+                vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
                 float centerIdRaw = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord).r;
                 
                 if (centerIdRaw > 0.0) {
-                    fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
+                    fsout_Color = sceneColor;
                     return;
                 }
 
                 float nearestIdRaw = 0.0;
                 float minSqDist = 10000.0f;
 
-                // Search a limited kernel to find the nearest object pixel.
-                // This determines which outline properties (color, thickness) to use.
-                const int searchRadius = 8;
+                // Increased search radius for a more visible glow.
+                // NOTE: Larger values have a significant performance impact.
+                const int searchRadius = 12;
                 for (int y = -searchRadius; y <= searchRadius; y++) {
                     for (int x = -searchRadius; x <= searchRadius; x++) {
                         vec2 offset = vec2(x, y) * TexelSize;
@@ -200,16 +206,26 @@ public class OutlineRenderer : IDisposable
                     int profileIndex = int(round(nearestIdRaw * 255.0)) - 1;
                     if (profileIndex >= 0 && profileIndex < ProfileCount) {
                         float thickness = Thicknesses[profileIndex].x;
+                        float dist = sqrt(minSqDist);
                         
                         // Check if the distance to the nearest object pixel is within the outline thickness.
-                        if (sqrt(minSqDist) <= thickness) {
-                            fsout_Color = Colors[profileIndex];
+                        if (dist <= thickness) {
+                            float glow = Glows[profileIndex].x;
+                            if (glow > 0.0f) {
+                                // Glow logic: additive blend with a falloff
+                                float falloff = 1.0 - (dist / thickness);
+                                falloff = pow(falloff, 2.0); // Tweak the curve to be less linear
+                                fsout_Color = sceneColor + Colors[profileIndex] * falloff * glow;
+                            } else {
+                                // Original outline logic: solid color
+                                fsout_Color = Colors[profileIndex];
+                            }
                             return;
                         }
                     }
                 }
                 
-                fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
+                fsout_Color = sceneColor;
             }";
 
         Shader[] shaders = factory.CreateFromSpirv(

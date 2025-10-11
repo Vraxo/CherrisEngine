@@ -1008,6 +1008,7 @@ public class OutlineRenderer : IDisposable
     private readonly DeviceBuffer _screenSizeBuffer;
     private readonly DeviceBuffer _propertiesBuffer;
     private ResourceSet _resourceSet;
+    private readonly Sampler _clampSampler;
 
     public unsafe OutlineRenderer(GraphicsDevice gd)
     {
@@ -1030,6 +1031,18 @@ public class OutlineRenderer : IDisposable
             propertiesBufferSize = (uint)sizeof(PropertiesBufferData);
         }
         _propertiesBuffer = factory.CreateBuffer(new BufferDescription(propertiesBufferSize, BufferUsage.UniformBuffer));
+
+        _clampSampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Clamp,
+            AddressModeV = SamplerAddressMode.Clamp,
+            AddressModeW = SamplerAddressMode.Clamp,
+            Filter = SamplerFilter.MinPoint_MagPoint_MipPoint,
+            LodBias = 0,
+            MinimumLod = 0,
+            MaximumLod = 0,
+            MaximumAnisotropy = 1
+        });
 
         _layout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("SceneTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
@@ -1065,7 +1078,7 @@ public class OutlineRenderer : IDisposable
             _layout,
             sceneView,
             idView,
-            _graphicsDevice.PointSampler,
+            _clampSampler,
             _screenSizeBuffer,
             _propertiesBuffer));
     }
@@ -1140,35 +1153,36 @@ public class OutlineRenderer : IDisposable
                     return;
                 }
 
-                float maxIdRaw = 0.0;
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0.0, TexelSize.y)).r);
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0.0, TexelSize.y)).r);
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(TexelSize.x, 0.0)).r);
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(TexelSize.x, 0.0)).r);
+                float nearestIdRaw = 0.0;
+                float minSqDist = 10000.0f;
 
-                if (maxIdRaw > 0.0) {
-                    int profileIndex = int(round(maxIdRaw * 255.0)) - 1;
+                // Search a limited kernel to find the nearest object pixel.
+                // This determines which outline properties (color, thickness) to use.
+                const int searchRadius = 8;
+                for (int y = -searchRadius; y <= searchRadius; y++) {
+                    for (int x = -searchRadius; x <= searchRadius; x++) {
+                        vec2 offset = vec2(x, y) * TexelSize;
+                        float currentId = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + offset).r;
+                        if (currentId > 0.0) {
+                            float sqDist = float(x*x + y*y);
+                            if (sqDist < minSqDist) {
+                                minSqDist = sqDist;
+                                nearestIdRaw = currentId;
+                            }
+                        }
+                    }
+                }
 
+                if (nearestIdRaw > 0.0) {
+                    int profileIndex = int(round(nearestIdRaw * 255.0)) - 1;
                     if (profileIndex >= 0 && profileIndex < ProfileCount) {
-                        vec4 outlineColor = Colors[profileIndex];
                         float thickness = Thicknesses[profileIndex].x;
-
-                        float h = TexelSize.x * thickness;
-                        float v = TexelSize.y * thickness;
-
-                        float outlineStrength = 0.0;
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, -v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, -v)).r > 0.0 ? 1.0 : 0.0);
-
-                        vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
-                        fsout_Color = mix(sceneColor, outlineColor, outlineStrength);
-                        return;
+                        
+                        // Check if the distance to the nearest object pixel is within the outline thickness.
+                        if (sqrt(minSqDist) <= thickness) {
+                            fsout_Color = Colors[profileIndex];
+                            return;
+                        }
                     }
                 }
                 
@@ -1191,6 +1205,7 @@ public class OutlineRenderer : IDisposable
         _vertexBuffer.Dispose();
         _screenSizeBuffer.Dispose();
         _propertiesBuffer.Dispose();
+        _clampSampler.Dispose();
     }
 }
 </file>
@@ -3292,8 +3307,8 @@ public class Spinner : Script
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
 OutlineProfiles:
   - Name: Lightsaber
-    Color: [1, 0, 0, 1]
-    Thickness: 2.0
+    Color: [0.2, 0.5, 1, 1] # A nice jedi blue
+    Thickness: 140.0
   - Name: Friendly
     Color: [0, 1, 1, 1] # Cyan
     Thickness: 3.0
@@ -3329,9 +3344,9 @@ GameObjects:
   - Name: StaticCube
     Components:
       Transform:
-        Position: [2.5, 0, 0]
+        Position: [2.5, 0.5, 0] # Adjusted Y to sit on the ground
         Rotation: [0, 45, 0]
-        Scale: [0.75, 0.75, 0.75]
+        Scale: [0.1, 2.5, 0.1] # Long and thin like a lightsaber
       MeshRenderer:
         Mesh: Cube
         Texture: White
