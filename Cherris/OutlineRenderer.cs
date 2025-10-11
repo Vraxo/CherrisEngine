@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -8,6 +10,18 @@ namespace Cherris;
 
 public class OutlineRenderer : IDisposable
 {
+    private const int MaxOutlineProfiles = 16;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct PropertiesBufferData
+    {
+        public uint ProfileCount;
+        private readonly uint _padding1, _padding2, _padding3;
+
+        public fixed float Colors[MaxOutlineProfiles * 4];
+        public fixed float Thicknesses[MaxOutlineProfiles * 4]; // Use float array for thickness, store in first component of each 'vec4'
+    }
+
     private readonly DeviceBuffer _vertexBuffer;
     private Pipeline _pipeline;
     private readonly ResourceLayout _layout;
@@ -15,9 +29,10 @@ public class OutlineRenderer : IDisposable
     private readonly Shader _vertexShader;
     private readonly Shader _fragmentShader;
     private readonly DeviceBuffer _screenSizeBuffer;
+    private readonly DeviceBuffer _propertiesBuffer;
     private ResourceSet _resourceSet;
 
-    public OutlineRenderer(GraphicsDevice gd)
+    public unsafe OutlineRenderer(GraphicsDevice gd)
     {
         _graphicsDevice = gd;
         ResourceFactory factory = gd.ResourceFactory;
@@ -32,11 +47,19 @@ public class OutlineRenderer : IDisposable
 
         _screenSizeBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
 
+        uint propertiesBufferSize;
+        unsafe
+        {
+            propertiesBufferSize = (uint)sizeof(PropertiesBufferData);
+        }
+        _propertiesBuffer = factory.CreateBuffer(new BufferDescription(propertiesBufferSize, BufferUsage.UniformBuffer));
+
         _layout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("SceneTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("IdTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("ScreenSizeBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment)
+            new ResourceLayoutElementDescription("ScreenSizeBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("PropertiesBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment)
         ));
 
         (_vertexShader, _fragmentShader) = LoadShaders(factory);
@@ -66,13 +89,32 @@ public class OutlineRenderer : IDisposable
             sceneView,
             idView,
             _graphicsDevice.PointSampler,
-            _screenSizeBuffer));
+            _screenSizeBuffer,
+            _propertiesBuffer));
     }
 
-    public void Render(CommandList cl, float width, float height)
+    public unsafe void Render(CommandList cl, float width, float height, IReadOnlyList<OutlineProfile> activeProfiles)
     {
         var screenSize = new Vector4(1.0f / width, 1.0f / height, 0, 0);
         cl.UpdateBuffer(_screenSizeBuffer, 0, screenSize);
+
+        var properties = new PropertiesBufferData();
+        properties.ProfileCount = (uint)Math.Min(activeProfiles.Count, MaxOutlineProfiles);
+
+        for (int i = 0; i < properties.ProfileCount; i++)
+        {
+            var profile = activeProfiles[i];
+
+            int colorIndex = i * 4;
+            properties.Colors[colorIndex + 0] = profile.Color.R;
+            properties.Colors[colorIndex + 1] = profile.Color.G;
+            properties.Colors[colorIndex + 2] = profile.Color.B;
+            properties.Colors[colorIndex + 3] = profile.Color.A;
+
+            int thicknessIndex = i * 4;
+            properties.Thicknesses[thicknessIndex] = profile.Thickness;
+        }
+        cl.UpdateBuffer(_propertiesBuffer, 0, properties);
 
         cl.SetVertexBuffer(0, _vertexBuffer);
         cl.SetPipeline(_pipeline);
@@ -103,27 +145,57 @@ public class OutlineRenderer : IDisposable
             layout(set = 0, binding = 2) uniform sampler SourceSampler;
             layout(set = 0, binding = 3) uniform ScreenSizeBuffer { vec2 TexelSize; };
 
+            layout(std140, set = 0, binding = 4) uniform PropertiesBuffer
+            {
+                uint ProfileCount;
+                uint _padding1;
+                uint _padding2;
+                uint _padding3;
+                vec4 Colors[16];
+                vec4 Thicknesses[16]; // Thickness is in the .x component
+            };
+
             void main() {
-                vec3 centerId = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord).rgb;
+                float centerIdRaw = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord).r;
                 
-                // If the current pixel belongs to the outlined object, just draw the scene color.
-                if (centerId.r > 0.5) {
+                if (centerIdRaw > 0.0) {
                     fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
                     return;
                 }
 
-                // The current pixel is background. Check if it's adjacent to an outline-target pixel.
-                float outlineStrength = 0.0;
-                outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0.0, TexelSize.y)).r);
-                outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0.0, TexelSize.y)).r);
-                outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(TexelSize.x, 0.0)).r);
-                outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(TexelSize.x, 0.0)).r);
+                float maxIdRaw = 0.0;
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0.0, TexelSize.y)).r);
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0.0, TexelSize.y)).r);
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(TexelSize.x, 0.0)).r);
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(TexelSize.x, 0.0)).r);
 
-                if (outlineStrength > 0.5) {
-                    fsout_Color = vec4(1.0, 0.0, 0.0, 1.0); // Draw red outline
-                } else {
-                    fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
+                if (maxIdRaw > 0.0) {
+                    int profileIndex = int(round(maxIdRaw * 255.0)) - 1;
+
+                    if (profileIndex >= 0 && profileIndex < ProfileCount) {
+                        vec4 outlineColor = Colors[profileIndex];
+                        float thickness = Thicknesses[profileIndex].x;
+
+                        float h = TexelSize.x * thickness;
+                        float v = TexelSize.y * thickness;
+
+                        float outlineStrength = 0.0;
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, -v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, -v)).r > 0.0 ? 1.0 : 0.0);
+
+                        vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
+                        fsout_Color = mix(sceneColor, outlineColor, outlineStrength);
+                        return;
+                    }
                 }
+                
+                fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
             }";
 
         Shader[] shaders = factory.CreateFromSpirv(
@@ -141,5 +213,6 @@ public class OutlineRenderer : IDisposable
         _layout.Dispose();
         _vertexBuffer.Dispose();
         _screenSizeBuffer.Dispose();
+        _propertiesBuffer.Dispose();
     }
 }

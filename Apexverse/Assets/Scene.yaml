@@ -1,3 +1,11 @@
+OutlineProfiles:
+  - Name: Lightsaber
+    Color: [1, 0, 0, 1]
+    Thickness: 2.0
+  - Name: Friendly
+    Color: [0, 1, 1, 1] # Cyan
+    Thickness: 3.0
+
 GameObjects:
   - Name: SkyboxContainer
     Components:
@@ -35,7 +43,8 @@ GameObjects:
       MeshRenderer:
         Mesh: Cube
         Texture: White
-      PermanentOutline: {}
+      PermanentOutline:
+        Profile: Lightsaber
         
   - Name: GroundPlane
     Components:

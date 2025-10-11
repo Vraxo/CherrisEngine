@@ -16,7 +16,17 @@ public class Game : Engine
         // Register custom components that the scene can use
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
         SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
-        SceneLoader.RegisterComponentFactory("PermanentOutline", _ => new PermanentOutline());
+        SceneLoader.RegisterComponentFactory("PermanentOutline", (properties) =>
+        {
+            if (properties is not System.Collections.Generic.Dictionary<object, object> propsDict ||
+                !propsDict.TryGetValue("Profile", out var profileNameObj) ||
+                profileNameObj is not string profileName)
+            {
+                // Default to a profile named "Default" if not specified
+                profileName = "Default";
+            }
+            return new PermanentOutline(profileName);
+        });
 
         // Load the scene from the file and populate the SceneManager
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");

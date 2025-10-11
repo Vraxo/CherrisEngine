@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -23,7 +24,6 @@ public class SceneRenderer
     private readonly ResourceLayout _idColorLayout;
     private readonly DeviceBuffer _idColorBuffer;
     private readonly ResourceSet _idColorResourceSet;
-    private static readonly RgbaFloat IdColorOutline = RgbaFloat.Red;
     private static readonly RgbaFloat IdColorNormal = RgbaFloat.Black;
 
     public ResourceLayout TextureLayout { get; }
@@ -120,17 +120,40 @@ public class SceneRenderer
         }
     }
 
-    public void RenderIdPass(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, HashSet<GameObject> objectsToOutline)
+    public void RenderIdPass(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, GameObject selectedObject, IReadOnlyList<OutlineProfile> activeProfiles)
     {
         commandList.SetPipeline(_idPipeline);
+
+        // Cache the mapping from profile name to index to avoid repeated lookups
+        var profileIndexMap = activeProfiles
+            .Select((profile, index) => new { profile.Name, Index = index + 1 }) // +1 because 0 is reserved for 'no outline'
+            .ToDictionary(item => item.Name, item => item.Index);
+
+        int selectionIndex = profileIndexMap.TryGetValue("Selection", out var idx) ? idx : -1;
 
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
             if (meshRenderer is null) continue;
 
-            var color = objectsToOutline.Contains(gameObject) ? IdColorOutline : IdColorNormal;
-            commandList.UpdateBuffer(_idColorBuffer, 0, color);
+            int finalIndex = 0; // Default to 0 (no outline)
+
+            if (gameObject == selectedObject && selectionIndex != -1)
+            {
+                finalIndex = selectionIndex;
+            }
+            else
+            {
+                var outlineComponent = gameObject.GetComponent<PermanentOutline>();
+                if (outlineComponent != null && profileIndexMap.TryGetValue(outlineComponent.ProfileName, out var permanentIndex))
+                {
+                    finalIndex = permanentIndex;
+                }
+            }
+
+            // Encode the index into the red channel.
+            var idColor = new RgbaFloat((float)finalIndex / 255.0f, 0, 0, 1);
+            commandList.UpdateBuffer(_idColorBuffer, 0, idColor);
 
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
@@ -142,6 +165,7 @@ public class SceneRenderer
             commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
         }
     }
+
 
     private (Shader, Shader) LoadShaders(ResourceFactory factory)
     {
