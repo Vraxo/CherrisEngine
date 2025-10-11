@@ -361,9 +361,7 @@ public abstract class Engine
             }
         }
 
-        var objectsToOutline = new HashSet<GameObject>(
-            SceneManager.GameObjects.Where(go => go.GetComponent<PermanentOutline>() != null)
-        );
+        var objectsToOutline = new HashSet<GameObject>(OutlineSystem.OutlinedObjects);
 
         if (_selectedGameObject is not null)
         {

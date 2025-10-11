@@ -21,6 +21,7 @@ public class GameObject
     {
         component.GameObject = this;
         _components.Add(component);
+        component.OnEnable();
         return component;
     }
 
@@ -39,6 +40,7 @@ public class GameObject
         var componentToRemove = GetComponent<T>();
         if (componentToRemove != null)
         {
+            componentToRemove.OnDisable();
             _components.Remove(componentToRemove);
         }
     }
