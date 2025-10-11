@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -117,38 +116,18 @@ public class Renderer : IDisposable
         _sceneRenderer.RenderIdPass(cl, view, projection, gameObjects, selectedObject, activeProfiles);
 
         // --- New Blur Passes ---
-        var glowingProfiles = activeProfiles.Where(p => p.Glow > 0).ToList();
-        if (glowingProfiles.Any())
-        {
-            // Use Thickness as blur pass count. Clamp to a reasonable value.
-            int blurPasses = (int)Math.Clamp(glowingProfiles.Max(p => p.Thickness), 1, 10);
+        // Pass 1.1: Horizontal Blur
+        cl.SetFramebuffer(_graphicsManager.BlurFramebufferA);
+        cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BlurFramebufferA.Width, _graphicsManager.BlurFramebufferA.Height, 0, 1));
+        _blurRenderer.CreateResources(_graphicsManager.ObjectIdView);
+        _blurRenderer.Render(cl, new Vector2(1, 0));
 
-            TextureView sourceView = _graphicsManager.ObjectIdView;
-
-            for (int i = 0; i < blurPasses; i++)
-            {
-                // Horizontal Blur (source -> BlurA)
-                cl.SetFramebuffer(_graphicsManager.BlurFramebufferA);
-                cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BlurFramebufferA.Width, _graphicsManager.BlurFramebufferA.Height, 0, 1));
-                _blurRenderer.CreateResources(sourceView);
-                _blurRenderer.Render(cl, new Vector2(1, 0));
-
-                // Vertical Blur (BlurA -> BlurB)
-                cl.SetFramebuffer(_graphicsManager.BlurFramebufferB);
-                cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BlurFramebufferB.Width, _graphicsManager.BlurFramebufferB.Height, 0, 1));
-                _blurRenderer.CreateResources(_graphicsManager.BlurViewA);
-                _blurRenderer.Render(cl, new Vector2(0, 1));
-
-                // The result of this full blur pass is now in BlurB. Use it as the source for the next pass.
-                sourceView = _graphicsManager.BlurViewB;
-            }
-        }
-        else
-        {
-            // If there's no glow, clear the final blur target to ensure no leftover glow is rendered.
-            cl.SetFramebuffer(_graphicsManager.BlurFramebufferB);
-            cl.ClearColorTarget(0, RgbaFloat.Black);
-        }
+        // Pass 1.2: Vertical Blur
+        cl.SetFramebuffer(_graphicsManager.BlurFramebufferB);
+        cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BlurFramebufferB.Width, _graphicsManager.BlurFramebufferB.Height, 0, 1));
+        _blurRenderer.CreateResources(_graphicsManager.BlurViewA);
+        _blurRenderer.Render(cl, new Vector2(0, 1));
+        // The result of the full blur is now in _graphicsManager.BlurViewB
 
         // Pass 2: Render scene to MSAA framebuffer
         cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
