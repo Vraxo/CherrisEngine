@@ -13,7 +13,6 @@ public class Renderer : IDisposable
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
     private OutlineRenderer _outlineRenderer;
-    private BlurRenderer _blurRenderer;
     private Sampler _sampler;
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
@@ -88,11 +87,6 @@ public class Renderer : IDisposable
         Console.WriteLine($"[PROFILE] OutlineRenderer created in {sw.ElapsedMilliseconds}ms");
         sw.Restart();
 
-        _blurRenderer = new BlurRenderer(gd);
-        sw.Stop();
-        Console.WriteLine($"[PROFILE] BlurRenderer created in {sw.ElapsedMilliseconds}ms");
-        sw.Restart();
-
         OnWindowResized();
         sw.Stop();
         Console.WriteLine($"[PROFILE] Initial OnWindowResized (pipeline creation) took {sw.ElapsedMilliseconds}ms");
@@ -115,20 +109,6 @@ public class Renderer : IDisposable
         cl.ClearDepthStencil(1f, 0);
         _sceneRenderer.RenderIdPass(cl, view, projection, gameObjects, selectedObject, activeProfiles);
 
-        // --- New Blur Passes ---
-        // Pass 1.1: Horizontal Blur
-        cl.SetFramebuffer(_graphicsManager.BlurFramebufferA);
-        cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BlurFramebufferA.Width, _graphicsManager.BlurFramebufferA.Height, 0, 1));
-        _blurRenderer.CreateResources(_graphicsManager.ObjectIdView);
-        _blurRenderer.Render(cl, new Vector2(1, 0));
-
-        // Pass 1.2: Vertical Blur
-        cl.SetFramebuffer(_graphicsManager.BlurFramebufferB);
-        cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BlurFramebufferB.Width, _graphicsManager.BlurFramebufferB.Height, 0, 1));
-        _blurRenderer.CreateResources(_graphicsManager.BlurViewA);
-        _blurRenderer.Render(cl, new Vector2(0, 1));
-        // The result of the full blur is now in _graphicsManager.BlurViewB
-
         // Pass 2: Render scene to MSAA framebuffer
         cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
@@ -145,7 +125,7 @@ public class Renderer : IDisposable
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 4: Composite outlines and glow, then render to screen's swapchain
+        // Pass 4: Composite outlines and render to screen's swapchain
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         _outlineRenderer.Render(cl, windowWidth, windowHeight, activeProfiles);
 
@@ -166,10 +146,9 @@ public class Renderer : IDisposable
         _sceneRenderer.SetFramebuffers(_graphicsManager.MsaaFramebuffer, _graphicsManager.IdFramebuffer);
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
-        _blurRenderer.SetFramebuffer(_graphicsManager.BlurFramebufferA); // Framebuffer is reusable for both passes
 
         // Update outline renderer with new textures and set its framebuffer
-        _outlineRenderer.CreateResources(_graphicsManager.FinalColorView, _graphicsManager.ObjectIdView, _graphicsManager.BlurViewB);
+        _outlineRenderer.CreateResources(_graphicsManager.FinalColorView, _graphicsManager.ObjectIdView);
         _outlineRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
@@ -179,7 +158,6 @@ public class Renderer : IDisposable
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();
         _outlineRenderer.Dispose();
-        _blurRenderer.Dispose();
         _sampler.Dispose();
     }
 }

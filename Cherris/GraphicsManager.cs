@@ -22,15 +22,6 @@ public class GraphicsManager : IDisposable
     private Veldrid.Texture _objectIdDepthTarget;
     public TextureView ObjectIdView { get; private set; }
 
-    // Blur resources
-    public Framebuffer BlurFramebufferA { get; private set; }
-    private Veldrid.Texture _blurTargetA;
-    public TextureView BlurViewA { get; private set; }
-    public Framebuffer BlurFramebufferB { get; private set; }
-    private Veldrid.Texture _blurTargetB;
-    public TextureView BlurViewB { get; private set; }
-
-
     // Final render target resources
     public Framebuffer FinalFramebuffer { get; private set; }
     public Veldrid.Texture FinalColorTarget { get; private set; }
@@ -95,19 +86,6 @@ public class GraphicsManager : IDisposable
         ObjectIdView = GraphicsDevice.ResourceFactory.CreateTextureView(_objectIdTarget);
         IdFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_objectIdDepthTarget, _objectIdTarget));
 
-        // Blur Targets (half resolution for wider, softer blur)
-        uint blurWidth = (uint)width / 2;
-        uint blurHeight = (uint)height / 2;
-        _blurTargetA = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            blurWidth, blurHeight, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget | TextureUsage.Sampled));
-        BlurViewA = GraphicsDevice.ResourceFactory.CreateTextureView(_blurTargetA);
-        BlurFramebufferA = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, _blurTargetA));
-
-        _blurTargetB = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            blurWidth, blurHeight, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget | TextureUsage.Sampled));
-        BlurViewB = GraphicsDevice.ResourceFactory.CreateTextureView(_blurTargetB);
-        BlurFramebufferB = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, _blurTargetB));
-
         // Final Target
         FinalColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             (uint)width, (uint)height, 1, 1, colorFormat,
@@ -129,13 +107,6 @@ public class GraphicsManager : IDisposable
         _objectIdTarget?.Dispose();
         _objectIdDepthTarget?.Dispose();
         IdFramebuffer?.Dispose();
-
-        BlurViewA?.Dispose();
-        _blurTargetA?.Dispose();
-        BlurFramebufferA?.Dispose();
-        BlurViewB?.Dispose();
-        _blurTargetB?.Dispose();
-        BlurFramebufferB?.Dispose();
 
         FinalColorView?.Dispose();
         FinalColorTarget?.Dispose();

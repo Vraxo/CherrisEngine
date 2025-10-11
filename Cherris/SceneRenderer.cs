@@ -157,13 +157,8 @@ public class SceneRenderer
                 }
             }
 
-            var profile = activeProfiles.FirstOrDefault(p => profileIndexMap.GetValueOrDefault(p.Name, -1) == finalIndex);
-
-            var idColor = new RgbaFloat(
-                (float)finalIndex / 255.0f, // R channel stores the consistent ID for color lookup
-                (profile != null && profile.Glow > 0.0f) ? 1.0f : 0.0f, // G channel is the full-strength mask for blurring
-                0,
-                1);
+            // Encode the index into the red channel.
+            var idColor = new RgbaFloat((float)finalIndex / 255.0f, 0, 0, 1);
             commandList.UpdateBuffer(_idColorBuffer, 0, idColor);
 
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;

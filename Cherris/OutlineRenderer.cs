@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Newtonsoft.Json.Linq;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -20,8 +21,8 @@ public class OutlineRenderer : IDisposable
         private readonly uint _padding1, _padding2, _padding3;
 
         public fixed float Colors[MaxOutlineProfiles * 4];
-        public fixed float Thicknesses[MaxOutlineProfiles * 4]; // No longer used for glow, but kept for standard outlines
-        public fixed float Glows[MaxOutlineProfiles * 4]; // Glow intensity
+        public fixed float Thicknesses[MaxOutlineProfiles * 4]; // Use float array for thickness, store in first component of each 'vec4'
+        public fixed float Glows[MaxOutlineProfiles * 4]; // Use float array for glow, store in first component of each 'vec4'
     }
 
     private readonly DeviceBuffer _vertexBuffer;
@@ -30,10 +31,10 @@ public class OutlineRenderer : IDisposable
     private readonly GraphicsDevice _graphicsDevice;
     private readonly Shader _vertexShader;
     private readonly Shader _fragmentShader;
+    private readonly DeviceBuffer _screenSizeBuffer;
     private readonly DeviceBuffer _propertiesBuffer;
     private ResourceSet _resourceSet;
     private readonly Sampler _clampSampler;
-    private readonly Sampler _linearSampler;
 
     public unsafe OutlineRenderer(GraphicsDevice gd)
     {
@@ -48,6 +49,8 @@ public class OutlineRenderer : IDisposable
         _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
+        _screenSizeBuffer = factory.CreateBuffer(new Veldrid.BufferDescription(16, BufferUsage.UniformBuffer));
+
         uint propertiesBufferSize;
         unsafe
         {
@@ -61,22 +64,17 @@ public class OutlineRenderer : IDisposable
             AddressModeV = SamplerAddressMode.Clamp,
             AddressModeW = SamplerAddressMode.Clamp,
             Filter = SamplerFilter.MinPoint_MagPoint_MipPoint,
-        });
-
-        _linearSampler = factory.CreateSampler(new Veldrid.SamplerDescription
-        {
-            AddressModeU = SamplerAddressMode.Clamp,
-            AddressModeV = SamplerAddressMode.Clamp,
-            AddressModeW = SamplerAddressMode.Clamp,
-            Filter = SamplerFilter.MinLinear_MagLinear_MipPoint,
+            LodBias = 0,
+            MinimumLod = 0,
+            MaximumLod = 0,
+            MaximumAnisotropy = 1
         });
 
         _layout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("SceneTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("IdTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("GlowTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("PointSampler", ResourceKind.Sampler, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("LinearSampler", ResourceKind.Sampler, ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("ScreenSizeBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment),
             new ResourceLayoutElementDescription("PropertiesBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment)
         ));
 
@@ -91,7 +89,7 @@ public class OutlineRenderer : IDisposable
         var sw = Stopwatch.StartNew();
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
-            BlendState = BlendStateDescription.SingleOverrideBlend,
+            BlendState = BlendStateDescription.SingleOverrideBlend, // The shader handles compositing (scene + glow), so we just overwrite.
             DepthStencilState = DepthStencilStateDescription.Disabled,
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
@@ -103,21 +101,23 @@ public class OutlineRenderer : IDisposable
         Console.WriteLine($"[PROFILE] OutlineRenderer pipeline created in {sw.ElapsedMilliseconds}ms");
     }
 
-    public void CreateResources(TextureView sceneView, TextureView idView, TextureView glowView)
+    public void CreateResources(TextureView sceneView, TextureView idView)
     {
         _resourceSet?.Dispose();
         _resourceSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
             _layout,
             sceneView,
             idView,
-            glowView,
             _clampSampler,
-            _linearSampler,
+            _screenSizeBuffer,
             _propertiesBuffer));
     }
 
     public unsafe void Render(CommandList cl, float width, float height, IReadOnlyList<OutlineProfile> activeProfiles)
     {
+        var screenSize = new Vector4(1.0f / width, 1.0f / height, 0, 0);
+        cl.UpdateBuffer(_screenSizeBuffer, 0, screenSize);
+
         var properties = new PropertiesBufferData();
         properties.ProfileCount = (uint)Math.Min(activeProfiles.Count, MaxOutlineProfiles);
 
@@ -153,7 +153,7 @@ public class OutlineRenderer : IDisposable
             layout(location = 0) out vec2 fsin_TexCoord;
             void main() {
                 gl_Position = vec4(Position.xy, 0, 1);
-                vec2 uv = (Position.xy + 1.0) / 2.0;
+                vec2 uv = (Position.xy + vec2(1.0, 1.0)) / 2.0;
                 uv.y = 1.0 - uv.y; // Flip Y-coordinate
                 fsin_TexCoord = uv;
             }";
@@ -165,57 +165,65 @@ public class OutlineRenderer : IDisposable
 
             layout(set = 0, binding = 0) uniform texture2D SceneTexture;
             layout(set = 0, binding = 1) uniform texture2D IdTexture;
-            layout(set = 0, binding = 2) uniform texture2D GlowTexture;
-            layout(set = 0, binding = 3) uniform sampler PointSampler;
-            layout(set = 0, binding = 4) uniform sampler LinearSampler;
+            layout(set = 0, binding = 2) uniform sampler SourceSampler;
+            layout(set = 0, binding = 3) uniform ScreenSizeBuffer { vec2 TexelSize; };
 
-            layout(std140, set = 0, binding = 5) uniform PropertiesBuffer
+            layout(std140, set = 0, binding = 4) uniform PropertiesBuffer
             {
                 uint ProfileCount;
                 uint _padding1;
                 uint _padding2;
                 uint _padding3;
                 vec4 Colors[16];
-                vec4 Thicknesses[16];
-                vec4 Glows[16];
+                vec4 Thicknesses[16]; // Thickness is in the .x component
+                vec4 Glows[16];       // Glow is in the .x component
             };
 
             void main() {
-                vec4 sceneColor = texture(sampler2D(SceneTexture, LinearSampler), fsin_TexCoord);
-                float glowAmount = texture(sampler2D(GlowTexture, LinearSampler), fsin_TexCoord).r;
+                vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
+                float centerIdRaw = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord).r;
                 
-                if (glowAmount > 0.001) {
-                    // Find the ID of the nearest object to determine color.
-                    // This is a small search on the UN-BLURRED ID texture's RED channel.
-                    float nearestIdRaw = 0.0f;
+                float finalIdRaw = centerIdRaw;
+                float dist = 0.0;
+
+                if (centerIdRaw == 0.0) {
+                    // Pixel is outside, so search for the nearest object pixel.
                     float minSqDist = 10000.0f;
-                    vec2 texelSize = 1.0 / textureSize(sampler2D(IdTexture, PointSampler), 0);
-                    
-                    // A small search radius is enough to find the object from its glow halo
-                    const int searchRadius = 5;
+                    const int searchRadius = 12;
                     for (int y = -searchRadius; y <= searchRadius; y++) {
                         for (int x = -searchRadius; x <= searchRadius; x++) {
-                            vec2 offset = vec2(x, y) * texelSize;
-                            // Sample the RED channel for the profile ID
-                            float currentId = texture(sampler2D(IdTexture, PointSampler), fsin_TexCoord + offset).r;
+                            vec2 offset = vec2(x, y) * TexelSize;
+                            float currentId = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + offset).r;
                             if (currentId > 0.0) {
                                 float sqDist = float(x*x + y*y);
                                 if (sqDist < minSqDist) {
                                     minSqDist = sqDist;
-                                    nearestIdRaw = currentId;
+                                    finalIdRaw = currentId;
                                 }
                             }
                         }
                     }
+                    dist = sqrt(minSqDist);
+                }
 
-                    if (nearestIdRaw > 0.0) {
-                        int profileIndex = int(round(nearestIdRaw * 255.0)) - 1;
-                        if (profileIndex >= 0 && profileIndex < ProfileCount) {
-                            float glowIntensity = Glows[profileIndex].x;
-                            if (glowIntensity > 0.0) {
-                                 // Additive blend: Use profile color, multiplied by the blurred falloff and intensity
-                                sceneColor += Colors[profileIndex] * glowAmount * glowIntensity;
+                if (finalIdRaw > 0.0) {
+                    int profileIndex = int(round(finalIdRaw * 255.0)) - 1;
+                    if (profileIndex >= 0 && profileIndex < ProfileCount) {
+                        float thickness = Thicknesses[profileIndex].x;
+                        
+                        if (dist <= thickness) {
+                            float glow = Glows[profileIndex].x;
+                            if (glow > 0.0f) {
+                                // Glow logic: additive blend with a falloff.
+                                // This now applies to the object's core (dist=0) and the area around it.
+                                float falloff = 1.0 - (dist / thickness);
+                                falloff = pow(falloff, 2.0); // Tweak the curve to be less linear
+                                fsout_Color = sceneColor + Colors[profileIndex] * falloff * glow;
+                            } else {
+                                // Original outline logic: solid color
+                                fsout_Color = Colors[profileIndex];
                             }
+                            return;
                         }
                     }
                 }
@@ -235,8 +243,8 @@ public class OutlineRenderer : IDisposable
         _fragmentShader.Dispose();
         _layout.Dispose();
         _vertexBuffer.Dispose();
+        _screenSizeBuffer.Dispose();
         _propertiesBuffer.Dispose();
         _clampSampler.Dispose();
-        _linearSampler.Dispose();
     }
 }
