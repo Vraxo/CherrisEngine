@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Veldrid;
 
@@ -35,14 +36,19 @@ public static class Input
             return;
         }
 
-        if (_firstMouseUpdate)
+        // After re-locking, the mouse position from the OS can be stale for a frame or two.
+        // A valid, post-warp position will be very close to the center of the screen. We can
+        // reject any position far from the center as it is almost certainly stale data.
+        float distanceFromCenter = Vector2.Distance(snapshot.MousePosition, windowCenter);
+
+        // A large distance implies stale data. The _firstMouseUpdate check handles the guaranteed first frame.
+        bool isStaleData = distanceFromCenter > windowCenter.X * 0.9f;
+
+        if (_firstMouseUpdate || isStaleData)
         {
-            // On the first frame after being locked, we ignore the delta
-            // to avoid a jump from the cursor's unlocked position. The cursor
-            // will be warped to the center by the Engine, and subsequent deltas
-            // will be correct.
+            // On the first frame after being locked, or if we detect stale data, ignore the delta.
             MouseDelta = Vector2.Zero;
-            _firstMouseUpdate = false;
+            _firstMouseUpdate = false; // Consume the flag; the stale data check will protect subsequent frames.
         }
         else
         {
