@@ -58,6 +58,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
+using System.Reflection;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.SPIRV;
@@ -76,7 +77,13 @@ public abstract class Engine
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;
-    private readonly Renderer _renderer;
+    private Renderer _renderer; // Removed readonly
+
+    private Framebuffer _msaaFramebuffer;
+    private Veldrid.Texture _msaaColorTarget;
+    private Veldrid.Texture _msaaDepthTarget;
+    private TextureView _msaaColorView;
+    private readonly TextureSampleCount _msaaSampleCount = TextureSampleCount.Count4; // Or Count8 for stronger AA.
 
     protected Engine(string windowTitle)
     {
@@ -92,13 +99,49 @@ public abstract class Engine
         _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
         _stopwatch = new Stopwatch();
 
-        // Initialize systems
+        // Get the swapchain color format
+        PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
+        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+
+        // Create MSAA framebuffer
+        uint width = _graphicsDevice.SwapchainFramebuffer.Width;
+        uint height = _graphicsDevice.SwapchainFramebuffer.Height;
+
+        _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            width, height, 1, 1, colorFormat, // Use non-sRGB format for correct MSAA
+            TextureUsage.RenderTarget | TextureUsage.Sampled,
+            sampleCount: _msaaSampleCount));
+
+        _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            width, height, 1, 1, PixelFormat.R16_UNorm, // Match your SwapchainDepthFormat.
+            TextureUsage.DepthStencil,
+            sampleCount: _msaaSampleCount));
+
+        _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
+            _msaaDepthTarget, _msaaColorTarget));
+
+        _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+
+        // Initialize systems after MSAA creation
         ResourceManager = new ResourceManager(_graphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsDevice);
         SceneManager = new SceneManager();
-        _renderer = new Renderer(_graphicsDevice);
+        _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer); // Pass both framebuffers
+
+        // Subscribe to resize event
+        _gameWindow.SdlWindow.Resized += OnWindowResized;
 
         RegisterEngineComponents();
+    }
+
+    private static PixelFormat GetNonSrgbFormat(PixelFormat format)
+    {
+        return format switch
+        {
+            PixelFormat.B8_G8_R8_A8_UNorm_SRgb => PixelFormat.B8_G8_R8_A8_UNorm,
+            PixelFormat.R8_G8_B8_A8_UNorm_SRgb => PixelFormat.R8_G8_B8_A8_UNorm,
+            _ => format
+        };
     }
 
     private void RegisterEngineComponents()
@@ -203,7 +246,10 @@ public abstract class Engine
         Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / (float)_gameWindow.Height);
 
         _commandList.Begin();
-        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+
+        // Render to MSAA framebuffer.
+        _commandList.SetFramebuffer(_msaaFramebuffer);
+        _commandList.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
         _commandList.ClearColorTarget(0, RgbaFloat.Black);
         _commandList.ClearDepthStencil(1f);
 
@@ -215,17 +261,140 @@ public abstract class Engine
 
         _renderer.RenderScene(_commandList, view, projection, SceneManager.GameObjects);
 
+        // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
+        _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+        _commandList.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
+        _commandList.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
+        _renderer.ResolveMSAA(_commandList, _msaaColorView);
+
         _commandList.End();
         _graphicsDevice.SubmitCommands(_commandList);
         _graphicsDevice.SwapBuffers();
     }
 
-    private void DisposeResources()
+private void OnWindowResized()
+{
+    _graphicsDevice.ResizeMainWindow((uint)_gameWindow.Width, (uint)_gameWindow.Height);
+
+    // Get the swapchain color format
+    PixelFormat swapchainFormat = _graphicsDevice.SwapchainFramebuffer.ColorTargets[0].Target.Format;
+    PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+
+    // Dispose old MSAA targets and framebuffer
+    _msaaColorView?.Dispose();
+    _msaaColorTarget?.Dispose();
+    _msaaDepthTarget?.Dispose();
+    _msaaFramebuffer?.Dispose();
+
+    uint width = (uint)_gameWindow.Width;
+    uint height = (uint)_gameWindow.Height;
+
+    _msaaColorTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+        width, height, 1, 1, colorFormat,
+        TextureUsage.RenderTarget | TextureUsage.Sampled,
+        sampleCount: _msaaSampleCount));
+
+    _msaaDepthTarget = _graphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+        width, height, 1, 1, PixelFormat.R16_UNorm,
+        TextureUsage.DepthStencil,
+        sampleCount: _msaaSampleCount));
+
+    _msaaFramebuffer = _graphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(
+        _msaaDepthTarget, _msaaColorTarget));
+
+    _msaaColorView = _graphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+
+    // Recreate renderer with new MSAA framebuffer
+    _renderer?.Dispose();
+    _renderer = new Renderer(_graphicsDevice, _msaaFramebuffer, _graphicsDevice.SwapchainFramebuffer);
+
+    // --- CRITICAL: Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler ---
+    // Best-effort: handle common patterns (GetComponent<T>() or Components collection) using reflection so you don't need to edit SceneManager/GameObject.
+    if (SceneManager?.GameObjects != null)
+    {
+        foreach (var go in SceneManager.GameObjects)
+        {
+            if (go == null) continue;
+
+            bool handled = false;
+            var goType = go.GetType();
+
+            // 1) Try GetComponent<MeshRenderer>() pattern (generic method)
+            var methods = goType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            foreach (var mi in methods)
+            {
+                if (mi.Name == "GetComponent" && mi.IsGenericMethodDefinition && mi.GetParameters().Length == 0)
+                {
+                    try
+                    {
+                        var generic = mi.MakeGenericMethod(typeof(MeshRenderer));
+                        var result = generic.Invoke(go, null);
+                        if (result is MeshRenderer mr)
+                        {
+                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
+                            handled = true;
+                        }
+                    }
+                    catch
+                    {
+                        // ignore reflection exceptions and try other approaches
+                    }
+                    break;
+                }
+            }
+
+            if (handled) continue;
+
+            // 2) Try a Components property/field that is enumerable
+            PropertyInfo compsProp = goType.GetProperty("Components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                ?? goType.GetProperty("components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (compsProp != null)
+            {
+                var compsObj = compsProp.GetValue(go);
+                if (compsObj is System.Collections.IEnumerable compsEnum)
+                {
+                    foreach (var c in compsEnum)
+                    {
+                        if (c is MeshRenderer mr)
+                        {
+                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            FieldInfo compsField = goType.GetField("Components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                             ?? goType.GetField("components", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (compsField != null)
+            {
+                var compsObj = compsField.GetValue(go);
+                if (compsObj is System.Collections.IEnumerable compsEnum)
+                {
+                    foreach (var c in compsEnum)
+                    {
+                        if (c is MeshRenderer mr)
+                        {
+                            mr.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
+                        }
+                    }
+                }
+            }
+
+            // If neither approach worked, you likely need to add an explicit method to SceneManager to re-initialize render-dependent resources.
+        }
+    }
+}
+private void DisposeResources()
     {
         SceneManager.Dispose();
         _renderer.Dispose();
         ResourceManager.Dispose();
         _commandList.Dispose();
+        _msaaColorView?.Dispose();
+        _msaaColorTarget?.Dispose();
+        _msaaDepthTarget?.Dispose();
+        _msaaFramebuffer?.Dispose();
         _graphicsDevice.Dispose();
     }
 }
@@ -450,17 +619,6 @@ public class Mesh
             new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
         };
 
-        // This cube is colored via vertex colors for demonstration.
-        // Let's re-color them now that they are not white.
-        var magenta = new RgbaFloat(1, 0, 1, 1);
-        vertices[0].Color = RgbaFloat.Red; vertices[1].Color = RgbaFloat.Red; vertices[2].Color = RgbaFloat.Red; vertices[3].Color = RgbaFloat.Red;
-        vertices[4].Color = RgbaFloat.Green; vertices[5].Color = RgbaFloat.Green; vertices[6].Color = RgbaFloat.Green; vertices[7].Color = RgbaFloat.Green;
-        vertices[8].Color = RgbaFloat.Blue; vertices[9].Color = RgbaFloat.Blue; vertices[10].Color = RgbaFloat.Blue; vertices[11].Color = RgbaFloat.Blue;
-        vertices[12].Color = RgbaFloat.Yellow; vertices[13].Color = RgbaFloat.Yellow; vertices[14].Color = RgbaFloat.Yellow; vertices[15].Color = RgbaFloat.Yellow;
-        vertices[16].Color = RgbaFloat.Cyan; vertices[17].Color = RgbaFloat.Cyan; vertices[18].Color = RgbaFloat.Cyan; vertices[19].Color = RgbaFloat.Cyan;
-        vertices[20].Color = magenta; vertices[21].Color = magenta; vertices[22].Color = magenta; vertices[23].Color = magenta;
-
-
         ushort[] indices =
         {
             0,1,2, 0,2,3,
@@ -505,41 +663,65 @@ namespace Cherris;
 
 public class MeshRenderer : Component
 {
-    private readonly DeviceBuffer _vertexBuffer;
-    private readonly DeviceBuffer _indexBuffer;
-    private readonly uint _indexCount;
-    private readonly ResourceSet _textureResourceSet;
-    private readonly DeviceBuffer _materialPropertiesBuffer;
-    private readonly ResourceSet _materialResourceSet;
+    private DeviceBuffer _vertexBuffer;
+    private DeviceBuffer _indexBuffer;
+    private uint _indexCount;
+    private ResourceSet _textureResourceSet;
+    private DeviceBuffer _materialPropertiesBuffer;
+    private ResourceSet _materialResourceSet;
+
+    private readonly Mesh _mesh;
+    private readonly Texture _texture;
+    private readonly Vector2 _textureTiling;
+    private readonly GraphicsDevice _gd;
 
     public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
     {
-        ResourceFactory factory = gd.ResourceFactory;
+        _mesh = mesh;
+        _gd = gd;
+        _texture = texture;
+        _textureTiling = textureTiling;
+
+        CreateResources(textureLayout, materialLayout, sampler);
+    }
+
+    private void CreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+    {
+        ResourceFactory factory = _gd.ResourceFactory;
 
         _vertexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(Vertex.SizeInBytes * mesh.Vertices.Length),
+            (uint)(Vertex.SizeInBytes * _mesh.Vertices.Length),
             BufferUsage.VertexBuffer));
-        gd.UpdateBuffer(_vertexBuffer, 0, mesh.Vertices);
+        _gd.UpdateBuffer(_vertexBuffer, 0, _mesh.Vertices);
 
         _indexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(sizeof(ushort) * mesh.Indices.Length),
+            (uint)(sizeof(ushort) * _mesh.Indices.Length),
             BufferUsage.IndexBuffer));
-        gd.UpdateBuffer(_indexBuffer, 0, mesh.Indices);
+        _gd.UpdateBuffer(_indexBuffer, 0, _mesh.Indices);
 
-        _indexCount = (uint)mesh.Indices.Length;
+        _indexCount = (uint)_mesh.Indices.Length;
 
         _textureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
             textureLayout,
-            texture.VeldridTextureView,
+            _texture.VeldridTextureView,
             sampler));
 
         _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
-        var materialData = new Vector4(textureTiling.X, textureTiling.Y, 0, 0);
-        gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
+        var materialData = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0);
+        _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
 
         _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
             materialLayout,
             _materialPropertiesBuffer));
+    }
+
+    public void RecreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+    {
+        _textureResourceSet?.Dispose();
+        _materialResourceSet?.Dispose();
+        _materialPropertiesBuffer?.Dispose();
+
+        CreateResources(textureLayout, materialLayout, sampler);
     }
 
     public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
@@ -561,11 +743,11 @@ public class MeshRenderer : Component
 
     public void Dispose()
     {
-        _vertexBuffer.Dispose();
-        _indexBuffer.Dispose();
-        _textureResourceSet.Dispose();
-        _materialPropertiesBuffer.Dispose();
-        _materialResourceSet.Dispose();
+        _vertexBuffer?.Dispose();
+        _indexBuffer?.Dispose();
+        _textureResourceSet?.Dispose();
+        _materialPropertiesBuffer?.Dispose();
+        _materialResourceSet?.Dispose();
     }
 }
 </file>
@@ -574,59 +756,30 @@ public class MeshRenderer : Component
 using System.Collections.Generic;
 using System.Numerics;
 using Veldrid;
-using Veldrid.SPIRV;
 
 namespace Cherris;
 
 public class Renderer
 {
-    private readonly GraphicsDevice _graphicsDevice;
-    private readonly DeviceBuffer _mvpBuffer;
-    private readonly Pipeline _pipeline;
-    private readonly ResourceSet _mvpResourceSet;
+    private readonly SceneRenderer _sceneRenderer;
+    private readonly SkyboxRenderer _skyboxRenderer;
+    private readonly ResolveRenderer _resolveRenderer;
+    private readonly Sampler _sampler;
 
-    // Skybox resources
-    private DeviceBuffer _skyboxVpBuffer;
-    private Pipeline _skyboxPipeline;
-    private ResourceSet _skyboxVpResourceSet;
-    private ResourceLayout _skyboxTextureLayout;
-    private DeviceBuffer _skyboxVertexBuffer;
-    private DeviceBuffer _skyboxIndexBuffer;
-    private uint _skyboxIndexCount;
-    private readonly Dictionary<Texture, ResourceSet> _skyboxTextureSets = new();
+    public ResourceLayout TextureLayout => _sceneRenderer.TextureLayout;
+    public ResourceLayout MaterialLayout => _sceneRenderer.MaterialLayout;
+    public Sampler Sampler => _sampler;
 
-
-    public ResourceLayout TextureLayout { get; }
-    public ResourceLayout MaterialLayout { get; }
-    public Sampler Sampler { get; }
-
-
-    public Renderer(GraphicsDevice gd)
+    public Renderer(GraphicsDevice gd, Framebuffer msaaFramebuffer, Framebuffer swapchainFramebuffer)
     {
-        _graphicsDevice = gd;
         ResourceFactory factory = gd.ResourceFactory;
-
-        _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
 
         VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
             new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
             new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
 
-        ResourceLayout mvpLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
-
-        TextureLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
-
-        MaterialLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
-
-        Sampler = factory.CreateSampler(new SamplerDescription
+        _sampler = factory.CreateSampler(new SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,
             AddressModeV = SamplerAddressMode.Wrap,
@@ -638,183 +791,133 @@ public class Renderer
             MaximumLod = uint.MaxValue
         });
 
-        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
+        _sceneRenderer = new SceneRenderer(gd, vertexLayout, msaaFramebuffer, _sampler);
+        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, msaaFramebuffer);
+        _resolveRenderer = new ResolveRenderer(gd, swapchainFramebuffer);
+    }
+
+    public void RenderSkybox(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
+    {
+        _skyboxRenderer.Render(commandList, skybox, view, projection);
+    }
+
+    public void RenderScene(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    {
+        _sceneRenderer.Render(commandList, view, projection, scene);
+    }
+
+    public void ResolveMSAA(CommandList commandList, TextureView msaaColorView)
+    {
+        _resolveRenderer.Render(commandList, msaaColorView);
+    }
+
+    public void Dispose()
+    {
+        _sceneRenderer.Dispose();
+        _skyboxRenderer.Dispose();
+        _resolveRenderer.Dispose();
+        _sampler.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResolveRenderer.cs">
+using System.Numerics;
+using Veldrid;
+using Veldrid.SPIRV;
+
+namespace Cherris;
+
+public class ResolveRenderer
+{
+    private readonly DeviceBuffer _vertexBuffer;
+    private readonly Pipeline _pipeline;
+    private readonly ResourceLayout _textureLayout;
+    private readonly GraphicsDevice _graphicsDevice;
+
+    public ResolveRenderer(GraphicsDevice gd, Framebuffer targetFramebuffer)
+    {
+        _graphicsDevice = gd;
+        ResourceFactory factory = gd.ResourceFactory;
+
+        // Fullscreen quad vertices (positions only)
+        Vector3[] quadVertices =
+        {
+            new Vector3(-1.0f, -1.0f, 0.0f),
+            new Vector3(-1.0f, 1.0f, 0.0f),
+            new Vector3(1.0f, -1.0f, 0.0f),
+            new Vector3(1.0f, 1.0f, 0.0f)
+        };
+
+        _vertexBuffer = factory.CreateBuffer(new BufferDescription(
+            (uint)(sizeof(float) * 3 * quadVertices.Length),
+            BufferUsage.VertexBuffer));
+        gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
+
+        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
+            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
+
+        _textureLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MsaaTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment)));
 
         (Shader vs, Shader fs) = LoadShaders(factory);
 
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(
-                true, true, ComparisonKind.LessEqual),
-            RasterizerState = new RasterizerStateDescription(
-                FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
-            PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout, TextureLayout, MaterialLayout },
+            DepthStencilState = DepthStencilStateDescription.Disabled,
+            RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+            ResourceLayouts = new[] { _textureLayout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = gd.SwapchainFramebuffer.OutputDescription
-        });
-
-        CreateSkyboxResources(gd, vertexLayout);
-    }
-
-    private void CreateSkyboxResources(GraphicsDevice gd, VertexLayoutDescription vertexLayout)
-    {
-        ResourceFactory factory = gd.ResourceFactory;
-
-        var skyboxMesh = Mesh.CreateCube();
-        _skyboxVertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * skyboxMesh.Vertices.Length), BufferUsage.VertexBuffer));
-        gd.UpdateBuffer(_skyboxVertexBuffer, 0, skyboxMesh.Vertices);
-
-        _skyboxIndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * skyboxMesh.Indices.Length), BufferUsage.IndexBuffer));
-        gd.UpdateBuffer(_skyboxIndexBuffer, 0, skyboxMesh.Indices);
-        _skyboxIndexCount = (uint)skyboxMesh.Indices.Length;
-
-        _skyboxVpBuffer = factory.CreateBuffer(new BufferDescription(128, BufferUsage.UniformBuffer));
-
-        ResourceLayout skyboxVpLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("ViewProjectionBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
-
-        _skyboxTextureLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
-
-        _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(skyboxVpLayout, _skyboxVpBuffer));
-
-        (Shader vs, Shader fs) = LoadSkyboxShaders(factory);
-
-        _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
-        {
-            BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
-            RasterizerState = new RasterizerStateDescription(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
-            PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { skyboxVpLayout, _skyboxTextureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = gd.SwapchainFramebuffer.OutputDescription
+            Outputs = targetFramebuffer.OutputDescription
         });
     }
 
-    public void RenderSkybox(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
+    public void Render(CommandList commandList, TextureView msaaColorView)
     {
-        Matrix4x4 skyboxView = view;
-        skyboxView.Translation = Vector3.Zero;
+        ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            _textureLayout,
+            msaaColorView));
 
-        commandList.UpdateBuffer(_skyboxVpBuffer, 0, ref skyboxView);
-        commandList.UpdateBuffer(_skyboxVpBuffer, 64, ref projection);
+        commandList.SetVertexBuffer(0, _vertexBuffer);
+        commandList.SetPipeline(_pipeline);
+        commandList.SetGraphicsResourceSet(0, textureSet);
+        commandList.Draw(4, 1, 0, 0);
 
-        if (!_skyboxTextureSets.TryGetValue(skybox.CubeMapTexture, out var textureSet))
-        {
-            textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _skyboxTextureLayout,
-                skybox.CubeMapTexture.VeldridTextureView,
-                Sampler));
-            _skyboxTextureSets.Add(skybox.CubeMapTexture, textureSet);
-        }
-
-        commandList.SetVertexBuffer(0, _skyboxVertexBuffer);
-        commandList.SetIndexBuffer(_skyboxIndexBuffer, IndexFormat.UInt16);
-        commandList.SetPipeline(_skyboxPipeline);
-        commandList.SetGraphicsResourceSet(0, _skyboxVpResourceSet);
-        commandList.SetGraphicsResourceSet(1, textureSet);
-        commandList.DrawIndexed(_skyboxIndexCount, 1, 0, 0, 0);
-    }
-
-    public void RenderScene(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
-    {
-        foreach (var gameObject in scene)
-        {
-            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer == null) continue;
-
-            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
-            commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
-
-            meshRenderer.Render(commandList, _pipeline, _mvpResourceSet);
-        }
+        textureSet.Dispose(); // Dispose the set after use since it's created per call
     }
 
     private (Shader, Shader) LoadShaders(ResourceFactory factory)
     {
         const string vertexCode = @"
-                #version 450
-                layout(location = 0) in vec3 Position;
-                layout(location = 1) in vec4 Color;
-                layout(location = 2) in vec2 TexCoord;
+#version 450
+layout(location = 0) in vec3 Position;
 
-                layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
-                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
-
-                layout(location = 0) out vec4 fsin_Color;
-                layout(location = 1) out vec2 fsin_TexCoord;
-
-                void main() 
-                { 
-                    gl_Position = mvp * vec4(Position, 1); 
-                    fsin_Color = Color; 
-                    fsin_TexCoord = TexCoord * TextureTiling.xy;
-                }";
+void main()
+{
+    gl_Position = vec4(Position.xy, 0, 1);
+}";
 
         const string fragmentCode = @"
-                #version 450
-                layout(location = 0) in vec4 fsin_Color;
-                layout(location = 1) in vec2 fsin_TexCoord;
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
 
-                layout(set = 1, binding = 0) uniform texture2D SourceTexture;
-                layout(set = 1, binding = 1) uniform sampler SourceSampler;
+layout(location = 0) out vec4 fsout_Color;
 
-                layout(location = 0) out vec4 fsout_Color;
+layout(set = 0, binding = 0) uniform texture2DMS MsaaTexture;
 
-                void main() 
-                { 
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
-                }";
-
-        ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
-        ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
-
-        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
-        return (shaders[0], shaders[1]);
-    }
-
-    private (Shader, Shader) LoadSkyboxShaders(ResourceFactory factory)
+void main()
+{
+    vec4 color = vec4(0);
+    ivec2 coord = ivec2(gl_FragCoord.xy);
+    for(int s = 0; s < 4; s++)
     {
-        const string vertexCode = @"
-            #version 450
-            layout(location = 0) in vec3 Position;
-
-            layout(set = 0, binding = 0) uniform ViewProjectionBuffer 
-            { 
-                mat4 View; 
-                mat4 Projection; 
-            };
-
-            layout(location = 0) out vec3 fsin_TexCoord;
-
-            void main()
-            {
-                fsin_TexCoord = Position;
-                vec4 pos = Projection * View * vec4(Position, 1.0);
-                gl_Position = pos.xyww;
-            }";
-
-        const string fragmentCode = @"
-            #version 450
-            layout(location = 0) in vec3 fsin_TexCoord;
-
-            layout(set = 1, binding = 0) uniform textureCube SourceCubeMap;
-            layout(set = 1, binding = 1) uniform sampler SourceSampler;
-
-            layout(location = 0) out vec4 fsout_Color;
-
-            void main()
-            {
-                fsout_Color = texture(samplerCube(SourceCubeMap, SourceSampler), fsin_TexCoord);
-            }";
+        color += texelFetch(MsaaTexture, coord, s);
+    }
+    fsout_Color = color / 4.0;
+}";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
             ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
@@ -828,22 +931,8 @@ public class Renderer
     public void Dispose()
     {
         _pipeline.Dispose();
-        TextureLayout.Dispose();
-        MaterialLayout.Dispose();
-        Sampler.Dispose();
-        _mvpResourceSet.Dispose();
-        _mvpBuffer.Dispose();
-
-        _skyboxPipeline.Dispose();
-        _skyboxTextureLayout.Dispose();
-        _skyboxVpResourceSet.Dispose();
-        _skyboxVpBuffer.Dispose();
-        _skyboxVertexBuffer.Dispose();
-        _skyboxIndexBuffer.Dispose();
-        foreach (var set in _skyboxTextureSets.Values)
-        {
-            set.Dispose();
-        }
+        _textureLayout.Dispose();
+        _vertexBuffer.Dispose();
     }
 }
 </file>
@@ -985,7 +1074,7 @@ public class ResourceManager
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
         Veldrid.Texture cubemap = factory.CreateTexture(TextureDescription.Texture2D(
             (uint)firstImage.Width, (uint)firstImage.Height, 1, 6, // arrayLayers must be 6 for a cubemap
-            PixelFormat.R8_G8_B8_A8_UNorm,
+            PixelFormat.R8_G8_B8_A8_UNorm, // Revert to UNorm to match previous brightness
             TextureUsage.Cubemap | TextureUsage.Sampled));
 
         for (uint i = 0; i < 6; i++)
@@ -1272,6 +1361,130 @@ public class SceneManager
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneRenderer.cs">
+using System.Collections.Generic;
+using System.Numerics;
+using Veldrid;
+using Veldrid.SPIRV;
+
+namespace Cherris;
+
+public class SceneRenderer
+{
+    private readonly DeviceBuffer _mvpBuffer;
+    private readonly Pipeline _pipeline;
+    private readonly ResourceSet _mvpResourceSet;
+
+    public ResourceLayout TextureLayout { get; }
+    public ResourceLayout MaterialLayout { get; }
+
+    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout, Framebuffer framebuffer, Sampler sampler) // Changed gd.SwapchainFramebuffer to framebuffer
+    {
+        ResourceFactory factory = gd.ResourceFactory;
+
+        _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
+
+        ResourceLayout mvpLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        TextureLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+        MaterialLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
+
+        (Shader vs, Shader fs) = LoadShaders(factory);
+
+        _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            BlendState = BlendStateDescription.SingleOverrideBlend,
+            DepthStencilState = new DepthStencilStateDescription(
+                true, true, ComparisonKind.LessEqual),
+            RasterizerState = new RasterizerStateDescription(
+                FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleList,
+            ResourceLayouts = new[] { mvpLayout, TextureLayout, MaterialLayout },
+            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            Outputs = framebuffer.OutputDescription
+        });
+    }
+
+    public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    {
+        foreach (var gameObject in scene)
+        {
+            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+            if (meshRenderer == null) continue;
+
+            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
+            commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
+
+            meshRenderer.Render(commandList, _pipeline, _mvpResourceSet);
+        }
+    }
+
+    private (Shader, Shader) LoadShaders(ResourceFactory factory)
+    {
+        const string vertexCode = @"
+                #version 450
+                layout(location = 0) in vec3 Position;
+                layout(location = 1) in vec4 Color;
+                layout(location = 2) in vec2 TexCoord;
+
+                layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
+
+                layout(location = 0) out vec4 fsin_Color;
+                layout(location = 1) out vec2 fsin_TexCoord;
+
+                void main() 
+                { 
+                    gl_Position = mvp * vec4(Position, 1); 
+                    fsin_Color = Color; 
+                    fsin_TexCoord = TexCoord * TextureTiling.xy;
+                }";
+
+        const string fragmentCode = @"
+                #version 450
+                layout(location = 0) in vec4 fsin_Color;
+                layout(location = 1) in vec2 fsin_TexCoord;
+
+                layout(set = 1, binding = 0) uniform texture2D SourceTexture;
+                layout(set = 1, binding = 1) uniform sampler SourceSampler;
+
+                layout(location = 0) out vec4 fsout_Color;
+
+                void main() 
+                { 
+                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                }";
+
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
+        return (shaders[0], shaders[1]);
+    }
+
+    public void Dispose()
+    {
+        _pipeline.Dispose();
+        TextureLayout.Dispose();
+        MaterialLayout.Dispose();
+        _mvpResourceSet.Dispose();
+        _mvpBuffer.Dispose();
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Skybox.cs">
 using Veldrid;
 
@@ -1289,6 +1502,153 @@ public class Skybox : Component
     public void Dispose()
     {
         CubeMapTexture.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxRenderer.cs">
+using System.Collections.Generic;
+using System.Numerics;
+using Veldrid;
+using Veldrid.SPIRV;
+
+namespace Cherris;
+
+public class SkyboxRenderer
+{
+    private readonly GraphicsDevice _graphicsDevice;
+    private readonly Sampler _sampler;
+    private readonly DeviceBuffer _skyboxVpBuffer;
+    private readonly Pipeline _skyboxPipeline;
+    private readonly ResourceSet _skyboxVpResourceSet;
+    private readonly ResourceLayout _skyboxTextureLayout;
+    private readonly DeviceBuffer _skyboxVertexBuffer;
+    private readonly DeviceBuffer _skyboxIndexBuffer;
+    private readonly uint _skyboxIndexCount;
+    private readonly Dictionary<Texture, ResourceSet> _skyboxTextureSets = new();
+
+    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout, Framebuffer framebuffer) // Changed gd.SwapchainFramebuffer to framebuffer
+    {
+        _graphicsDevice = gd;
+        _sampler = sampler;
+        ResourceFactory factory = gd.ResourceFactory;
+
+        var skyboxMesh = Mesh.CreateCube();
+        _skyboxVertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * skyboxMesh.Vertices.Length), BufferUsage.VertexBuffer));
+        gd.UpdateBuffer(_skyboxVertexBuffer, 0, skyboxMesh.Vertices);
+
+        _skyboxIndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * skyboxMesh.Indices.Length), BufferUsage.IndexBuffer));
+        gd.UpdateBuffer(_skyboxIndexBuffer, 0, skyboxMesh.Indices);
+        _skyboxIndexCount = (uint)skyboxMesh.Indices.Length;
+
+        _skyboxVpBuffer = factory.CreateBuffer(new BufferDescription(128, BufferUsage.UniformBuffer));
+
+        ResourceLayout skyboxVpLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("ViewProjectionBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+
+        _skyboxTextureLayout = factory.CreateResourceLayout(
+            new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+        _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(skyboxVpLayout, _skyboxVpBuffer));
+
+        (Shader vs, Shader fs) = LoadSkyboxShaders(factory);
+
+        _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            BlendState = BlendStateDescription.SingleOverrideBlend,
+            DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
+            RasterizerState = new RasterizerStateDescription(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleList,
+            ResourceLayouts = new[] { skyboxVpLayout, _skyboxTextureLayout },
+            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            Outputs = framebuffer.OutputDescription // Use the passed framebuffer's OutputDescription
+        });
+    }
+
+    public void Render(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
+    {
+        Matrix4x4 skyboxView = view;
+        skyboxView.Translation = Vector3.Zero;
+
+        commandList.UpdateBuffer(_skyboxVpBuffer, 0, ref skyboxView);
+        commandList.UpdateBuffer(_skyboxVpBuffer, 64, ref projection);
+
+        if (!_skyboxTextureSets.TryGetValue(skybox.CubeMapTexture, out var textureSet))
+        {
+            textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _skyboxTextureLayout,
+                skybox.CubeMapTexture.VeldridTextureView,
+                _sampler));
+            _skyboxTextureSets.Add(skybox.CubeMapTexture, textureSet);
+        }
+
+        commandList.SetVertexBuffer(0, _skyboxVertexBuffer);
+        commandList.SetIndexBuffer(_skyboxIndexBuffer, IndexFormat.UInt16);
+        commandList.SetPipeline(_skyboxPipeline);
+        commandList.SetGraphicsResourceSet(0, _skyboxVpResourceSet);
+        commandList.SetGraphicsResourceSet(1, textureSet);
+        commandList.DrawIndexed(_skyboxIndexCount, 1, 0, 0, 0);
+    }
+
+    private (Shader, Shader) LoadSkyboxShaders(ResourceFactory factory)
+    {
+        const string vertexCode = @"
+            #version 450
+            layout(location = 0) in vec3 Position;
+
+            layout(set = 0, binding = 0) uniform ViewProjectionBuffer 
+            { 
+                mat4 View; 
+                mat4 Projection; 
+            };
+
+            layout(location = 0) out vec3 fsin_TexCoord;
+
+            void main()
+            {
+                fsin_TexCoord = Position;
+                vec4 pos = Projection * View * vec4(Position, 1.0);
+                gl_Position = pos.xyww;
+            }";
+
+        const string fragmentCode = @"
+            #version 450
+            layout(location = 0) in vec3 fsin_TexCoord;
+
+            layout(set = 1, binding = 0) uniform textureCube SourceCubeMap;
+            layout(set = 1, binding = 1) uniform sampler SourceSampler;
+
+            layout(location = 0) out vec4 fsout_Color;
+
+            void main()
+            {
+                fsout_Color = texture(samplerCube(SourceCubeMap, SourceSampler), fsin_TexCoord);
+            }";
+
+        ShaderDescription vertexShaderDesc = new ShaderDescription(
+            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription fragmentShaderDesc = new ShaderDescription(
+            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+
+        Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
+        return (shaders[0], shaders[1]);
+    }
+
+    public void Dispose()
+    {
+        _skyboxPipeline.Dispose();
+        _skyboxTextureLayout.Dispose();
+        _skyboxVpResourceSet.Dispose();
+        _skyboxVpBuffer.Dispose();
+        _skyboxVertexBuffer.Dispose();
+        _skyboxIndexBuffer.Dispose();
+        foreach (var set in _skyboxTextureSets.Values)
+        {
+            set.Dispose();
+        }
     }
 }
 </file>
@@ -1362,7 +1722,7 @@ public static class TextureLoader
             (uint)imageResult.Height,
             mipLevels,
             1,
-            PixelFormat.R8_G8_B8_A8_UNorm,
+            PixelFormat.R8_G8_B8_A8_UNorm, // Revert to UNorm to match previous brightness
             TextureUsage.Sampled | TextureUsage.GenerateMipmaps));
 
         // Copy the pixel data to the Veldrid texture.
@@ -1679,6 +2039,6 @@ GameObjects:
       MeshRenderer:
         Mesh: Plane
         Texture: Asphalt
-        TextureTiling: [1, 1]
+        TextureTiling: [10, 10]
 </file>
 
