@@ -10,10 +10,16 @@ public class GraphicsManager : IDisposable
     public GraphicsDevice GraphicsDevice { get; }
     public CommandList CommandList { get; }
 
+    // MSAA resources
     public Framebuffer MsaaFramebuffer { get; private set; }
     private Veldrid.Texture _msaaColorTarget;
     private Veldrid.Texture _msaaDepthTarget;
     public TextureView MsaaColorView { get; private set; }
+
+    // Final render target resources
+    public Framebuffer FinalFramebuffer { get; private set; }
+    public Veldrid.Texture FinalColorTarget { get; private set; }
+    public TextureView FinalColorView { get; private set; }
 
     public Framebuffer SwapchainFramebuffer => GraphicsDevice.SwapchainFramebuffer;
 
@@ -32,27 +38,27 @@ public class GraphicsManager : IDisposable
         GraphicsDevice = VeldridStartup.CreateGraphicsDevice(window, options);
         CommandList = GraphicsDevice.ResourceFactory.CreateCommandList();
 
-        CreateMsaaTargets((int)window.Width, (int)window.Height);
+        CreateResources((int)window.Width, (int)window.Height);
     }
 
     public void Resize(int width, int height)
     {
         GraphicsDevice.ResizeMainWindow((uint)width, (uint)height);
-        DisposeMsaaTargets();
-        CreateMsaaTargets(width, height);
+        DisposeResources();
+        CreateResources(width, height);
     }
 
-    private void CreateMsaaTargets(int width, int height)
+    private void CreateResources(int width, int height)
     {
         PixelFormat swapchainFormat = SwapchainFramebuffer.ColorTargets[0].Target.Format;
         PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
 
+        // MSAA Targets
         _msaaColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             (uint)width, (uint)height, 1, 1, colorFormat,
             TextureUsage.RenderTarget | TextureUsage.Sampled,
             sampleCount: _msaaSampleCount));
 
-        // Use a depth-stencil format to allow for stencil operations like outlining
         _msaaDepthTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             (uint)width, (uint)height, 1, 1, PixelFormat.D24_UNorm_S8_UInt,
             TextureUsage.DepthStencil,
@@ -62,14 +68,27 @@ public class GraphicsManager : IDisposable
             _msaaDepthTarget, _msaaColorTarget));
 
         MsaaColorView = GraphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
+
+        // Final Target
+        FinalColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            (uint)width, (uint)height, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled));
+
+        FinalColorView = GraphicsDevice.ResourceFactory.CreateTextureView(FinalColorTarget);
+
+        FinalFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, FinalColorTarget));
     }
 
-    private void DisposeMsaaTargets()
+    private void DisposeResources()
     {
         MsaaColorView?.Dispose();
         _msaaColorTarget?.Dispose();
         _msaaDepthTarget?.Dispose();
         MsaaFramebuffer?.Dispose();
+
+        FinalColorView?.Dispose();
+        FinalColorTarget?.Dispose();
+        FinalFramebuffer?.Dispose();
     }
 
     private static PixelFormat GetNonSrgbFormat(PixelFormat format)
@@ -84,7 +103,7 @@ public class GraphicsManager : IDisposable
 
     public void Dispose()
     {
-        DisposeMsaaTargets();
+        DisposeResources();
         CommandList.Dispose();
         GraphicsDevice.Dispose();
     }

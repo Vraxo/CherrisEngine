@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
-using Apexverse;
 using Veldrid;
-using Vortice.Direct3D11;
 
 namespace Cherris;
 
@@ -91,6 +89,10 @@ public abstract class Engine
     private readonly GameLoop _gameLoop;
     private GameObject _selectedGameObject;
     private Script _editorController;
+    private readonly Snapshotter _snapshotter;
+    private float _lastDeltaTime;
+    private float _snapshotTimer;
+    private const float SnapshotInterval = 1.0f;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
@@ -111,6 +113,8 @@ public abstract class Engine
         SceneLoader = new(ResourceManager, _graphicsManager.GraphicsDevice);
         SceneManager = new();
         _renderer = new(_graphicsManager);
+        _snapshotter = new(_graphicsManager.GraphicsDevice);
+        _renderer.SetSnapshotter(_snapshotter);
 
         // Game loop is created last, as it depends on the Update/Draw methods
         _gameLoop = new(_gameWindow, Update, Draw);
@@ -230,6 +234,8 @@ public abstract class Engine
 
     protected virtual void Update(float deltaTime)
     {
+        _lastDeltaTime = deltaTime;
+
         if (Mode == EngineMode.Editor)
         {
             _editorController?.Update(deltaTime);
@@ -333,6 +339,14 @@ public abstract class Engine
 
     private void Draw()
     {
+        _snapshotTimer += _lastDeltaTime;
+        if (_snapshotTimer >= SnapshotInterval)
+        {
+            _snapshotTimer -= SnapshotInterval;
+            string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
+            _renderer.RequestSnapshot(path);
+        }
+
         _renderer.RenderFrame(
             SceneManager.MainCamera,
             SceneManager.Skybox,
@@ -340,6 +354,8 @@ public abstract class Engine
             _selectedGameObject,
             _gameWindow.Width,
             _gameWindow.Height);
+
+        _renderer.ProcessSnapshot();
     }
 
     private void OnWindowResized()
@@ -353,6 +369,7 @@ public abstract class Engine
         SceneManager.Dispose();
         _renderer.Dispose();
         ResourceManager.Dispose();
+        _snapshotter.Dispose();
         _graphicsManager.Dispose();
     }
 }
