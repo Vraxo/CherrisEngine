@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -41,6 +42,7 @@ public class SceneLoader
 
     public List<GameObject> LoadScene(string filePath)
     {
+        var sw = Stopwatch.StartNew();
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
 
@@ -88,7 +90,8 @@ public class SceneLoader
                 sceneObjects.Add(go);
             }
         }
-
+        sw.Stop();
+        Console.WriteLine($"[PROFILE] SceneLoader.LoadScene('{filePath}') completed in {sw.ElapsedMilliseconds}ms");
         return sceneObjects;
     }
 

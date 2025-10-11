@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
@@ -209,12 +210,31 @@ public abstract class Engine
         });
     }
 
-    public void Run()
+    public void Run(Stopwatch totalStartupTimer)
     {
+        var sw = Stopwatch.StartNew();
+        Console.WriteLine("[PROFILE] Starting engine run...");
+
         LoadContent();
+        sw.Stop();
+        Console.WriteLine($"[PROFILE] LoadContent completed in {sw.ElapsedMilliseconds}ms");
+        sw.Restart();
+
         Start();
+        sw.Stop();
+        Console.WriteLine($"[PROFILE] SceneManager.Start completed in {sw.ElapsedMilliseconds}ms");
+        sw.Restart();
+
         OnStart();
+        sw.Stop();
+        Console.WriteLine($"[PROFILE] Engine.OnStart completed in {sw.ElapsedMilliseconds}ms");
+
+        totalStartupTimer.Stop();
+        Console.WriteLine($"[PROFILE] Total startup time: {totalStartupTimer.ElapsedMilliseconds}ms");
+        Console.WriteLine("[PROFILE] Entering game loop.");
+
         _gameLoop.Run();
+
         DisposeResources();
     }
 

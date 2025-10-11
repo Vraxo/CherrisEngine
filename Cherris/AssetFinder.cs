@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
+using Veldrid;
 
 namespace Cherris;
 
@@ -11,6 +14,7 @@ public static class AssetFinder
 
     static AssetFinder()
     {
+        var sw = Stopwatch.StartNew();
         if (!Directory.Exists(AssetRootPath))
         {
             Console.WriteLine($"[AssetFinder] Warning: Asset root directory '{AssetRootPath}' not found.");
@@ -44,6 +48,8 @@ public static class AssetFinder
             }
             _assetPathCache[assetNameKey] = file;
         }
+        sw.Stop();
+        Console.WriteLine($"[PROFILE] AssetFinder scanned {allAssetFiles.Length} files in {sw.ElapsedMilliseconds}ms");
     }
 
     public static string? FindAssetPath(string assetName)

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Veldrid;
 
 namespace Cherris;
@@ -60,6 +61,7 @@ public class ResourceManager
             return texture;
         }
 
+        var sw = Stopwatch.StartNew();
         // Texture not in cache, try to load it from file by searching the asset directory.
         string? filePath = AssetFinder.FindAssetPath(name);
 
@@ -69,6 +71,8 @@ public class ResourceManager
             if (loadedTexture is not null)
             {
                 _textures.Add(name, loadedTexture);
+                sw.Stop();
+                Console.WriteLine($"[PROFILE] Loaded texture '{name}' in {sw.ElapsedMilliseconds}ms");
                 return loadedTexture;
             }
         }
@@ -85,10 +89,13 @@ public class ResourceManager
             return skybox;
         }
 
+        var sw = Stopwatch.StartNew();
         var loadedSkybox = SkyboxLoader.LoadSkybox(_graphicsDevice, name);
         if (loadedSkybox is not null)
         {
             _skyboxes.Add(name, loadedSkybox);
+            sw.Stop();
+            Console.WriteLine($"[PROFILE] Loaded skybox '{name}' in {sw.ElapsedMilliseconds}ms");
             return loadedSkybox;
         }
 
