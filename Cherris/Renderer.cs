@@ -68,7 +68,7 @@ public class Renderer
         cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         cl.ClearColorTarget(0, RgbaFloat.Black);
-        cl.ClearDepthStencil(1f);
+        cl.ClearDepthStencil(1f, 0); // Clear depth to 1 and stencil to 0
 
         if (skybox is not null)
         {

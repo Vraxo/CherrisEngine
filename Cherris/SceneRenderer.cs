@@ -58,11 +58,26 @@ public class SceneRenderer
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
+        // Pipeline for standard objects: writes to the stencil buffer.
+        var mainDepthStencilState = new DepthStencilStateDescription(
+            depthTestEnabled: true,
+            depthWriteEnabled: true,
+            comparisonKind: ComparisonKind.LessEqual,
+            stencilTestEnabled: true,
+            stencilFront: new StencilBehaviorDescription(
+                fail: StencilOperation.Keep,
+                pass: StencilOperation.Replace,
+                depthFail: StencilOperation.Keep,
+                comparison: ComparisonKind.Always),
+            stencilBack: new StencilBehaviorDescription(StencilOperation.Keep, StencilOperation.Keep, StencilOperation.Keep, ComparisonKind.Always),
+            stencilReadMask: 0xff,
+            stencilWriteMask: 0xff,
+            stencilReference: 1);
+
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(
-                true, true, ComparisonKind.LessEqual),
+            DepthStencilState = mainDepthStencilState,
             RasterizerState = new RasterizerStateDescription(
                 FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
@@ -71,13 +86,26 @@ public class SceneRenderer
             Outputs = framebuffer.OutputDescription
         });
 
+        // Pipeline for outlines: tests against the stencil buffer.
+        var outlineDepthStencilState = new DepthStencilStateDescription(
+            depthTestEnabled: true,
+            depthWriteEnabled: false,
+            comparisonKind: ComparisonKind.LessEqual,
+            stencilTestEnabled: true,
+            stencilFront: new StencilBehaviorDescription(
+                fail: StencilOperation.Keep,
+                pass: StencilOperation.Keep,
+                depthFail: StencilOperation.Keep,
+                comparison: ComparisonKind.NotEqual),
+            stencilBack: new StencilBehaviorDescription(StencilOperation.Keep, StencilOperation.Keep, StencilOperation.Keep, ComparisonKind.Always),
+            stencilReadMask: 0xff,
+            stencilWriteMask: 0x00,
+            stencilReference: 1);
+
         _outlinePipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
-            // Use FaceCullMode.None and rely on Z-offset to prevent z-fighting.
-            // This ensures the plane's outline is visible from above.
-            // The previous Front culling would hide it when viewed from the direction of its normal.
+            DepthStencilState = outlineDepthStencilState,
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { _mvpLayout },
@@ -107,8 +135,6 @@ public class SceneRenderer
 
         var transform = gameObject.Transform;
 
-        // Correctly create an outline model matrix by scaling in local space first.
-        // This prevents the object's position from being scaled, which would shift the outline.
         const float outlineFactor = 1.05f;
         var outlineModelMatrix =
             Matrix4x4.CreateScale(transform.Scale * outlineFactor) *
@@ -183,11 +209,6 @@ public class SceneRenderer
                 void main() 
                 { 
                     gl_Position = mvp * vec4(Position, 1); 
-                    // Apply a small, perspective-correct offset to the depth value.
-                    // This pushes the outline geometry slightly away from the camera,
-                    // resolving z-fighting with the original object, especially for flat surfaces.
-                    // It is a simple alternative to glPolygonOffset.
-                    gl_Position.z += 0.0005 * gl_Position.w;
                 }";
 
         const string fragmentCode = @"

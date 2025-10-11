@@ -208,7 +208,7 @@ public abstract class Engine
 
     private void Start()
     {
-        SceneManager.Start();
+        SceneManager.Start(_mode);
     }
 
     protected GraphicsDevice GetGraphicsDevice() => _graphicsManager.GraphicsDevice;
@@ -221,8 +221,10 @@ public abstract class Engine
         {
             UpdateEditor();
         }
-
-        SceneManager.Update(deltaTime);
+        else // Only run scripts in Game mode
+        {
+            SceneManager.Update(deltaTime);
+        }
     }
 
     private void UpdateEditor()

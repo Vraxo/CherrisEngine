@@ -52,8 +52,9 @@ public class GraphicsManager : IDisposable
             TextureUsage.RenderTarget | TextureUsage.Sampled,
             sampleCount: _msaaSampleCount));
 
+        // Use a depth-stencil format to allow for stencil operations like outlining
         _msaaDepthTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            (uint)width, (uint)height, 1, 1, PixelFormat.R16_UNorm,
+            (uint)width, (uint)height, 1, 1, PixelFormat.D24_UNorm_S8_UInt,
             TextureUsage.DepthStencil,
             sampleCount: _msaaSampleCount));
 
