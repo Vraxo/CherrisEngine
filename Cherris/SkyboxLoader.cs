@@ -8,7 +8,7 @@ namespace Cherris;
 
 public static class SkyboxLoader
 {
-    public static Skybox LoadSkybox(GraphicsDevice gd, ResourceManager resourceManager, string name)
+    public static Skybox LoadSkybox(GraphicsDevice gd, string name)
     {
         // The order corresponds to the cubemap array layers: +X, -X, +Y, -Y, +Z, -Z
         string[] faceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
@@ -16,7 +16,7 @@ public static class SkyboxLoader
 
         for (int i = 0; i < 6; i++)
         {
-            var path = resourceManager.FindTextureFile(name + faceSuffixes[i]);
+            var path = AssetFinder.FindTextureFile(name + faceSuffixes[i]);
             if (path == null)
             {
                 Console.WriteLine($"[SkyboxLoader] Could not find face '{name}{faceSuffixes[i]}' for skybox.");
