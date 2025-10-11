@@ -213,8 +213,10 @@ public class OutlineRenderer : IDisposable
                         if (profileIndex >= 0 && profileIndex < ProfileCount) {
                             float glowIntensity = Glows[profileIndex].x;
                             if (glowIntensity > 0.0) {
-                                 // Additive blend: Use profile color, multiplied by the blurred falloff and intensity
-                                sceneColor += Colors[profileIndex] * glowAmount * glowIntensity;
+                                 // Remap the linear falloff to a non-linear curve for a better bloom effect.
+                                 // pow(x, >1) pushes values towards 0, creating a faster, more natural falloff.
+                                float falloff = pow(glowAmount, 2.0);
+                                sceneColor += Colors[profileIndex] * falloff * glowIntensity;
                             }
                         }
                     }

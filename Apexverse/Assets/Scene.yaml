@@ -1,11 +1,11 @@
 OutlineProfiles:
   - Name: Lightsaber
-    Color: [0.2, 0.5, 1, 1] # A nice jedi blue
-    Thickness: 8.0 # The pixel radius of the glow. MUST be <= searchRadius in the shader.
-    Glow: 1.8 # Increased intensity slightly to compensate for smaller radius.
+    Color: [1, 0, 0, 1] # A nice jedi blue
+    Thickness: 40.0 # The number of blur passes. Higher is wider/softer.
+    Glow: 1.5 # The intensity of the glow. > 0 enables glow mode.
   - Name: Friendly
     Color: [0, 1, 1, 1] # Cyan
-    Thickness: 30.0
+    Thickness: 3.0
 
 GameObjects:
   - Name: SkyboxContainer
