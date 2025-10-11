@@ -1,13 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using System.Reflection;
 using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.SPIRV;
-using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
@@ -15,25 +10,27 @@ public abstract class Engine
 {
     private readonly GameWindow _gameWindow;
     private readonly GraphicsManager _graphicsManager;
-    private readonly Stopwatch _stopwatch;
+    private readonly GameLoop _gameLoop;
 
     // Engine Systems
     protected readonly ResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;
-    private Renderer _renderer;
+    private readonly Renderer _renderer;
 
     protected Engine(string windowTitle)
     {
         _gameWindow = new GameWindow(windowTitle, 960, 540);
         _graphicsManager = new GraphicsManager(_gameWindow.SdlWindow, TextureSampleCount.Count4);
-        _stopwatch = new Stopwatch();
 
         // Initialize systems
         ResourceManager = new ResourceManager(_graphicsManager.GraphicsDevice);
         SceneLoader = new SceneLoader(ResourceManager, _graphicsManager.GraphicsDevice);
         SceneManager = new SceneManager();
-        _renderer = new Renderer(_graphicsManager.GraphicsDevice, _graphicsManager.MsaaFramebuffer, _graphicsManager.SwapchainFramebuffer);
+        _renderer = new Renderer(_graphicsManager);
+
+        // Game loop is created last, as it depends on the Update/Draw methods
+        _gameLoop = new GameLoop(_gameWindow, Update, Draw);
 
         // Subscribe to resize event
         _gameWindow.SdlWindow.Resized += OnWindowResized;
@@ -102,21 +99,7 @@ public abstract class Engine
     {
         LoadContent();
         Start();
-        _stopwatch.Start();
-
-        while (_gameWindow.Exists)
-        {
-            _gameWindow.ProcessEvents();
-
-            if (!_gameWindow.Exists) break;
-
-            float deltaTime = (float)_stopwatch.Elapsed.TotalSeconds;
-            _stopwatch.Restart();
-
-            Update(deltaTime);
-            Draw();
-        }
-
+        _gameLoop.Run();
         DisposeResources();
     }
 
@@ -136,47 +119,20 @@ public abstract class Engine
 
     private void Draw()
     {
-        var mainCamera = SceneManager.MainCamera;
-        if (mainCamera == null) return;
-
-        Matrix4x4 view = mainCamera.GetViewMatrix();
-        Matrix4x4 projection = mainCamera.GetProjectionMatrix(_gameWindow.Width / (float)_gameWindow.Height);
-
-        CommandList cl = _graphicsManager.CommandList;
-        cl.Begin();
-
-        // Render to MSAA framebuffer.
-        cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
-        cl.ClearColorTarget(0, RgbaFloat.Black);
-        cl.ClearDepthStencil(1f);
-
-        var skybox = SceneManager.Skybox;
-        if (skybox != null)
-        {
-            _renderer.RenderSkybox(cl, skybox, view, projection);
-        }
-
-        _renderer.RenderScene(cl, view, projection, SceneManager.GameObjects);
-
-        // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
-        cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, _gameWindow.Width, _gameWindow.Height, 0, 1));
-        cl.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
-        _renderer.ResolveMSAA(cl, _graphicsManager.MsaaColorView);
-
-        cl.End();
-        _graphicsManager.GraphicsDevice.SubmitCommands(cl);
-        _graphicsManager.GraphicsDevice.SwapBuffers();
+        _renderer.RenderFrame(
+            SceneManager.MainCamera,
+            SceneManager.Skybox,
+            SceneManager.GameObjects,
+            _gameWindow.Width,
+            _gameWindow.Height);
     }
+
+
 
     private void OnWindowResized()
     {
         _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
-
-        // Recreate renderer with new MSAA framebuffer
-        _renderer?.Dispose();
-        _renderer = new Renderer(_graphicsManager.GraphicsDevice, _graphicsManager.MsaaFramebuffer, _graphicsManager.SwapchainFramebuffer);
+        _renderer.OnWindowResized();
 
         // Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler
         if (SceneManager?.GameObjects != null)

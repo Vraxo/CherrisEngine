@@ -6,17 +6,25 @@ namespace Cherris;
 
 public class Renderer
 {
-    private readonly SceneRenderer _sceneRenderer;
-    private readonly SkyboxRenderer _skyboxRenderer;
-    private readonly ResolveRenderer _resolveRenderer;
-    private readonly Sampler _sampler;
+    private readonly GraphicsManager _graphicsManager;
+    private SceneRenderer _sceneRenderer;
+    private SkyboxRenderer _skyboxRenderer;
+    private ResolveRenderer _resolveRenderer;
+    private Sampler _sampler;
 
     public ResourceLayout TextureLayout => _sceneRenderer.TextureLayout;
     public ResourceLayout MaterialLayout => _sceneRenderer.MaterialLayout;
     public Sampler Sampler => _sampler;
 
-    public Renderer(GraphicsDevice gd, Framebuffer msaaFramebuffer, Framebuffer swapchainFramebuffer)
+    public Renderer(GraphicsManager graphicsManager)
     {
+        _graphicsManager = graphicsManager;
+        CreateResources();
+    }
+
+    private void CreateResources()
+    {
+        GraphicsDevice gd = _graphicsManager.GraphicsDevice;
         ResourceFactory factory = gd.ResourceFactory;
 
         VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
@@ -36,24 +44,55 @@ public class Renderer
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout, msaaFramebuffer, _sampler);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, msaaFramebuffer);
-        _resolveRenderer = new ResolveRenderer(gd, swapchainFramebuffer);
+        _sceneRenderer = new SceneRenderer(gd, vertexLayout, _graphicsManager.MsaaFramebuffer, _sampler);
+        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, _graphicsManager.MsaaFramebuffer);
+        _resolveRenderer = new ResolveRenderer(gd, _graphicsManager.SwapchainFramebuffer);
     }
 
-    public void RenderSkybox(CommandList commandList, Skybox skybox, Matrix4x4 view, Matrix4x4 projection)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, float windowWidth, float windowHeight)
     {
-        _skyboxRenderer.Render(commandList, skybox, view, projection);
+        if (mainCamera == null) return;
+
+        Matrix4x4 view = mainCamera.GetViewMatrix();
+        Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
+
+        CommandList cl = _graphicsManager.CommandList;
+        cl.Begin();
+
+        // Render to MSAA framebuffer.
+        cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        cl.ClearColorTarget(0, RgbaFloat.Black);
+        cl.ClearDepthStencil(1f);
+
+        if (skybox != null)
+        {
+            _skyboxRenderer.Render(cl, skybox, view, projection);
+        }
+
+        _sceneRenderer.Render(cl, view, projection, gameObjects);
+
+        // Switch to swapchain and resolve MSAA with custom shader for sRGB conversion
+        cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        cl.ClearColorTarget(0, RgbaFloat.Black); // Optional, since resolve covers the screen
+        _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
+
+        cl.End();
+        _graphicsManager.GraphicsDevice.SubmitCommands(cl);
+        _graphicsManager.GraphicsDevice.SwapBuffers();
     }
 
-    public void RenderScene(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    public void OnWindowResized()
     {
-        _sceneRenderer.Render(commandList, view, projection, scene);
-    }
+        // Dispose old renderers
+        _sceneRenderer?.Dispose();
+        _skyboxRenderer?.Dispose();
+        _resolveRenderer?.Dispose();
+        _sampler?.Dispose();
 
-    public void ResolveMSAA(CommandList commandList, TextureView msaaColorView)
-    {
-        _resolveRenderer.Render(commandList, msaaColorView);
+        // Recreate them with the new framebuffer info from GraphicsManager
+        CreateResources();
     }
 
     public void Dispose()
