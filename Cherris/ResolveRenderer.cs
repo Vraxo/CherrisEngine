@@ -7,11 +7,14 @@ namespace Cherris;
 public class ResolveRenderer
 {
     private readonly DeviceBuffer _vertexBuffer;
-    private readonly Pipeline _pipeline;
+    private Pipeline _pipeline;
     private readonly ResourceLayout _textureLayout;
     private readonly GraphicsDevice _graphicsDevice;
+    private readonly Shader _vertexShader;
+    private readonly Shader _fragmentShader;
+    private readonly VertexLayoutDescription _vertexLayout;
 
-    public ResolveRenderer(GraphicsDevice gd, Framebuffer targetFramebuffer)
+    public ResolveRenderer(GraphicsDevice gd)
     {
         _graphicsDevice = gd;
         ResourceFactory factory = gd.ResourceFactory;
@@ -30,15 +33,20 @@ public class ResolveRenderer
             BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
-        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
+        _vertexLayout = new VertexLayoutDescription(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
 
         _textureLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MsaaTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment)));
 
-        (Shader vs, Shader fs) = LoadShaders(factory);
+        (_vertexShader, _fragmentShader) = LoadShaders(factory);
+    }
 
+    public void SetFramebuffer(Framebuffer targetFramebuffer)
+    {
+        _pipeline?.Dispose();
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -46,7 +54,7 @@ public class ResolveRenderer
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
             ResourceLayouts = new[] { _textureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
             Outputs = targetFramebuffer.OutputDescription
         });
     }
@@ -106,7 +114,9 @@ void main()
 
     public void Dispose()
     {
-        _pipeline.Dispose();
+        _pipeline?.Dispose();
+        _vertexShader.Dispose();
+        _fragmentShader.Dispose();
         _textureLayout.Dispose();
         _vertexBuffer.Dispose();
     }

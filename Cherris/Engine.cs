@@ -70,7 +70,7 @@ public abstract class Engine
                 // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
             }
-           
+
             if (texture is null)
             {
                 return null;
@@ -155,18 +155,6 @@ public abstract class Engine
     {
         _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
         _renderer.OnWindowResized();
-
-        // Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler
-        if (SceneManager?.GameObjects is null)
-        {
-            return;
-        }
-
-        foreach (GameObject go in SceneManager.GameObjects)
-        {
-            var mr = go.GetComponent<MeshRenderer>();
-            mr?.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
-        }
     }
 
     private void DisposeResources()

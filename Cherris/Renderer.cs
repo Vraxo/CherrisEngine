@@ -44,9 +44,14 @@ public class Renderer
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout, _graphicsManager.MsaaFramebuffer, _sampler);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, _graphicsManager.MsaaFramebuffer);
-        _resolveRenderer = new ResolveRenderer(gd, _graphicsManager.SwapchainFramebuffer);
+        _sceneRenderer = new SceneRenderer(gd, vertexLayout);
+        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+
+        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
+        _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+
+        _resolveRenderer = new ResolveRenderer(gd);
+        _resolveRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, float windowWidth, float windowHeight)
@@ -85,14 +90,11 @@ public class Renderer
 
     public void OnWindowResized()
     {
-        // Dispose old renderers
-        _sceneRenderer?.Dispose();
-        _skyboxRenderer?.Dispose();
-        _resolveRenderer?.Dispose();
-        _sampler?.Dispose();
-
-        // Recreate them with the new framebuffer info from GraphicsManager
-        CreateResources();
+        // Recreate only the pipelines, which depend on the framebuffer's output description.
+        // All other resources (buffers, layouts, shaders) remain.
+        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        _resolveRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
     public void Dispose()

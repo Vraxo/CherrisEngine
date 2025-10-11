@@ -8,19 +8,26 @@ namespace Cherris;
 public class SceneRenderer
 {
     private readonly DeviceBuffer _mvpBuffer;
-    private readonly Pipeline _pipeline;
+    private Pipeline _pipeline;
     private readonly ResourceSet _mvpResourceSet;
+    private readonly GraphicsDevice _graphicsDevice;
+    private readonly VertexLayoutDescription _vertexLayout;
+    private readonly Shader _vertexShader;
+    private readonly Shader _fragmentShader;
+    private readonly ResourceLayout _mvpLayout;
 
     public ResourceLayout TextureLayout { get; }
     public ResourceLayout MaterialLayout { get; }
 
-    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout, Framebuffer framebuffer, Sampler sampler) // Changed gd.SwapchainFramebuffer to framebuffer
+    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout)
     {
+        _graphicsDevice = gd;
+        _vertexLayout = vertexLayout;
         ResourceFactory factory = gd.ResourceFactory;
 
         _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
 
-        ResourceLayout mvpLayout = factory.CreateResourceLayout(
+        _mvpLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
@@ -33,10 +40,15 @@ public class SceneRenderer
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
-        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
+        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
-        (Shader vs, Shader fs) = LoadShaders(factory);
+        (_vertexShader, _fragmentShader) = LoadShaders(factory);
+    }
 
+    public void SetFramebuffer(Framebuffer framebuffer)
+    {
+        _pipeline?.Dispose();
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -45,8 +57,8 @@ public class SceneRenderer
             RasterizerState = new RasterizerStateDescription(
                 FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout, TextureLayout, MaterialLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            ResourceLayouts = new[] { _mvpLayout, TextureLayout, MaterialLayout },
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
             Outputs = framebuffer.OutputDescription
         });
     }
@@ -112,9 +124,12 @@ public class SceneRenderer
 
     public void Dispose()
     {
-        _pipeline.Dispose();
+        _pipeline?.Dispose();
+        _vertexShader.Dispose();
+        _fragmentShader.Dispose();
         TextureLayout.Dispose();
         MaterialLayout.Dispose();
+        _mvpLayout.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
     }

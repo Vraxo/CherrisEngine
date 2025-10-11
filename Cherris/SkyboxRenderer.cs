@@ -10,18 +10,23 @@ public class SkyboxRenderer
     private readonly GraphicsDevice _graphicsDevice;
     private readonly Sampler _sampler;
     private readonly DeviceBuffer _skyboxVpBuffer;
-    private readonly Pipeline _skyboxPipeline;
+    private Pipeline _skyboxPipeline;
     private readonly ResourceSet _skyboxVpResourceSet;
     private readonly ResourceLayout _skyboxTextureLayout;
     private readonly DeviceBuffer _skyboxVertexBuffer;
     private readonly DeviceBuffer _skyboxIndexBuffer;
     private readonly uint _skyboxIndexCount;
     private readonly Dictionary<Texture, ResourceSet> _skyboxTextureSets = new();
+    private readonly VertexLayoutDescription _vertexLayout;
+    private readonly Shader _vertexShader;
+    private readonly Shader _fragmentShader;
+    private readonly ResourceLayout _skyboxVpLayout;
 
-    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout, Framebuffer framebuffer) // Changed gd.SwapchainFramebuffer to framebuffer
+    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout)
     {
         _graphicsDevice = gd;
         _sampler = sampler;
+        _vertexLayout = vertexLayout;
         ResourceFactory factory = gd.ResourceFactory;
 
         var skyboxMesh = Mesh.CreateCube();
@@ -34,7 +39,7 @@ public class SkyboxRenderer
 
         _skyboxVpBuffer = factory.CreateBuffer(new BufferDescription(128, BufferUsage.UniformBuffer));
 
-        ResourceLayout skyboxVpLayout = factory.CreateResourceLayout(
+        _skyboxVpLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("ViewProjectionBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
@@ -43,9 +48,15 @@ public class SkyboxRenderer
                 new ResourceLayoutElementDescription("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
 
-        _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(skyboxVpLayout, _skyboxVpBuffer));
+        _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_skyboxVpLayout, _skyboxVpBuffer));
 
-        (Shader vs, Shader fs) = LoadSkyboxShaders(factory);
+        (_vertexShader, _fragmentShader) = LoadSkyboxShaders(factory);
+    }
+
+    public void SetFramebuffer(Framebuffer framebuffer)
+    {
+        _skyboxPipeline?.Dispose();
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
         _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -53,9 +64,9 @@ public class SkyboxRenderer
             DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
             RasterizerState = new RasterizerStateDescription(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { skyboxVpLayout, _skyboxTextureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = framebuffer.OutputDescription // Use the passed framebuffer's OutputDescription
+            ResourceLayouts = new[] { _skyboxVpLayout, _skyboxTextureLayout },
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
+            Outputs = framebuffer.OutputDescription
         });
     }
 
@@ -130,8 +141,11 @@ public class SkyboxRenderer
 
     public void Dispose()
     {
-        _skyboxPipeline.Dispose();
+        _skyboxPipeline?.Dispose();
+        _vertexShader.Dispose();
+        _fragmentShader.Dispose();
         _skyboxTextureLayout.Dispose();
+        _skyboxVpLayout.Dispose();
         _skyboxVpResourceSet.Dispose();
         _skyboxVpBuffer.Dispose();
         _skyboxVertexBuffer.Dispose();
