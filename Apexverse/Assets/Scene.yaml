@@ -1,6 +1,6 @@
 OutlineProfiles:
   - Name: Lightsaber
-    Color: [0, 1, 0, 1] # A nice jedi blue
+    Color: [0.2, 0.5, 1, 1] # A nice jedi blue
     Thickness: 12.0 # The pixel radius of the glow. Must be <= searchRadius in OutlineRenderer shader.
     Glow: 1.5 # The intensity of the glow. > 0 enables glow mode.
   - Name: Friendly
