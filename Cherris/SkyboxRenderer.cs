@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -40,13 +41,13 @@ public class SkyboxRenderer
         _skyboxVpBuffer = factory.CreateBuffer(new BufferDescription(128, BufferUsage.UniformBuffer));
 
         _skyboxVpLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
+            new(
                 new ResourceLayoutElementDescription("ViewProjectionBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
         _skyboxTextureLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+            new(
+                new("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
 
         _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_skyboxVpLayout, _skyboxVpBuffer));
 
@@ -61,11 +62,11 @@ public class SkyboxRenderer
         _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
-            RasterizerState = new RasterizerStateDescription(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            DepthStencilState = new(true, false, ComparisonKind.LessEqual),
+            RasterizerState = new(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { _skyboxVpLayout, _skyboxTextureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
+            ResourceLayouts = [_skyboxVpLayout, _skyboxTextureLayout],
+            ShaderSet = new([_vertexLayout], [_vertexShader, _fragmentShader]),
             Outputs = framebuffer.OutputDescription
         });
     }
@@ -80,10 +81,11 @@ public class SkyboxRenderer
 
         if (!_skyboxTextureSets.TryGetValue(skybox.CubeMapTexture, out var textureSet))
         {
-            textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new(
                 _skyboxTextureLayout,
                 skybox.CubeMapTexture.VeldridTextureView,
                 _sampler));
+
             _skyboxTextureSets.Add(skybox.CubeMapTexture, textureSet);
         }
 
@@ -130,10 +132,15 @@ public class SkyboxRenderer
                 fsout_Color = texture(samplerCube(SourceCubeMap, SourceSampler), fsin_TexCoord);
             }";
 
-        ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
-        ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+        ShaderDescription vertexShaderDesc = new(
+            ShaderStages.Vertex,
+            Encoding.UTF8.GetBytes(vertexCode),
+            "main");
+
+        ShaderDescription fragmentShaderDesc = new(
+            ShaderStages.Fragment,
+            Encoding.UTF8.GetBytes(fragmentCode), 
+            "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
@@ -150,7 +157,8 @@ public class SkyboxRenderer
         _skyboxVpBuffer.Dispose();
         _skyboxVertexBuffer.Dispose();
         _skyboxIndexBuffer.Dispose();
-        foreach (var set in _skyboxTextureSets.Values)
+
+        foreach (ResourceSet set in _skyboxTextureSets.Values)
         {
             set.Dispose();
         }

@@ -46,60 +46,6 @@ public static class AssetFinder
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Camera.cs">
-using System;
-using System.Numerics;
-using Veldrid;
-
-namespace Cherris;
-
-public class Camera : Component
-{
-    public float FieldOfView { get; set; } = 60.0f; // in degrees
-    public float NearClipPlane { get; set; } = 0.1f;
-    public float FarClipPlane { get; set; } = 100.0f;
-
-    public Matrix4x4 GetViewMatrix()
-    {
-        // Assumes camera looks along its local -Z axis
-        var transform = GameObject.Transform;
-        var lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
-        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
-        return Matrix4x4.CreateLookAt(transform.Position, lookAt, up);
-    }
-
-    public Matrix4x4 GetProjectionMatrix(float aspectRatio)
-    {
-        return Matrix4x4.CreatePerspectiveFieldOfView(
-            FieldOfView * (MathF.PI / 180.0f),
-            aspectRatio,
-            NearClipPlane,
-            FarClipPlane);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component.cs">
-using System.Diagnostics;
-using System.Numerics;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
-using Veldrid;
-
-namespace Cherris;
-
-public abstract class Component
-{
-    public GameObject GameObject { get; internal set; }
-}
-
-public abstract class Script : Component
-{
-    public virtual void Start() { }
-    public virtual void Update(float deltaTime) { }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Engine.cs">
 using System;
 using System.Collections.Generic;
@@ -173,7 +119,7 @@ public abstract class Engine
                 // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
             }
-           
+
             if (texture is null)
             {
                 return null;
@@ -258,18 +204,6 @@ public abstract class Engine
     {
         _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
         _renderer.OnWindowResized();
-
-        // Recreate every MeshRenderer's resources so their ResourceSets reference the new layouts/sampler
-        if (SceneManager?.GameObjects is null)
-        {
-            return;
-        }
-
-        foreach (GameObject go in SceneManager.GameObjects)
-        {
-            var mr = go.GetComponent<MeshRenderer>();
-            mr?.RecreateResources(_renderer.TextureLayout, _renderer.MaterialLayout, _renderer.Sampler);
-        }
     }
 
     private void DisposeResources()
@@ -590,192 +524,6 @@ public static class Input
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Mesh.cs">
-using System.Numerics;
-using Veldrid;
-
-namespace Cherris;
-
-public class Mesh
-{
-    public Vertex[] Vertices { get; }
-    public ushort[] Indices { get; }
-
-    public Mesh(Vertex[] vertices, ushort[] indices)
-    {
-        Vertices = vertices;
-        Indices = indices;
-    }
-
-    public static Mesh CreateCube()
-    {
-        Vertex[] vertices =
-        {
-            // Top
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Bottom
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-            // Left
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-            // Right
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Front
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Back
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-        };
-
-        ushort[] indices =
-        {
-            0,1,2, 0,2,3,
-            4,5,6, 4,6,7,
-            8,9,10, 8,10,11,
-            12,13,14, 12,14,15,
-            16,17,18, 16,18,19,
-            20,21,22, 20,22,23,
-        };
-
-        return new Mesh(vertices, indices);
-    }
-
-    public static Mesh CreatePlane(float size)
-    {
-        float halfSize = size * 0.5f;
-        Vertex[] vertices =
-        {
-            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
-        };
-
-        // Reversed winding order to be visible with existing pipeline state.
-        // The original order (0,1,2) was being culled.
-        ushort[] indices =
-        {
-            0,2,1, 0,3,2
-        };
-
-        return new Mesh(vertices, indices);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\MeshRenderer.cs">
-using System.Numerics;
-using Veldrid;
-
-namespace Cherris;
-
-public class MeshRenderer : Component
-{
-    private DeviceBuffer _vertexBuffer;
-    private DeviceBuffer _indexBuffer;
-    private uint _indexCount;
-    private ResourceSet _textureResourceSet;
-    private DeviceBuffer _materialPropertiesBuffer;
-    private ResourceSet _materialResourceSet;
-
-    private readonly Mesh _mesh;
-    private readonly Texture _texture;
-    private readonly Vector2 _textureTiling;
-    private readonly GraphicsDevice _gd;
-
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
-    {
-        _mesh = mesh;
-        _gd = gd;
-        _texture = texture;
-        _textureTiling = textureTiling;
-
-        CreateResources(textureLayout, materialLayout, sampler);
-    }
-
-    private void CreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
-    {
-        ResourceFactory factory = _gd.ResourceFactory;
-
-        _vertexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(Vertex.SizeInBytes * _mesh.Vertices.Length),
-            BufferUsage.VertexBuffer));
-        _gd.UpdateBuffer(_vertexBuffer, 0, _mesh.Vertices);
-
-        _indexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(sizeof(ushort) * _mesh.Indices.Length),
-            BufferUsage.IndexBuffer));
-        _gd.UpdateBuffer(_indexBuffer, 0, _mesh.Indices);
-
-        _indexCount = (uint)_mesh.Indices.Length;
-
-        _textureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-            textureLayout,
-            _texture.VeldridTextureView,
-            sampler));
-
-        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
-        var materialData = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0);
-        _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
-
-        _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-            materialLayout,
-            _materialPropertiesBuffer));
-    }
-
-    public void RecreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
-    {
-        _textureResourceSet?.Dispose();
-        _materialResourceSet?.Dispose();
-        _materialPropertiesBuffer?.Dispose();
-
-        CreateResources(textureLayout, materialLayout, sampler);
-    }
-
-    public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
-    {
-        cl.SetVertexBuffer(0, _vertexBuffer);
-        cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
-        cl.SetPipeline(pipeline);
-        cl.SetGraphicsResourceSet(0, mvpResourceSet);
-        cl.SetGraphicsResourceSet(1, _textureResourceSet);
-        cl.SetGraphicsResourceSet(2, _materialResourceSet);
-
-        cl.DrawIndexed(
-            indexCount: _indexCount,
-            instanceCount: 1,
-            indexStart: 0,
-            vertexOffset: 0,
-            instanceStart: 0);
-    }
-
-    public void Dispose()
-    {
-        _vertexBuffer?.Dispose();
-        _indexBuffer?.Dispose();
-        _textureResourceSet?.Dispose();
-        _materialPropertiesBuffer?.Dispose();
-        _materialResourceSet?.Dispose();
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Renderer.cs">
 using System.Collections.Generic;
 using System.Numerics;
@@ -823,9 +571,14 @@ public class Renderer
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout, _graphicsManager.MsaaFramebuffer, _sampler);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout, _graphicsManager.MsaaFramebuffer);
-        _resolveRenderer = new ResolveRenderer(gd, _graphicsManager.SwapchainFramebuffer);
+        _sceneRenderer = new SceneRenderer(gd, vertexLayout);
+        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+
+        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
+        _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+
+        _resolveRenderer = new ResolveRenderer(gd);
+        _resolveRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, float windowWidth, float windowHeight)
@@ -864,14 +617,11 @@ public class Renderer
 
     public void OnWindowResized()
     {
-        // Dispose old renderers
-        _sceneRenderer?.Dispose();
-        _skyboxRenderer?.Dispose();
-        _resolveRenderer?.Dispose();
-        _sampler?.Dispose();
-
-        // Recreate them with the new framebuffer info from GraphicsManager
-        CreateResources();
+        // Recreate only the pipelines, which depend on the framebuffer's output description.
+        // All other resources (buffers, layouts, shaders) remain.
+        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        _resolveRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
     public void Dispose()
@@ -894,11 +644,14 @@ namespace Cherris;
 public class ResolveRenderer
 {
     private readonly DeviceBuffer _vertexBuffer;
-    private readonly Pipeline _pipeline;
+    private Pipeline _pipeline;
     private readonly ResourceLayout _textureLayout;
     private readonly GraphicsDevice _graphicsDevice;
+    private readonly Shader _vertexShader;
+    private readonly Shader _fragmentShader;
+    private readonly VertexLayoutDescription _vertexLayout;
 
-    public ResolveRenderer(GraphicsDevice gd, Framebuffer targetFramebuffer)
+    public ResolveRenderer(GraphicsDevice gd)
     {
         _graphicsDevice = gd;
         ResourceFactory factory = gd.ResourceFactory;
@@ -917,15 +670,20 @@ public class ResolveRenderer
             BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
-        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
+        _vertexLayout = new VertexLayoutDescription(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
 
         _textureLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MsaaTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment)));
 
-        (Shader vs, Shader fs) = LoadShaders(factory);
+        (_vertexShader, _fragmentShader) = LoadShaders(factory);
+    }
 
+    public void SetFramebuffer(Framebuffer targetFramebuffer)
+    {
+        _pipeline?.Dispose();
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -933,7 +691,7 @@ public class ResolveRenderer
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
             ResourceLayouts = new[] { _textureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
             Outputs = targetFramebuffer.OutputDescription
         });
     }
@@ -993,7 +751,9 @@ void main()
 
     public void Dispose()
     {
-        _pipeline.Dispose();
+        _pipeline?.Dispose();
+        _vertexShader.Dispose();
+        _fragmentShader.Dispose();
         _textureLayout.Dispose();
         _vertexBuffer.Dispose();
     }
@@ -1333,19 +1093,26 @@ namespace Cherris;
 public class SceneRenderer
 {
     private readonly DeviceBuffer _mvpBuffer;
-    private readonly Pipeline _pipeline;
+    private Pipeline _pipeline;
     private readonly ResourceSet _mvpResourceSet;
+    private readonly GraphicsDevice _graphicsDevice;
+    private readonly VertexLayoutDescription _vertexLayout;
+    private readonly Shader _vertexShader;
+    private readonly Shader _fragmentShader;
+    private readonly ResourceLayout _mvpLayout;
 
     public ResourceLayout TextureLayout { get; }
     public ResourceLayout MaterialLayout { get; }
 
-    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout, Framebuffer framebuffer, Sampler sampler) // Changed gd.SwapchainFramebuffer to framebuffer
+    public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout)
     {
+        _graphicsDevice = gd;
+        _vertexLayout = vertexLayout;
         ResourceFactory factory = gd.ResourceFactory;
 
         _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
 
-        ResourceLayout mvpLayout = factory.CreateResourceLayout(
+        _mvpLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
@@ -1358,10 +1125,15 @@ public class SceneRenderer
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
-        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(mvpLayout, _mvpBuffer));
+        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
-        (Shader vs, Shader fs) = LoadShaders(factory);
+        (_vertexShader, _fragmentShader) = LoadShaders(factory);
+    }
 
+    public void SetFramebuffer(Framebuffer framebuffer)
+    {
+        _pipeline?.Dispose();
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
@@ -1370,8 +1142,8 @@ public class SceneRenderer
             RasterizerState = new RasterizerStateDescription(
                 FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { mvpLayout, TextureLayout, MaterialLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
+            ResourceLayouts = new[] { _mvpLayout, TextureLayout, MaterialLayout },
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
             Outputs = framebuffer.OutputDescription
         });
     }
@@ -1437,32 +1209,14 @@ public class SceneRenderer
 
     public void Dispose()
     {
-        _pipeline.Dispose();
+        _pipeline?.Dispose();
+        _vertexShader.Dispose();
+        _fragmentShader.Dispose();
         TextureLayout.Dispose();
         MaterialLayout.Dispose();
+        _mvpLayout.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Skybox.cs">
-using Veldrid;
-
-namespace Cherris;
-
-public class Skybox : Component
-{
-    public Texture CubeMapTexture { get; }
-
-    public Skybox(Texture cubeMapTexture)
-    {
-        CubeMapTexture = cubeMapTexture;
-    }
-
-    public void Dispose()
-    {
-        CubeMapTexture.Dispose();
     }
 }
 </file>
@@ -1619,18 +1373,23 @@ public class SkyboxRenderer
     private readonly GraphicsDevice _graphicsDevice;
     private readonly Sampler _sampler;
     private readonly DeviceBuffer _skyboxVpBuffer;
-    private readonly Pipeline _skyboxPipeline;
+    private Pipeline _skyboxPipeline;
     private readonly ResourceSet _skyboxVpResourceSet;
     private readonly ResourceLayout _skyboxTextureLayout;
     private readonly DeviceBuffer _skyboxVertexBuffer;
     private readonly DeviceBuffer _skyboxIndexBuffer;
     private readonly uint _skyboxIndexCount;
     private readonly Dictionary<Texture, ResourceSet> _skyboxTextureSets = new();
+    private readonly VertexLayoutDescription _vertexLayout;
+    private readonly Shader _vertexShader;
+    private readonly Shader _fragmentShader;
+    private readonly ResourceLayout _skyboxVpLayout;
 
-    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout, Framebuffer framebuffer) // Changed gd.SwapchainFramebuffer to framebuffer
+    public SkyboxRenderer(GraphicsDevice gd, Sampler sampler, VertexLayoutDescription vertexLayout)
     {
         _graphicsDevice = gd;
         _sampler = sampler;
+        _vertexLayout = vertexLayout;
         ResourceFactory factory = gd.ResourceFactory;
 
         var skyboxMesh = Mesh.CreateCube();
@@ -1643,7 +1402,7 @@ public class SkyboxRenderer
 
         _skyboxVpBuffer = factory.CreateBuffer(new BufferDescription(128, BufferUsage.UniformBuffer));
 
-        ResourceLayout skyboxVpLayout = factory.CreateResourceLayout(
+        _skyboxVpLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("ViewProjectionBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
@@ -1652,9 +1411,15 @@ public class SkyboxRenderer
                 new ResourceLayoutElementDescription("SourceCubeMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
 
-        _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(skyboxVpLayout, _skyboxVpBuffer));
+        _skyboxVpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_skyboxVpLayout, _skyboxVpBuffer));
 
-        (Shader vs, Shader fs) = LoadSkyboxShaders(factory);
+        (_vertexShader, _fragmentShader) = LoadSkyboxShaders(factory);
+    }
+
+    public void SetFramebuffer(Framebuffer framebuffer)
+    {
+        _skyboxPipeline?.Dispose();
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
         _skyboxPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -1662,9 +1427,9 @@ public class SkyboxRenderer
             DepthStencilState = new DepthStencilStateDescription(true, false, ComparisonKind.LessEqual),
             RasterizerState = new RasterizerStateDescription(FaceCullMode.Front, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { skyboxVpLayout, _skyboxTextureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, new[] { vs, fs }),
-            Outputs = framebuffer.OutputDescription // Use the passed framebuffer's OutputDescription
+            ResourceLayouts = new[] { _skyboxVpLayout, _skyboxTextureLayout },
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
+            Outputs = framebuffer.OutputDescription
         });
     }
 
@@ -1739,8 +1504,11 @@ public class SkyboxRenderer
 
     public void Dispose()
     {
-        _skyboxPipeline.Dispose();
+        _skyboxPipeline?.Dispose();
+        _vertexShader.Dispose();
+        _fragmentShader.Dispose();
         _skyboxTextureLayout.Dispose();
+        _skyboxVpLayout.Dispose();
         _skyboxVpResourceSet.Dispose();
         _skyboxVpBuffer.Dispose();
         _skyboxVertexBuffer.Dispose();
@@ -1847,34 +1615,6 @@ public static class TextureLoader
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Transform.cs">
-using System.Numerics;
-
-namespace Cherris;
-
-public class Transform
-{
-    public Vector3 Position { get; set; }
-    public Quaternion Rotation { get; set; }
-    public Vector3 Scale { get; set; }
-
-    public Transform()
-    {
-        Position = Vector3.Zero;
-        Rotation = Quaternion.Identity;
-        Scale = Vector3.One;
-    }
-
-    public Matrix4x4 GetModelMatrix()
-    {
-        // The order of operations is important: scale, then rotate, then translate.
-        return Matrix4x4.CreateScale(Scale) *
-               Matrix4x4.CreateFromQuaternion(Rotation) *
-               Matrix4x4.CreateTranslation(Position);
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vector3YamlTypeConverter.cs">
 using System;
 using System.Globalization;
@@ -1960,6 +1700,301 @@ public struct VertexPositionColor
     {
         Position = position;
         Color = color;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Camera.cs">
+using System;
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public class Camera : Component
+{
+    public float FieldOfView { get; set; } = 60.0f; // in degrees
+    public float NearClipPlane { get; set; } = 0.1f;
+    public float FarClipPlane { get; set; } = 100.0f;
+
+    public Matrix4x4 GetViewMatrix()
+    {
+        // Assumes camera looks along its local -Z axis
+        var transform = GameObject.Transform;
+        var lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
+        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        return Matrix4x4.CreateLookAt(transform.Position, lookAt, up);
+    }
+
+    public Matrix4x4 GetProjectionMatrix(float aspectRatio)
+    {
+        return Matrix4x4.CreatePerspectiveFieldOfView(
+            FieldOfView * (MathF.PI / 180.0f),
+            aspectRatio,
+            NearClipPlane,
+            FarClipPlane);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Component.cs">
+using System.Diagnostics;
+using System.Numerics;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+using Veldrid;
+
+namespace Cherris;
+
+public abstract class Component
+{
+    public GameObject GameObject { get; internal set; }
+}
+
+public abstract class Script : Component
+{
+    public virtual void Start() { }
+    public virtual void Update(float deltaTime) { }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Mesh.cs">
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public class Mesh
+{
+    public Vertex[] Vertices { get; }
+    public ushort[] Indices { get; }
+
+    public Mesh(Vertex[] vertices, ushort[] indices)
+    {
+        Vertices = vertices;
+        Indices = indices;
+    }
+
+    public static Mesh CreateCube()
+    {
+        Vertex[] vertices =
+        {
+            // Top
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
+            // Bottom
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+            // Left
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+            // Right
+            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
+            // Front
+            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
+            // Back
+            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+        };
+
+        ushort[] indices =
+        {
+            0,1,2, 0,2,3,
+            4,5,6, 4,6,7,
+            8,9,10, 8,10,11,
+            12,13,14, 12,14,15,
+            16,17,18, 16,18,19,
+            20,21,22, 20,22,23,
+        };
+
+        return new Mesh(vertices, indices);
+    }
+
+    public static Mesh CreatePlane(float size)
+    {
+        float halfSize = size * 0.5f;
+        Vertex[] vertices =
+        {
+            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
+        };
+
+        // Reversed winding order to be visible with existing pipeline state.
+        // The original order (0,1,2) was being culled.
+        ushort[] indices =
+        {
+            0,2,1, 0,3,2
+        };
+
+        return new Mesh(vertices, indices);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public class MeshRenderer : Component
+{
+    private DeviceBuffer _vertexBuffer;
+    private DeviceBuffer _indexBuffer;
+    private uint _indexCount;
+    private ResourceSet _textureResourceSet;
+    private DeviceBuffer _materialPropertiesBuffer;
+    private ResourceSet _materialResourceSet;
+
+    private readonly Mesh _mesh;
+    private readonly Texture _texture;
+    private readonly Vector2 _textureTiling;
+    private readonly GraphicsDevice _gd;
+
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
+    {
+        _mesh = mesh;
+        _gd = gd;
+        _texture = texture;
+        _textureTiling = textureTiling;
+
+        CreateDeviceBuffers();
+        CreateResourceSets(textureLayout, materialLayout, sampler);
+    }
+
+    private void CreateDeviceBuffers()
+    {
+        ResourceFactory factory = _gd.ResourceFactory;
+
+        _vertexBuffer = factory.CreateBuffer(new BufferDescription(
+            (uint)(Vertex.SizeInBytes * _mesh.Vertices.Length),
+            BufferUsage.VertexBuffer));
+        _gd.UpdateBuffer(_vertexBuffer, 0, _mesh.Vertices);
+
+        _indexBuffer = factory.CreateBuffer(new BufferDescription(
+            (uint)(sizeof(ushort) * _mesh.Indices.Length),
+            BufferUsage.IndexBuffer));
+        _gd.UpdateBuffer(_indexBuffer, 0, _mesh.Indices);
+
+        _indexCount = (uint)_mesh.Indices.Length;
+    }
+
+    private void CreateResourceSets(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+    {
+        ResourceFactory factory = _gd.ResourceFactory;
+
+        _textureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+            textureLayout,
+            _texture.VeldridTextureView,
+            sampler));
+
+        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
+        var materialData = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0);
+        _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
+
+        _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+            materialLayout,
+            _materialPropertiesBuffer));
+    }
+
+    public void RecreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+    {
+        _textureResourceSet?.Dispose();
+        _materialResourceSet?.Dispose();
+        _materialPropertiesBuffer?.Dispose();
+
+        CreateResourceSets(textureLayout, materialLayout, sampler);
+    }
+
+    public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
+    {
+        cl.SetVertexBuffer(0, _vertexBuffer);
+        cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
+        cl.SetPipeline(pipeline);
+        cl.SetGraphicsResourceSet(0, mvpResourceSet);
+        cl.SetGraphicsResourceSet(1, _textureResourceSet);
+        cl.SetGraphicsResourceSet(2, _materialResourceSet);
+
+        cl.DrawIndexed(
+            indexCount: _indexCount,
+            instanceCount: 1,
+            indexStart: 0,
+            vertexOffset: 0,
+            instanceStart: 0);
+    }
+
+    public void Dispose()
+    {
+        _vertexBuffer?.Dispose();
+        _indexBuffer?.Dispose();
+        _textureResourceSet?.Dispose();
+        _materialPropertiesBuffer?.Dispose();
+        _materialResourceSet?.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Skybox.cs">
+using Veldrid;
+
+namespace Cherris;
+
+public class Skybox : Component
+{
+    public Texture CubeMapTexture { get; }
+
+    public Skybox(Texture cubeMapTexture)
+    {
+        CubeMapTexture = cubeMapTexture;
+    }
+
+    public void Dispose()
+    {
+        CubeMapTexture.Dispose();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Transform.cs">
+using System.Numerics;
+
+namespace Cherris;
+
+public class Transform
+{
+    public Vector3 Position { get; set; }
+    public Quaternion Rotation { get; set; }
+    public Vector3 Scale { get; set; }
+
+    public Transform()
+    {
+        Position = Vector3.Zero;
+        Rotation = Quaternion.Identity;
+        Scale = Vector3.One;
+    }
+
+    public Matrix4x4 GetModelMatrix()
+    {
+        // The order of operations is important: scale, then rotate, then translate.
+        return Matrix4x4.CreateScale(Scale) *
+               Matrix4x4.CreateFromQuaternion(Rotation) *
+               Matrix4x4.CreateTranslation(Position);
     }
 }
 </file>
