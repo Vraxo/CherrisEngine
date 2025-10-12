@@ -4,30 +4,17 @@ namespace Cherris;
 
 public static class OutlineSystem
 {
-    private static readonly Dictionary<string, HashSet<GameObject>> _objectsByProfile = new();
+    private static readonly HashSet<GameObject> _outlinedObjects = new();
 
-    public static IReadOnlyDictionary<string, HashSet<GameObject>> ObjectsByProfile => _objectsByProfile;
+    public static IReadOnlyCollection<GameObject> OutlinedObjects => _outlinedObjects;
 
-    public static void Register(GameObject gameObject, string profileName)
+    public static void Register(GameObject gameObject)
     {
-        if (string.IsNullOrEmpty(profileName)) return;
-
-        if (!_objectsByProfile.TryGetValue(profileName, out var objectSet))
-        {
-            objectSet = new HashSet<GameObject>();
-            _objectsByProfile[profileName] = objectSet;
-        }
-
-        objectSet.Add(gameObject);
+        _outlinedObjects.Add(gameObject);
     }
 
-    public static void Unregister(GameObject gameObject, string profileName)
+    public static void Unregister(GameObject gameObject)
     {
-        if (string.IsNullOrEmpty(profileName)) return;
-
-        if (_objectsByProfile.TryGetValue(profileName, out var objectSet))
-        {
-            objectSet.Remove(gameObject);
-        }
+        _outlinedObjects.Remove(gameObject);
     }
 }

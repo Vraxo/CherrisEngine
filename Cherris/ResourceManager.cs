@@ -9,7 +9,6 @@ public class ResourceManager
     private readonly Dictionary<string, Mesh> _meshes = new();
     private readonly Dictionary<string, Texture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
-    private readonly Dictionary<string, OutlineProfile> _outlineProfiles = new();
     private readonly GraphicsDevice _graphicsDevice;
 
     public ResourceManager(GraphicsDevice gd)
@@ -30,22 +29,6 @@ public class ResourceManager
         // Create a default white texture for untextured objects or if a texture fails to load.
         var white = CreateWhiteTexture("White");
         _textures.Add("White", white);
-    }
-
-    public void AddOutlineProfiles(List<OutlineProfile> profiles)
-    {
-        foreach (var profile in profiles)
-        {
-            if (profile?.Name != null && !_outlineProfiles.ContainsKey(profile.Name))
-            {
-                _outlineProfiles.Add(profile.Name, profile);
-            }
-        }
-    }
-
-    public OutlineProfile GetOutlineProfile(string name)
-    {
-        return _outlineProfiles.TryGetValue(name, out var profile) ? profile : null;
     }
 
     public Mesh GetMesh(string name)

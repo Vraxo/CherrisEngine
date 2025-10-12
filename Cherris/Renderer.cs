@@ -73,7 +73,7 @@ public class Renderer : IDisposable
         OnWindowResized();
     }
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, IReadOnlyList<OutlineProfile> activeProfiles, float windowWidth, float windowHeight)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, HashSet<GameObject> objectsToOutline, float windowWidth, float windowHeight)
     {
         if (mainCamera is null) return;
 
@@ -88,7 +88,7 @@ public class Renderer : IDisposable
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         cl.ClearColorTarget(0, RgbaFloat.Black);
         cl.ClearDepthStencil(1f, 0);
-        _sceneRenderer.RenderIdPass(cl, view, projection, gameObjects, selectedObject, activeProfiles);
+        _sceneRenderer.RenderIdPass(cl, view, projection, gameObjects, objectsToOutline);
 
         // Pass 2: Render scene to MSAA framebuffer
         cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
@@ -108,7 +108,7 @@ public class Renderer : IDisposable
 
         // Pass 4: Composite outlines and render to screen's swapchain
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _outlineRenderer.Render(cl, windowWidth, windowHeight, activeProfiles);
+        _outlineRenderer.Render(cl, windowWidth, windowHeight);
 
         if (_snapshotRequested && _snapshotter != null)
         {

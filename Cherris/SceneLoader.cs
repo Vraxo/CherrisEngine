@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using Veldrid;
 using YamlDotNet.Serialization;
@@ -25,13 +24,12 @@ public class SceneLoader
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
-            .WithTypeConverter(new RgbaFloatYamlTypeConverter())
             .Build();
 
-        _serializer = new SerializerBuilder()
-            .WithNamingConvention(PascalCaseNamingConvention.Instance)
-            .WithTypeConverter(new RgbaFloatYamlTypeConverter())
-            .Build();
+        // A serializer is used to re-serialize parts of the YAML object graph.
+        // This allows us to leverage the deserializer's type conversion capabilities
+        // (e.g., for Vector3) without writing manual, reflection-based conversion logic.
+        _serializer = new SerializerBuilder().Build();
     }
 
     public void RegisterComponentFactory(string typeName, Func<object, Component> factory)
@@ -44,49 +42,45 @@ public class SceneLoader
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
 
-        var sceneData = _deserializer.Deserialize<Dictionary<string, object>>(input);
+        // Instead of custom data classes, deserialize into a generic dictionary structure.
+        // This is more flexible and avoids a rigid coupling to the YAML file structure.
+        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
-        // Load outline profiles first, so they are available when components need them.
-        if (sceneData.TryGetValue("OutlineProfiles", out var profilesObj))
+        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            // Re-serialize and deserialize to get strong types.
-            var yaml = _serializer.Serialize(profilesObj);
-            var profiles = _deserializer.Deserialize<List<OutlineProfile>>(new StringReader(yaml));
-            _resourceManager.AddOutlineProfiles(profiles);
+            return sceneObjects; // Return empty list if no game objects are defined
         }
 
-        if (sceneData.TryGetValue("GameObjects", out var gameObjectsObj) && gameObjectsObj is List<object> gameObjectDataList)
+        foreach (var goData in gameObjectDatas)
         {
-            var gameObjectDatas = gameObjectDataList.Cast<Dictionary<object, object>>();
-
-            foreach (var goData in gameObjectDatas)
+            // Extract name, defaulting if not present.
+            string name = "GameObject";
+            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
             {
-                string name = "GameObject";
-                if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
-                {
-                    name = goName;
-                }
-                var go = new GameObject(name);
-
-                if (!goData.TryGetValue("Components", out var componentsObj) || componentsObj is not Dictionary<object, object> componentsDict)
-                {
-                    sceneObjects.Add(go);
-                    continue;
-                }
-
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
-                {
-                    ApplyTransformProperties(go.Transform, transformProperties);
-                }
-
-                foreach (var componentKvp in componentsDict)
-                {
-                    if (componentKvp.Key as string == "Transform") continue;
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
-                }
-
-                sceneObjects.Add(go);
+                name = goName;
             }
+            var go = new GameObject(name);
+
+            if (!goData.TryGetValue("Components", out var componentsObj) || componentsObj is not Dictionary<object, object> componentsDict)
+            {
+                sceneObjects.Add(go);
+                continue;
+            }
+
+            // Find and apply the Transform first, as it's fundamental.
+            if (componentsDict.TryGetValue("Transform", out var transformProperties))
+            {
+                ApplyTransformProperties(go.Transform, transformProperties);
+            }
+
+            // Create and add all other components
+            foreach (var componentKvp in componentsDict)
+            {
+                if (componentKvp.Key as string == "Transform") continue;
+                AddComponent(go, componentKvp.Key as string, componentKvp.Value);
+            }
+
+            sceneObjects.Add(go);
         }
 
         return sceneObjects;
@@ -94,6 +88,9 @@ public class SceneLoader
 
     private void ApplyTransformProperties(Transform transform, object properties)
     {
+        // This is a pragmatic way to reuse our Vector3YamlTypeConverter without reflection.
+        // We serialize the properties object back to a YAML string and then
+        // deserialize it into a dictionary where we know the values will be Vector3.
         var yaml = _serializer.Serialize(properties);
         var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
 
@@ -107,6 +104,7 @@ public class SceneLoader
         }
         if (props.TryGetValue("Rotation", out var rotDegrees))
         {
+            // Convert Euler angles from degrees to radians for quaternion creation.
             var rotRadians = rotDegrees * (MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
         }

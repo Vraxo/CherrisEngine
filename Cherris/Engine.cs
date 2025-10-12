@@ -361,39 +361,18 @@ public abstract class Engine
             }
         }
 
-        // --- Prepare Outline Data ---
-        // Get all unique profile names currently in use by the system.
-        var activeProfileNames = new List<string>(OutlineSystem.ObjectsByProfile.Keys);
-        var activeProfiles = new List<OutlineProfile>();
-        foreach (var name in activeProfileNames)
-        {
-            var profile = ResourceManager.GetOutlineProfile(name);
-            if (profile != null)
-            {
-                activeProfiles.Add(profile);
-            }
-        }
+        var objectsToOutline = new HashSet<GameObject>(OutlineSystem.OutlinedObjects);
 
-        // Also add a default profile for the selected object, if it doesn't have one.
-        if (_selectedGameObject != null)
+        if (_selectedGameObject is not null)
         {
-            var selectionProfile = ResourceManager.GetOutlineProfile("Selection");
-            if (selectionProfile == null) // Create a default if not defined in scene
-            {
-                selectionProfile = new OutlineProfile { Name = "Selection", Color = RgbaFloat.Yellow, Thickness = 2.0f };
-            }
-            if (activeProfiles.All(p => p.Name != "Selection"))
-            {
-                activeProfiles.Add(selectionProfile);
-            }
+            objectsToOutline.Add(_selectedGameObject);
         }
 
         _renderer.RenderFrame(
             SceneManager.MainCamera,
             SceneManager.Skybox,
             SceneManager.GameObjects,
-            _selectedGameObject,
-            activeProfiles,
+            objectsToOutline,
             _gameWindow.Width,
             _gameWindow.Height);
 
