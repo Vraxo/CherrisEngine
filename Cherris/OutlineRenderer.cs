@@ -176,36 +176,35 @@ public class OutlineRenderer : IDisposable
                     return;
                 }
 
-                float nearestIdRaw = 0.0;
-                float minSqDist = 10000.0f;
+                float maxIdRaw = 0.0;
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0.0, TexelSize.y)).r);
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0.0, TexelSize.y)).r);
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(TexelSize.x, 0.0)).r);
+                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(TexelSize.x, 0.0)).r);
 
-                // Search a limited kernel to find the nearest object pixel.
-                // This determines which outline properties (color, thickness) to use.
-                const int searchRadius = 8;
-                for (int y = -searchRadius; y <= searchRadius; y++) {
-                    for (int x = -searchRadius; x <= searchRadius; x++) {
-                        vec2 offset = vec2(x, y) * TexelSize;
-                        float currentId = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + offset).r;
-                        if (currentId > 0.0) {
-                            float sqDist = float(x*x + y*y);
-                            if (sqDist < minSqDist) {
-                                minSqDist = sqDist;
-                                nearestIdRaw = currentId;
-                            }
-                        }
-                    }
-                }
+                if (maxIdRaw > 0.0) {
+                    int profileIndex = int(round(maxIdRaw * 255.0)) - 1;
 
-                if (nearestIdRaw > 0.0) {
-                    int profileIndex = int(round(nearestIdRaw * 255.0)) - 1;
                     if (profileIndex >= 0 && profileIndex < ProfileCount) {
+                        vec4 outlineColor = Colors[profileIndex];
                         float thickness = Thicknesses[profileIndex].x;
-                        
-                        // Check if the distance to the nearest object pixel is within the outline thickness.
-                        if (sqrt(minSqDist) <= thickness) {
-                            fsout_Color = Colors[profileIndex];
-                            return;
-                        }
+
+                        float h = TexelSize.x * thickness;
+                        float v = TexelSize.y * thickness;
+
+                        float outlineStrength = 0.0;
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, -v)).r > 0.0 ? 1.0 : 0.0);
+                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, -v)).r > 0.0 ? 1.0 : 0.0);
+
+                        vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
+                        fsout_Color = mix(sceneColor, outlineColor, outlineStrength);
+                        return;
                     }
                 }
                 
