@@ -12,6 +12,7 @@ public class Renderer : IDisposable
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
     private BlitRenderer _blitRenderer;
+    private BloomRenderer _bloomRenderer;
     private Sampler _sampler;
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
@@ -53,7 +54,7 @@ public class Renderer : IDisposable
             new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
             new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
 
-        _sampler = factory.CreateSampler(new SamplerDescription
+        _sampler = factory.CreateSampler(new Veldrid.SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,
             AddressModeV = SamplerAddressMode.Wrap,
@@ -69,6 +70,7 @@ public class Renderer : IDisposable
         _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
         _resolveRenderer = new ResolveRenderer(gd);
         _blitRenderer = new BlitRenderer(gd);
+        _bloomRenderer = new BloomRenderer(gd);
 
         OnWindowResized();
     }
@@ -103,9 +105,20 @@ public class Renderer : IDisposable
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 3: Blit the final texture to the screen's swapchain
+        // Pass 3: Extract bright parts of the scene for bloom
+        cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1));
+        _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
+
+        // Pass 4: Blit the final texture to the screen's swapchain
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+
+        // --- DEBUG: Show the output of the bright pass ---
+        _blitRenderer.Render(cl, _graphicsManager.BloomColorView);
+        // --- To restore normal rendering, use this line instead:
+        // _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
+
 
         if (_snapshotRequested && _snapshotter != null)
         {
@@ -125,6 +138,7 @@ public class Renderer : IDisposable
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _blitRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer);
     }
 
     public void Dispose()
@@ -133,6 +147,7 @@ public class Renderer : IDisposable
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();
         _blitRenderer.Dispose();
+        _bloomRenderer.Dispose();
         _sampler.Dispose();
     }
 
@@ -158,7 +173,7 @@ public class Renderer : IDisposable
                 new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
                 new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
             };
-            _vertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+            _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
             gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
             var vertexLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));

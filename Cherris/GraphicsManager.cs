@@ -21,6 +21,12 @@ public class GraphicsManager : IDisposable
     public Veldrid.Texture FinalColorTarget { get; private set; }
     public TextureView FinalColorView { get; private set; }
 
+    // Bloom resources (half resolution)
+    public Framebuffer BloomFramebuffer { get; private set; }
+    public Veldrid.Texture BloomColorTarget { get; private set; }
+    public TextureView BloomColorView { get; private set; }
+
+
     public Framebuffer SwapchainFramebuffer => GraphicsDevice.SwapchainFramebuffer;
 
     private readonly TextureSampleCount _msaaSampleCount;
@@ -77,6 +83,17 @@ public class GraphicsManager : IDisposable
         FinalColorView = GraphicsDevice.ResourceFactory.CreateTextureView(FinalColorTarget);
 
         FinalFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, FinalColorTarget));
+
+        // Bloom Target (half res)
+        uint bloomWidth = (uint)width / 2;
+        uint bloomHeight = (uint)height / 2;
+        BloomColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            bloomWidth, bloomHeight, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled));
+
+        BloomColorView = GraphicsDevice.ResourceFactory.CreateTextureView(BloomColorTarget);
+
+        BloomFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, BloomColorTarget));
     }
 
     private void DisposeResources()
@@ -89,6 +106,10 @@ public class GraphicsManager : IDisposable
         FinalColorView?.Dispose();
         FinalColorTarget?.Dispose();
         FinalFramebuffer?.Dispose();
+
+        BloomColorView?.Dispose();
+        BloomColorTarget?.Dispose();
+        BloomFramebuffer?.Dispose();
     }
 
     public void Dispose()
