@@ -73,7 +73,7 @@ public class Renderer : IDisposable
         OnWindowResized();
     }
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<GameObject> objectsToOutline, float windowWidth, float windowHeight)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight)
     {
         if (mainCamera is null) return;
 
@@ -94,12 +94,9 @@ public class Renderer : IDisposable
             _skyboxRenderer.Render(cl, skybox, view, projection);
         }
         _sceneRenderer.Render(cl, view, projection, gameObjects);
-        if (objectsToOutline is not null)
+        if (selectedObject is not null)
         {
-            foreach (var obj in objectsToOutline)
-            {
-                _sceneRenderer.RenderOutline(cl, view, projection, obj);
-            }
+            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject);
         }
 
         // Pass 2: Resolve MSAA to our final intermediate texture

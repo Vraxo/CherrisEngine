@@ -217,7 +217,7 @@ public class SceneRenderer
 
                 void main() 
                 { 
-                    fsout_Color = vec4(1.0, 0.0, 0.0, 1.0); // Red
+                    fsout_Color = vec4(1.0, 0.8, 0.0, 1.0); // Yellow
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(

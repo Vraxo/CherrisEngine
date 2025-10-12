@@ -34,8 +34,7 @@ GameObjects:
         Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
-        Texture: White
-      PermanentOutline: {}
+        Texture: crate
         
   - Name: GroundPlane
     Components:

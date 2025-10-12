@@ -361,20 +361,11 @@ public abstract class Engine
             }
         }
 
-        var objectsToOutline = SceneManager.GameObjects
-            .Where(go => go.GetComponent<PermanentOutline>() != null)
-            .ToList();
-
-        if (_selectedGameObject is not null)
-        {
-            objectsToOutline.Add(_selectedGameObject);
-        }
-
         _renderer.RenderFrame(
             SceneManager.MainCamera,
             SceneManager.Skybox,
             SceneManager.GameObjects,
-            objectsToOutline.Distinct(),
+            _selectedGameObject,
             _gameWindow.Width,
             _gameWindow.Height);
 
