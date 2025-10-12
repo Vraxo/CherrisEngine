@@ -473,39 +473,11 @@ public abstract class Engine
             }
         }
 
-        // --- Prepare Outline Data ---
-        // Get all unique profile names currently in use by the system.
-        var activeProfileNames = new List<string>(OutlineSystem.ObjectsByProfile.Keys);
-        var activeProfiles = new List<OutlineProfile>();
-        foreach (var name in activeProfileNames)
-        {
-            var profile = ResourceManager.GetOutlineProfile(name);
-            if (profile != null)
-            {
-                activeProfiles.Add(profile);
-            }
-        }
-
-        // Also add a default profile for the selected object, if it doesn't have one.
-        if (_selectedGameObject != null)
-        {
-            var selectionProfile = ResourceManager.GetOutlineProfile("Selection");
-            if (selectionProfile == null) // Create a default if not defined in scene
-            {
-                selectionProfile = new OutlineProfile { Name = "Selection", Color = RgbaFloat.Yellow, Thickness = 2.0f };
-            }
-            if (activeProfiles.All(p => p.Name != "Selection"))
-            {
-                activeProfiles.Add(selectionProfile);
-            }
-        }
-
         _renderer.RenderFrame(
             SceneManager.MainCamera,
             SceneManager.Skybox,
             SceneManager.GameObjects,
             _selectedGameObject,
-            activeProfiles,
             _gameWindow.Width,
             _gameWindow.Height);
 
@@ -596,7 +568,6 @@ public class GameObject
     {
         component.GameObject = this;
         _components.Add(component);
-        component.OnEnable();
         return component;
     }
 
@@ -615,7 +586,6 @@ public class GameObject
         var componentToRemove = GetComponent<T>();
         if (componentToRemove != null)
         {
-            componentToRemove.OnDisable();
             _components.Remove(componentToRemove);
         }
     }
@@ -745,12 +715,6 @@ public class GraphicsManager : IDisposable
     private Veldrid.Texture _msaaDepthTarget;
     public TextureView MsaaColorView { get; private set; }
 
-    // Object ID resources for post-processing
-    public Framebuffer IdFramebuffer { get; private set; }
-    private Veldrid.Texture _objectIdTarget;
-    private Veldrid.Texture _objectIdDepthTarget;
-    public TextureView ObjectIdView { get; private set; }
-
     // Final render target resources
     public Framebuffer FinalFramebuffer { get; private set; }
     public Veldrid.Texture FinalColorTarget { get; private set; }
@@ -804,16 +768,6 @@ public class GraphicsManager : IDisposable
 
         MsaaColorView = GraphicsDevice.ResourceFactory.CreateTextureView(_msaaColorTarget);
 
-        // Object ID Target (No MSAA - we want crisp edges for detection)
-        _objectIdTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            (uint)width, (uint)height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm,
-            TextureUsage.RenderTarget | TextureUsage.Sampled));
-        _objectIdDepthTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
-            (uint)width, (uint)height, 1, 1, PixelFormat.D24_UNorm_S8_UInt,
-            TextureUsage.DepthStencil));
-        ObjectIdView = GraphicsDevice.ResourceFactory.CreateTextureView(_objectIdTarget);
-        IdFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(_objectIdDepthTarget, _objectIdTarget));
-
         // Final Target
         FinalColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             (uint)width, (uint)height, 1, 1, colorFormat,
@@ -830,11 +784,6 @@ public class GraphicsManager : IDisposable
         _msaaColorTarget?.Dispose();
         _msaaDepthTarget?.Dispose();
         MsaaFramebuffer?.Dispose();
-
-        ObjectIdView?.Dispose();
-        _objectIdTarget?.Dispose();
-        _objectIdDepthTarget?.Dispose();
-        IdFramebuffer?.Dispose();
 
         FinalColorView?.Dispose();
         FinalColorTarget?.Dispose();
@@ -961,276 +910,6 @@ public static class Input
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\OutlineProfile.cs">
-using Veldrid;
-
-namespace Cherris;
-
-public class OutlineProfile
-{
-    public string Name { get; set; }
-    public RgbaFloat Color { get; set; } = RgbaFloat.Red;
-    public float Thickness { get; set; } = 2.0f;
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\OutlineRenderer.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using System.Runtime.InteropServices;
-using System.Text;
-using Veldrid;
-using Veldrid.SPIRV;
-
-namespace Cherris;
-
-public class OutlineRenderer : IDisposable
-{
-    private const int MaxOutlineProfiles = 16;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private unsafe struct PropertiesBufferData
-    {
-        public uint ProfileCount;
-        private readonly uint _padding1, _padding2, _padding3;
-
-        public fixed float Colors[MaxOutlineProfiles * 4];
-        public fixed float Thicknesses[MaxOutlineProfiles * 4]; // Use float array for thickness, store in first component of each 'vec4'
-    }
-
-    private readonly DeviceBuffer _vertexBuffer;
-    private Pipeline _pipeline;
-    private readonly ResourceLayout _layout;
-    private readonly GraphicsDevice _graphicsDevice;
-    private readonly Shader _vertexShader;
-    private readonly Shader _fragmentShader;
-    private readonly DeviceBuffer _screenSizeBuffer;
-    private readonly DeviceBuffer _propertiesBuffer;
-    private ResourceSet _resourceSet;
-
-    public unsafe OutlineRenderer(GraphicsDevice gd)
-    {
-        _graphicsDevice = gd;
-        ResourceFactory factory = gd.ResourceFactory;
-
-        Vector3[] quadVertices =
-        {
-            new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
-            new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
-        };
-        _vertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
-        gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
-
-        _screenSizeBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
-
-        uint propertiesBufferSize;
-        unsafe
-        {
-            propertiesBufferSize = (uint)sizeof(PropertiesBufferData);
-        }
-        _propertiesBuffer = factory.CreateBuffer(new BufferDescription(propertiesBufferSize, BufferUsage.UniformBuffer));
-
-        _layout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("SceneTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("IdTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("ScreenSizeBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("PropertiesBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment)
-        ));
-
-        (_vertexShader, _fragmentShader) = LoadShaders(factory);
-    }
-
-    public void SetFramebuffer(Framebuffer targetFramebuffer)
-    {
-        _pipeline?.Dispose();
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
-        {
-            BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = DepthStencilStateDescription.Disabled,
-            RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
-            PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-            ResourceLayouts = new[] { _layout },
-            ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) }, new[] { _vertexShader, _fragmentShader }),
-            Outputs = targetFramebuffer.OutputDescription
-        });
-    }
-
-    public void CreateResources(TextureView sceneView, TextureView idView)
-    {
-        _resourceSet?.Dispose();
-        _resourceSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-            _layout,
-            sceneView,
-            idView,
-            _graphicsDevice.PointSampler,
-            _screenSizeBuffer,
-            _propertiesBuffer));
-    }
-
-    public unsafe void Render(CommandList cl, float width, float height, IReadOnlyList<OutlineProfile> activeProfiles)
-    {
-        var screenSize = new Vector4(1.0f / width, 1.0f / height, 0, 0);
-        cl.UpdateBuffer(_screenSizeBuffer, 0, screenSize);
-
-        var properties = new PropertiesBufferData();
-        properties.ProfileCount = (uint)Math.Min(activeProfiles.Count, MaxOutlineProfiles);
-
-        for (int i = 0; i < properties.ProfileCount; i++)
-        {
-            var profile = activeProfiles[i];
-
-            int colorIndex = i * 4;
-            properties.Colors[colorIndex + 0] = profile.Color.R;
-            properties.Colors[colorIndex + 1] = profile.Color.G;
-            properties.Colors[colorIndex + 2] = profile.Color.B;
-            properties.Colors[colorIndex + 3] = profile.Color.A;
-
-            int thicknessIndex = i * 4;
-            properties.Thicknesses[thicknessIndex] = profile.Thickness;
-        }
-        cl.UpdateBuffer(_propertiesBuffer, 0, properties);
-
-        cl.SetVertexBuffer(0, _vertexBuffer);
-        cl.SetPipeline(_pipeline);
-        cl.SetGraphicsResourceSet(0, _resourceSet);
-        cl.Draw(4, 1, 0, 0);
-    }
-
-    private (Shader, Shader) LoadShaders(ResourceFactory factory)
-    {
-        const string vertexCode = @"
-            #version 450
-            layout(location = 0) in vec3 Position;
-            layout(location = 0) out vec2 fsin_TexCoord;
-            void main() {
-                gl_Position = vec4(Position.xy, 0, 1);
-                vec2 uv = (Position.xy + vec2(1.0, 1.0)) / 2.0;
-                uv.y = 1.0 - uv.y; // Flip Y-coordinate
-                fsin_TexCoord = uv;
-            }";
-
-        const string fragmentCode = @"
-            #version 450
-            layout(location = 0) in vec2 fsin_TexCoord;
-            layout(location = 0) out vec4 fsout_Color;
-
-            layout(set = 0, binding = 0) uniform texture2D SceneTexture;
-            layout(set = 0, binding = 1) uniform texture2D IdTexture;
-            layout(set = 0, binding = 2) uniform sampler SourceSampler;
-            layout(set = 0, binding = 3) uniform ScreenSizeBuffer { vec2 TexelSize; };
-
-            layout(std140, set = 0, binding = 4) uniform PropertiesBuffer
-            {
-                uint ProfileCount;
-                uint _padding1;
-                uint _padding2;
-                uint _padding3;
-                vec4 Colors[16];
-                vec4 Thicknesses[16]; // Thickness is in the .x component
-            };
-
-            void main() {
-                float centerIdRaw = texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord).r;
-                
-                if (centerIdRaw > 0.0) {
-                    fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
-                    return;
-                }
-
-                float maxIdRaw = 0.0;
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0.0, TexelSize.y)).r);
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0.0, TexelSize.y)).r);
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(TexelSize.x, 0.0)).r);
-                maxIdRaw = max(maxIdRaw, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(TexelSize.x, 0.0)).r);
-
-                if (maxIdRaw > 0.0) {
-                    int profileIndex = int(round(maxIdRaw * 255.0)) - 1;
-
-                    if (profileIndex >= 0 && profileIndex < ProfileCount) {
-                        vec4 outlineColor = Colors[profileIndex];
-                        float thickness = Thicknesses[profileIndex].x;
-
-                        float h = TexelSize.x * thickness;
-                        float v = TexelSize.y * thickness;
-
-                        float outlineStrength = 0.0;
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(0, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord - vec2(h, 0)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(h, -v)).r > 0.0 ? 1.0 : 0.0);
-                        outlineStrength = max(outlineStrength, texture(sampler2D(IdTexture, SourceSampler), fsin_TexCoord + vec2(-h, -v)).r > 0.0 ? 1.0 : 0.0);
-
-                        vec4 sceneColor = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
-                        fsout_Color = mix(sceneColor, outlineColor, outlineStrength);
-                        return;
-                    }
-                }
-                
-                fsout_Color = texture(sampler2D(SceneTexture, SourceSampler), fsin_TexCoord);
-            }";
-
-        Shader[] shaders = factory.CreateFromSpirv(
-            new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertexCode), "main"),
-            new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragmentCode), "main"));
-        return (shaders[0], shaders[1]);
-    }
-
-    public void Dispose()
-    {
-        _pipeline?.Dispose();
-        _resourceSet?.Dispose();
-        _vertexShader.Dispose();
-        _fragmentShader.Dispose();
-        _layout.Dispose();
-        _vertexBuffer.Dispose();
-        _screenSizeBuffer.Dispose();
-        _propertiesBuffer.Dispose();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\OutlineSystem.cs">
-using System.Collections.Generic;
-
-namespace Cherris;
-
-public static class OutlineSystem
-{
-    private static readonly Dictionary<string, HashSet<GameObject>> _objectsByProfile = new();
-
-    public static IReadOnlyDictionary<string, HashSet<GameObject>> ObjectsByProfile => _objectsByProfile;
-
-    public static void Register(GameObject gameObject, string profileName)
-    {
-        if (string.IsNullOrEmpty(profileName)) return;
-
-        if (!_objectsByProfile.TryGetValue(profileName, out var objectSet))
-        {
-            objectSet = new HashSet<GameObject>();
-            _objectsByProfile[profileName] = objectSet;
-        }
-
-        objectSet.Add(gameObject);
-    }
-
-    public static void Unregister(GameObject gameObject, string profileName)
-    {
-        if (string.IsNullOrEmpty(profileName)) return;
-
-        if (_objectsByProfile.TryGetValue(profileName, out var objectSet))
-        {
-            objectSet.Remove(gameObject);
-        }
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Renderer.cs">
 using System.Collections.Generic;
 using System.Numerics;
@@ -1245,7 +924,7 @@ public class Renderer : IDisposable
     private SceneRenderer _sceneRenderer;
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
-    private OutlineRenderer _outlineRenderer;
+    private BlitRenderer _blitRenderer;
     private Sampler _sampler;
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
@@ -1302,12 +981,12 @@ public class Renderer : IDisposable
         _sceneRenderer = new SceneRenderer(gd, vertexLayout);
         _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
         _resolveRenderer = new ResolveRenderer(gd);
-        _outlineRenderer = new OutlineRenderer(gd);
+        _blitRenderer = new BlitRenderer(gd);
 
         OnWindowResized();
     }
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, IReadOnlyList<OutlineProfile> activeProfiles, float windowWidth, float windowHeight)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight)
     {
         if (mainCamera is null) return;
 
@@ -1317,14 +996,7 @@ public class Renderer : IDisposable
         CommandList cl = _graphicsManager.CommandList;
         cl.Begin();
 
-        // Pass 1: Render Object IDs to ID framebuffer
-        cl.SetFramebuffer(_graphicsManager.IdFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
-        cl.ClearColorTarget(0, RgbaFloat.Black);
-        cl.ClearDepthStencil(1f, 0);
-        _sceneRenderer.RenderIdPass(cl, view, projection, gameObjects, selectedObject, activeProfiles);
-
-        // Pass 2: Render scene to MSAA framebuffer
+        // Pass 1: Render scene to MSAA framebuffer
         cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         cl.ClearColorTarget(0, RgbaFloat.Black);
@@ -1335,14 +1007,18 @@ public class Renderer : IDisposable
             _skyboxRenderer.Render(cl, skybox, view, projection);
         }
         _sceneRenderer.Render(cl, view, projection, gameObjects);
+        if (selectedObject is not null)
+        {
+            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject);
+        }
 
-        // Pass 3: Resolve MSAA to our final intermediate texture
+        // Pass 2: Resolve MSAA to our final intermediate texture
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 4: Composite outlines and render to screen's swapchain
+        // Pass 3: Blit the final texture to the screen's swapchain
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _outlineRenderer.Render(cl, windowWidth, windowHeight, activeProfiles);
+        _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
 
         if (_snapshotRequested && _snapshotter != null)
         {
@@ -1358,13 +1034,10 @@ public class Renderer : IDisposable
 
     public void OnWindowResized()
     {
-        _sceneRenderer.SetFramebuffers(_graphicsManager.MsaaFramebuffer, _graphicsManager.IdFramebuffer);
+        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
-
-        // Update outline renderer with new textures and set its framebuffer
-        _outlineRenderer.CreateResources(_graphicsManager.FinalColorView, _graphicsManager.ObjectIdView);
-        _outlineRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _blitRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
     }
 
     public void Dispose()
@@ -1372,8 +1045,109 @@ public class Renderer : IDisposable
         _sceneRenderer.Dispose();
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();
-        _outlineRenderer.Dispose();
+        _blitRenderer.Dispose();
         _sampler.Dispose();
+    }
+
+    /// <summary>
+    /// A simple renderer to draw a texture to a fullscreen quad.
+    /// </summary>
+    private class BlitRenderer : IDisposable
+    {
+        private readonly DeviceBuffer _vertexBuffer;
+        private Pipeline _pipeline;
+        private readonly ResourceLayout _textureLayout;
+        private readonly GraphicsDevice _graphicsDevice;
+        private readonly Shader _vertexShader;
+        private readonly Shader _fragmentShader;
+
+        public BlitRenderer(GraphicsDevice gd)
+        {
+            _graphicsDevice = gd;
+            ResourceFactory factory = gd.ResourceFactory;
+
+            Vector3[] quadVertices =
+            {
+                new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
+                new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
+            };
+            _vertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+            gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
+
+            var vertexLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
+
+            _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            (_vertexShader, _fragmentShader) = LoadShaders(factory);
+        }
+
+        public void SetFramebuffer(Framebuffer targetFramebuffer)
+        {
+            _pipeline?.Dispose();
+            ResourceFactory factory = _graphicsDevice.ResourceFactory;
+            _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleOverrideBlend,
+                DepthStencilState = DepthStencilStateDescription.Disabled,
+                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+                ResourceLayouts = new[] { _textureLayout },
+                ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) }, new[] { _vertexShader, _fragmentShader }),
+                Outputs = targetFramebuffer.OutputDescription
+            });
+        }
+
+        public void Render(CommandList cl, TextureView sourceView)
+        {
+            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _textureLayout, sourceView, _graphicsDevice.PointSampler));
+
+            cl.SetVertexBuffer(0, _vertexBuffer);
+            cl.SetPipeline(_pipeline);
+            cl.SetGraphicsResourceSet(0, textureSet);
+            cl.Draw(4, 1, 0, 0);
+
+            textureSet.Dispose();
+        }
+
+        private (Shader, Shader) LoadShaders(ResourceFactory factory)
+        {
+            const string vertexCode = @"
+                #version 450
+                layout(location = 0) in vec3 Position;
+                layout(location = 0) out vec2 fsin_TexCoord;
+                void main() {
+                    gl_Position = vec4(Position.xy, 0, 1);
+                    vec2 uv = (Position.xy + vec2(1.0, 1.0)) / 2.0;
+                    uv.y = 1.0 - uv.y; // Flip Y-coordinate
+                    fsin_TexCoord = uv;
+                }";
+            const string fragmentCode = @"
+                #version 450
+                layout(location = 0) in vec2 fsin_TexCoord;
+                layout(location = 0) out vec4 fsout_Color;
+                layout(set = 0, binding = 0) uniform texture2D SourceTexture;
+                layout(set = 0, binding = 1) uniform sampler SourceSampler;
+                void main() {
+                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord);
+                }";
+
+            Shader[] shaders = factory.CreateFromSpirv(
+                new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main"),
+                new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main"));
+            return (shaders[0], shaders[1]);
+        }
+
+        public void Dispose()
+        {
+            _pipeline?.Dispose();
+            _vertexShader.Dispose();
+            _fragmentShader.Dispose();
+            _textureLayout.Dispose();
+            _vertexBuffer.Dispose();
+        }
     }
 }
 </file>
@@ -1516,7 +1290,6 @@ public class ResourceManager
     private readonly Dictionary<string, Mesh> _meshes = new();
     private readonly Dictionary<string, Texture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
-    private readonly Dictionary<string, OutlineProfile> _outlineProfiles = new();
     private readonly GraphicsDevice _graphicsDevice;
 
     public ResourceManager(GraphicsDevice gd)
@@ -1537,22 +1310,6 @@ public class ResourceManager
         // Create a default white texture for untextured objects or if a texture fails to load.
         var white = CreateWhiteTexture("White");
         _textures.Add("White", white);
-    }
-
-    public void AddOutlineProfiles(List<OutlineProfile> profiles)
-    {
-        foreach (var profile in profiles)
-        {
-            if (profile?.Name != null && !_outlineProfiles.ContainsKey(profile.Name))
-            {
-                _outlineProfiles.Add(profile.Name, profile);
-            }
-        }
-    }
-
-    public OutlineProfile GetOutlineProfile(string name)
-    {
-        return _outlineProfiles.TryGetValue(name, out var profile) ? profile : null;
     }
 
     public Mesh GetMesh(string name)
@@ -1631,52 +1388,10 @@ public class ResourceManager
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\RgbaFloatYamlTypeConverter.cs">
-using System;
-using System.Globalization;
-using Veldrid;
-using YamlDotNet.Core;
-using YamlDotNet.Core.Events;
-using YamlDotNet.Serialization;
-
-namespace Cherris;
-
-public class RgbaFloatYamlTypeConverter : IYamlTypeConverter
-{
-    public bool Accepts(Type type)
-    {
-        return type == typeof(RgbaFloat);
-    }
-
-    public object ReadYaml(IParser parser, Type type, ObjectDeserializer nestedObjectDeserializer)
-    {
-        parser.Consume<SequenceStart>();
-        var r = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var g = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var b = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var a = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        parser.Consume<SequenceEnd>();
-        return new RgbaFloat(r, g, b, a);
-    }
-
-    public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
-    {
-        var color = (RgbaFloat)value;
-        emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow));
-        emitter.Emit(new Scalar(color.R.ToString(CultureInfo.InvariantCulture)));
-        emitter.Emit(new Scalar(color.G.ToString(CultureInfo.InvariantCulture)));
-        emitter.Emit(new Scalar(color.B.ToString(CultureInfo.InvariantCulture)));
-        emitter.Emit(new Scalar(color.A.ToString(CultureInfo.InvariantCulture)));
-        emitter.Emit(new SequenceEnd());
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneLoader.cs">
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using Veldrid;
 using YamlDotNet.Serialization;
@@ -1700,13 +1415,12 @@ public class SceneLoader
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
-            .WithTypeConverter(new RgbaFloatYamlTypeConverter())
             .Build();
 
-        _serializer = new SerializerBuilder()
-            .WithNamingConvention(PascalCaseNamingConvention.Instance)
-            .WithTypeConverter(new RgbaFloatYamlTypeConverter())
-            .Build();
+        // A serializer is used to re-serialize parts of the YAML object graph.
+        // This allows us to leverage the deserializer's type conversion capabilities
+        // (e.g., for Vector3) without writing manual, reflection-based conversion logic.
+        _serializer = new SerializerBuilder().Build();
     }
 
     public void RegisterComponentFactory(string typeName, Func<object, Component> factory)
@@ -1719,49 +1433,45 @@ public class SceneLoader
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
 
-        var sceneData = _deserializer.Deserialize<Dictionary<string, object>>(input);
+        // Instead of custom data classes, deserialize into a generic dictionary structure.
+        // This is more flexible and avoids a rigid coupling to the YAML file structure.
+        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
-        // Load outline profiles first, so they are available when components need them.
-        if (sceneData.TryGetValue("OutlineProfiles", out var profilesObj))
+        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            // Re-serialize and deserialize to get strong types.
-            var yaml = _serializer.Serialize(profilesObj);
-            var profiles = _deserializer.Deserialize<List<OutlineProfile>>(new StringReader(yaml));
-            _resourceManager.AddOutlineProfiles(profiles);
+            return sceneObjects; // Return empty list if no game objects are defined
         }
 
-        if (sceneData.TryGetValue("GameObjects", out var gameObjectsObj) && gameObjectsObj is List<object> gameObjectDataList)
+        foreach (var goData in gameObjectDatas)
         {
-            var gameObjectDatas = gameObjectDataList.Cast<Dictionary<object, object>>();
-
-            foreach (var goData in gameObjectDatas)
+            // Extract name, defaulting if not present.
+            string name = "GameObject";
+            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
             {
-                string name = "GameObject";
-                if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
-                {
-                    name = goName;
-                }
-                var go = new GameObject(name);
-
-                if (!goData.TryGetValue("Components", out var componentsObj) || componentsObj is not Dictionary<object, object> componentsDict)
-                {
-                    sceneObjects.Add(go);
-                    continue;
-                }
-
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
-                {
-                    ApplyTransformProperties(go.Transform, transformProperties);
-                }
-
-                foreach (var componentKvp in componentsDict)
-                {
-                    if (componentKvp.Key as string == "Transform") continue;
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
-                }
-
-                sceneObjects.Add(go);
+                name = goName;
             }
+            var go = new GameObject(name);
+
+            if (!goData.TryGetValue("Components", out var componentsObj) || componentsObj is not Dictionary<object, object> componentsDict)
+            {
+                sceneObjects.Add(go);
+                continue;
+            }
+
+            // Find and apply the Transform first, as it's fundamental.
+            if (componentsDict.TryGetValue("Transform", out var transformProperties))
+            {
+                ApplyTransformProperties(go.Transform, transformProperties);
+            }
+
+            // Create and add all other components
+            foreach (var componentKvp in componentsDict)
+            {
+                if (componentKvp.Key as string == "Transform") continue;
+                AddComponent(go, componentKvp.Key as string, componentKvp.Value);
+            }
+
+            sceneObjects.Add(go);
         }
 
         return sceneObjects;
@@ -1769,6 +1479,9 @@ public class SceneLoader
 
     private void ApplyTransformProperties(Transform transform, object properties)
     {
+        // This is a pragmatic way to reuse our Vector3YamlTypeConverter without reflection.
+        // We serialize the properties object back to a YAML string and then
+        // deserialize it into a dictionary where we know the values will be Vector3.
         var yaml = _serializer.Serialize(properties);
         var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
 
@@ -1782,6 +1495,7 @@ public class SceneLoader
         }
         if (props.TryGetValue("Rotation", out var rotDegrees))
         {
+            // Convert Euler angles from degrees to radians for quaternion creation.
             var rotRadians = rotDegrees * (MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
         }
@@ -1891,7 +1605,6 @@ public class SceneManager
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneRenderer.cs">
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -1909,14 +1622,10 @@ public class SceneRenderer
     private readonly Shader _fragmentShader;
     private readonly ResourceLayout _mvpLayout;
 
-    // ID Pass Resources
-    private readonly Shader _idVertexShader;
-    private readonly Shader _idFragmentShader;
-    private Pipeline _idPipeline;
-    private readonly ResourceLayout _idColorLayout;
-    private readonly DeviceBuffer _idColorBuffer;
-    private readonly ResourceSet _idColorResourceSet;
-    private static readonly RgbaFloat IdColorNormal = RgbaFloat.Black;
+    // Outline rendering resources
+    private readonly Shader _outlineVertexShader;
+    private readonly Shader _outlineFragmentShader;
+    private Pipeline _outlinePipeline;
 
     public ResourceLayout TextureLayout { get; }
     public ResourceLayout MaterialLayout { get; }
@@ -1944,29 +1653,32 @@ public class SceneRenderer
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
-        // Create ID Pass resources
-        _idColorLayout = factory.CreateResourceLayout(
-            new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("IdColorBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
-        _idColorBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
-        _idColorResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_idColorLayout, _idColorBuffer));
-
         (_vertexShader, _fragmentShader) = LoadShaders(factory);
-        (_idVertexShader, _idFragmentShader) = LoadIdShaders(factory);
+        (_outlineVertexShader, _outlineFragmentShader) = LoadOutlineShaders(factory);
     }
 
-    public void SetFramebuffers(Framebuffer mainFramebuffer, Framebuffer idFramebuffer)
+    public void SetFramebuffer(Framebuffer framebuffer)
     {
         _pipeline?.Dispose();
-        _idPipeline?.Dispose();
+        _outlinePipeline?.Dispose();
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
-        // Pipeline for standard objects.
+        // Pipeline for standard objects: writes to the stencil buffer.
         var mainDepthStencilState = new DepthStencilStateDescription(
             depthTestEnabled: true,
             depthWriteEnabled: true,
-            comparisonKind: ComparisonKind.LessEqual);
+            comparisonKind: ComparisonKind.LessEqual,
+            stencilTestEnabled: true,
+            stencilFront: new StencilBehaviorDescription(
+                fail: StencilOperation.Keep,
+                pass: StencilOperation.Replace,
+                depthFail: StencilOperation.Keep,
+                comparison: ComparisonKind.Always),
+            stencilBack: new StencilBehaviorDescription(StencilOperation.Keep, StencilOperation.Keep, StencilOperation.Keep, ComparisonKind.Always),
+            stencilReadMask: 0xff,
+            stencilWriteMask: 0xff,
+            stencilReference: 1);
 
         _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -1977,24 +1689,34 @@ public class SceneRenderer
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { _mvpLayout, TextureLayout, MaterialLayout },
             ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
-            Outputs = mainFramebuffer.OutputDescription
+            Outputs = framebuffer.OutputDescription
         });
 
-        // Pipeline for ID Pass.
-        var idDepthStencilState = new DepthStencilStateDescription(
+        // Pipeline for outlines: tests against the stencil buffer.
+        var outlineDepthStencilState = new DepthStencilStateDescription(
             depthTestEnabled: true,
-            depthWriteEnabled: true,
-            comparisonKind: ComparisonKind.LessEqual);
+            depthWriteEnabled: false,
+            comparisonKind: ComparisonKind.LessEqual,
+            stencilTestEnabled: true,
+            stencilFront: new StencilBehaviorDescription(
+                fail: StencilOperation.Keep,
+                pass: StencilOperation.Keep,
+                depthFail: StencilOperation.Keep,
+                comparison: ComparisonKind.NotEqual),
+            stencilBack: new StencilBehaviorDescription(StencilOperation.Keep, StencilOperation.Keep, StencilOperation.Keep, ComparisonKind.Always),
+            stencilReadMask: 0xff,
+            stencilWriteMask: 0x00,
+            stencilReference: 1);
 
-        _idPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        _outlinePipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             BlendState = BlendStateDescription.SingleOverrideBlend,
-            DepthStencilState = idDepthStencilState,
-            RasterizerState = new RasterizerStateDescription(FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
+            DepthStencilState = outlineDepthStencilState,
+            RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { _mvpLayout, _idColorLayout },
-            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _idVertexShader, _idFragmentShader }),
-            Outputs = idFramebuffer.OutputDescription
+            ResourceLayouts = new[] { _mvpLayout },
+            ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _outlineVertexShader, _outlineFragmentShader }),
+            Outputs = framebuffer.OutputDescription
         });
     }
 
@@ -2012,52 +1734,28 @@ public class SceneRenderer
         }
     }
 
-    public void RenderIdPass(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, GameObject selectedObject, IReadOnlyList<OutlineProfile> activeProfiles)
+    public void RenderOutline(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, GameObject gameObject)
     {
-        commandList.SetPipeline(_idPipeline);
+        var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+        if (meshRenderer is null) return;
 
-        // Cache the mapping from profile name to index to avoid repeated lookups
-        var profileIndexMap = activeProfiles
-            .Select((profile, index) => new { profile.Name, Index = index + 1 }) // +1 because 0 is reserved for 'no outline'
-            .ToDictionary(item => item.Name, item => item.Index);
+        var transform = gameObject.Transform;
 
-        int selectionIndex = profileIndexMap.TryGetValue("Selection", out var idx) ? idx : -1;
+        const float outlineFactor = 1.05f;
+        var outlineModelMatrix =
+            Matrix4x4.CreateScale(transform.Scale * outlineFactor) *
+            Matrix4x4.CreateFromQuaternion(transform.Rotation) *
+            Matrix4x4.CreateTranslation(transform.Position);
 
-        foreach (var gameObject in scene)
-        {
-            var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer is null) continue;
+        Matrix4x4 mvp = outlineModelMatrix * view * projection;
+        commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
-            int finalIndex = 0; // Default to 0 (no outline)
-
-            if (gameObject == selectedObject && selectionIndex != -1)
-            {
-                finalIndex = selectionIndex;
-            }
-            else
-            {
-                var outlineComponent = gameObject.GetComponent<PermanentOutline>();
-                if (outlineComponent != null && profileIndexMap.TryGetValue(outlineComponent.ProfileName, out var permanentIndex))
-                {
-                    finalIndex = permanentIndex;
-                }
-            }
-
-            // Encode the index into the red channel.
-            var idColor = new RgbaFloat((float)finalIndex / 255.0f, 0, 0, 1);
-            commandList.UpdateBuffer(_idColorBuffer, 0, idColor);
-
-            Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
-            commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
-
-            commandList.SetVertexBuffer(0, meshRenderer.VertexBuffer);
-            commandList.SetIndexBuffer(meshRenderer.IndexBuffer, IndexFormat.UInt16);
-            commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
-            commandList.SetGraphicsResourceSet(1, _idColorResourceSet);
-            commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
-        }
+        commandList.SetPipeline(_outlinePipeline);
+        commandList.SetVertexBuffer(0, meshRenderer.VertexBuffer);
+        commandList.SetIndexBuffer(meshRenderer.IndexBuffer, IndexFormat.UInt16);
+        commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
+        commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
     }
-
 
     private (Shader, Shader) LoadShaders(ResourceFactory factory)
     {
@@ -2104,14 +1802,16 @@ public class SceneRenderer
         return (shaders[0], shaders[1]);
     }
 
-    private (Shader, Shader) LoadIdShaders(ResourceFactory factory)
+    private (Shader, Shader) LoadOutlineShaders(ResourceFactory factory)
     {
         const string vertexCode = @"
                 #version 450
                 layout(location = 0) in vec3 Position;
                 layout(location = 1) in vec4 Color;
                 layout(location = 2) in vec2 TexCoord;
+
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+
                 void main() 
                 { 
                     gl_Position = mvp * vec4(Position, 1); 
@@ -2119,11 +1819,11 @@ public class SceneRenderer
 
         const string fragmentCode = @"
                 #version 450
-                layout(set = 1, binding = 0) uniform IdColorBuffer { vec4 IdColor; };
                 layout(location = 0) out vec4 fsout_Color;
+
                 void main() 
                 { 
-                    fsout_Color = IdColor;
+                    fsout_Color = vec4(1.0, 0.8, 0.0, 1.0); // Yellow
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
@@ -2138,19 +1838,16 @@ public class SceneRenderer
     public void Dispose()
     {
         _pipeline?.Dispose();
-        _idPipeline?.Dispose();
+        _outlinePipeline?.Dispose();
         _vertexShader.Dispose();
         _fragmentShader.Dispose();
-        _idVertexShader.Dispose();
-        _idFragmentShader.Dispose();
+        _outlineVertexShader.Dispose();
+        _outlineFragmentShader.Dispose();
         TextureLayout.Dispose();
         MaterialLayout.Dispose();
         _mvpLayout.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
-        _idColorLayout.Dispose();
-        _idColorResourceSet.Dispose();
-        _idColorBuffer.Dispose();
     }
 }
 </file>
@@ -2806,14 +2503,17 @@ public class Camera : Component
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Component.cs">
+using System.Diagnostics;
+using System.Numerics;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+using Veldrid;
+
 namespace Cherris;
 
 public abstract class Component
 {
     public GameObject GameObject { get; internal set; }
-
-    public virtual void OnEnable() { }
-    public virtual void OnDisable() { }
 }
 
 public abstract class Script : Component
@@ -3053,30 +2753,6 @@ public class MeshRenderer : Component
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\PermanentOutline.cs">
-namespace Cherris;
-
-public class PermanentOutline : Component
-{
-    public string ProfileName { get; }
-
-    public PermanentOutline(string profileName)
-    {
-        ProfileName = profileName;
-    }
-
-    public override void OnEnable()
-    {
-        OutlineSystem.Register(GameObject, ProfileName);
-    }
-
-    public override void OnDisable()
-    {
-        OutlineSystem.Unregister(GameObject, ProfileName);
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Skybox.cs">
 using Veldrid;
 
@@ -3145,17 +2821,6 @@ public class Game : Engine
         // Register custom components that the scene can use
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
         SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
-        SceneLoader.RegisterComponentFactory("PermanentOutline", (properties) =>
-        {
-            if (properties is not System.Collections.Generic.Dictionary<object, object> propsDict ||
-                !propsDict.TryGetValue("Profile", out var profileNameObj) ||
-                profileNameObj is not string profileName)
-            {
-                // Default to a profile named "Default" if not specified
-                profileName = "Default";
-            }
-            return new PermanentOutline(profileName);
-        });
 
         // Load the scene from the file and populate the SceneManager
         var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
@@ -3290,14 +2955,6 @@ public class Spinner : Script
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
-OutlineProfiles:
-  - Name: Lightsaber
-    Color: [1, 0, 0, 1]
-    Thickness: 2.0
-  - Name: Friendly
-    Color: [0, 1, 1, 1] # Cyan
-    Thickness: 3.0
-
 GameObjects:
   - Name: SkyboxContainer
     Components:
@@ -3334,9 +2991,7 @@ GameObjects:
         Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
-        Texture: White
-      PermanentOutline:
-        Profile: Lightsaber
+        Texture: crate
         
   - Name: GroundPlane
     Components:

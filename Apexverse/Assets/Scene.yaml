@@ -1,7 +1,7 @@
 OutlineProfiles:
   - Name: Lightsaber
-    Color: [0.2, 0.5, 1, 1] # A nice jedi blue
-    Thickness: 140.0
+    Color: [1, 0, 0, 1]
+    Thickness: 2.0
   - Name: Friendly
     Color: [0, 1, 1, 1] # Cyan
     Thickness: 3.0
@@ -37,9 +37,9 @@ GameObjects:
   - Name: StaticCube
     Components:
       Transform:
-        Position: [2.5, 0.5, 0] # Adjusted Y to sit on the ground
+        Position: [2.5, 0, 0]
         Rotation: [0, 45, 0]
-        Scale: [0.1, 2.5, 0.1] # Long and thin like a lightsaber
+        Scale: [0.75, 0.75, 0.75]
       MeshRenderer:
         Mesh: Cube
         Texture: White

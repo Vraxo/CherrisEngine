@@ -31,7 +31,6 @@ public class OutlineRenderer : IDisposable
     private readonly DeviceBuffer _screenSizeBuffer;
     private readonly DeviceBuffer _propertiesBuffer;
     private ResourceSet _resourceSet;
-    private readonly Sampler _clampSampler;
 
     public unsafe OutlineRenderer(GraphicsDevice gd)
     {
@@ -54,18 +53,6 @@ public class OutlineRenderer : IDisposable
             propertiesBufferSize = (uint)sizeof(PropertiesBufferData);
         }
         _propertiesBuffer = factory.CreateBuffer(new BufferDescription(propertiesBufferSize, BufferUsage.UniformBuffer));
-
-        _clampSampler = factory.CreateSampler(new SamplerDescription
-        {
-            AddressModeU = SamplerAddressMode.Clamp,
-            AddressModeV = SamplerAddressMode.Clamp,
-            AddressModeW = SamplerAddressMode.Clamp,
-            Filter = SamplerFilter.MinPoint_MagPoint_MipPoint,
-            LodBias = 0,
-            MinimumLod = 0,
-            MaximumLod = 0,
-            MaximumAnisotropy = 1
-        });
 
         _layout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("SceneTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
@@ -101,7 +88,7 @@ public class OutlineRenderer : IDisposable
             _layout,
             sceneView,
             idView,
-            _clampSampler,
+            _graphicsDevice.PointSampler,
             _screenSizeBuffer,
             _propertiesBuffer));
     }
@@ -227,6 +214,5 @@ public class OutlineRenderer : IDisposable
         _vertexBuffer.Dispose();
         _screenSizeBuffer.Dispose();
         _propertiesBuffer.Dispose();
-        _clampSampler.Dispose();
     }
 }
