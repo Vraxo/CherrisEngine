@@ -43,7 +43,7 @@ public class SceneRenderer
 
         MaterialLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment))); // FIX: Visible to both shaders
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
@@ -160,7 +160,8 @@ public class SceneRenderer
                 layout(location = 2) in vec2 TexCoord;
 
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
-                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
+                // The Tiling component is still needed by the vertex shader
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; vec4 EmissiveColor; };
 
                 layout(location = 0) out vec4 fsin_Color;
                 layout(location = 1) out vec2 fsin_TexCoord;
@@ -179,12 +180,16 @@ public class SceneRenderer
 
                 layout(set = 1, binding = 0) uniform texture2D SourceTexture;
                 layout(set = 1, binding = 1) uniform sampler SourceSampler;
+                
+                // EmissiveColor is now read in the fragment shader
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; vec4 EmissiveColor; };
 
                 layout(location = 0) out vec4 fsout_Color;
 
                 void main() 
                 { 
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                    vec4 baseColor = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                    fsout_Color = vec4(baseColor.rgb + EmissiveColor.rgb, baseColor.a);
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(

@@ -182,6 +182,22 @@ public abstract class Engine
                 }
             }
 
+            Vector3 emissiveColor = Vector3.Zero; // Default to black (no emission)
+            if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
+            {
+                try
+                {
+                    emissiveColor = new Vector3(
+                        Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
+                }
+            }
+
             return new MeshRenderer(
                 mesh,
                 _graphicsManager.GraphicsDevice,
@@ -189,7 +205,8 @@ public abstract class Engine
                 _renderer.MaterialLayout,
                 _renderer.Sampler,
                 texture,
-                textureTiling);
+                textureTiling,
+                emissiveColor);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());

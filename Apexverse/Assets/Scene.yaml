@@ -24,6 +24,7 @@ GameObjects:
       MeshRenderer:
         Mesh: Cube
         Texture: crate
+        EmissiveColor: [20, 2, 2] # Intense Red
       Spinner:
 
   - Name: StaticCube

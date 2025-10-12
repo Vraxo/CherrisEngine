@@ -20,14 +20,16 @@ public class MeshRenderer : Component
     private readonly Mesh _mesh;
     private readonly Texture _texture;
     private readonly Vector2 _textureTiling;
+    private readonly Vector3 _emissiveColor;
     private readonly GraphicsDevice _gd;
 
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling, Vector3 emissiveColor)
     {
         _mesh = mesh;
         _gd = gd;
         _texture = texture;
         _textureTiling = textureTiling;
+        _emissiveColor = emissiveColor;
 
         CreateDeviceBuffers();
         CreateResourceSets(textureLayout, materialLayout, sampler);
@@ -59,8 +61,11 @@ public class MeshRenderer : Component
             _texture.VeldridTextureView,
             sampler));
 
-        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
-        var materialData = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0);
+        // Uniform buffer now holds 2 Vector4s (tiling and emissive color)
+        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
+        var materialData = new Vector4[2];
+        materialData[0] = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0); // Tiling in xy
+        materialData[1] = new Vector4(_emissiveColor, 1.0f); // Emissive color in xyz
         _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
 
         _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
