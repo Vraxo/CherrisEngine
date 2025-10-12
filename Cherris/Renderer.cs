@@ -12,6 +12,7 @@ public class Renderer : IDisposable
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
     private BlitRenderer _blitRenderer;
+    private BloomRenderer _bloomRenderer; // New
     private Sampler _sampler;
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
@@ -69,6 +70,11 @@ public class Renderer : IDisposable
         _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
         _resolveRenderer = new ResolveRenderer(gd);
         _blitRenderer = new BlitRenderer(gd);
+        // Create BloomRenderer with the same size and format as our HDR buffer
+        _bloomRenderer = new BloomRenderer(gd,
+            _graphicsManager.FinalColorTarget.Width,
+            _graphicsManager.FinalColorTarget.Height,
+            _graphicsManager.FinalColorTarget.Format);
 
         OnWindowResized();
     }
@@ -103,9 +109,16 @@ public class Renderer : IDisposable
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 3: Blit the final texture to the screen's swapchain
+        // --- NEW BLOOM PASS ---
+        // Pass 3: Run the bright-pass filter on the resolved HDR scene image.
+        // A threshold of 1.0 means only colors brighter than standard white will "glow".
+        _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView, 1.0f);
+        // --- END NEW BLOOM PASS ---
+
+        // Pass 4: Blit the final texture to the screen's swapchain
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
+        // DEBUG: Render the result of the bright pass instead of the main scene
+        _blitRenderer.Render(cl, _bloomRenderer.BrightPassTargetView);
 
         if (_snapshotRequested && _snapshotter != null)
         {
@@ -125,6 +138,8 @@ public class Renderer : IDisposable
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _blitRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        // Make sure the bloom renderer's targets are also resized.
+        _bloomRenderer?.OnWindowResized(_graphicsManager.FinalColorTarget.Width, _graphicsManager.FinalColorTarget.Height);
     }
 
     public void Dispose()
@@ -133,6 +148,7 @@ public class Renderer : IDisposable
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();
         _blitRenderer.Dispose();
+        _bloomRenderer?.Dispose();
         _sampler.Dispose();
     }
 
