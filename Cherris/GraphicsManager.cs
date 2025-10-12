@@ -26,6 +26,11 @@ public class GraphicsManager : IDisposable
     public Veldrid.Texture BloomColorTarget { get; private set; }
     public TextureView BloomColorView { get; private set; }
 
+    // Temporary "ping-pong" buffer for blurring
+    public Framebuffer BloomTempFramebuffer { get; private set; }
+    public Veldrid.Texture BloomTempColorTarget { get; private set; }
+    public TextureView BloomTempColorView { get; private set; }
+
 
     public Framebuffer SwapchainFramebuffer => GraphicsDevice.SwapchainFramebuffer;
 
@@ -94,6 +99,15 @@ public class GraphicsManager : IDisposable
         BloomColorView = GraphicsDevice.ResourceFactory.CreateTextureView(BloomColorTarget);
 
         BloomFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, BloomColorTarget));
+
+        // Bloom Temp Target (half res)
+        BloomTempColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            bloomWidth, bloomHeight, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled));
+
+        BloomTempColorView = GraphicsDevice.ResourceFactory.CreateTextureView(BloomTempColorTarget);
+
+        BloomTempFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, BloomTempColorTarget));
     }
 
     private void DisposeResources()
@@ -110,6 +124,10 @@ public class GraphicsManager : IDisposable
         BloomColorView?.Dispose();
         BloomColorTarget?.Dispose();
         BloomFramebuffer?.Dispose();
+
+        BloomTempColorView?.Dispose();
+        BloomTempColorTarget?.Dispose();
+        BloomTempFramebuffer?.Dispose();
     }
 
     public void Dispose()

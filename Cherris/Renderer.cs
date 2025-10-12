@@ -75,6 +75,8 @@ public class Renderer : IDisposable
         OnWindowResized();
     }
 
+
+
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight)
     {
         if (mainCamera is null) return;
@@ -103,18 +105,27 @@ public class Renderer : IDisposable
 
         // Pass 2: Resolve MSAA to our final intermediate texture
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 3: Extract bright parts of the scene for bloom
+        // Pass 3: Extract bright parts and blur them for the bloom effect
+        var bloomViewport = new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1);
+        cl.SetViewport(0, bloomViewport);
+
+        // 3a: Bright Pass
         cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1));
         _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
+
+        // 3b: Blur Pass
+        _bloomRenderer.RenderBlur(cl,
+            _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer,
+            _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
 
         // Pass 4: Blit the final texture to the screen's swapchain
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
 
-        // --- DEBUG: Show the output of the bright pass ---
+        // --- DEBUG: Show the output of the bloom process ---
         _blitRenderer.Render(cl, _graphicsManager.BloomColorView);
         // --- To restore normal rendering, use this line instead:
         // _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
@@ -138,7 +149,9 @@ public class Renderer : IDisposable
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _blitRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer);
+        _bloomRenderer.OnWindowResized(
+            _graphicsManager.BloomFramebuffer,
+            _graphicsManager.BloomTempFramebuffer);
     }
 
     public void Dispose()
