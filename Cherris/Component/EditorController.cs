@@ -40,21 +40,32 @@ public class EditorController : Script
         }
 
         // --- Keyboard Movement ---
-        var moveDirection = Vector3.Zero;
+        var localMove = Vector3.Zero;
+        if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
+        if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
+        if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
+        if (Input.IsKeyDown(Key.D)) localMove.X += 1;
 
-        if (Input.IsKeyDown(Key.W)) moveDirection -= Vector3.UnitZ;
-        if (Input.IsKeyDown(Key.S)) moveDirection += Vector3.UnitZ;
-        if (Input.IsKeyDown(Key.A)) moveDirection -= Vector3.UnitX;
-        if (Input.IsKeyDown(Key.D)) moveDirection += Vector3.UnitX;
-        if (Input.IsKeyDown(Key.E)) moveDirection += Vector3.UnitY; // Up
-        if (Input.IsKeyDown(Key.Q)) moveDirection -= Vector3.UnitY; // Down
+        var worldVerticalMove = 0f;
+        if (Input.IsKeyDown(Key.Space)) worldVerticalMove += 1;
+        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)) worldVerticalMove -= 1;
 
-        if (moveDirection != Vector3.Zero)
+        if (localMove != Vector3.Zero || worldVerticalMove != 0)
         {
-            moveDirection = Vector3.Normalize(moveDirection);
-            // Transform the local direction vector by the full camera rotation to fly.
-            var worldDirection = Vector3.Transform(moveDirection, GameObject.Transform.Rotation);
-            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+            // Transform local horizontal movement into world space.
+            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
+
+            // Combine with world vertical movement.
+            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+
+            // Normalize the final vector to ensure consistent speed in all directions.
+            if (finalMove.LengthSquared() > 0)
+            {
+                GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
+            }
         }
     }
 }
