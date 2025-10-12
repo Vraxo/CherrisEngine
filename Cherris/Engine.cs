@@ -105,6 +105,8 @@ public abstract class Engine
 
     protected EngineMode Mode { get; }
 
+    public float Exposure { get; set; } = 1.0f;
+
     protected Engine(string windowTitle, EngineMode mode = EngineMode.Game)
     {
         Mode = mode;
@@ -384,7 +386,8 @@ public abstract class Engine
             SceneManager.GameObjects,
             _selectedGameObject,
             _gameWindow.Width,
-            _gameWindow.Height);
+            _gameWindow.Height,
+            Exposure);
 
         _renderer.ProcessSnapshot();
     }

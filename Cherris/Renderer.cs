@@ -11,7 +11,7 @@ public class Renderer : IDisposable
     private SceneRenderer _sceneRenderer;
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
-    private BlitRenderer _blitRenderer;
+    private FinalPassRenderer _finalPassRenderer;
     private BloomRenderer _bloomRenderer;
     private Sampler _sampler;
     private Snapshotter _snapshotter;
@@ -44,6 +44,8 @@ public class Renderer : IDisposable
         _snapshotter?.SaveCopiedData(_snapshotPath);
     }
 
+
+
     private void CreateResources()
     {
         GraphicsDevice gd = _graphicsManager.GraphicsDevice;
@@ -69,15 +71,13 @@ public class Renderer : IDisposable
         _sceneRenderer = new SceneRenderer(gd, vertexLayout);
         _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
         _resolveRenderer = new ResolveRenderer(gd);
-        _blitRenderer = new BlitRenderer(gd);
+        _finalPassRenderer = new FinalPassRenderer(gd);
         _bloomRenderer = new BloomRenderer(gd);
 
         OnWindowResized();
     }
 
-
-
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
         if (mainCamera is null) return;
 
@@ -121,14 +121,15 @@ public class Renderer : IDisposable
             _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer,
             _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
 
-        // Pass 4: Blit the final texture to the screen's swapchain
+        // Pass 4: Composite scene and bloom, tonemap, and draw to screen
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
 
-        // --- DEBUG: Show the output of the bloom process ---
-        _blitRenderer.Render(cl, _graphicsManager.BloomColorView);
-        // --- To restore normal rendering, use this line instead:
-        // _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
+        // 4a: Draw the main scene with tonemapping
+        _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
+
+        // 4b: Additively blend the bloom on top
+        _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
 
 
         if (_snapshotRequested && _snapshotter != null)
@@ -148,7 +149,7 @@ public class Renderer : IDisposable
         _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
-        _blitRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         _bloomRenderer.OnWindowResized(
             _graphicsManager.BloomFramebuffer,
             _graphicsManager.BloomTempFramebuffer);
@@ -159,24 +160,29 @@ public class Renderer : IDisposable
         _sceneRenderer.Dispose();
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();
-        _blitRenderer.Dispose();
+        _finalPassRenderer.Dispose();
         _bloomRenderer.Dispose();
         _sampler.Dispose();
     }
 
     /// <summary>
-    /// A simple renderer to draw a texture to a fullscreen quad.
+    /// Renders a fullscreen texture, applying exposure and tonemapping.
+    /// Also handles additive blending for bloom.
     /// </summary>
-    private class BlitRenderer : IDisposable
+    private class FinalPassRenderer : IDisposable
     {
         private readonly DeviceBuffer _vertexBuffer;
         private Pipeline _pipeline;
+        private Pipeline _bloomPipeline;
         private readonly ResourceLayout _textureLayout;
+        private readonly ResourceLayout _paramsLayout;
+        private readonly DeviceBuffer _paramsBuffer;
         private readonly GraphicsDevice _graphicsDevice;
         private readonly Shader _vertexShader;
         private readonly Shader _fragmentShader;
+        private readonly Sampler _clampSampler;
 
-        public BlitRenderer(GraphicsDevice gd)
+        public FinalPassRenderer(GraphicsDevice gd)
         {
             _graphicsDevice = gd;
             ResourceFactory factory = gd.ResourceFactory;
@@ -189,11 +195,22 @@ public class Renderer : IDisposable
             _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
             gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
-            var vertexLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
-
             _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            _paramsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("Params", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+            _paramsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+
+            _clampSampler = factory.CreateSampler(new SamplerDescription
+            {
+                AddressModeU = SamplerAddressMode.Clamp,
+                AddressModeV = SamplerAddressMode.Clamp,
+                AddressModeW = SamplerAddressMode.Clamp,
+                Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
+            });
 
             (_vertexShader, _fragmentShader) = LoadShaders(factory);
         }
@@ -201,30 +218,74 @@ public class Renderer : IDisposable
         public void SetFramebuffer(Framebuffer targetFramebuffer)
         {
             _pipeline?.Dispose();
+            _bloomPipeline?.Dispose();
             ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+            var shaderSet = new ShaderSetDescription(
+                new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) },
+                new[] { _vertexShader, _fragmentShader });
+
+            // Standard pipeline for the main scene pass
             _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
             {
                 BlendState = BlendStateDescription.SingleOverrideBlend,
                 DepthStencilState = DepthStencilStateDescription.Disabled,
                 RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
                 PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-                ResourceLayouts = new[] { _textureLayout },
-                ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) }, new[] { _vertexShader, _fragmentShader }),
+                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
+                ShaderSet = shaderSet,
+                Outputs = targetFramebuffer.OutputDescription
+            });
+
+            // Additive blend pipeline for the bloom pass
+            _bloomPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleAdditiveBlend,
+                DepthStencilState = DepthStencilStateDescription.Disabled,
+                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
+                ShaderSet = shaderSet,
                 Outputs = targetFramebuffer.OutputDescription
             });
         }
 
-        public void Render(CommandList cl, TextureView sourceView)
+        public void Render(CommandList cl, TextureView sourceView, float exposure)
         {
+            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(exposure, 1, 0, 0)); // Use Y=1 to signal main pass
+
             ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _textureLayout, sourceView, _graphicsDevice.PointSampler));
+                _textureLayout, sourceView, _graphicsDevice.LinearSampler)); // Main scene can wrap
+            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _paramsLayout, _paramsBuffer));
 
             cl.SetVertexBuffer(0, _vertexBuffer);
             cl.SetPipeline(_pipeline);
             cl.SetGraphicsResourceSet(0, textureSet);
+            cl.SetGraphicsResourceSet(1, paramsSet);
             cl.Draw(4, 1, 0, 0);
 
             textureSet.Dispose();
+            paramsSet.Dispose();
+        }
+
+        public void RenderBloom(CommandList cl, TextureView bloomView)
+        {
+            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(0, 0, 0, 0)); // Use Y=0 to signal bloom pass
+
+            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _textureLayout, bloomView, _clampSampler)); // Bloom must clamp
+            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _paramsLayout, _paramsBuffer));
+
+            cl.SetVertexBuffer(0, _vertexBuffer);
+            cl.SetPipeline(_bloomPipeline);
+            cl.SetGraphicsResourceSet(0, textureSet);
+            cl.SetGraphicsResourceSet(1, paramsSet);
+            cl.Draw(4, 1, 0, 0);
+
+            textureSet.Dispose();
+            paramsSet.Dispose();
         }
 
         private (Shader, Shader) LoadShaders(ResourceFactory factory)
@@ -245,8 +306,21 @@ public class Renderer : IDisposable
                 layout(location = 0) out vec4 fsout_Color;
                 layout(set = 0, binding = 0) uniform texture2D SourceTexture;
                 layout(set = 0, binding = 1) uniform sampler SourceSampler;
+                layout(set = 1, binding = 0) uniform Params { float Exposure; float IsMainPass; }; // IsMainPass is 1.0 or 0.0
+
+                vec3 tonemap_reinhard(vec3 color) {
+                    return color / (color + vec3(1.0));
+                }
+
                 void main() {
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord);
+                    vec3 color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb;
+                    
+                    if (IsMainPass > 0.5) {
+                        color *= Exposure;
+                        color = tonemap_reinhard(color);
+                    }
+
+                    fsout_Color = vec4(color, 1.0);
                 }";
 
             Shader[] shaders = factory.CreateFromSpirv(
@@ -258,10 +332,14 @@ public class Renderer : IDisposable
         public void Dispose()
         {
             _pipeline?.Dispose();
+            _bloomPipeline?.Dispose();
             _vertexShader.Dispose();
             _fragmentShader.Dispose();
             _textureLayout.Dispose();
+            _paramsLayout.Dispose();
+            _paramsBuffer.Dispose();
             _vertexBuffer.Dispose();
+            _clampSampler.Dispose();
         }
     }
 }

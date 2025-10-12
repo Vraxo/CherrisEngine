@@ -6,6 +6,7 @@ public class Game : Engine
 {
     public Game(EngineMode mode) : base("Veldrid Engine Demo", mode)
     {
+        Exposure = 0.5f;
     }
 
     protected override void LoadContent()
