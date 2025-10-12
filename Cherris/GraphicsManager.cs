@@ -50,8 +50,8 @@ public class GraphicsManager : IDisposable
 
     private void CreateResources(int width, int height)
     {
-        // Use a 16-bit floating-point format for HDR rendering.
-        const PixelFormat colorFormat = PixelFormat.R16_G16_B16_A16_Float;
+        PixelFormat swapchainFormat = SwapchainFramebuffer.ColorTargets[0].Target.Format;
+        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
 
         // MSAA Targets
         _msaaColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(

@@ -138,68 +138,47 @@ public abstract class Engine
             }
 
             Mesh? mesh = null;
+
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
             {
                 mesh = ResourceManager.GetMesh(meshName);
             }
-            if (mesh is null) return null;
+
+            if (mesh is null)
+            {
+                return null;
+            }
 
             Texture texture;
+
             if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
             {
                 texture = ResourceManager.GetTexture(textureName);
             }
             else
             {
+                // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
             }
-            if (texture is null) return null;
 
-            var materialProps = new MaterialProperties
+            if (texture is null)
             {
-                TextureTiling = Vector2.One,
-                EmissiveColor = Vector3.Zero,
-                EmissiveIntensity = 0.0f
-            };
+                return null;
+            }
+
+            Vector2 textureTiling = Vector2.One;
 
             if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
                 {
-                    materialProps.TextureTiling = new Vector2(
+                    textureTiling = new Vector2(
                         Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
                         Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"[Engine] Warning: Could not parse TextureTiling. Error: {e.Message}");
-                }
-            }
-
-            if (propsDict.TryGetValue("EmissiveColor", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
-            {
-                try
-                {
-                    materialProps.EmissiveColor = new Vector3(
-                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor. Error: {e.Message}");
-                }
-            }
-
-            if (propsDict.TryGetValue("EmissiveIntensity", out var intensityObj))
-            {
-                try
-                {
-                    materialProps.EmissiveIntensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Engine] Warning: Could not parse EmissiveIntensity. Error: {e.Message}");
+                    Console.WriteLine($"[Engine] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
                 }
             }
 
@@ -210,7 +189,7 @@ public abstract class Engine
                 _renderer.MaterialLayout,
                 _renderer.Sampler,
                 texture,
-                materialProps);
+                textureTiling);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
