@@ -361,9 +361,9 @@ public abstract class Engine
             }
         }
 
-        var objectsToOutline = new HashSet<GameObject>(
-            SceneManager.GameObjects.Where(go => go.GetComponent<PermanentOutline>() != null)
-        );
+        var objectsToOutline = SceneManager.GameObjects
+            .Where(go => go.GetComponent<PermanentOutline>() != null)
+            .ToList();
 
         if (_selectedGameObject is not null)
         {
@@ -374,7 +374,7 @@ public abstract class Engine
             SceneManager.MainCamera,
             SceneManager.Skybox,
             SceneManager.GameObjects,
-            objectsToOutline,
+            objectsToOutline.Distinct(),
             _gameWindow.Width,
             _gameWindow.Height);
 
