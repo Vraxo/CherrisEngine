@@ -1,7 +1,19 @@
 ﻿using System.Numerics;
+using System.Runtime.InteropServices;
 using Veldrid;
 
 namespace Cherris;
+
+// It's good practice to define a struct that matches the shader's uniform buffer layout.
+[StructLayout(LayoutKind.Sequential)]
+public struct MaterialProperties
+{
+    public Vector2 TextureTiling;
+    private float _padding1; // Veldrid requires uniform buffer members to be aligned to 16 bytes.
+    private float _padding2;
+    public Vector3 EmissiveColor;
+    public float EmissiveIntensity;
+}
 
 public class MeshRenderer : Component
 {
@@ -19,15 +31,15 @@ public class MeshRenderer : Component
 
     private readonly Mesh _mesh;
     private readonly Texture _texture;
-    private readonly Vector2 _textureTiling;
+    private readonly MaterialProperties _materialProperties;
     private readonly GraphicsDevice _gd;
 
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, MaterialProperties materialProperties)
     {
         _mesh = mesh;
         _gd = gd;
         _texture = texture;
-        _textureTiling = textureTiling;
+        _materialProperties = materialProperties;
 
         CreateDeviceBuffers();
         CreateResourceSets(textureLayout, materialLayout, sampler);
@@ -59,22 +71,12 @@ public class MeshRenderer : Component
             _texture.VeldridTextureView,
             sampler));
 
-        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
-        var materialData = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0);
-        _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
+        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription((uint)Marshal.SizeOf<MaterialProperties>(), BufferUsage.UniformBuffer));
+        _gd.UpdateBuffer(_materialPropertiesBuffer, 0, _materialProperties);
 
         _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
             materialLayout,
             _materialPropertiesBuffer));
-    }
-
-    public void RecreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
-    {
-        _textureResourceSet?.Dispose();
-        _materialResourceSet?.Dispose();
-        _materialPropertiesBuffer?.Dispose();
-
-        CreateResourceSets(textureLayout, materialLayout, sampler);
     }
 
     public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)

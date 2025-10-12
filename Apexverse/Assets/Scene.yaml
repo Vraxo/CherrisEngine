@@ -24,7 +24,8 @@ GameObjects:
       MeshRenderer:
         Mesh: Cube
         Texture: crate
-      Spinner:
+        EmissiveColor: [1.0, 0.8, 0.4] # An orange-white light
+        EmissiveIntensity: 5.0 # Make it 5 times brighter than standard white
 
   - Name: StaticCube
     Components:
