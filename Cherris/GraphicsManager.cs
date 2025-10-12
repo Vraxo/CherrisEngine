@@ -50,8 +50,8 @@ public class GraphicsManager : IDisposable
 
     private void CreateResources(int width, int height)
     {
-        PixelFormat swapchainFormat = SwapchainFramebuffer.ColorTargets[0].Target.Format;
-        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+        // Use a 16-bit float format for our intermediate render targets to support HDR values.
+        const PixelFormat colorFormat = PixelFormat.R16_G16_B16_A16_Float;
 
         // MSAA Targets
         _msaaColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
@@ -89,16 +89,6 @@ public class GraphicsManager : IDisposable
         FinalColorView?.Dispose();
         FinalColorTarget?.Dispose();
         FinalFramebuffer?.Dispose();
-    }
-
-    private static PixelFormat GetNonSrgbFormat(PixelFormat format)
-    {
-        return format switch
-        {
-            PixelFormat.B8_G8_R8_A8_UNorm_SRgb => PixelFormat.B8_G8_R8_A8_UNorm,
-            PixelFormat.R8_G8_B8_A8_UNorm_SRgb => PixelFormat.R8_G8_B8_A8_UNorm,
-            _ => format
-        };
     }
 
     public void Dispose()
