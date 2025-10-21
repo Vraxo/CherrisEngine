@@ -3511,7 +3511,7 @@ public class Transform
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKBackend.cs">
 using Cherris.Rendering;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Desktop;
 
 namespace Cherris;
@@ -3550,7 +3550,7 @@ using Cherris.Rendering;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.Common;
 using OpenTK.Mathematics;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL4;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OpenTKMouseButton = OpenTK.Windowing.GraphicsLibraryFramework.MouseButton;
@@ -3967,14 +3967,9 @@ void main()
         {
             _shaderProgram.Use();
 
-            // Activate texture unit 0
-            GL.ActiveTexture(TextureUnit.Texture0);
-
             if (meshRenderer.Texture is OpenTKTexture glTexture)
             {
-                // Prefer: glTexture.Bind(TextureUnit.Texture0);
-                // If your OpenTKTexture.Bind expects a different TextureUnit type, update it to use OpenTK.Graphics.OpenGL4.TextureUnit
-                glTexture.Bind((OpenTK.Graphics.OpenGL.TextureUnit)TextureUnit.Texture0);
+                glTexture.Bind(TextureUnit.Texture0);
             }
             else
             {
@@ -4025,8 +4020,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Cherris.Rendering;
-using OpenTK.Graphics.OpenGL;
-using OpenTK.Windowing.Common.Input;
+using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
 
 namespace Cherris;
@@ -4077,7 +4071,7 @@ public class OpenTKResourceManager : IResourceManager
         GL.BindTexture(TextureTarget.Texture2D, handle);
 
         byte[] pixel = { 255, 255, 255, 255 };
-        GL.TexImage2D(TextureTarget.Texture2D, 0, (PixelInternalFormat)InternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
 
         SetTextureParameters();
         return new OpenTKTexture(handle);
@@ -4112,10 +4106,10 @@ public class OpenTKResourceManager : IResourceManager
             int handle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, handle);
 
-            GL.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba,
-                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, (Image)image.Data);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
 
-            GL.GenerateMipmap((GenerateMipmapTarget)TextureTarget.Texture2D);
+            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
             SetTextureParameters();
 
             var newTexture = new OpenTKTexture(handle);

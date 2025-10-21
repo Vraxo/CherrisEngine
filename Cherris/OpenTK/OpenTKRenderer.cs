@@ -212,42 +212,15 @@ void main()
             // Set texture unit 0 (modern GL.Uniform1 overload)
             GL.Uniform1(_textureLocation, 0);
 
-            var opaque = new List<(GameObject go, MeshRenderer mr, OpenGLMeshRendererData data)>();
-            var transparent = new List<(GameObject go, MeshRenderer mr, OpenGLMeshRendererData data, float depth)>();
-
-            System.Numerics.Matrix4x4.Invert(mainCamera.GetViewMatrix(), out var invView);
-            var camWorld = System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, invView);
-
+            // Render all objects as opaque. This removes the faulty transparency sort.
+            GL.DepthMask(true);
+            GL.Disable(EnableCap.Blend);
             foreach (var go in gameObjects)
             {
                 var mr = go.GetComponent<MeshRenderer>();
                 if (mr?.Mesh is null) continue;
                 var data = GetOrCreateBackendData(mr);
-
-                bool isTransparent = (mr.Texture != null); // heuristic; prefer an explicit IsTransparent flag if you have it
-
-                if (!isTransparent) opaque.Add((go, mr, data));
-                else
-                {
-                    var worldPos = System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, go.Transform.GetModelMatrix());
-                    var d2 = System.Numerics.Vector3.DistanceSquared(worldPos, camWorld);
-                    transparent.Add((go, mr, data, d2));
-                }
-            }
-
-            // Opaque pass
-            GL.DepthMask(true);
-            GL.Disable(EnableCap.Blend);
-            foreach (var it in opaque) DrawObject(it.go, it.mr, it.data, view, projection);
-
-            // Transparent pass: back-to-front
-            if (transparent.Count > 0)
-            {
-                GL.Enable(EnableCap.Blend);
-                GL.DepthMask(false);
-                foreach (var it in transparent.OrderByDescending(t => t.depth))
-                    DrawObject(it.go, it.mr, it.data, view, projection);
-                GL.DepthMask(true);
+                DrawObject(go, mr, data, view, projection);
             }
 
             CheckGLError("Frame End");
@@ -267,9 +240,12 @@ void main()
             }
 
             var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
-            var mvp = projection * view * model;
+            // The multiplication order for row-major matrices is Model -> View -> Projection.
+            // The original order was incorrect, causing objects to be rendered off-screen.
+            var mvp = model * view * projection;
 
-            // Upload matrix with transpose = true (row-major -> column-major)
+            // Upload matrix. OpenTK's Matrix4 is row-major. 
+            // `transpose: true` tells OpenGL to transpose it into column-major format for GLSL.
             GL.UniformMatrix4(_mvpLocation, true, ref mvp);
 
             GL.Uniform2(_tilingLocation, meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
