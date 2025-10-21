@@ -95,7 +95,6 @@ public abstract class Engine
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
     private bool _snapshotsEnabled;
-    private bool _f12PressedLastFrame;
 
     // Engine Systems
     private readonly IGraphicsBackend _backend;
@@ -234,13 +233,11 @@ public abstract class Engine
     {
         _lastDeltaTime = deltaTime;
 
-        bool isF12Down = Input.IsKeyDown(Key.F12);
-        if (isF12Down && !_f12PressedLastFrame)
+        if (Input.WasKeyPressed(Key.F12))
         {
             _snapshotsEnabled = !_snapshotsEnabled;
             Console.WriteLine($"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. Press F12 to toggle.");
         }
-        _f12PressedLastFrame = isF12Down;
 
         if (Mode == EngineMode.Editor)
         {
@@ -338,7 +335,9 @@ public abstract class Engine
         _renderer.RenderFrame(
             SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
             _selectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
+
         _renderer.ProcessSnapshot();
+        _gameWindow.SwapBuffers();
     }
 
     private void OnWindowResized()
@@ -375,6 +374,7 @@ public class VeldridBackend : IGraphicsBackend
             SwapchainDepthFormat = PixelFormat.R16_UNorm
         };
         _graphicsDevice = VeldridStartup.CreateGraphicsDevice(window.SdlWindow, options);
+        window.SetGraphicsDevice(_graphicsDevice);
 
         _graphicsManager = new GraphicsManager(_graphicsDevice, window.SdlWindow, TextureSampleCount.Count4);
 

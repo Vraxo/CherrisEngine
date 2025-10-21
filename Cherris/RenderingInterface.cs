@@ -17,6 +17,7 @@ namespace Cherris.Rendering
         float Height { get; }
         bool IsMouseLocked { get; set; }
         void ProcessEvents();
+        void SwapBuffers();
         event Action Resized;
     }
 

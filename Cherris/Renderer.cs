@@ -175,7 +175,6 @@ public class Renderer : IRenderer
 
         cl.End();
         _graphicsDevice.SubmitCommands(cl);
-        _graphicsDevice.SwapBuffers();
     }
 
     public void OnWindowResized()
