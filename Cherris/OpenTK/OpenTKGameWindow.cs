@@ -3,7 +3,7 @@ using Cherris.Rendering;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.Common;
 using OpenTK.Mathematics;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL4;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OpenTKMouseButton = OpenTK.Windowing.GraphicsLibraryFramework.MouseButton;

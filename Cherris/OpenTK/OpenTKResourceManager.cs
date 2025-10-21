@@ -2,8 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using Cherris.Rendering;
-using OpenTK.Graphics.OpenGL;
-using OpenTK.Windowing.Common.Input;
+using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
 
 namespace Cherris;
@@ -54,7 +53,7 @@ public class OpenTKResourceManager : IResourceManager
         GL.BindTexture(TextureTarget.Texture2D, handle);
 
         byte[] pixel = { 255, 255, 255, 255 };
-        GL.TexImage2D(TextureTarget.Texture2D, 0, (PixelInternalFormat)InternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
 
         SetTextureParameters();
         return new OpenTKTexture(handle);
@@ -89,10 +88,10 @@ public class OpenTKResourceManager : IResourceManager
             int handle = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, handle);
 
-            GL.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba,
-                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, (Image)image.Data);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
 
-            GL.GenerateMipmap((GenerateMipmapTarget)TextureTarget.Texture2D);
+            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
             SetTextureParameters();
 
             var newTexture = new OpenTKTexture(handle);

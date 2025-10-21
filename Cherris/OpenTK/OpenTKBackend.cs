@@ -1,5 +1,5 @@
 ﻿using Cherris.Rendering;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Desktop;
 
 namespace Cherris;

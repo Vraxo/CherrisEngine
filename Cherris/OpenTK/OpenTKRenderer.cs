@@ -257,14 +257,9 @@ void main()
         {
             _shaderProgram.Use();
 
-            // Activate texture unit 0
-            GL.ActiveTexture(TextureUnit.Texture0);
-
             if (meshRenderer.Texture is OpenTKTexture glTexture)
             {
-                // Prefer: glTexture.Bind(TextureUnit.Texture0);
-                // If your OpenTKTexture.Bind expects a different TextureUnit type, update it to use OpenTK.Graphics.OpenGL4.TextureUnit
-                glTexture.Bind((OpenTK.Graphics.OpenGL.TextureUnit)TextureUnit.Texture0);
+                glTexture.Bind(TextureUnit.Texture0);
             }
             else
             {
@@ -308,4 +303,3 @@ void main()
         }
     }
 }
-
