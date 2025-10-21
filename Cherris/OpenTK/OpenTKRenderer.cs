@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 using System.Text;
 using Cherris.Rendering;
@@ -13,6 +14,7 @@ public class OpenTKRenderer : IRenderer
 {
     private ShaderProgram _shaderProgram;
     private int _mvpLocation;
+    private int _textureLocation;
 
     #region Shader Program Helper
     private class ShaderProgram : IDisposable
@@ -121,35 +123,54 @@ public class OpenTKRenderer : IRenderer
 
     public OpenTKRenderer()
     {
-        // Simple shaders for now
         const string vertSource = @"
             #version 330 core
             layout (location = 0) in vec3 aPosition;
             layout (location = 1) in vec4 aColor;
+            layout (location = 2) in vec2 aTexCoord;
             
             uniform mat4 mvp;
+            uniform vec2 uTiling;
+
             out vec4 fsin_Color;
+            out vec2 fsin_TexCoord;
 
             void main()
             {
                 gl_Position = mvp * vec4(aPosition, 1.0);
                 fsin_Color = aColor;
+                fsin_TexCoord = aTexCoord * uTiling;
             }";
+
         const string fragSource = @"
             #version 330 core
             in vec4 fsin_Color;
+            in vec2 fsin_TexCoord;
+            
+            uniform sampler2D uTexture;
+            uniform vec3 uEmissive;
+
             out vec4 FragColor;
 
             void main()
             {
-                FragColor = fsin_Color;
+                vec4 texColor = texture(uTexture, fsin_TexCoord);
+                vec3 finalColor = (texColor.rgb * fsin_Color.rgb) + uEmissive;
+                FragColor = vec4(finalColor, texColor.a * fsin_Color.a);
             }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
         _mvpLocation = _shaderProgram.GetUniformLocation("mvp");
+        _textureLocation = _shaderProgram.GetUniformLocation("uTexture");
 
-        GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f); // Dark blue
+        GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
         GL.Enable(EnableCap.DepthTest);
+        GL.Enable(EnableCap.CullFace);
+        GL.FrontFace(FrontFaceDirection.Cw); // Match Veldrid's winding order
+        GL.Enable(EnableCap.Blend);
+        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
+        CheckGLError("Setup");
     }
 
     private OpenGLMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
@@ -163,12 +184,8 @@ public class OpenTKRenderer : IRenderer
         return newData;
     }
 
-    public void OnWindowResized()
-    {
-        // Viewport is handled by OpenTKGameWindow
-    }
+    public void OnWindowResized() { }
 
-    // Helper to convert System.Numerics.Matrix4x4 to OpenTK.Mathematics.Matrix4d
     private static Matrix4d ToOpenTKMatrixd(System.Numerics.Matrix4x4 m)
     {
         return new Matrix4d(
@@ -182,6 +199,7 @@ public class OpenTKRenderer : IRenderer
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        CheckGLError("Frame Start");
 
         if (mainCamera is null) return;
 
@@ -190,6 +208,8 @@ public class OpenTKRenderer : IRenderer
         var view = ToOpenTKMatrixd(mainCamera.GetViewMatrix());
         var projection = ToOpenTKMatrixd(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
 
+        GL.Uniform1i(_textureLocation, 0);
+
         foreach (var go in gameObjects)
         {
             var meshRenderer = go.GetComponent<MeshRenderer>();
@@ -197,26 +217,40 @@ public class OpenTKRenderer : IRenderer
 
             var data = GetOrCreateBackendData(meshRenderer);
 
+            if (meshRenderer.Texture is OpenTKTexture glTexture)
+            {
+                glTexture.Bind(TextureUnit.Texture0);
+            }
+
             var model = ToOpenTKMatrixd(go.Transform.GetModelMatrix());
             var mvp = model * view * projection;
+            GL.UniformMatrix4d(_mvpLocation, 1, true, ref mvp);
 
-            // System.Numerics matrices are row-major, but OpenGL expects column-major.
-            // We must set the 'transpose' argument to true.
-            GL.UniformMatrix4d(_mvpLocation, 1, true, mvp);
+            GL.Uniform2f(_shaderProgram.GetUniformLocation("uTiling"),
+                meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
+
+            GL.Uniform3f(_shaderProgram.GetUniformLocation("uEmissive"),
+                meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);
 
             GL.BindVertexArray(data.VaoHandle);
             GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
+            GL.BindVertexArray(0); // Unbind after use
+            CheckGLError($"Draw '{go.Name}'");
         }
     }
 
-    public void RequestSnapshot(string path)
-    {
-        Console.WriteLine("[OpenTKRenderer] Snapshots not yet implemented.");
-    }
+    public void RequestSnapshot(string path) { }
+    public void ProcessSnapshot() { }
 
-    public void ProcessSnapshot()
+    [Conditional("DEBUG")]
+    private static void CheckGLError(string context)
     {
-        // Not implemented
+        var error = GL.GetError();
+        while (error != ErrorCode.NoError)
+        {
+            Console.WriteLine($"[OpenGL Error] After {context}: {error}");
+            error = GL.GetError();
+        }
     }
 
     public void Dispose()
