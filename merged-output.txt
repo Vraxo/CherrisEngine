@@ -3710,12 +3710,12 @@ public class OpenTKGameWindow : IGameWindow
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKRenderer.cs">
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 using System.Text;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
-using Matrix4 = OpenTK.Mathematics.Matrix4;
 using Vector3 = System.Numerics.Vector3;
 
 namespace Cherris;
@@ -3724,6 +3724,7 @@ public class OpenTKRenderer : IRenderer
 {
     private ShaderProgram _shaderProgram;
     private int _mvpLocation;
+    private int _textureLocation;
 
     #region Shader Program Helper
     private class ShaderProgram : IDisposable
@@ -3744,7 +3745,7 @@ public class OpenTKRenderer : IRenderer
             GL.GetProgrami(Handle, ProgramProperty.LinkStatus, out success);
             if (success == 0)
             {
-                string info = GL.GetProgramInfoLog(Handle);
+                GL.GetProgramInfoLog(Handle, out string info);
                 throw new InvalidOperationException($"Failed to link shader program: {info}");
             }
 
@@ -3764,7 +3765,7 @@ public class OpenTKRenderer : IRenderer
             GL.GetShaderi(shader, ShaderParameterName.CompileStatus, out success);
             if (success == 0)
             {
-                string info = GL.GetShaderInfoLog(shader);
+                GL.GetShaderInfoLog(shader, out string info);
                 throw new InvalidOperationException($"Failed to compile {type}: {info}");
             }
             return shader;
@@ -3832,35 +3833,54 @@ public class OpenTKRenderer : IRenderer
 
     public OpenTKRenderer()
     {
-        // Simple shaders for now
         const string vertSource = @"
             #version 330 core
             layout (location = 0) in vec3 aPosition;
             layout (location = 1) in vec4 aColor;
+            layout (location = 2) in vec2 aTexCoord;
             
             uniform mat4 mvp;
+            uniform vec2 uTiling;
+
             out vec4 fsin_Color;
+            out vec2 fsin_TexCoord;
 
             void main()
             {
                 gl_Position = mvp * vec4(aPosition, 1.0);
                 fsin_Color = aColor;
+                fsin_TexCoord = aTexCoord * uTiling;
             }";
+
         const string fragSource = @"
             #version 330 core
             in vec4 fsin_Color;
+            in vec2 fsin_TexCoord;
+            
+            uniform sampler2D uTexture;
+            uniform vec3 uEmissive;
+
             out vec4 FragColor;
 
             void main()
             {
-                FragColor = fsin_Color;
+                vec4 texColor = texture(uTexture, fsin_TexCoord);
+                vec3 finalColor = (texColor.rgb * fsin_Color.rgb) + uEmissive;
+                FragColor = vec4(finalColor, texColor.a * fsin_Color.a);
             }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
         _mvpLocation = _shaderProgram.GetUniformLocation("mvp");
+        _textureLocation = _shaderProgram.GetUniformLocation("uTexture");
 
-        GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f); // Dark blue
+        GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
         GL.Enable(EnableCap.DepthTest);
+        GL.Enable(EnableCap.CullFace);
+        GL.FrontFace(FrontFaceDirection.Cw); // Match Veldrid's winding order
+        GL.Enable(EnableCap.Blend);
+        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
+        CheckGLError("Setup");
     }
 
     private OpenGLMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
@@ -3874,15 +3894,11 @@ public class OpenTKRenderer : IRenderer
         return newData;
     }
 
-    public void OnWindowResized()
-    {
-        // Viewport is handled by OpenTKGameWindow
-    }
+    public void OnWindowResized() { }
 
-    // Helper to convert System.Numerics.Matrix4x4 to OpenTK.Mathematics.Matrix4
-    private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
+    private static Matrix4d ToOpenTKMatrixd(System.Numerics.Matrix4x4 m)
     {
-        return new Matrix4(
+        return new Matrix4d(
             m.M11, m.M12, m.M13, m.M14,
             m.M21, m.M22, m.M23, m.M24,
             m.M31, m.M32, m.M33, m.M34,
@@ -3893,13 +3909,16 @@ public class OpenTKRenderer : IRenderer
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        CheckGLError("Frame Start");
 
         if (mainCamera is null) return;
 
         _shaderProgram.Use();
 
-        var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
-        var projection = ToOpenTKMatrix(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
+        var view = ToOpenTKMatrixd(mainCamera.GetViewMatrix());
+        var projection = ToOpenTKMatrixd(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
+
+        GL.Uniform1i(_textureLocation, 0);
 
         foreach (var go in gameObjects)
         {
@@ -3908,26 +3927,40 @@ public class OpenTKRenderer : IRenderer
 
             var data = GetOrCreateBackendData(meshRenderer);
 
-            var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
-            var mvp = model * view * projection;
+            if (meshRenderer.Texture is OpenTKTexture glTexture)
+            {
+                glTexture.Bind(TextureUnit.Texture0);
+            }
 
-            // System.Numerics matrices are row-major, but OpenGL expects column-major.
-            // We must set the 'transpose' argument to true.
-            GL.UniformMatrix4d(_mvpLocation, true, ref mvp);
+            var model = ToOpenTKMatrixd(go.Transform.GetModelMatrix());
+            var mvp = model * view * projection;
+            GL.UniformMatrix4d(_mvpLocation, 1, true, ref mvp);
+
+            GL.Uniform2f(_shaderProgram.GetUniformLocation("uTiling"),
+                meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
+
+            GL.Uniform3f(_shaderProgram.GetUniformLocation("uEmissive"),
+                meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);
 
             GL.BindVertexArray(data.VaoHandle);
             GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
+            GL.BindVertexArray(0); // Unbind after use
+            CheckGLError($"Draw '{go.Name}'");
         }
     }
 
-    public void RequestSnapshot(string path)
-    {
-        Console.WriteLine("[OpenTKRenderer] Snapshots not yet implemented.");
-    }
+    public void RequestSnapshot(string path) { }
+    public void ProcessSnapshot() { }
 
-    public void ProcessSnapshot()
+    [Conditional("DEBUG")]
+    private static void CheckGLError(string context)
     {
-        // Not implemented
+        var error = GL.GetError();
+        while (error != ErrorCode.NoError)
+        {
+            Console.WriteLine($"[OpenGL Error] After {context}: {error}");
+            error = GL.GetError();
+        }
     }
 
     public void Dispose()
@@ -3940,22 +3973,63 @@ public class OpenTKRenderer : IRenderer
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKResourceManager.cs">
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Cherris.Rendering;
+using OpenTK.Graphics.OpenGL;
+using StbImageSharp;
 
 namespace Cherris;
+
+public class OpenTKTexture : ITexture
+{
+    public int Handle { get; }
+
+    public OpenTKTexture(int handle)
+    {
+        Handle = handle;
+    }
+
+    public void Bind(TextureUnit unit = TextureUnit.Texture0)
+    {
+        GL.ActiveTexture(unit);
+        GL.BindTexture(TextureTarget.Texture2d, Handle);
+    }
+
+
+
+    public object GetBackendHandle() => Handle;
+
+    public void Dispose()
+    {
+        GL.DeleteTexture(Handle);
+    }
+}
 
 public class OpenTKResourceManager : IResourceManager
 {
     private readonly Dictionary<string, Mesh> _meshes = new();
+    private readonly Dictionary<string, ITexture> _textures = new();
 
     public void LoadInitialAssets()
     {
         Console.WriteLine("[OpenTKResourceManager] Initial assets loaded.");
-        var cubeMesh = Mesh.CreateCube();
-        _meshes.Add("Cube", cubeMesh);
+        _meshes.Add("Cube", Mesh.CreateCube());
+        _meshes.Add("Plane", Mesh.CreatePlane(20f));
 
-        var planeMesh = Mesh.CreatePlane(20f);
-        _meshes.Add("Plane", planeMesh);
+        // Create a default white texture
+        _textures.Add("White", CreateWhiteTexture());
+    }
+
+    private ITexture CreateWhiteTexture()
+    {
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2d, handle);
+
+        byte[] pixel = { 255, 255, 255, 255 };
+        GL.TexImage2D(TextureTarget.Texture2d, 0, InternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
+
+        SetTextureParameters();
+        return new OpenTKTexture(handle);
     }
 
     public Mesh GetMesh(string name)
@@ -3965,18 +4039,65 @@ public class OpenTKResourceManager : IResourceManager
 
     public ITexture GetTexture(string name)
     {
-        Console.WriteLine($"[OpenTKResourceManager] Stub: GetTexture '{name}'");
-        return null; // Stubbed for now
+        if (_textures.TryGetValue(name, out var texture))
+        {
+            return texture;
+        }
+
+        string path = AssetFinder.FindAssetPath(name);
+        if (path == null)
+        {
+            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find texture '{name}'.");
+            return _textures["White"];
+        }
+
+        try
+        {
+            // Flip vertically as OpenGL expects the origin at the bottom-left
+            StbImage.stbi_set_flip_vertically_on_load(1);
+            using var stream = File.OpenRead(path);
+            ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+
+            int handle = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2d, handle);
+
+            GL.TexImage2D(TextureTarget.Texture2d, 0, InternalFormat.Rgba,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+
+            GL.GenerateMipmap(TextureTarget.Texture2d);
+            SetTextureParameters();
+
+            var newTexture = new OpenTKTexture(handle);
+            _textures.Add(name, newTexture);
+            return newTexture;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[OpenTKResourceManager] Error loading texture '{name}': {e.Message}");
+            return _textures["White"];
+        }
+    }
+
+    private void SetTextureParameters()
+    {
+        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
     }
 
     public Skybox GetSkybox(string name)
     {
-        Console.WriteLine($"[OpenTKResourceManager] Stub: GetSkybox '{name}'");
-        return null; // Stubbed for now
+        Console.WriteLine($"[OpenTKResourceManager] Stub: GetSkybox '{name}' not implemented yet.");
+        return null;
     }
 
     public void Dispose()
     {
+        foreach (var texture in _textures.Values)
+        {
+            texture.Dispose();
+        }
     }
 }
 </file>

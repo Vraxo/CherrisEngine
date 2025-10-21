@@ -186,9 +186,9 @@ public class OpenTKRenderer : IRenderer
 
     public void OnWindowResized() { }
 
-    private static Matrix4d ToOpenTKMatrixd(System.Numerics.Matrix4x4 m)
+    private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
     {
-        return new Matrix4d(
+        return new Matrix4(
             m.M11, m.M12, m.M13, m.M14,
             m.M21, m.M22, m.M23, m.M24,
             m.M31, m.M32, m.M33, m.M34,
@@ -205,8 +205,8 @@ public class OpenTKRenderer : IRenderer
 
         _shaderProgram.Use();
 
-        var view = ToOpenTKMatrixd(mainCamera.GetViewMatrix());
-        var projection = ToOpenTKMatrixd(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
+        var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
+        var projection = ToOpenTKMatrix(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
 
         GL.Uniform1i(_textureLocation, 0);
 
@@ -222,9 +222,9 @@ public class OpenTKRenderer : IRenderer
                 glTexture.Bind(TextureUnit.Texture0);
             }
 
-            var model = ToOpenTKMatrixd(go.Transform.GetModelMatrix());
+            var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
             var mvp = model * view * projection;
-            GL.UniformMatrix4d(_mvpLocation, 1, true, ref mvp);
+            GL.UniformMatrix4f(_mvpLocation, 1, true, mvp);
 
             GL.Uniform2f(_shaderProgram.GetUniformLocation("uTiling"),
                 meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
