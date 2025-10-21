@@ -7,7 +7,7 @@ namespace Apexverse
     public class PlayerController : Script
     {
         public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.00015f;
+        public float MouseSensitivity { get; set; } = 0.0015f;
 
         private float _yaw;
         private float _pitch;
@@ -27,36 +27,34 @@ namespace Apexverse
                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
 
             // --- Keyboard Movement ---
-            var moveInput = Vector3.Zero;
+            var moveDirection = Vector3.Zero;
 
             if (Input.IsKeyDown(Key.W))
             {
-                moveInput.Z -= 1f;
+                moveDirection -= Vector3.UnitZ;
             }
             if (Input.IsKeyDown(Key.S))
             {
-                moveInput.Z += 1f;
+                moveDirection += Vector3.UnitZ;
             }
             if (Input.IsKeyDown(Key.A))
             {
-                moveInput.X -= 1f;
+                moveDirection -= Vector3.UnitX;
             }
             if (Input.IsKeyDown(Key.D))
             {
-                moveInput.X += 1f;
+                moveDirection += Vector3.UnitX;
             }
 
-            if (moveInput.LengthSquared() > 0)
+            if (moveDirection != Vector3.Zero)
             {
+                moveDirection = Vector3.Normalize(moveDirection);
+
                 // Create a rotation that only includes the horizontal (yaw) component.
                 var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
 
-                // Transform the local input vector by the horizontal-only rotation.
-                // This ensures movement is on the XZ plane regardless of camera pitch.
-                var worldDirection = Vector3.Transform(moveInput, yawRotation);
-
-                // Normalize the final world direction to ensure consistent speed.
-                worldDirection = Vector3.Normalize(worldDirection);
+                // Transform the local direction vector by the horizontal-only rotation.
+                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
                 GameObject.Transform.Position += worldDirection * Speed * deltaTime;
             }
         }

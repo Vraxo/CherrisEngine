@@ -6,22 +6,22 @@ GameObjects:
 #        # Assets/sky/night_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
 #        CubeMap: sky/day
 
-  - Name: DebugCamera
-    Components:
-      Transform:
-        Position: [0, 1, 5] # Positioned to clearly see the static cube
-        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-        Scale: [1, 1, 1]
-      Camera:
-
-#  - Name: Player
+#  - Name: DebugCamera
 #    Components:
 #      Transform:
-#        Position: [0, 1, 3] # Start at a good vantage point
+#        Position: [0, 1, 5] # Positioned to clearly see the static cube
 #        Rotation: [0, 0, 0] # Looking forward (towards -Z)
 #        Scale: [1, 1, 1]
-#      PlayerController:
 #      Camera:
+
+  - Name: Player
+    Components:
+      Transform:
+        Position: [0, 1, 3] # Start at a good vantage point
+        Rotation: [0, 0, 0] # Looking forward (towards -Z)
+        Scale: [1, 1, 1]
+      PlayerController:
+      Camera:
 
 #  - Name: SpinningCube
 #    Components:
@@ -45,13 +45,13 @@ GameObjects:
         Mesh: Cube
         Texture: crate
         
-#  - Name: GroundPlane
-#    Components:
-#      Transform:
-#        Position: [0, -0.75, 0]
-#        Rotation: [0, 0, 0]
-#        Scale: [1, 1, 1]
-#      MeshRenderer:
-#        Mesh: Plane
-#        Texture: Asphalt
-#        TextureTiling: [10, 10]
+  - Name: GroundPlane
+    Components:
+      Transform:
+        Position: [0, -0.75, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Plane
+        Texture: Asphalt
+        TextureTiling: [10, 10]
