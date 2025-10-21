@@ -205,7 +205,14 @@ void main()
             if (mainCamera is null) return;
 
             var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
-            var projection = ToOpenTKMatrix(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
+
+            // The projection matrix from the shared Camera component is for Veldrid (LH, 0-1 depth).
+            // We must create a new one that is compatible with OpenGL (RH, -1 to 1 depth).
+            var projection = Matrix4.CreatePerspectiveFieldOfView(
+                mainCamera.FieldOfView * (float)Math.PI / 180.0f,
+                windowWidth / windowHeight,
+                mainCamera.NearClipPlane,
+                mainCamera.FarClipPlane);
 
             _shaderProgram.Use();
 
@@ -240,13 +247,15 @@ void main()
             }
 
             var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
-            // The multiplication order for row-major matrices is Model -> View -> Projection.
-            // The original order was incorrect, causing objects to be rendered off-screen.
+
+            // The correct multiplication order for row-major matrices is Model -> View -> Projection.
             var mvp = model * view * projection;
 
             // Upload matrix. OpenTK's Matrix4 is row-major. 
-            // `transpose: true` tells OpenGL to transpose it into column-major format for GLSL.
-            GL.UniformMatrix4(_mvpLocation, true, ref mvp);
+            // `transpose: false` is correct here because the in-memory layout of a row-major
+            // matrix is identical to the in-memory layout of a transposed column-major matrix.
+            // GLSL expects column-major, so this effectively uploads the transpose of our matrix.
+            GL.UniformMatrix4(_mvpLocation, false, ref mvp);
 
             GL.Uniform2(_tilingLocation, meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
             GL.Uniform3(_emissiveLocation, meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);

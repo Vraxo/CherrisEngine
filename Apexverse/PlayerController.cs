@@ -27,34 +27,36 @@ namespace Apexverse
                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
 
             // --- Keyboard Movement ---
-            var moveDirection = Vector3.Zero;
+            var moveInput = Vector3.Zero;
 
             if (Input.IsKeyDown(Key.W))
             {
-                moveDirection -= Vector3.UnitZ;
+                moveInput.Z -= 1f;
             }
             if (Input.IsKeyDown(Key.S))
             {
-                moveDirection += Vector3.UnitZ;
+                moveInput.Z += 1f;
             }
             if (Input.IsKeyDown(Key.A))
             {
-                moveDirection -= Vector3.UnitX;
+                moveInput.X -= 1f;
             }
             if (Input.IsKeyDown(Key.D))
             {
-                moveDirection += Vector3.UnitX;
+                moveInput.X += 1f;
             }
 
-            if (moveDirection != Vector3.Zero)
+            if (moveInput.LengthSquared() > 0)
             {
-                moveDirection = Vector3.Normalize(moveDirection);
-
                 // Create a rotation that only includes the horizontal (yaw) component.
                 var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
 
-                // Transform the local direction vector by the horizontal-only rotation.
-                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+                // Transform the local input vector by the horizontal-only rotation.
+                // This ensures movement is on the XZ plane regardless of camera pitch.
+                var worldDirection = Vector3.Transform(moveInput, yawRotation);
+
+                // Normalize the final world direction to ensure consistent speed.
+                worldDirection = Vector3.Normalize(worldDirection);
                 GameObject.Transform.Position += worldDirection * Speed * deltaTime;
             }
         }
