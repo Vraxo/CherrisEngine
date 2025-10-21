@@ -218,6 +218,7 @@ void main()
             GL.FrontFace(FrontFaceDirection.Cw);
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Enable(EnableCap.Multisample);
 
             CheckGLError("Setup");
         }

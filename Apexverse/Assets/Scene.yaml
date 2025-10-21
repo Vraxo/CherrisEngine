@@ -54,4 +54,4 @@ GameObjects:
       MeshRenderer:
         Mesh: Plane
         Texture: Asphalt
-        TextureTiling: [10, 10]
+        TextureTiling: [1, 1]

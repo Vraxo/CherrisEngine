@@ -61,7 +61,7 @@ namespace Apexverse
     public class PlayerController : Script
     {
         public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.00015f;
+        public float MouseSensitivity { get; set; } = 0.0015f;
 
         private float _yaw;
         private float _pitch;
@@ -125,7 +125,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        var game = new Game(EngineMode.Editor, GraphicsAPI.OpenTK);
+        var game = new Game(EngineMode.Game, GraphicsAPI.OpenTK);
         game.Run();
     }
 }
@@ -152,29 +152,29 @@ public class Spinner : Script
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
 GameObjects:
-#  - Name: SkyboxContainer
-#    Components:
-#      Skybox:
-#        # NOTE: This requires 6 images in your Assets folder, named like:
-#        # Assets/sky/night_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
-#        CubeMap: sky/day
-
-  - Name: DebugCamera
+  - Name: SkyboxContainer
     Components:
-      Transform:
-        Position: [0, 1, 5] # Positioned to clearly see the static cube
-        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-        Scale: [1, 1, 1]
-      Camera:
+      Skybox:
+        # NOTE: This requires 6 images in your Assets folder, named like:
+        # Assets/sky/day_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
+        CubeMap: sky/day
 
-#  - Name: Player
+#  - Name: DebugCamera
 #    Components:
 #      Transform:
-#        Position: [0, 1, 3] # Start at a good vantage point
+#        Position: [0, 1, 5] # Positioned to clearly see the static cube
 #        Rotation: [0, 0, 0] # Looking forward (towards -Z)
 #        Scale: [1, 1, 1]
-#      PlayerController:
 #      Camera:
+
+  - Name: Player
+    Components:
+      Transform:
+        Position: [0, 1, 3] # Start at a good vantage point
+        Rotation: [0, 0, 0] # Looking forward (towards -Z)
+        Scale: [1, 1, 1]
+      PlayerController:
+      Camera:
 
 #  - Name: SpinningCube
 #    Components:
@@ -198,16 +198,16 @@ GameObjects:
         Mesh: Cube
         Texture: crate
         
-#  - Name: GroundPlane
-#    Components:
-#      Transform:
-#        Position: [0, -0.75, 0]
-#        Rotation: [0, 0, 0]
-#        Scale: [1, 1, 1]
-#      MeshRenderer:
-#        Mesh: Plane
-#        Texture: Asphalt
-#        TextureTiling: [10, 10]
+  - Name: GroundPlane
+    Components:
+      Transform:
+        Position: [0, -0.75, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Plane
+        Texture: Asphalt
+        TextureTiling: [10, 10]
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\AssetFinder.cs">
@@ -2722,6 +2722,7 @@ public static class SkyboxLoader
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
+using Cherris.Rendering;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -2800,14 +2801,17 @@ public class SkyboxRenderer
         commandList.UpdateBuffer(_skyboxVpBuffer, 0, ref skyboxView);
         commandList.UpdateBuffer(_skyboxVpBuffer, 64, ref projection);
 
-        if (!_skyboxTextureSets.TryGetValue(skybox.CubeMapTexture, out var textureSet))
+        var veldridTexture = skybox.CubeMapTexture as Texture;
+        if (veldridTexture is null) return; // Should not happen with Veldrid backend
+
+        if (!_skyboxTextureSets.TryGetValue(veldridTexture, out var textureSet))
         {
             textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new(
                 _skyboxTextureLayout,
-                skybox.CubeMapTexture.VeldridTextureView,
+                veldridTexture.VeldridTextureView,
                 _sampler));
 
-            _skyboxTextureSets.Add(skybox.CubeMapTexture, textureSet);
+            _skyboxTextureSets.Add(veldridTexture, textureSet);
         }
 
         commandList.SetVertexBuffer(0, _skyboxVertexBuffer);
@@ -2860,7 +2864,7 @@ public class SkyboxRenderer
 
         ShaderDescription fragmentShaderDesc = new(
             ShaderStages.Fragment,
-            Encoding.UTF8.GetBytes(fragmentCode), 
+            Encoding.UTF8.GetBytes(fragmentCode),
             "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
@@ -3469,15 +3473,15 @@ public class MeshRenderer : Component, IDisposable
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Skybox.cs">
-using Veldrid;
+using Cherris.Rendering;
 
 namespace Cherris;
 
 public class Skybox : Component
 {
-    public Texture CubeMapTexture { get; }
+    public ITexture CubeMapTexture { get; }
 
-    public Skybox(Texture cubeMapTexture)
+    public Skybox(ITexture cubeMapTexture)
     {
         CubeMapTexture = cubeMapTexture;
     }
@@ -3737,6 +3741,13 @@ namespace Cherris
         private int _tilingLocation;
         private int _emissiveLocation;
 
+        private ShaderProgram _skyboxShaderProgram;
+        private int _skyboxViewLocation;
+        private int _skyboxProjectionLocation;
+        private int _skyboxSamplerLocation;
+        private OpenGLMeshRendererData _skyboxCubeData;
+
+
         #region Shader Program Helper
         private class ShaderProgram : IDisposable
         {
@@ -3887,6 +3898,41 @@ void main()
             _tilingLocation = _shaderProgram.GetUniformLocation("uTiling");
             _emissiveLocation = _shaderProgram.GetUniformLocation("uEmissive");
 
+            const string skyboxVert = @"
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+
+out vec3 TexCoords;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+void main()
+{
+    TexCoords = aPosition;
+    vec4 pos = projection * view * vec4(aPosition, 1.0);
+    gl_Position = pos.xyww; // Force depth to be 1.0
+}";
+            const string skyboxFrag = @"
+#version 330 core
+out vec4 FragColor;
+
+in vec3 TexCoords;
+
+uniform samplerCube skybox;
+
+void main()
+{    
+    FragColor = texture(skybox, TexCoords);
+}";
+
+            _skyboxShaderProgram = new ShaderProgram(skyboxVert, skyboxFrag);
+            _skyboxViewLocation = _skyboxShaderProgram.GetUniformLocation("view");
+            _skyboxProjectionLocation = _skyboxShaderProgram.GetUniformLocation("projection");
+            _skyboxSamplerLocation = _skyboxShaderProgram.GetUniformLocation("skybox");
+            _skyboxCubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
+
+
             GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
             GL.Enable(EnableCap.DepthTest);
             GL.DepthFunc(DepthFunction.Less);
@@ -3923,8 +3969,46 @@ void main()
             if (mainCamera is null) return;
 
             var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
-            var projection = ToOpenTKMatrix(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
 
+            // The projection matrix from the shared Camera component is for Veldrid (LH, 0-1 depth).
+            // We must create a new one that is compatible with OpenGL (RH, -1 to 1 depth).
+            var projection = Matrix4.CreatePerspectiveFieldOfView(
+                mainCamera.FieldOfView * (float)Math.PI / 180.0f,
+                windowWidth / windowHeight,
+                mainCamera.NearClipPlane,
+                mainCamera.FarClipPlane);
+
+            // --- Draw Skybox ---
+            if (skybox != null && skybox.CubeMapTexture != null)
+            {
+                GL.DepthFunc(DepthFunction.Lequal);
+                GL.CullFace(CullFaceMode.Front);
+
+                _skyboxShaderProgram.Use();
+
+                var skyboxView = view;
+                skyboxView.Row3 = new OpenTK.Mathematics.Vector4(0, 0, 0, 1); // Remove translation
+
+                GL.UniformMatrix4(_skyboxViewLocation, false, ref skyboxView);
+                GL.UniformMatrix4(_skyboxProjectionLocation, false, ref projection);
+
+                if (skybox.CubeMapTexture is OpenTKTexture glSkyboxTexture)
+                {
+                    glSkyboxTexture.Bind(TextureUnit.Texture0);
+                    GL.Uniform1(_skyboxSamplerLocation, 0);
+                }
+
+                GL.BindVertexArray(_skyboxCubeData.VaoHandle);
+                GL.DrawElements(PrimitiveType.Triangles, _skyboxCubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
+                GL.BindVertexArray(0);
+
+                // Reset state for main scene rendering
+                GL.CullFace(CullFaceMode.Back);
+                GL.DepthFunc(DepthFunction.Less);
+            }
+
+
+            // --- Draw Scene Objects ---
             _shaderProgram.Use();
 
             // Set texture unit 0 (modern GL.Uniform1 overload)
@@ -3936,7 +4020,7 @@ void main()
             foreach (var go in gameObjects)
             {
                 var mr = go.GetComponent<MeshRenderer>();
-                if (mr?.Mesh is null) continue;
+                if (mr?.Mesh is null || go.GetComponent<Skybox>() != null) continue; // Skip skybox container
                 var data = GetOrCreateBackendData(mr);
                 DrawObject(go, mr, data, view, projection);
             }
@@ -3958,13 +4042,15 @@ void main()
             }
 
             var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
-            // The multiplication order for row-major matrices is Model -> View -> Projection.
-            // The original order was incorrect, causing objects to be rendered off-screen.
+
+            // The correct multiplication order for row-major matrices is Model -> View -> Projection.
             var mvp = model * view * projection;
 
             // Upload matrix. OpenTK's Matrix4 is row-major. 
-            // `transpose: true` tells OpenGL to transpose it into column-major format for GLSL.
-            GL.UniformMatrix4(_mvpLocation, true, ref mvp);
+            // `transpose: false` is correct here because the in-memory layout of a row-major
+            // matrix is identical to the in-memory layout of a transposed column-major matrix.
+            // GLSL expects column-major, so this effectively uploads the transpose of our matrix.
+            GL.UniformMatrix4(_mvpLocation, false, ref mvp);
 
             GL.Uniform2(_tilingLocation, meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
             GL.Uniform3(_emissiveLocation, meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);
@@ -3975,6 +4061,8 @@ void main()
 
             CheckGLError($"Draw '{go.Name}'");
         }
+
+
 
         public void OnWindowResized() { }
         public void RequestSnapshot(string path) { }
@@ -3994,6 +4082,8 @@ void main()
         public void Dispose()
         {
             _shaderProgram?.Dispose();
+            _skyboxShaderProgram?.Dispose();
+            _skyboxCubeData?.Dispose();
         }
     }
 }
@@ -4003,6 +4093,7 @@ void main()
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
@@ -4012,19 +4103,19 @@ namespace Cherris;
 public class OpenTKTexture : ITexture
 {
     public int Handle { get; }
+    private readonly TextureTarget _target;
 
-    public OpenTKTexture(int handle)
+    public OpenTKTexture(int handle, TextureTarget target = TextureTarget.Texture2D)
     {
         Handle = handle;
+        _target = target;
     }
 
     public void Bind(TextureUnit unit = TextureUnit.Texture0)
     {
         GL.ActiveTexture(unit);
-        GL.BindTexture(TextureTarget.Texture2D, Handle);
+        GL.BindTexture(_target, Handle);
     }
-
-
 
     public object GetBackendHandle() => Handle;
 
@@ -4038,6 +4129,9 @@ public class OpenTKResourceManager : IResourceManager
 {
     private readonly Dictionary<string, Mesh> _meshes = new();
     private readonly Dictionary<string, ITexture> _textures = new();
+    private readonly Dictionary<string, Skybox> _skyboxes = new();
+    private static readonly string[] FaceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
+
 
     public void LoadInitialAssets()
     {
@@ -4057,7 +4151,7 @@ public class OpenTKResourceManager : IResourceManager
         byte[] pixel = { 255, 255, 255, 255 };
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
 
-        SetTextureParameters();
+        SetTextureParameters(TextureTarget.Texture2D);
         return new OpenTKTexture(handle);
     }
 
@@ -4094,7 +4188,7 @@ public class OpenTKResourceManager : IResourceManager
                 image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
 
             GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
-            SetTextureParameters();
+            SetTextureParameters(TextureTarget.Texture2D);
 
             var newTexture = new OpenTKTexture(handle);
             _textures.Add(name, newTexture);
@@ -4107,18 +4201,70 @@ public class OpenTKResourceManager : IResourceManager
         }
     }
 
-    private void SetTextureParameters()
+    private void SetTextureParameters(TextureTarget target)
     {
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        if (target == TextureTarget.Texture2D)
+        {
+            GL.TexParameter(target, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(target, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        }
+        else if (target == TextureTarget.TextureCubeMap)
+        {
+            GL.TexParameter(target, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureWrapR, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        }
     }
 
     public Skybox GetSkybox(string name)
     {
-        Console.WriteLine($"[OpenTKResourceManager] Stub: GetSkybox '{name}' not implemented yet.");
-        return null;
+        if (_skyboxes.TryGetValue(name, out var skybox))
+        {
+            return skybox;
+        }
+
+        var facePaths = FaceSuffixes.Select(suffix => AssetFinder.FindAssetPath(name + suffix)).ToArray();
+        if (facePaths.Any(p => p == null))
+        {
+            Console.WriteLine($"[OpenTKResourceManager] Error: Could not find all 6 faces for skybox '{name}'.");
+            return null;
+        }
+
+        try
+        {
+            StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps should not be flipped
+
+            int handle = GL.GenTexture();
+            GL.BindTexture(TextureTarget.TextureCubeMap, handle);
+
+            for (int i = 0; i < facePaths.Length; i++)
+            {
+                using var stream = File.OpenRead(facePaths[i]);
+                ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + i, 0, PixelInternalFormat.Rgba,
+                    image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+            }
+
+            SetTextureParameters(TextureTarget.TextureCubeMap);
+
+            var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
+            var newSkybox = new Skybox(newTexture);
+            _skyboxes.Add(name, newSkybox);
+            return newSkybox;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[OpenTKResourceManager] Error loading skybox '{name}': {e.Message}");
+            return null;
+        }
+        finally
+        {
+            StbImage.stbi_set_flip_vertically_on_load(1); // Reset to default for other textures
+        }
     }
 
     public void Dispose()
@@ -4126,6 +4272,10 @@ public class OpenTKResourceManager : IResourceManager
         foreach (var texture in _textures.Values)
         {
             texture.Dispose();
+        }
+        foreach (var skybox in _skyboxes.Values)
+        {
+            skybox.Dispose();
         }
     }
 }

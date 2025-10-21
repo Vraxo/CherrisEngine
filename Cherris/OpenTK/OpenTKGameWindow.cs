@@ -43,6 +43,7 @@ public class OpenTKGameWindow : IGameWindow
         {
             ClientSize = new Vector2i(width, height),
             Title = title,
+            NumberOfSamples = 4 // Request 4x MSAA
         };
         _window = new OTKGameWindow(gameWindowSettings, nativeWindowSettings);
 
