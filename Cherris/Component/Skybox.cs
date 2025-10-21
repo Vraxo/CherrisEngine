@@ -1,12 +1,12 @@
-﻿using Veldrid;
+﻿using Cherris.Rendering;
 
 namespace Cherris;
 
 public class Skybox : Component
 {
-    public Texture CubeMapTexture { get; }
+    public ITexture CubeMapTexture { get; }
 
-    public Skybox(Texture cubeMapTexture)
+    public Skybox(ITexture cubeMapTexture)
     {
         CubeMapTexture = cubeMapTexture;
     }

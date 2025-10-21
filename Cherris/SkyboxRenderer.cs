@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
+using Cherris.Rendering;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -79,14 +80,17 @@ public class SkyboxRenderer
         commandList.UpdateBuffer(_skyboxVpBuffer, 0, ref skyboxView);
         commandList.UpdateBuffer(_skyboxVpBuffer, 64, ref projection);
 
-        if (!_skyboxTextureSets.TryGetValue(skybox.CubeMapTexture, out var textureSet))
+        var veldridTexture = skybox.CubeMapTexture as Texture;
+        if (veldridTexture is null) return; // Should not happen with Veldrid backend
+
+        if (!_skyboxTextureSets.TryGetValue(veldridTexture, out var textureSet))
         {
             textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new(
                 _skyboxTextureLayout,
-                skybox.CubeMapTexture.VeldridTextureView,
+                veldridTexture.VeldridTextureView,
                 _sampler));
 
-            _skyboxTextureSets.Add(skybox.CubeMapTexture, textureSet);
+            _skyboxTextureSets.Add(veldridTexture, textureSet);
         }
 
         commandList.SetVertexBuffer(0, _skyboxVertexBuffer);
@@ -139,7 +143,7 @@ public class SkyboxRenderer
 
         ShaderDescription fragmentShaderDesc = new(
             ShaderStages.Fragment,
-            Encoding.UTF8.GetBytes(fragmentCode), 
+            Encoding.UTF8.GetBytes(fragmentCode),
             "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);

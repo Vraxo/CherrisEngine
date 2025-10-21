@@ -1,10 +1,10 @@
 GameObjects:
-#  - Name: SkyboxContainer
-#    Components:
-#      Skybox:
-#        # NOTE: This requires 6 images in your Assets folder, named like:
-#        # Assets/sky/night_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
-#        CubeMap: sky/day
+  - Name: SkyboxContainer
+    Components:
+      Skybox:
+        # NOTE: This requires 6 images in your Assets folder, named like:
+        # Assets/sky/day_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
+        CubeMap: sky/day
 
 #  - Name: DebugCamera
 #    Components:

@@ -19,6 +19,13 @@ namespace Cherris
         private int _tilingLocation;
         private int _emissiveLocation;
 
+        private ShaderProgram _skyboxShaderProgram;
+        private int _skyboxViewLocation;
+        private int _skyboxProjectionLocation;
+        private int _skyboxSamplerLocation;
+        private OpenGLMeshRendererData _skyboxCubeData;
+
+
         #region Shader Program Helper
         private class ShaderProgram : IDisposable
         {
@@ -169,6 +176,41 @@ void main()
             _tilingLocation = _shaderProgram.GetUniformLocation("uTiling");
             _emissiveLocation = _shaderProgram.GetUniformLocation("uEmissive");
 
+            const string skyboxVert = @"
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+
+out vec3 TexCoords;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+void main()
+{
+    TexCoords = aPosition;
+    vec4 pos = projection * view * vec4(aPosition, 1.0);
+    gl_Position = pos.xyww; // Force depth to be 1.0
+}";
+            const string skyboxFrag = @"
+#version 330 core
+out vec4 FragColor;
+
+in vec3 TexCoords;
+
+uniform samplerCube skybox;
+
+void main()
+{    
+    FragColor = texture(skybox, TexCoords);
+}";
+
+            _skyboxShaderProgram = new ShaderProgram(skyboxVert, skyboxFrag);
+            _skyboxViewLocation = _skyboxShaderProgram.GetUniformLocation("view");
+            _skyboxProjectionLocation = _skyboxShaderProgram.GetUniformLocation("projection");
+            _skyboxSamplerLocation = _skyboxShaderProgram.GetUniformLocation("skybox");
+            _skyboxCubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
+
+
             GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
             GL.Enable(EnableCap.DepthTest);
             GL.DepthFunc(DepthFunction.Less);
@@ -214,6 +256,37 @@ void main()
                 mainCamera.NearClipPlane,
                 mainCamera.FarClipPlane);
 
+            // --- Draw Skybox ---
+            if (skybox != null && skybox.CubeMapTexture != null)
+            {
+                GL.DepthFunc(DepthFunction.Lequal);
+                GL.CullFace(CullFaceMode.Front);
+
+                _skyboxShaderProgram.Use();
+
+                var skyboxView = view;
+                skyboxView.Row3 = new OpenTK.Mathematics.Vector4(0, 0, 0, 1); // Remove translation
+
+                GL.UniformMatrix4(_skyboxViewLocation, false, ref skyboxView);
+                GL.UniformMatrix4(_skyboxProjectionLocation, false, ref projection);
+
+                if (skybox.CubeMapTexture is OpenTKTexture glSkyboxTexture)
+                {
+                    glSkyboxTexture.Bind(TextureUnit.Texture0);
+                    GL.Uniform1(_skyboxSamplerLocation, 0);
+                }
+
+                GL.BindVertexArray(_skyboxCubeData.VaoHandle);
+                GL.DrawElements(PrimitiveType.Triangles, _skyboxCubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
+                GL.BindVertexArray(0);
+
+                // Reset state for main scene rendering
+                GL.CullFace(CullFaceMode.Back);
+                GL.DepthFunc(DepthFunction.Less);
+            }
+
+
+            // --- Draw Scene Objects ---
             _shaderProgram.Use();
 
             // Set texture unit 0 (modern GL.Uniform1 overload)
@@ -225,7 +298,7 @@ void main()
             foreach (var go in gameObjects)
             {
                 var mr = go.GetComponent<MeshRenderer>();
-                if (mr?.Mesh is null) continue;
+                if (mr?.Mesh is null || go.GetComponent<Skybox>() != null) continue; // Skip skybox container
                 var data = GetOrCreateBackendData(mr);
                 DrawObject(go, mr, data, view, projection);
             }
@@ -267,6 +340,8 @@ void main()
             CheckGLError($"Draw '{go.Name}'");
         }
 
+
+
         public void OnWindowResized() { }
         public void RequestSnapshot(string path) { }
         public void ProcessSnapshot() { }
@@ -285,6 +360,8 @@ void main()
         public void Dispose()
         {
             _shaderProgram?.Dispose();
+            _skyboxShaderProgram?.Dispose();
+            _skyboxCubeData?.Dispose();
         }
     }
 }
