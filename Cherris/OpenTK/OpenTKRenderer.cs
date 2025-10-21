@@ -268,18 +268,29 @@ namespace Cherris
             GL.Clear(ClearBufferMask.ColorBufferBit);
 
             _finalCompositeShader.Use();
+            var imageLoc = _finalCompositeShader.GetUniformLocation("image");
+            var exposureLoc = _finalCompositeShader.GetUniformLocation("exposure");
+            var isBloomLoc = _finalCompositeShader.GetUniformLocation("isBloomPass");
+
+            // Pass 1: Draw tonemapped scene
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _resolvedColorTexture);
-            GL.Uniform1(_finalCompositeShader.GetUniformLocation("sceneTexture"), 0);
-
-            GL.ActiveTexture(TextureUnit.Texture1);
-            GL.BindTexture(TextureTarget.Texture2D, _bloomTextures[horizontal ? 0 : 1]);
-            GL.Uniform1(_finalCompositeShader.GetUniformLocation("bloomTexture"), 1);
-
-            GL.Uniform1(_finalCompositeShader.GetUniformLocation("exposure"), exposure);
+            GL.Uniform1(imageLoc, 0);
+            GL.Uniform1(exposureLoc, exposure);
+            GL.Uniform1(isBloomLoc, 0); // Corresponds to 'false'
             RenderQuad();
 
-            CheckGLError("Frame End");
+            // Pass 2: Additively blend bloom on top
+            GL.Enable(EnableCap.Blend);
+            GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
+            GL.ActiveTexture(TextureUnit.Texture0);
+            // The final blurred image is in the texture that was the *target* in the last blur pass
+            GL.BindTexture(TextureTarget.Texture2D, _bloomTextures[horizontal ? 0 : 1]);
+            GL.Uniform1(imageLoc, 0); // Sampler is still 0
+            GL.Uniform1(isBloomLoc, 1); // Corresponds to 'true'
+            RenderQuad();
+
+            GL.Disable(EnableCap.Blend); // Reset blend state
         }
 
         private void DrawSkybox(Skybox skybox, Matrix4 view, Matrix4 projection)
@@ -444,26 +455,20 @@ out vec4 FragColor;
 in vec2 TexCoords;
 uniform sampler2D image;
 uniform bool horizontal;
-float weight[5] = float[] (0.227027, 0.1945946, 0.1216216, 0.05405405, 0.01621622);
+
+// 5-tap Gaussian blur (Veldrid equivalent)
+const float weights[3] = float[](0.227027, 0.316216, 0.070270);
+const float offsets[3] = float[](0.0, 1.384615, 3.230769);
+
 void main()
 {
-    vec2 tex_offset = 1.0 / textureSize(image, 0);
-    vec3 result = texture(image, TexCoords).rgb * weight[0];
-    if(horizontal)
-    {
-        for(int i = 1; i < 5; ++i)
-        {
-            result += texture(image, TexCoords + vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
-            result += texture(image, TexCoords - vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
-        }
-    }
-    else
-    {
-        for(int i = 1; i < 5; ++i)
-        {
-            result += texture(image, TexCoords + vec2(0.0, tex_offset.y * i)).rgb * weight[i];
-            result += texture(image, TexCoords - vec2(0.0, tex_offset.y * i)).rgb * weight[i];
-        }
+    vec2 texelSize = 1.0 / textureSize(image, 0);
+    vec3 result = texture(image, TexCoords).rgb * weights[0];
+    vec2 dir = horizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
+
+    for (int i = 1; i < 3; i++) {
+        result += texture(image, TexCoords + offsets[i] * dir).rgb * weights[i];
+        result += texture(image, TexCoords - offsets[i] * dir).rgb * weights[i];
     }
     FragColor = vec4(result, 1.0);
 }";
@@ -473,9 +478,9 @@ void main()
 #version 330 core
 out vec4 FragColor;
 in vec2 TexCoords;
-uniform sampler2D sceneTexture;
-uniform sampler2D bloomTexture;
+uniform sampler2D image;
 uniform float exposure;
+uniform bool isBloomPass;
 
 vec3 tonemap_reinhard(vec3 color) {
     return color / (color + vec3(1.0));
@@ -483,12 +488,14 @@ vec3 tonemap_reinhard(vec3 color) {
 
 void main()
 {
-    vec3 hdrColor = texture(sceneTexture, TexCoords).rgb;
-    vec3 bloomColor = texture(bloomTexture, TexCoords).rgb;
-    hdrColor += bloomColor;
-    hdrColor *= exposure;
-    vec3 ldrColor = tonemap_reinhard(hdrColor);
-    FragColor = vec4(ldrColor, 1.0);
+    vec3 color = texture(image, TexCoords).rgb;
+    if (!isBloomPass) { // This is the main scene pass
+        color *= exposure;
+        color = tonemap_reinhard(color);
+    }
+    // else, this is the bloom pass, so we output the raw color for additive blending.
+    
+    FragColor = vec4(color, 1.0);
 }";
             _finalCompositeShader = new ShaderProgram(quadVert, finalCompositeFrag);
         }
