@@ -1,13 +1,17 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
+using Cherris.Rendering;
 using Veldrid;
 using Veldrid.SPIRV;
 
 namespace Cherris;
 
-public class Renderer : IDisposable
+// This class now acts as the Veldrid implementation of IRenderer
+public class Renderer : IRenderer
 {
     private readonly GraphicsManager _graphicsManager;
+    private readonly GraphicsDevice _graphicsDevice;
     private SceneRenderer _sceneRenderer;
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
@@ -18,19 +22,55 @@ public class Renderer : IDisposable
     private bool _snapshotRequested;
     private string _snapshotPath;
 
-    public ResourceLayout TextureLayout => _sceneRenderer.TextureLayout;
-    public ResourceLayout MaterialLayout => _sceneRenderer.MaterialLayout;
-    public Sampler Sampler => _sampler;
-
-    public Renderer(GraphicsManager graphicsManager)
+    // Veldrid-specific data associated with a MeshRenderer component
+    internal class VeldridMeshRendererData : IDisposable
     {
-        _graphicsManager = graphicsManager;
-        CreateResources();
+        public readonly DeviceBuffer VertexBuffer;
+        public readonly DeviceBuffer IndexBuffer;
+        public readonly uint IndexCount;
+        public readonly ResourceSet TextureResourceSet;
+        public readonly DeviceBuffer MaterialPropertiesBuffer;
+        public readonly ResourceSet MaterialResourceSet;
+
+        public VeldridMeshRendererData(GraphicsDevice gd, MeshRenderer meshRenderer, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+        {
+            var texture = (Texture)meshRenderer.Texture.GetBackendHandle();
+            ResourceFactory factory = gd.ResourceFactory;
+
+            VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
+            gd.UpdateBuffer(VertexBuffer, 0, meshRenderer.Mesh.Vertices);
+
+            IndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * meshRenderer.Mesh.Indices.Length), BufferUsage.IndexBuffer));
+            gd.UpdateBuffer(IndexBuffer, 0, meshRenderer.Mesh.Indices);
+            IndexCount = (uint)meshRenderer.Mesh.Indices.Length;
+
+            TextureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(textureLayout, texture.VeldridTextureView, sampler));
+
+            MaterialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
+            var materialData = new Vector4[2];
+            materialData[0] = new Vector4(meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y, 0, 0);
+            materialData[1] = new Vector4(meshRenderer.EmissiveColor, 1.0f);
+            gd.UpdateBuffer(MaterialPropertiesBuffer, 0, materialData);
+
+            MaterialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(materialLayout, MaterialPropertiesBuffer));
+        }
+
+        public void Dispose()
+        {
+            VertexBuffer.Dispose();
+            IndexBuffer.Dispose();
+            TextureResourceSet.Dispose();
+            MaterialPropertiesBuffer.Dispose();
+            MaterialResourceSet.Dispose();
+        }
     }
 
-    public void SetSnapshotter(Snapshotter snapshotter)
+    public Renderer(GraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
     {
-        _snapshotter = snapshotter;
+        _graphicsManager = graphicsManager;
+        _graphicsDevice = graphicsDevice;
+        _snapshotter = new Snapshotter(_graphicsDevice);
+        CreateResources();
     }
 
     public void RequestSnapshot(string path)
@@ -44,19 +84,16 @@ public class Renderer : IDisposable
         _snapshotter?.SaveCopiedData(_snapshotPath);
     }
 
-
-
     private void CreateResources()
     {
-        GraphicsDevice gd = _graphicsManager.GraphicsDevice;
-        ResourceFactory factory = gd.ResourceFactory;
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
         VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
             new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
             new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
 
-        _sampler = factory.CreateSampler(new Veldrid.SamplerDescription
+        _sampler = factory.CreateSampler(new SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,
             AddressModeV = SamplerAddressMode.Wrap,
@@ -68,13 +105,24 @@ public class Renderer : IDisposable
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
-        _resolveRenderer = new ResolveRenderer(gd);
-        _finalPassRenderer = new FinalPassRenderer(gd);
-        _bloomRenderer = new BloomRenderer(gd);
+        _sceneRenderer = new SceneRenderer(_graphicsDevice, vertexLayout);
+        _skyboxRenderer = new SkyboxRenderer(_graphicsDevice, _sampler, vertexLayout);
+        _resolveRenderer = new ResolveRenderer(_graphicsDevice);
+        _finalPassRenderer = new FinalPassRenderer(_graphicsDevice);
+        _bloomRenderer = new BloomRenderer(_graphicsDevice);
 
         OnWindowResized();
+    }
+
+    private VeldridMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
+    {
+        if (mr.BackendData is VeldridMeshRendererData data)
+        {
+            return data;
+        }
+        var newData = new VeldridMeshRendererData(_graphicsDevice, mr, _sceneRenderer.TextureLayout, _sceneRenderer.MaterialLayout, _sampler);
+        mr.BackendData = newData;
+        return newData;
     }
 
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
@@ -83,8 +131,8 @@ public class Renderer : IDisposable
 
         Matrix4x4 view = mainCamera.GetViewMatrix();
         Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
-
         CommandList cl = _graphicsManager.CommandList;
+
         cl.Begin();
 
         // Pass 1: Render scene to MSAA framebuffer
@@ -93,66 +141,51 @@ public class Renderer : IDisposable
         cl.ClearColorTarget(0, RgbaFloat.Black);
         cl.ClearDepthStencil(1f, 0);
 
-        if (skybox is not null)
+        if (skybox is not null) _skyboxRenderer.Render(cl, skybox, view, projection);
+
+        _sceneRenderer.Render(cl, view, projection, gameObjects, GetOrCreateBackendData);
+        if (selectedObject?.GetComponent<MeshRenderer>() != null)
         {
-            _skyboxRenderer.Render(cl, skybox, view, projection);
-        }
-        _sceneRenderer.Render(cl, view, projection, gameObjects);
-        if (selectedObject is not null)
-        {
-            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject);
+            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
         }
 
-        // Pass 2: Resolve MSAA to our final intermediate texture
+        // Pass 2: Resolve MSAA
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 3: Extract bright parts and blur them for the bloom effect
+        // Pass 3: Bloom
         var bloomViewport = new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1);
         cl.SetViewport(0, bloomViewport);
-
-        // 3a: Bright Pass
         cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
         _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
+        _bloomRenderer.RenderBlur(cl, _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
 
-        // 3b: Blur Pass
-        _bloomRenderer.RenderBlur(cl,
-            _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer,
-            _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
-
-        // Pass 4: Composite scene and bloom, tonemap, and draw to screen
+        // Pass 4: Composite and draw to screen
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
-
-        // 4a: Draw the main scene with tonemapping
         _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
-
-        // 4b: Additively blend the bloom on top
         _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
-
 
         if (_snapshotRequested && _snapshotter != null)
         {
-            // Copy from our stable intermediate texture, not the swapchain
             _snapshotter.RecordCopyCommand(cl, _graphicsManager.FinalColorTarget);
             _snapshotRequested = false;
         }
 
         cl.End();
-        _graphicsManager.GraphicsDevice.SubmitCommands(cl);
-        _graphicsManager.GraphicsDevice.SwapBuffers();
+        _graphicsDevice.SubmitCommands(cl);
+        _graphicsDevice.SwapBuffers();
     }
 
     public void OnWindowResized()
     {
+        _graphicsManager.Resize((int)_graphicsManager.SwapchainFramebuffer.Width, (int)_graphicsManager.SwapchainFramebuffer.Height);
         _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _bloomRenderer.OnWindowResized(
-            _graphicsManager.BloomFramebuffer,
-            _graphicsManager.BloomTempFramebuffer);
+        _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempFramebuffer);
     }
 
     public void Dispose()
@@ -163,6 +196,8 @@ public class Renderer : IDisposable
         _finalPassRenderer.Dispose();
         _bloomRenderer.Dispose();
         _sampler.Dispose();
+        _snapshotter.Dispose();
+        _graphicsManager.Dispose();
     }
 
     /// <summary>

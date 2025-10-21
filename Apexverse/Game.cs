@@ -4,7 +4,7 @@ namespace Apexverse;
 
 public class Game : Engine
 {
-    public Game(EngineMode mode) : base("Veldrid Engine Demo", mode)
+    public Game(EngineMode mode, GraphicsAPI api) : base("Veldrid Engine Demo", mode, api)
     {
         Exposure = 0.5f;
     }

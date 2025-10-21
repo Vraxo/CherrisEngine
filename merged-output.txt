@@ -1,4 +1,209 @@
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\AssetFinder.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
+using Cherris;
+
+namespace Apexverse;
+
+public class Game : Engine
+{
+    public Game(EngineMode mode) : base("Veldrid Engine Demo", mode)
+    {
+        Exposure = 0.5f;
+    }
+
+    protected override void LoadContent()
+    {
+        // Pre-load assets that the scene will need
+        ResourceManager.LoadInitialAssets();
+
+        // Register custom components that the scene can use
+        SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
+        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
+
+        // Load the scene from the file and populate the SceneManager
+        var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
+        SceneManager.SetScene(loadedObjects);
+    }
+
+    protected override void OnStart()
+    {
+        if (Mode == EngineMode.Editor && SceneManager.MainCamera?.GameObject != null)
+        {
+            var cameraGo = SceneManager.MainCamera.GameObject;
+
+            // If the scene camera is the player, remove its controller
+            // so it doesn't fight with the new editor controller.
+            var playerController = cameraGo.GetComponent<PlayerController>();
+            if (playerController != null)
+            {
+                cameraGo.RemoveComponent<PlayerController>();
+            }
+
+            var editorController = cameraGo.AddComponent(new EditorController());
+            RegisterEditorController(editorController);
+        }
+    }
+
+    protected override void Update(float deltaTime)
+    {
+        // The base engine Update now handles calling Update on all Scripts
+        base.Update(deltaTime);
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\PlayerController.cs">
+using Cherris;
+using System;
+using System.Numerics;
+using Veldrid;
+
+namespace Apexverse
+{
+    public class PlayerController : Script
+    {
+        public float Speed { get; set; } = 3.0f;
+        public float MouseSensitivity { get; set; } = 0.00015f;
+
+        private float _yaw;
+        private float _pitch;
+
+        public override void Update(float deltaTime)
+        {
+            // --- Mouse Look ---
+            Vector2 mouseDelta = Input.MouseDelta;
+            _yaw -= mouseDelta.X * MouseSensitivity;
+            _pitch -= mouseDelta.Y * MouseSensitivity;
+
+            // Clamp the pitch to prevent the camera from flipping upside down
+            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+            // Update rotation from yaw and pitch
+            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
+                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+
+            // --- Keyboard Movement ---
+            var moveDirection = Vector3.Zero;
+
+            if (Input.IsKeyDown(Key.W))
+            {
+                moveDirection -= Vector3.UnitZ;
+            }
+            if (Input.IsKeyDown(Key.S))
+            {
+                moveDirection += Vector3.UnitZ;
+            }
+            if (Input.IsKeyDown(Key.A))
+            {
+                moveDirection -= Vector3.UnitX;
+            }
+            if (Input.IsKeyDown(Key.D))
+            {
+                moveDirection += Vector3.UnitX;
+            }
+
+            if (moveDirection != Vector3.Zero)
+            {
+                moveDirection = Vector3.Normalize(moveDirection);
+
+                // Create a rotation that only includes the horizontal (yaw) component.
+                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+                // Transform the local direction vector by the horizontal-only rotation.
+                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+                GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+            }
+        }
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Program.cs">
+using Cherris;
+
+namespace Apexverse;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        var game = new Game(EngineMode.Editor);
+        game.Run();
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Spinner.cs">
+using System.Numerics;
+using Cherris;
+
+namespace Apexverse;
+
+public class Spinner : Script
+{
+    private float _totalTime;
+
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
+GameObjects:
+  - Name: SkyboxContainer
+    Components:
+      Skybox:
+        # NOTE: This requires 6 images in your Assets folder, named like:
+        # Assets/sky/night_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
+        CubeMap: sky/day
+
+  - Name: Player
+    Components:
+      Transform:
+        Position: [0, 1, 3] # Start at a good vantage point
+        Rotation: [0, 0, 0] # Looking forward (towards -Z)
+        Scale: [1, 1, 1]
+      PlayerController:
+      Camera:
+
+  - Name: SpinningCube
+    Components:
+      Transform:
+        Position: [0, 0, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Cube
+        Texture: crate
+        EmissiveColor: [20, 2, 2] # Intense Red
+      Spinner:
+
+  - Name: StaticCube
+    Components:
+      Transform:
+        Position: [2.5, 0, 0]
+        Rotation: [0, 45, 0]
+        Scale: [0.75, 0.75, 0.75]
+      MeshRenderer:
+        Mesh: Cube
+        Texture: crate
+        
+  - Name: GroundPlane
+    Components:
+      Transform:
+        Position: [0, -0.75, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Plane
+        Texture: Asphalt
+        TextureTiling: [10, 10]
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\AssetFinder.cs">
 namespace Cherris;
 
 public static class AssetFinder
@@ -46,70 +251,219 @@ public static class AssetFinder
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\EditorController.cs">
-using Cherris;
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\BloomRenderer.cs">
 using System;
 using System.Numerics;
 using Veldrid;
+using Veldrid.SPIRV;
 
-namespace Apexverse;
+namespace Cherris;
 
-public class EditorController : Script
+public class BloomRenderer : IDisposable
 {
-    public float Speed { get; set; } = 5.0f;
-    public float MouseSensitivity { get; set; } = 0.00015f;
+    private readonly DeviceBuffer _vertexBuffer;
+    private Pipeline _brightPassPipeline;
+    private Pipeline _blurPipeline;
+    private readonly ResourceLayout _textureLayout;
+    private readonly ResourceLayout _blurParamsLayout;
+    private readonly DeviceBuffer _blurParamsBuffer;
+    private readonly GraphicsDevice _graphicsDevice;
+    private readonly Shader _vertexShader;
+    private readonly Shader _brightPassFragmentShader;
+    private readonly Shader _blurFragmentShader;
+    private readonly Sampler _clampSampler;
 
-    private float _yaw;
-    private float _pitch;
-
-    public override void Start()
+    public BloomRenderer(GraphicsDevice gd)
     {
-        // Initialize yaw and pitch from the camera's starting rotation
-        var initialRotation = GameObject.Transform.Rotation;
-        var direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
-        _yaw = MathF.Atan2(direction.X, -direction.Z);
-        _pitch = MathF.Asin(direction.Y);
+        _graphicsDevice = gd;
+        ResourceFactory factory = gd.ResourceFactory;
+
+        Vector3[] quadVertices =
+        {
+            new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
+            new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
+        };
+        _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+        gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
+
+        _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+            new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+            new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+        _blurParamsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+            new ResourceLayoutElementDescription("BlurParams", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+        _blurParamsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+
+        _clampSampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Clamp,
+            AddressModeV = SamplerAddressMode.Clamp,
+            AddressModeW = SamplerAddressMode.Clamp,
+            Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
+        });
+
+
+        (_vertexShader, _brightPassFragmentShader, _blurFragmentShader) = LoadShaders(factory);
     }
 
-    public override void Update(float deltaTime)
+    public void OnWindowResized(Framebuffer brightPassTarget, Framebuffer blurTarget)
     {
-        if (Input.IsMouseLocked)
+        _brightPassPipeline?.Dispose();
+        _blurPipeline?.Dispose();
+
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+        var quadLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
+
+        _brightPassPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
-            // --- Mouse Look ---
-            Vector2 mouseDelta = Input.MouseDelta;
-            _yaw -= mouseDelta.X * MouseSensitivity;
-            _pitch -= mouseDelta.Y * MouseSensitivity;
+            BlendState = BlendStateDescription.SingleOverrideBlend,
+            DepthStencilState = DepthStencilStateDescription.Disabled,
+            RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+            ResourceLayouts = new[] { _textureLayout },
+            ShaderSet = new ShaderSetDescription(new[] { quadLayout }, new[] { _vertexShader, _brightPassFragmentShader }),
+            Outputs = brightPassTarget.OutputDescription
+        });
 
-            // Clamp the pitch to prevent the camera from flipping upside down
-            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-            // Update rotation from yaw and pitch
-            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-        }
-
-        // --- Keyboard Movement ---
-        var moveDirection = Vector3.Zero;
-
-        if (Input.IsKeyDown(Key.W)) moveDirection -= Vector3.UnitZ;
-        if (Input.IsKeyDown(Key.S)) moveDirection += Vector3.UnitZ;
-        if (Input.IsKeyDown(Key.A)) moveDirection -= Vector3.UnitX;
-        if (Input.IsKeyDown(Key.D)) moveDirection += Vector3.UnitX;
-        if (Input.IsKeyDown(Key.E)) moveDirection += Vector3.UnitY; // Up
-        if (Input.IsKeyDown(Key.Q)) moveDirection -= Vector3.UnitY; // Down
-
-        if (moveDirection != Vector3.Zero)
+        _blurPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
-            moveDirection = Vector3.Normalize(moveDirection);
-            // Transform the local direction vector by the full camera rotation to fly.
-            var worldDirection = Vector3.Transform(moveDirection, GameObject.Transform.Rotation);
-            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-        }
+            BlendState = BlendStateDescription.SingleOverrideBlend,
+            DepthStencilState = DepthStencilStateDescription.Disabled,
+            RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+            PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+            ResourceLayouts = new[] { _textureLayout, _blurParamsLayout },
+            ShaderSet = new ShaderSetDescription(new[] { quadLayout }, new[] { _vertexShader, _blurFragmentShader }),
+            Outputs = blurTarget.OutputDescription
+        });
+    }
+
+    public void RenderBrightPass(CommandList cl, TextureView sourceView)
+    {
+        ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            _textureLayout, sourceView, _graphicsDevice.LinearSampler));
+
+        cl.SetVertexBuffer(0, _vertexBuffer);
+        cl.SetPipeline(_brightPassPipeline);
+        cl.SetGraphicsResourceSet(0, textureSet);
+        cl.Draw(4, 1, 0, 0);
+
+        textureSet.Dispose();
+    }
+
+    public void RenderBlur(CommandList cl,
+        TextureView sourceView, Framebuffer sourceFramebuffer,
+        TextureView tempView, Framebuffer tempFramebuffer)
+    {
+        // Use ClampSampler for blurring to prevent edge wrapping artifacts
+        ResourceSet sourceSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            _textureLayout, sourceView, _clampSampler));
+        ResourceSet tempSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            _textureLayout, tempView, _clampSampler));
+
+        ResourceSet blurParamsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+            _blurParamsLayout, _blurParamsBuffer));
+
+        cl.SetVertexBuffer(0, _vertexBuffer);
+        cl.SetPipeline(_blurPipeline);
+        cl.SetGraphicsResourceSet(1, blurParamsSet);
+
+        // Pass 1: Horizontal Blur
+        // Source: sourceView, Target: tempFramebuffer
+        cl.UpdateBuffer(_blurParamsBuffer, 0, new Vector4(1.0f / sourceView.Target.Width, 0, 0, 0));
+        cl.SetFramebuffer(tempFramebuffer);
+        cl.SetGraphicsResourceSet(0, sourceSet);
+        cl.Draw(4, 1, 0, 0);
+
+        // Pass 2: Vertical Blur
+        // Source: tempView, Target: sourceFramebuffer
+        cl.UpdateBuffer(_blurParamsBuffer, 0, new Vector4(0, 1.0f / sourceView.Target.Height, 0, 0));
+        cl.SetFramebuffer(sourceFramebuffer);
+        cl.SetGraphicsResourceSet(0, tempSet);
+        cl.Draw(4, 1, 0, 0);
+
+        sourceSet.Dispose();
+        tempSet.Dispose();
+        blurParamsSet.Dispose();
+    }
+
+    private (Shader, Shader, Shader) LoadShaders(ResourceFactory factory)
+    {
+        const string vertexCode = @"
+            #version 450
+            layout(location = 0) in vec3 Position;
+            layout(location = 0) out vec2 fsin_TexCoord;
+            void main() {
+                gl_Position = vec4(Position.xy, 0, 1);
+                vec2 uv = (Position.xy + vec2(1.0, 1.0)) / 2.0;
+                uv.y = 1.0 - uv.y; // Flip Y-coordinate
+                fsin_TexCoord = uv;
+            }";
+
+        const string brightPassFragmentCode = @"
+            #version 450
+            layout(location = 0) in vec2 fsin_TexCoord;
+            layout(location = 0) out vec4 fsout_Color;
+            layout(set = 0, binding = 0) uniform texture2D SourceTexture;
+            layout(set = 0, binding = 1) uniform sampler SourceSampler;
+            const float threshold = 1.1;
+            void main() {
+                vec3 color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb;
+                // Subtract the threshold to get a smooth falloff for bloom contribution.
+                // This avoids the hard edges from a step() function which cause bleeding artifacts.
+                vec3 finalColor = max(vec3(0.0), color - threshold);
+                fsout_Color = vec4(finalColor, 1.0);
+            }";
+
+        const string blurFragmentCode = @"
+            #version 450
+            layout(location = 0) in vec2 fsin_TexCoord;
+            layout(location = 0) out vec4 fsout_Color;
+            layout(set = 0, binding = 0) uniform texture2D SourceTexture;
+            layout(set = 0, binding = 1) uniform sampler SourceSampler;
+            layout(set = 1, binding = 0) uniform BlurParams { vec2 TexelSize; };
+
+            // 5-tap Gaussian blur
+            const float weights[3] = float[](0.227027, 0.316216, 0.070270);
+            const float offsets[3] = float[](0.0, 1.384615, 3.230769);
+
+            void main() {
+                vec3 result = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb * weights[0];
+                for (int i = 1; i < 3; i++) {
+                    result += texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord + offsets[i] * TexelSize).rgb * weights[i];
+                    result += texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord - offsets[i] * TexelSize).rgb * weights[i];
+                }
+                fsout_Color = vec4(result, 1.0);
+            }";
+
+        var vertexShaderDesc = new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+
+        var brightPassFragmentDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(brightPassFragmentCode), "main");
+        var blurFragmentDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(blurFragmentCode), "main");
+
+        Shader[] brightPassShaders = factory.CreateFromSpirv(vertexShaderDesc, brightPassFragmentDesc);
+        Shader[] blurShaders = factory.CreateFromSpirv(vertexShaderDesc, blurFragmentDesc);
+
+        return (brightPassShaders[0], brightPassShaders[1], blurShaders[1]);
+    }
+
+    public void Dispose()
+    {
+        _brightPassPipeline?.Dispose();
+        _blurPipeline?.Dispose();
+        _vertexShader.Dispose();
+        _brightPassFragmentShader.Dispose();
+        _blurFragmentShader.Dispose();
+        _textureLayout.Dispose();
+        _blurParamsLayout.Dispose();
+        _blurParamsBuffer.Dispose();
+        _vertexBuffer.Dispose();
+        _clampSampler.Dispose();
     }
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Engine.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Engine.cs">
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -217,6 +571,8 @@ public abstract class Engine
 
     protected EngineMode Mode { get; }
 
+    public float Exposure { get; set; } = 1.0f;
+
     protected Engine(string windowTitle, EngineMode mode = EngineMode.Game)
     {
         Mode = mode;
@@ -294,6 +650,22 @@ public abstract class Engine
                 }
             }
 
+            Vector3 emissiveColor = Vector3.Zero; // Default to black (no emission)
+            if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
+            {
+                try
+                {
+                    emissiveColor = new Vector3(
+                        Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
+                }
+            }
+
             return new MeshRenderer(
                 mesh,
                 _graphicsManager.GraphicsDevice,
@@ -301,7 +673,8 @@ public abstract class Engine
                 _renderer.MaterialLayout,
                 _renderer.Sampler,
                 texture,
-                textureTiling);
+                textureTiling,
+                emissiveColor);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
@@ -479,7 +852,8 @@ public abstract class Engine
             SceneManager.GameObjects,
             _selectedGameObject,
             _gameWindow.Width,
-            _gameWindow.Height);
+            _gameWindow.Height,
+            Exposure);
 
         _renderer.ProcessSnapshot();
     }
@@ -501,7 +875,7 @@ public abstract class Engine
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameLoop.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameLoop.cs">
 using System.Diagnostics;
 
 namespace Cherris;
@@ -544,7 +918,7 @@ public class GameLoop
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameObject.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameObject.cs">
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -627,7 +1001,7 @@ public class GameObject
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameWindow.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameWindow.cs">
 using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
@@ -696,7 +1070,7 @@ public class GameWindow
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\GraphicsManager.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GraphicsManager.cs">
 using System;
 using Veldrid;
 using Veldrid.Sdl2;
@@ -719,6 +1093,17 @@ public class GraphicsManager : IDisposable
     public Framebuffer FinalFramebuffer { get; private set; }
     public Veldrid.Texture FinalColorTarget { get; private set; }
     public TextureView FinalColorView { get; private set; }
+
+    // Bloom resources (half resolution)
+    public Framebuffer BloomFramebuffer { get; private set; }
+    public Veldrid.Texture BloomColorTarget { get; private set; }
+    public TextureView BloomColorView { get; private set; }
+
+    // Temporary "ping-pong" buffer for blurring
+    public Framebuffer BloomTempFramebuffer { get; private set; }
+    public Veldrid.Texture BloomTempColorTarget { get; private set; }
+    public TextureView BloomTempColorView { get; private set; }
+
 
     public Framebuffer SwapchainFramebuffer => GraphicsDevice.SwapchainFramebuffer;
 
@@ -749,8 +1134,8 @@ public class GraphicsManager : IDisposable
 
     private void CreateResources(int width, int height)
     {
-        PixelFormat swapchainFormat = SwapchainFramebuffer.ColorTargets[0].Target.Format;
-        PixelFormat colorFormat = GetNonSrgbFormat(swapchainFormat);
+        // Use a 16-bit float format for our intermediate render targets to support HDR values.
+        const PixelFormat colorFormat = PixelFormat.R16_G16_B16_A16_Float;
 
         // MSAA Targets
         _msaaColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
@@ -776,6 +1161,26 @@ public class GraphicsManager : IDisposable
         FinalColorView = GraphicsDevice.ResourceFactory.CreateTextureView(FinalColorTarget);
 
         FinalFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, FinalColorTarget));
+
+        // Bloom Target (half res)
+        uint bloomWidth = (uint)width / 2;
+        uint bloomHeight = (uint)height / 2;
+        BloomColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            bloomWidth, bloomHeight, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled));
+
+        BloomColorView = GraphicsDevice.ResourceFactory.CreateTextureView(BloomColorTarget);
+
+        BloomFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, BloomColorTarget));
+
+        // Bloom Temp Target (half res)
+        BloomTempColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
+            bloomWidth, bloomHeight, 1, 1, colorFormat,
+            TextureUsage.RenderTarget | TextureUsage.Sampled));
+
+        BloomTempColorView = GraphicsDevice.ResourceFactory.CreateTextureView(BloomTempColorTarget);
+
+        BloomTempFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, BloomTempColorTarget));
     }
 
     private void DisposeResources()
@@ -788,16 +1193,14 @@ public class GraphicsManager : IDisposable
         FinalColorView?.Dispose();
         FinalColorTarget?.Dispose();
         FinalFramebuffer?.Dispose();
-    }
 
-    private static PixelFormat GetNonSrgbFormat(PixelFormat format)
-    {
-        return format switch
-        {
-            PixelFormat.B8_G8_R8_A8_UNorm_SRgb => PixelFormat.B8_G8_R8_A8_UNorm,
-            PixelFormat.R8_G8_B8_A8_UNorm_SRgb => PixelFormat.R8_G8_B8_A8_UNorm,
-            _ => format
-        };
+        BloomColorView?.Dispose();
+        BloomColorTarget?.Dispose();
+        BloomFramebuffer?.Dispose();
+
+        BloomTempColorView?.Dispose();
+        BloomTempColorTarget?.Dispose();
+        BloomTempFramebuffer?.Dispose();
     }
 
     public void Dispose()
@@ -809,7 +1212,7 @@ public class GraphicsManager : IDisposable
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Input.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Input.cs">
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -910,7 +1313,7 @@ public static class Input
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Renderer.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Renderer.cs">
 using System.Collections.Generic;
 using System.Numerics;
 using Veldrid;
@@ -924,7 +1327,8 @@ public class Renderer : IDisposable
     private SceneRenderer _sceneRenderer;
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
-    private BlitRenderer _blitRenderer;
+    private FinalPassRenderer _finalPassRenderer;
+    private BloomRenderer _bloomRenderer;
     private Sampler _sampler;
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
@@ -956,6 +1360,8 @@ public class Renderer : IDisposable
         _snapshotter?.SaveCopiedData(_snapshotPath);
     }
 
+
+
     private void CreateResources()
     {
         GraphicsDevice gd = _graphicsManager.GraphicsDevice;
@@ -966,7 +1372,7 @@ public class Renderer : IDisposable
             new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
             new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
 
-        _sampler = factory.CreateSampler(new SamplerDescription
+        _sampler = factory.CreateSampler(new Veldrid.SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,
             AddressModeV = SamplerAddressMode.Wrap,
@@ -981,12 +1387,13 @@ public class Renderer : IDisposable
         _sceneRenderer = new SceneRenderer(gd, vertexLayout);
         _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
         _resolveRenderer = new ResolveRenderer(gd);
-        _blitRenderer = new BlitRenderer(gd);
+        _finalPassRenderer = new FinalPassRenderer(gd);
+        _bloomRenderer = new BloomRenderer(gd);
 
         OnWindowResized();
     }
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
         if (mainCamera is null) return;
 
@@ -1014,11 +1421,32 @@ public class Renderer : IDisposable
 
         // Pass 2: Resolve MSAA to our final intermediate texture
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 3: Blit the final texture to the screen's swapchain
+        // Pass 3: Extract bright parts and blur them for the bloom effect
+        var bloomViewport = new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1);
+        cl.SetViewport(0, bloomViewport);
+
+        // 3a: Bright Pass
+        cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
+        _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
+
+        // 3b: Blur Pass
+        _bloomRenderer.RenderBlur(cl,
+            _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer,
+            _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
+
+        // Pass 4: Composite scene and bloom, tonemap, and draw to screen
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _blitRenderer.Render(cl, _graphicsManager.FinalColorView);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+
+        // 4a: Draw the main scene with tonemapping
+        _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
+
+        // 4b: Additively blend the bloom on top
+        _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
+
 
         if (_snapshotRequested && _snapshotter != null)
         {
@@ -1037,7 +1465,10 @@ public class Renderer : IDisposable
         _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
-        _blitRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _bloomRenderer.OnWindowResized(
+            _graphicsManager.BloomFramebuffer,
+            _graphicsManager.BloomTempFramebuffer);
     }
 
     public void Dispose()
@@ -1045,23 +1476,29 @@ public class Renderer : IDisposable
         _sceneRenderer.Dispose();
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();
-        _blitRenderer.Dispose();
+        _finalPassRenderer.Dispose();
+        _bloomRenderer.Dispose();
         _sampler.Dispose();
     }
 
     /// <summary>
-    /// A simple renderer to draw a texture to a fullscreen quad.
+    /// Renders a fullscreen texture, applying exposure and tonemapping.
+    /// Also handles additive blending for bloom.
     /// </summary>
-    private class BlitRenderer : IDisposable
+    private class FinalPassRenderer : IDisposable
     {
         private readonly DeviceBuffer _vertexBuffer;
         private Pipeline _pipeline;
+        private Pipeline _bloomPipeline;
         private readonly ResourceLayout _textureLayout;
+        private readonly ResourceLayout _paramsLayout;
+        private readonly DeviceBuffer _paramsBuffer;
         private readonly GraphicsDevice _graphicsDevice;
         private readonly Shader _vertexShader;
         private readonly Shader _fragmentShader;
+        private readonly Sampler _clampSampler;
 
-        public BlitRenderer(GraphicsDevice gd)
+        public FinalPassRenderer(GraphicsDevice gd)
         {
             _graphicsDevice = gd;
             ResourceFactory factory = gd.ResourceFactory;
@@ -1071,14 +1508,25 @@ public class Renderer : IDisposable
                 new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
                 new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
             };
-            _vertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+            _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
             gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
-
-            var vertexLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
 
             _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            _paramsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("Params", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+            _paramsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+
+            _clampSampler = factory.CreateSampler(new SamplerDescription
+            {
+                AddressModeU = SamplerAddressMode.Clamp,
+                AddressModeV = SamplerAddressMode.Clamp,
+                AddressModeW = SamplerAddressMode.Clamp,
+                Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
+            });
 
             (_vertexShader, _fragmentShader) = LoadShaders(factory);
         }
@@ -1086,30 +1534,74 @@ public class Renderer : IDisposable
         public void SetFramebuffer(Framebuffer targetFramebuffer)
         {
             _pipeline?.Dispose();
+            _bloomPipeline?.Dispose();
             ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+            var shaderSet = new ShaderSetDescription(
+                new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) },
+                new[] { _vertexShader, _fragmentShader });
+
+            // Standard pipeline for the main scene pass
             _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
             {
                 BlendState = BlendStateDescription.SingleOverrideBlend,
                 DepthStencilState = DepthStencilStateDescription.Disabled,
                 RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
                 PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-                ResourceLayouts = new[] { _textureLayout },
-                ShaderSet = new ShaderSetDescription(new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) }, new[] { _vertexShader, _fragmentShader }),
+                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
+                ShaderSet = shaderSet,
+                Outputs = targetFramebuffer.OutputDescription
+            });
+
+            // Additive blend pipeline for the bloom pass
+            _bloomPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleAdditiveBlend,
+                DepthStencilState = DepthStencilStateDescription.Disabled,
+                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
+                ShaderSet = shaderSet,
                 Outputs = targetFramebuffer.OutputDescription
             });
         }
 
-        public void Render(CommandList cl, TextureView sourceView)
+        public void Render(CommandList cl, TextureView sourceView, float exposure)
         {
+            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(exposure, 1, 0, 0)); // Use Y=1 to signal main pass
+
             ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _textureLayout, sourceView, _graphicsDevice.PointSampler));
+                _textureLayout, sourceView, _graphicsDevice.LinearSampler)); // Main scene can wrap
+            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _paramsLayout, _paramsBuffer));
 
             cl.SetVertexBuffer(0, _vertexBuffer);
             cl.SetPipeline(_pipeline);
             cl.SetGraphicsResourceSet(0, textureSet);
+            cl.SetGraphicsResourceSet(1, paramsSet);
             cl.Draw(4, 1, 0, 0);
 
             textureSet.Dispose();
+            paramsSet.Dispose();
+        }
+
+        public void RenderBloom(CommandList cl, TextureView bloomView)
+        {
+            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(0, 0, 0, 0)); // Use Y=0 to signal bloom pass
+
+            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _textureLayout, bloomView, _clampSampler)); // Bloom must clamp
+            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _paramsLayout, _paramsBuffer));
+
+            cl.SetVertexBuffer(0, _vertexBuffer);
+            cl.SetPipeline(_bloomPipeline);
+            cl.SetGraphicsResourceSet(0, textureSet);
+            cl.SetGraphicsResourceSet(1, paramsSet);
+            cl.Draw(4, 1, 0, 0);
+
+            textureSet.Dispose();
+            paramsSet.Dispose();
         }
 
         private (Shader, Shader) LoadShaders(ResourceFactory factory)
@@ -1130,8 +1622,21 @@ public class Renderer : IDisposable
                 layout(location = 0) out vec4 fsout_Color;
                 layout(set = 0, binding = 0) uniform texture2D SourceTexture;
                 layout(set = 0, binding = 1) uniform sampler SourceSampler;
+                layout(set = 1, binding = 0) uniform Params { float Exposure; float IsMainPass; }; // IsMainPass is 1.0 or 0.0
+
+                vec3 tonemap_reinhard(vec3 color) {
+                    return color / (color + vec3(1.0));
+                }
+
                 void main() {
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord);
+                    vec3 color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb;
+                    
+                    if (IsMainPass > 0.5) {
+                        color *= Exposure;
+                        color = tonemap_reinhard(color);
+                    }
+
+                    fsout_Color = vec4(color, 1.0);
                 }";
 
             Shader[] shaders = factory.CreateFromSpirv(
@@ -1143,16 +1648,20 @@ public class Renderer : IDisposable
         public void Dispose()
         {
             _pipeline?.Dispose();
+            _bloomPipeline?.Dispose();
             _vertexShader.Dispose();
             _fragmentShader.Dispose();
             _textureLayout.Dispose();
+            _paramsLayout.Dispose();
+            _paramsBuffer.Dispose();
             _vertexBuffer.Dispose();
+            _clampSampler.Dispose();
         }
     }
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResolveRenderer.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResolveRenderer.cs">
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -1278,7 +1787,7 @@ void main()
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResourceManager.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResourceManager.cs">
 using System;
 using System.Collections.Generic;
 using Veldrid;
@@ -1388,7 +1897,7 @@ public class ResourceManager
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneLoader.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneLoader.cs">
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -1521,7 +2030,7 @@ public class SceneLoader
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneManager.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneManager.cs">
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1603,7 +2112,7 @@ public class SceneManager
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneRenderer.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneRenderer.cs">
 using System.Collections.Generic;
 using System.Numerics;
 using Veldrid;
@@ -1649,7 +2158,7 @@ public class SceneRenderer
 
         MaterialLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+                new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment))); // FIX: Visible to both shaders
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
@@ -1766,7 +2275,8 @@ public class SceneRenderer
                 layout(location = 2) in vec2 TexCoord;
 
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
-                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; }; // Use vec4 for 16-byte alignment
+                // The Tiling component is still needed by the vertex shader
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; vec4 EmissiveColor; };
 
                 layout(location = 0) out vec4 fsin_Color;
                 layout(location = 1) out vec2 fsin_TexCoord;
@@ -1785,12 +2295,16 @@ public class SceneRenderer
 
                 layout(set = 1, binding = 0) uniform texture2D SourceTexture;
                 layout(set = 1, binding = 1) uniform sampler SourceSampler;
+                
+                // EmissiveColor is now read in the fragment shader
+                layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; vec4 EmissiveColor; };
 
                 layout(location = 0) out vec4 fsout_Color;
 
                 void main() 
                 { 
-                    fsout_Color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                    vec4 baseColor = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                    fsout_Color = vec4(baseColor.rgb + EmissiveColor.rgb, baseColor.a);
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
@@ -1852,7 +2366,7 @@ public class SceneRenderer
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxLoader.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxLoader.cs">
 using StbImageSharp;
 using Veldrid;
 
@@ -1991,7 +2505,7 @@ public static class SkyboxLoader
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxRenderer.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SkyboxRenderer.cs">
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
@@ -2160,7 +2674,7 @@ public class SkyboxRenderer
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Snapshotter.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Snapshotter.cs">
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -2286,7 +2800,7 @@ public class Snapshotter : IDisposable
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Texture.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Texture.cs">
 using System;
 using Veldrid;
 
@@ -2311,7 +2825,7 @@ public class Texture : IDisposable
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\TextureLoader.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\TextureLoader.cs">
 using StbImageSharp;
 using System;
 using System.IO;
@@ -2380,7 +2894,7 @@ public static class TextureLoader
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vector3YamlTypeConverter.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vector3YamlTypeConverter.cs">
 using System;
 using System.Globalization;
 using System.Numerics;
@@ -2425,7 +2939,7 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vertex.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vertex.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -2448,7 +2962,7 @@ public struct Vertex
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\VertexPositionColor.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\VertexPositionColor.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -2469,7 +2983,7 @@ public struct VertexPositionColor
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Camera.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Camera.cs">
 using System;
 using System.Numerics;
 using Veldrid;
@@ -2502,7 +3016,7 @@ public class Camera : Component
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Component.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Component.cs">
 using System.Diagnostics;
 using System.Numerics;
 using Veldrid.Sdl2;
@@ -2523,7 +3037,81 @@ public abstract class Script : Component
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Mesh.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\EditorController.cs">
+using Cherris;
+using System;
+using System.Numerics;
+using Veldrid;
+
+namespace Apexverse;
+
+public class EditorController : Script
+{
+    public float Speed { get; set; } = 5.0f;
+    public float MouseSensitivity { get; set; } = 0.00015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Start()
+    {
+        // Initialize yaw and pitch from the camera's starting rotation
+        var initialRotation = GameObject.Transform.Rotation;
+        var direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
+        _yaw = MathF.Atan2(direction.X, -direction.Z);
+        _pitch = MathF.Asin(direction.Y);
+    }
+
+    public override void Update(float deltaTime)
+    {
+        if (Input.IsMouseLocked)
+        {
+            // --- Mouse Look ---
+            Vector2 mouseDelta = Input.MouseDelta;
+            _yaw -= mouseDelta.X * MouseSensitivity;
+            _pitch -= mouseDelta.Y * MouseSensitivity;
+
+            // Clamp the pitch to prevent the camera from flipping upside down
+            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+            // Update rotation from yaw and pitch
+            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
+                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+        }
+
+        // --- Keyboard Movement ---
+        var localMove = Vector3.Zero;
+        if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
+        if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
+        if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
+        if (Input.IsKeyDown(Key.D)) localMove.X += 1;
+
+        var worldVerticalMove = 0f;
+        if (Input.IsKeyDown(Key.Space)) worldVerticalMove += 1;
+        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)) worldVerticalMove -= 1;
+
+        if (localMove != Vector3.Zero || worldVerticalMove != 0)
+        {
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+            // Transform local horizontal movement into world space.
+            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
+
+            // Combine with world vertical movement.
+            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+
+            // Normalize the final vector to ensure consistent speed in all directions.
+            if (finalMove.LengthSquared() > 0)
+            {
+                GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
+            }
+        }
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Mesh.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -2645,7 +3233,7 @@ public class Mesh
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -2668,14 +3256,16 @@ public class MeshRenderer : Component
     private readonly Mesh _mesh;
     private readonly Texture _texture;
     private readonly Vector2 _textureTiling;
+    private readonly Vector3 _emissiveColor;
     private readonly GraphicsDevice _gd;
 
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling)
+    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling, Vector3 emissiveColor)
     {
         _mesh = mesh;
         _gd = gd;
         _texture = texture;
         _textureTiling = textureTiling;
+        _emissiveColor = emissiveColor;
 
         CreateDeviceBuffers();
         CreateResourceSets(textureLayout, materialLayout, sampler);
@@ -2707,8 +3297,11 @@ public class MeshRenderer : Component
             _texture.VeldridTextureView,
             sampler));
 
-        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer)); // Vector4 is 16 bytes
-        var materialData = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0);
+        // Uniform buffer now holds 2 Vector4s (tiling and emissive color)
+        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
+        var materialData = new Vector4[2];
+        materialData[0] = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0); // Tiling in xy
+        materialData[1] = new Vector4(_emissiveColor, 1.0f); // Emissive color in xyz
         _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
 
         _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
@@ -2753,7 +3346,7 @@ public class MeshRenderer : Component
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Skybox.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Skybox.cs">
 using Veldrid;
 
 namespace Cherris;
@@ -2774,7 +3367,7 @@ public class Skybox : Component
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Transform.cs">
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Transform.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -2800,208 +3393,5 @@ public class Transform
                Matrix4x4.CreateTranslation(Position);
     }
 }
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
-using Cherris;
-
-namespace Apexverse;
-
-public class Game : Engine
-{
-    public Game(EngineMode mode) : base("Veldrid Engine Demo", mode)
-    {
-    }
-
-    protected override void LoadContent()
-    {
-        // Pre-load assets that the scene will need
-        ResourceManager.LoadInitialAssets();
-
-        // Register custom components that the scene can use
-        SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
-        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
-
-        // Load the scene from the file and populate the SceneManager
-        var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
-        SceneManager.SetScene(loadedObjects);
-    }
-
-    protected override void OnStart()
-    {
-        if (Mode == EngineMode.Editor && SceneManager.MainCamera?.GameObject != null)
-        {
-            var cameraGo = SceneManager.MainCamera.GameObject;
-
-            // If the scene camera is the player, remove its controller
-            // so it doesn't fight with the new editor controller.
-            var playerController = cameraGo.GetComponent<PlayerController>();
-            if (playerController != null)
-            {
-                cameraGo.RemoveComponent<PlayerController>();
-            }
-
-            var editorController = cameraGo.AddComponent(new EditorController());
-            RegisterEditorController(editorController);
-        }
-    }
-
-    protected override void Update(float deltaTime)
-    {
-        // The base engine Update now handles calling Update on all Scripts
-        base.Update(deltaTime);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\PlayerController.cs">
-using Cherris;
-using System;
-using System.Numerics;
-using Veldrid;
-
-namespace Apexverse
-{
-    public class PlayerController : Script
-    {
-        public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.00015f;
-
-        private float _yaw;
-        private float _pitch;
-
-        public override void Update(float deltaTime)
-        {
-            // --- Mouse Look ---
-            Vector2 mouseDelta = Input.MouseDelta;
-            _yaw -= mouseDelta.X * MouseSensitivity;
-            _pitch -= mouseDelta.Y * MouseSensitivity;
-
-            // Clamp the pitch to prevent the camera from flipping upside down
-            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-            // Update rotation from yaw and pitch
-            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-
-            // --- Keyboard Movement ---
-            var moveDirection = Vector3.Zero;
-
-            if (Input.IsKeyDown(Key.W))
-            {
-                moveDirection -= Vector3.UnitZ;
-            }
-            if (Input.IsKeyDown(Key.S))
-            {
-                moveDirection += Vector3.UnitZ;
-            }
-            if (Input.IsKeyDown(Key.A))
-            {
-                moveDirection -= Vector3.UnitX;
-            }
-            if (Input.IsKeyDown(Key.D))
-            {
-                moveDirection += Vector3.UnitX;
-            }
-
-            if (moveDirection != Vector3.Zero)
-            {
-                moveDirection = Vector3.Normalize(moveDirection);
-
-                // Create a rotation that only includes the horizontal (yaw) component.
-                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-                // Transform the local direction vector by the horizontal-only rotation.
-                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
-                GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-            }
-        }
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Program.cs">
-using Cherris;
-
-namespace Apexverse;
-
-class Program
-{
-    static void Main(string[] args)
-    {
-        var game = new Game(EngineMode.Editor);
-        game.Run();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Spinner.cs">
-using System.Numerics;
-using Cherris;
-
-namespace Apexverse;
-
-public class Spinner : Script
-{
-    private float _totalTime;
-
-    public override void Update(float deltaTime)
-    {
-        _totalTime += deltaTime;
-        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
-GameObjects:
-  - Name: SkyboxContainer
-    Components:
-      Skybox:
-        # NOTE: This requires 6 images in your Assets folder, named like:
-        # Assets/sky/night_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
-        CubeMap: sky/day
-
-  - Name: Player
-    Components:
-      Transform:
-        Position: [0, 1, 3] # Start at a good vantage point
-        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-        Scale: [1, 1, 1]
-      PlayerController:
-      Camera:
-
-  - Name: SpinningCube
-    Components:
-      Transform:
-        Position: [0, 0, 0]
-        Rotation: [0, 0, 0]
-        Scale: [1, 1, 1]
-      MeshRenderer:
-        Mesh: Cube
-        Texture: crate
-      Spinner:
-
-  - Name: StaticCube
-    Components:
-      Transform:
-        Position: [2.5, 0, 0]
-        Rotation: [0, 45, 0]
-        Scale: [0.75, 0.75, 0.75]
-      MeshRenderer:
-        Mesh: Cube
-        Texture: crate
-        
-  - Name: GroundPlane
-    Components:
-      Transform:
-        Position: [0, -0.75, 0]
-        Rotation: [0, 0, 0]
-        Scale: [1, 1, 1]
-      MeshRenderer:
-        Mesh: Plane
-        Texture: Asphalt
-        TextureTiling: [10, 10]
 </file>
 

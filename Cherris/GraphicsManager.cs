@@ -1,7 +1,6 @@
 ﻿using System;
 using Veldrid;
 using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
@@ -36,17 +35,10 @@ public class GraphicsManager : IDisposable
 
     private readonly TextureSampleCount _msaaSampleCount;
 
-    public GraphicsManager(Sdl2Window window, TextureSampleCount msaaSampleCount = TextureSampleCount.Count4)
+    public GraphicsManager(GraphicsDevice graphicsDevice, Sdl2Window window, TextureSampleCount msaaSampleCount)
     {
         _msaaSampleCount = msaaSampleCount;
-
-        GraphicsDeviceOptions options = new GraphicsDeviceOptions
-        {
-            PreferStandardClipSpaceYDirection = true,
-            PreferDepthRangeZeroToOne = true,
-            SwapchainDepthFormat = PixelFormat.R16_UNorm
-        };
-        GraphicsDevice = VeldridStartup.CreateGraphicsDevice(window, options);
+        GraphicsDevice = graphicsDevice;
         CommandList = GraphicsDevice.ResourceFactory.CreateCommandList();
 
         CreateResources((int)window.Width, (int)window.Height);
@@ -54,7 +46,8 @@ public class GraphicsManager : IDisposable
 
     public void Resize(int width, int height)
     {
-        GraphicsDevice.ResizeMainWindow((uint)width, (uint)height);
+        // The swapchain is resized automatically by the window resize event handler in VeldridStartup.
+        // We only need to recreate our intermediate buffers.
         DisposeResources();
         CreateResources(width, height);
     }
@@ -90,8 +83,8 @@ public class GraphicsManager : IDisposable
         FinalFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, FinalColorTarget));
 
         // Bloom Target (half res)
-        uint bloomWidth = (uint)width / 2;
-        uint bloomHeight = (uint)height / 2;
+        uint bloomWidth = (uint)Math.Max(1, width / 2);
+        uint bloomHeight = (uint)Math.Max(1, height / 2);
         BloomColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             bloomWidth, bloomHeight, 1, 1, colorFormat,
             TextureUsage.RenderTarget | TextureUsage.Sampled));
@@ -134,6 +127,6 @@ public class GraphicsManager : IDisposable
     {
         DisposeResources();
         CommandList.Dispose();
-        GraphicsDevice.Dispose();
+        // The GraphicsDevice is managed by the backend, so we don't dispose it here.
     }
 }

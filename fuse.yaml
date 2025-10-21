@@ -1,0 +1,26 @@
+outputFilePath: merged-output.txt
+sourceDirectoryPaths:
+  - Apexverse
+  - Cherris
+includeExtensions:
+  - .cs
+  - .c
+  - .yaml
+  - .toml
+  - .xaml
+  - .csv
+  - .tscn
+  - .tres
+  - .uid
+  - .gdshader
+  - .html
+  - .css
+  - .js
+  - .ts
+excludeExtensions: []
+excludeDirectoryNames:
+  - bin
+  - obj
+  - .vs
+  - properties
+  - .git

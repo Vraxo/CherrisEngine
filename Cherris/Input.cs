@@ -10,9 +10,6 @@ public static class Input
     private static readonly HashSet<Key> _pressedKeys = new();
     private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
     private static readonly HashSet<MouseButton> _pressedMouseButtons = new();
-
-    // This flag tracks whether we are waiting for the OS to process a mouse warp
-    // that brings the cursor back to the center of the screen after re-locking.
     private static bool _awaitingMouseCentering;
 
     public static bool IsMouseLocked { get; internal set; } = true;
@@ -25,28 +22,26 @@ public static class Input
 
         foreach (var keyEvent in snapshot.KeyEvents)
         {
-            if (keyEvent.Down)
-            {
-                _pressedKeys.Add(keyEvent.Key);
-            }
-            else
-            {
-                _pressedKeys.Remove(keyEvent.Key);
-            }
+            var engineKey = VeldridKeyMapper.ToEngineKey(keyEvent.Key);
+            if (engineKey == Key.Unknown) continue;
+
+            if (keyEvent.Down) _pressedKeys.Add(engineKey);
+            else _pressedKeys.Remove(engineKey);
         }
 
         foreach (var mouseEvent in snapshot.MouseEvents)
         {
+            var engineButton = VeldridKeyMapper.ToEngineButton(mouseEvent.MouseButton);
             if (mouseEvent.Down)
             {
-                if (_pressedMouseButtons.Add(mouseEvent.MouseButton))
+                if (_pressedMouseButtons.Add(engineButton))
                 {
-                    _justPressedMouseButtons.Add(mouseEvent.MouseButton);
+                    _justPressedMouseButtons.Add(engineButton);
                 }
             }
             else
             {
-                _pressedMouseButtons.Remove(mouseEvent.MouseButton);
+                _pressedMouseButtons.Remove(engineButton);
             }
         }
 
@@ -55,44 +50,90 @@ public static class Input
         if (!IsMouseLocked)
         {
             MouseDelta = Vector2.Zero;
-            // When the mouse is unlocked, we will need to confirm it has been
-            // centered again after it is re-locked.
             _awaitingMouseCentering = true;
             return;
         }
 
-        // At this point, the mouse is locked.
-
         if (_awaitingMouseCentering)
         {
-            // Check if the mouse has been centered by the warp. A small tolerance is used.
             float distanceFromCenter = Vector2.Distance(snapshot.MousePosition, windowCenter);
             if (distanceFromCenter > 1.0f)
             {
-                // The warp hasn't been processed by the OS yet. The mouse position is stale.
-                // We ignore the delta for this frame and wait for a centered position.
                 MouseDelta = Vector2.Zero;
                 return;
             }
             else
             {
-                // The mouse is now centered. We can stop waiting.
                 _awaitingMouseCentering = false;
             }
         }
-
-        // The delta is the difference between the current mouse position
-        // and the center of the screen (where it was warped to last frame).
         MouseDelta = snapshot.MousePosition - windowCenter;
     }
 
-    public static bool IsKeyDown(Key key)
+    public static bool IsKeyDown(Key key) => _pressedKeys.Contains(key);
+    public static bool WasMouseButtonPressed(MouseButton button) => _justPressedMouseButtons.Contains(button);
+}
+
+// Helper class to map Veldrid inputs to engine inputs.
+public static class VeldridKeyMapper
+{
+    public static Key ToEngineKey(Veldrid.Key key)
     {
-        return _pressedKeys.Contains(key);
+        if (key >= Veldrid.Key.F1 && key <= Veldrid.Key.F35) return (Key)((int)Key.F1 + (int)key - (int)Veldrid.Key.F1);
+        if (key >= Veldrid.Key.Keypad0 && key <= Veldrid.Key.KeypadEnter) return (Key)((int)Key.Keypad0 + (int)key - (int)Veldrid.Key.Keypad0);
+        if (key >= Veldrid.Key.A && key <= Veldrid.Key.Z) return (Key)((int)Key.A + (int)key - (int)Veldrid.Key.A);
+        if (key >= Veldrid.Key.Number0 && key <= Veldrid.Key.Number9) return (Key)((int)Key.Number0 + (int)key - (int)Veldrid.Key.Number0);
+
+        switch (key)
+        {
+            case Veldrid.Key.ShiftLeft: return Key.ShiftLeft;
+            case Veldrid.Key.ShiftRight: return Key.ShiftRight;
+            case Veldrid.Key.ControlLeft: return Key.ControlLeft;
+            case Veldrid.Key.ControlRight: return Key.ControlRight;
+            case Veldrid.Key.AltLeft: return Key.AltLeft;
+            case Veldrid.Key.AltRight: return Key.AltRight;
+            case Veldrid.Key.WinLeft: return Key.WinLeft;
+            case Veldrid.Key.WinRight: return Key.WinRight;
+            case Veldrid.Key.Menu: return Key.Menu;
+            case Veldrid.Key.Up: return Key.Up;
+            case Veldrid.Key.Down: return Key.Down;
+            case Veldrid.Key.Left: return Key.Left;
+            case Veldrid.Key.Right: return Key.Right;
+            case Veldrid.Key.Enter: return Key.Enter;
+            case Veldrid.Key.Escape: return Key.Escape;
+            case Veldrid.Key.Space: return Key.Space;
+            case Veldrid.Key.Tab: return Key.Tab;
+            case Veldrid.Key.BackSpace: return Key.BackSpace;
+            case Veldrid.Key.Insert: return Key.Insert;
+            case Veldrid.Key.Delete: return Key.Delete;
+            case Veldrid.Key.PageUp: return Key.PageUp;
+            case Veldrid.Key.PageDown: return Key.PageDown;
+            case Veldrid.Key.Home: return Key.Home;
+            case Veldrid.Key.End: return Key.End;
+            case Veldrid.Key.CapsLock: return Key.CapsLock;
+            case Veldrid.Key.ScrollLock: return Key.ScrollLock;
+            case Veldrid.Key.PrintScreen: return Key.PrintScreen;
+            case Veldrid.Key.Pause: return Key.Pause;
+            case Veldrid.Key.NumLock: return Key.NumLock;
+            case Veldrid.Key.Clear: return Key.Clear;
+            case Veldrid.Key.Sleep: return Key.Sleep;
+            case Veldrid.Key.Tilde: return Key.Tilde;
+            case Veldrid.Key.Minus: return Key.Minus;
+            case Veldrid.Key.Plus: return Key.Plus;
+            case Veldrid.Key.BracketLeft: return Key.BracketLeft;
+            case Veldrid.Key.BracketRight: return Key.BracketRight;
+            case Veldrid.Key.Semicolon: return Key.Semicolon;
+            case Veldrid.Key.Quote: return Key.Quote;
+            case Veldrid.Key.Comma: return Key.Comma;
+            case Veldrid.Key.Period: return Key.Period;
+            case Veldrid.Key.Slash: return Key.Slash;
+            case Veldrid.Key.BackSlash: return Key.BackSlash;
+            default: return Key.Unknown;
+        }
     }
 
-    public static bool WasMouseButtonPressed(MouseButton button)
+    public static MouseButton ToEngineButton(Veldrid.MouseButton button)
     {
-        return _justPressedMouseButtons.Contains(button);
+        return (MouseButton)button;
     }
 }

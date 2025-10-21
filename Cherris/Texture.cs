@@ -1,9 +1,10 @@
 ﻿using System;
+using Cherris.Rendering;
 using Veldrid;
 
 namespace Cherris;
 
-public class Texture : IDisposable
+public class Texture : ITexture
 {
     public Veldrid.Texture VeldridTexture { get; }
     public TextureView VeldridTextureView { get; }
@@ -19,4 +20,6 @@ public class Texture : IDisposable
         VeldridTextureView.Dispose();
         VeldridTexture.Dispose();
     }
+
+    public object GetBackendHandle() => this;
 }

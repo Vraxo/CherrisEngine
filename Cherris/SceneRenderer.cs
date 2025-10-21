@@ -1,11 +1,13 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
 
 namespace Cherris;
 
-public class SceneRenderer
+public class SceneRenderer : IDisposable
 {
     private readonly DeviceBuffer _mvpBuffer;
     private Pipeline _pipeline;
@@ -114,27 +116,34 @@ public class SceneRenderer
         });
     }
 
-    public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, Func<MeshRenderer, object> backendDataProvider)
     {
+        commandList.SetPipeline(_pipeline);
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
             if (meshRenderer is null) continue;
 
+            var backendData = backendDataProvider(meshRenderer) as dynamic;
+            if (backendData is null) continue;
+
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
-            meshRenderer.Render(commandList, _pipeline, _mvpResourceSet);
+            commandList.SetVertexBuffer(0, backendData.VertexBuffer);
+            commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt16);
+            commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
+            commandList.SetGraphicsResourceSet(1, backendData.TextureResourceSet);
+            commandList.SetGraphicsResourceSet(2, backendData.MaterialResourceSet);
+            commandList.DrawIndexed(backendData.IndexCount, 1, 0, 0, 0);
         }
     }
 
-    public void RenderOutline(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, GameObject gameObject)
+    public void RenderOutline(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, GameObject gameObject, dynamic backendData)
     {
-        var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-        if (meshRenderer is null) return;
+        if (backendData is null) return;
 
         var transform = gameObject.Transform;
-
         const float outlineFactor = 1.05f;
         var outlineModelMatrix =
             Matrix4x4.CreateScale(transform.Scale * outlineFactor) *
@@ -145,10 +154,10 @@ public class SceneRenderer
         commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
         commandList.SetPipeline(_outlinePipeline);
-        commandList.SetVertexBuffer(0, meshRenderer.VertexBuffer);
-        commandList.SetIndexBuffer(meshRenderer.IndexBuffer, IndexFormat.UInt16);
+        commandList.SetVertexBuffer(0, backendData.VertexBuffer);
+        commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt16);
         commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
-        commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
+        commandList.DrawIndexed(backendData.IndexCount, 1, 0, 0, 0);
     }
 
     private (Shader, Shader) LoadShaders(ResourceFactory factory)
@@ -193,9 +202,9 @@ public class SceneRenderer
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+            ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertexCode), "main");
         ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+            ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragmentCode), "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
@@ -226,9 +235,9 @@ public class SceneRenderer
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+            ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertexCode), "main");
         ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+            ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragmentCode), "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);

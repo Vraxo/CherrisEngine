@@ -155,8 +155,9 @@ public class BloomRenderer : IDisposable
             const float threshold = 1.1;
             void main() {
                 vec3 color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb;
-                float brightness = max(color.r, max(color.g, color.b));
-                vec3 finalColor = color * step(threshold, brightness);
+                // Subtract the threshold to get a smooth falloff for bloom contribution.
+                // This avoids the hard edges from a step() function which cause bleeding artifacts.
+                vec3 finalColor = max(vec3(0.0), color - threshold);
                 fsout_Color = vec4(finalColor, 1.0);
             }";
 

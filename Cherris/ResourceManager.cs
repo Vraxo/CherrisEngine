@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using Cherris.Rendering;
 using Veldrid;
 
 namespace Cherris;
 
-public class ResourceManager
+public class ResourceManager : IResourceManager
 {
     private readonly Dictionary<string, Mesh> _meshes = new();
-    private readonly Dictionary<string, Texture> _textures = new();
+    private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
     private readonly GraphicsDevice _graphicsDevice;
 
@@ -26,7 +27,6 @@ public class ResourceManager
         _meshes.Add("Plane", planeMesh);
 
         // Textures
-        // Create a default white texture for untextured objects or if a texture fails to load.
         var white = CreateWhiteTexture("White");
         _textures.Add("White", white);
     }
@@ -36,14 +36,13 @@ public class ResourceManager
         return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
     }
 
-    public Texture GetTexture(string name)
+    public ITexture GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out var texture))
         {
             return texture;
         }
 
-        // Texture not in cache, try to load it from file by searching the asset directory.
         string? filePath = AssetFinder.FindAssetPath(name);
 
         if (filePath is not null)
@@ -56,7 +55,6 @@ public class ResourceManager
             }
         }
 
-        // Fallback to the default white texture if loading fails or file doesn't exist.
         Console.WriteLine($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
         return _textures["White"];
     }

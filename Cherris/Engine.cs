@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using Cherris.Rendering;
 using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
@@ -84,92 +87,83 @@ public abstract class Engine
         }
     }
 
-    private readonly GameWindow _gameWindow;
-    private readonly GraphicsManager _graphicsManager;
+    private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
     private GameObject _selectedGameObject;
     private Script _editorController;
-    private readonly Snapshotter _snapshotter;
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
     private bool _snapshotsEnabled;
     private bool _f12PressedLastFrame;
 
-
     // Engine Systems
-    protected readonly ResourceManager ResourceManager;
+    private readonly IGraphicsBackend _backend;
+    protected readonly IResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;
-    private readonly Renderer _renderer;
+    private readonly IRenderer _renderer;
 
     protected EngineMode Mode { get; }
 
     public float Exposure { get; set; } = 1.0f;
 
-    protected Engine(string windowTitle, EngineMode mode = EngineMode.Game)
+    protected Engine(string windowTitle, EngineMode mode, GraphicsAPI api)
     {
         Mode = mode;
-        _gameWindow = new(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
-        _graphicsManager = new(_gameWindow.SdlWindow, TextureSampleCount.Count4);
 
-        // Initialize systems
-        ResourceManager = new(_graphicsManager.GraphicsDevice);
-        SceneLoader = new(ResourceManager, _graphicsManager.GraphicsDevice);
+        _backend = CreateBackend(api);
+        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
+
+        _gameWindow = _backend.GameWindow;
+        ResourceManager = _backend.ResourceManager;
+        _renderer = _backend.Renderer;
+
+        // Initialize systems that depend on the backend
+        SceneLoader = new(ResourceManager);
         SceneManager = new();
-        _renderer = new(_graphicsManager);
-        _snapshotter = new(_graphicsManager.GraphicsDevice);
-        _renderer.SetSnapshotter(_snapshotter);
 
         // Game loop is created last, as it depends on the Update/Draw methods
         _gameLoop = new(_gameWindow, Update, Draw);
 
         // Subscribe to resize event
-        _gameWindow.SdlWindow.Resized += OnWindowResized;
+        _gameWindow.Resized += OnWindowResized;
 
         RegisterEngineComponents();
+    }
+
+    private IGraphicsBackend CreateBackend(GraphicsAPI api)
+    {
+        switch (api)
+        {
+            case GraphicsAPI.Veldrid:
+                return new VeldridBackend();
+            case GraphicsAPI.OpenTK:
+                return new OpenTKBackend();
+            default:
+                throw new ArgumentOutOfRangeException(nameof(api), api, null);
+        }
     }
 
     private void RegisterEngineComponents()
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return null;
-            }
+            if (properties is not Dictionary<object, object> propsDict) return null;
 
-            Mesh? mesh = null;
-
+            Mesh mesh = null;
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
-            {
                 mesh = ResourceManager.GetMesh(meshName);
-            }
+            if (mesh is null) return null;
 
-            if (mesh is null)
-            {
-                return null;
-            }
-
-            Texture texture;
-
+            ITexture texture;
             if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
-            {
                 texture = ResourceManager.GetTexture(textureName);
-            }
             else
-            {
-                // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
-            }
-
-            if (texture is null)
-            {
-                return null;
-            }
+            if (texture is null) return null;
 
             Vector2 textureTiling = Vector2.One;
-
             if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
@@ -184,7 +178,7 @@ public abstract class Engine
                 }
             }
 
-            Vector3 emissiveColor = Vector3.Zero; // Default to black (no emission)
+            Vector3 emissiveColor = Vector3.Zero;
             if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
             {
                 try
@@ -199,31 +193,15 @@ public abstract class Engine
                     Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
                 }
             }
-
-            return new MeshRenderer(
-                mesh,
-                _graphicsManager.GraphicsDevice,
-                _renderer.TextureLayout,
-                _renderer.MaterialLayout,
-                _renderer.Sampler,
-                texture,
-                textureTiling,
-                emissiveColor);
+            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
-
         SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return null;
-            }
-
+            if (properties is not Dictionary<object, object> propsDict) return null;
             if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
-            {
                 return ResourceManager.GetSkybox(cubemapName);
-            }
             return null;
         });
     }
@@ -250,8 +228,6 @@ public abstract class Engine
         _editorController.Start();
     }
 
-    protected GraphicsDevice GetGraphicsDevice() => _graphicsManager.GraphicsDevice;
-
     protected abstract void LoadContent();
 
     protected virtual void Update(float deltaTime)
@@ -271,7 +247,7 @@ public abstract class Engine
             _editorController?.Update(deltaTime);
             UpdateEditor(deltaTime);
         }
-        else // Only run scripts in Game mode
+        else
         {
             SceneManager.Update(deltaTime);
         }
@@ -279,19 +255,15 @@ public abstract class Engine
 
     private void UpdateEditor(float deltaTime)
     {
-        // --- Object Picking ---
         if (Input.WasMouseButtonPressed(MouseButton.Left))
         {
             Ray ray = CreateRayFromMouse();
-
             GameObject closestObject = null;
             float closestDistance = float.MaxValue;
 
             foreach (var go in SceneManager.GameObjects)
             {
-                // Don't allow selecting the skybox container or the player/camera itself.
                 if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
-
                 var aabb = go.GetWorldSpaceAABB();
                 if (ray.Intersects(aabb, out float distance))
                 {
@@ -302,42 +274,30 @@ public abstract class Engine
                     }
                 }
             }
-
             _selectedGameObject = closestObject;
-            if (_selectedGameObject is not null)
-            {
-                Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
-            }
+            if (_selectedGameObject is not null) Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
         }
 
-        // --- Object Movement ---
         if (_selectedGameObject is not null)
         {
             const float moveSpeed = 2.0f;
             var moveDirection = Vector3.Zero;
             bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
 
-            // Left/Right on X-axis
             if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
             if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
-
             if (shiftHeld)
             {
-                // Up/Down on Y-axis (vertical)
                 if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
                 if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
             }
             else
             {
-                // Up/Down on Z-axis (depth)
                 if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
                 if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
             }
-
             if (moveDirection != Vector3.Zero)
-            {
                 _selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
-            }
         }
     }
 
@@ -346,24 +306,20 @@ public abstract class Engine
         Camera camera = SceneManager.MainCamera;
         if (camera is null) return new Ray();
 
-        // 1. Mouse coordinates to Normalized Device Coordinates (NDC)
         float x = (2.0f * Input.MousePosition.X) / _gameWindow.Width - 1.0f;
         float y = 1.0f - (2.0f * Input.MousePosition.Y) / _gameWindow.Height;
         var ndc = new Vector4(x, y, 1.0f, 1.0f);
 
-        // 2. NDC to Camera (View) space
         Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
         var viewRay = Vector4.Transform(ndc, invProjection);
         viewRay.Z = -1.0f;
         viewRay.W = 0.0f;
 
-        // 3. Camera (View) space to World space
         Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
         var worldRay = Vector4.Transform(viewRay, invView);
 
         var rayDir = Vector3.Normalize(new Vector3(worldRay.X, worldRay.Y, worldRay.Z));
         var rayOrigin = camera.GameObject.Transform.Position;
-
         return new Ray(rayOrigin, rayDir);
     }
 
@@ -379,31 +335,59 @@ public abstract class Engine
                 _renderer.RequestSnapshot(path);
             }
         }
-
         _renderer.RenderFrame(
-            SceneManager.MainCamera,
-            SceneManager.Skybox,
-            SceneManager.GameObjects,
-            _selectedGameObject,
-            _gameWindow.Width,
-            _gameWindow.Height,
-            Exposure);
-
+            SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
+            _selectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
         _renderer.ProcessSnapshot();
     }
 
     private void OnWindowResized()
     {
-        _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
         _renderer.OnWindowResized();
     }
 
     private void DisposeResources()
     {
         SceneManager.Dispose();
-        _renderer.Dispose();
-        ResourceManager.Dispose();
-        _snapshotter.Dispose();
-        _graphicsManager.Dispose();
+        _backend.Dispose();
+    }
+}
+
+// Concrete Veldrid backend implementation, nested here to avoid creating new files.
+public class VeldridBackend : IGraphicsBackend
+{
+    public IGameWindow GameWindow { get; private set; }
+    public IRenderer Renderer { get; private set; }
+    public IResourceManager ResourceManager { get; private set; }
+    private GraphicsDevice _graphicsDevice;
+    private GraphicsManager _graphicsManager;
+
+    public VeldridBackend() { }
+
+    public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
+    {
+        var window = new GameWindow(windowTitle, width, height, startWithMouseLocked);
+
+        GraphicsDeviceOptions options = new GraphicsDeviceOptions
+        {
+            PreferStandardClipSpaceYDirection = true,
+            PreferDepthRangeZeroToOne = true,
+            SwapchainDepthFormat = PixelFormat.R16_UNorm
+        };
+        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(window.SdlWindow, options);
+
+        _graphicsManager = new GraphicsManager(_graphicsDevice, window.SdlWindow, TextureSampleCount.Count4);
+
+        GameWindow = window;
+        ResourceManager = new ResourceManager(_graphicsDevice);
+        Renderer = new Renderer(_graphicsManager, _graphicsDevice);
+    }
+
+    public void Dispose()
+    {
+        Renderer?.Dispose();
+        ResourceManager?.Dispose();
+        _graphicsDevice?.Dispose();
+        GameWindow?.Dispose();
     }
 }
