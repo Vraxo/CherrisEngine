@@ -165,6 +165,7 @@ namespace Cherris
 
             GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
             GL.FrontFace(FrontFaceDirection.Cw);
+            GL.Enable(EnableCap.FramebufferSrgb); // Enable automatic linear->sRGB conversion
 
             CheckGLError("Setup");
         }
@@ -487,8 +488,6 @@ void main()
     hdrColor += bloomColor;
     hdrColor *= exposure;
     vec3 ldrColor = tonemap_reinhard(hdrColor);
-    // Apply some gamma correction
-    ldrColor = pow(ldrColor, vec3(1.0/2.2));
     FragColor = vec4(ldrColor, 1.0);
 }";
             _finalCompositeShader = new ShaderProgram(quadVert, finalCompositeFrag);
