@@ -5,7 +5,7 @@ namespace Apexverse;
 
 public class Game : Engine
 {
-    public Game(EngineMode mode) : base("Veldrid Engine Demo", mode)
+    public Game(EngineMode mode, GraphicsAPI api) : base("Veldrid Engine Demo", mode, api)
     {
         Exposure = 0.5f;
     }
@@ -55,7 +55,6 @@ public class Game : Engine
 using Cherris;
 using System;
 using System.Numerics;
-using Veldrid;
 
 namespace Apexverse
 {
@@ -126,7 +125,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        var game = new Game(EngineMode.Editor);
+        var game = new Game(EngineMode.Editor, GraphicsAPI.OpenTK);
         game.Run();
     }
 }
@@ -469,7 +468,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using Cherris.Rendering;
 using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
@@ -550,92 +552,82 @@ public abstract class Engine
         }
     }
 
-    private readonly GameWindow _gameWindow;
-    private readonly GraphicsManager _graphicsManager;
+    private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
     private GameObject _selectedGameObject;
     private Script _editorController;
-    private readonly Snapshotter _snapshotter;
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
     private bool _snapshotsEnabled;
-    private bool _f12PressedLastFrame;
-
 
     // Engine Systems
-    protected readonly ResourceManager ResourceManager;
+    private readonly IGraphicsBackend _backend;
+    protected readonly IResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;
-    private readonly Renderer _renderer;
+    private readonly IRenderer _renderer;
 
     protected EngineMode Mode { get; }
 
     public float Exposure { get; set; } = 1.0f;
 
-    protected Engine(string windowTitle, EngineMode mode = EngineMode.Game)
+    protected Engine(string windowTitle, EngineMode mode, GraphicsAPI api)
     {
         Mode = mode;
-        _gameWindow = new(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
-        _graphicsManager = new(_gameWindow.SdlWindow, TextureSampleCount.Count4);
 
-        // Initialize systems
-        ResourceManager = new(_graphicsManager.GraphicsDevice);
-        SceneLoader = new(ResourceManager, _graphicsManager.GraphicsDevice);
+        _backend = CreateBackend(api);
+        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
+
+        _gameWindow = _backend.GameWindow;
+        ResourceManager = _backend.ResourceManager;
+        _renderer = _backend.Renderer;
+
+        // Initialize systems that depend on the backend
+        SceneLoader = new(ResourceManager);
         SceneManager = new();
-        _renderer = new(_graphicsManager);
-        _snapshotter = new(_graphicsManager.GraphicsDevice);
-        _renderer.SetSnapshotter(_snapshotter);
 
         // Game loop is created last, as it depends on the Update/Draw methods
         _gameLoop = new(_gameWindow, Update, Draw);
 
         // Subscribe to resize event
-        _gameWindow.SdlWindow.Resized += OnWindowResized;
+        _gameWindow.Resized += OnWindowResized;
 
         RegisterEngineComponents();
+    }
+
+    private IGraphicsBackend CreateBackend(GraphicsAPI api)
+    {
+        switch (api)
+        {
+            case GraphicsAPI.Veldrid:
+                return new VeldridBackend();
+            case GraphicsAPI.OpenTK:
+                return new OpenTKBackend();
+            default:
+                throw new ArgumentOutOfRangeException(nameof(api), api, null);
+        }
     }
 
     private void RegisterEngineComponents()
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return null;
-            }
+            if (properties is not Dictionary<object, object> propsDict) return null;
 
-            Mesh? mesh = null;
-
+            Mesh mesh = null;
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
-            {
                 mesh = ResourceManager.GetMesh(meshName);
-            }
+            if (mesh is null) return null;
 
-            if (mesh is null)
-            {
-                return null;
-            }
-
-            Texture texture;
-
+            ITexture texture;
             if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
-            {
                 texture = ResourceManager.GetTexture(textureName);
-            }
             else
-            {
-                // Use a default white texture if none is specified
                 texture = ResourceManager.GetTexture("White");
-            }
-
-            if (texture is null)
-            {
-                return null;
-            }
+            if (texture is null) return null;
 
             Vector2 textureTiling = Vector2.One;
-
             if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
@@ -650,7 +642,7 @@ public abstract class Engine
                 }
             }
 
-            Vector3 emissiveColor = Vector3.Zero; // Default to black (no emission)
+            Vector3 emissiveColor = Vector3.Zero;
             if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
             {
                 try
@@ -665,31 +657,15 @@ public abstract class Engine
                     Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
                 }
             }
-
-            return new MeshRenderer(
-                mesh,
-                _graphicsManager.GraphicsDevice,
-                _renderer.TextureLayout,
-                _renderer.MaterialLayout,
-                _renderer.Sampler,
-                texture,
-                textureTiling,
-                emissiveColor);
+            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
-
         SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return null;
-            }
-
+            if (properties is not Dictionary<object, object> propsDict) return null;
             if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
-            {
                 return ResourceManager.GetSkybox(cubemapName);
-            }
             return null;
         });
     }
@@ -716,28 +692,24 @@ public abstract class Engine
         _editorController.Start();
     }
 
-    protected GraphicsDevice GetGraphicsDevice() => _graphicsManager.GraphicsDevice;
-
     protected abstract void LoadContent();
 
     protected virtual void Update(float deltaTime)
     {
         _lastDeltaTime = deltaTime;
 
-        bool isF12Down = Input.IsKeyDown(Key.F12);
-        if (isF12Down && !_f12PressedLastFrame)
+        if (Input.WasKeyPressed(Key.F12))
         {
             _snapshotsEnabled = !_snapshotsEnabled;
             Console.WriteLine($"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. Press F12 to toggle.");
         }
-        _f12PressedLastFrame = isF12Down;
 
         if (Mode == EngineMode.Editor)
         {
             _editorController?.Update(deltaTime);
             UpdateEditor(deltaTime);
         }
-        else // Only run scripts in Game mode
+        else
         {
             SceneManager.Update(deltaTime);
         }
@@ -745,19 +717,15 @@ public abstract class Engine
 
     private void UpdateEditor(float deltaTime)
     {
-        // --- Object Picking ---
         if (Input.WasMouseButtonPressed(MouseButton.Left))
         {
             Ray ray = CreateRayFromMouse();
-
             GameObject closestObject = null;
             float closestDistance = float.MaxValue;
 
             foreach (var go in SceneManager.GameObjects)
             {
-                // Don't allow selecting the skybox container or the player/camera itself.
                 if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
-
                 var aabb = go.GetWorldSpaceAABB();
                 if (ray.Intersects(aabb, out float distance))
                 {
@@ -768,42 +736,30 @@ public abstract class Engine
                     }
                 }
             }
-
             _selectedGameObject = closestObject;
-            if (_selectedGameObject is not null)
-            {
-                Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
-            }
+            if (_selectedGameObject is not null) Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
         }
 
-        // --- Object Movement ---
         if (_selectedGameObject is not null)
         {
             const float moveSpeed = 2.0f;
             var moveDirection = Vector3.Zero;
             bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
 
-            // Left/Right on X-axis
             if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
             if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
-
             if (shiftHeld)
             {
-                // Up/Down on Y-axis (vertical)
                 if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
                 if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
             }
             else
             {
-                // Up/Down on Z-axis (depth)
                 if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
                 if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
             }
-
             if (moveDirection != Vector3.Zero)
-            {
                 _selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
-            }
         }
     }
 
@@ -812,24 +768,20 @@ public abstract class Engine
         Camera camera = SceneManager.MainCamera;
         if (camera is null) return new Ray();
 
-        // 1. Mouse coordinates to Normalized Device Coordinates (NDC)
         float x = (2.0f * Input.MousePosition.X) / _gameWindow.Width - 1.0f;
         float y = 1.0f - (2.0f * Input.MousePosition.Y) / _gameWindow.Height;
         var ndc = new Vector4(x, y, 1.0f, 1.0f);
 
-        // 2. NDC to Camera (View) space
         Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
         var viewRay = Vector4.Transform(ndc, invProjection);
         viewRay.Z = -1.0f;
         viewRay.W = 0.0f;
 
-        // 3. Camera (View) space to World space
         Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
         var worldRay = Vector4.Transform(viewRay, invView);
 
         var rayDir = Vector3.Normalize(new Vector3(worldRay.X, worldRay.Y, worldRay.Z));
         var rayOrigin = camera.GameObject.Transform.Position;
-
         return new Ray(rayOrigin, rayDir);
     }
 
@@ -845,49 +797,82 @@ public abstract class Engine
                 _renderer.RequestSnapshot(path);
             }
         }
-
         _renderer.RenderFrame(
-            SceneManager.MainCamera,
-            SceneManager.Skybox,
-            SceneManager.GameObjects,
-            _selectedGameObject,
-            _gameWindow.Width,
-            _gameWindow.Height,
-            Exposure);
+            SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
+            _selectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
 
         _renderer.ProcessSnapshot();
+        _gameWindow.SwapBuffers();
     }
 
     private void OnWindowResized()
     {
-        _graphicsManager.Resize((int)_gameWindow.Width, (int)_gameWindow.Height);
         _renderer.OnWindowResized();
     }
 
     private void DisposeResources()
     {
         SceneManager.Dispose();
-        _renderer.Dispose();
-        ResourceManager.Dispose();
-        _snapshotter.Dispose();
-        _graphicsManager.Dispose();
+        _backend.Dispose();
+    }
+}
+
+// Concrete Veldrid backend implementation, nested here to avoid creating new files.
+public class VeldridBackend : IGraphicsBackend
+{
+    public IGameWindow GameWindow { get; private set; }
+    public IRenderer Renderer { get; private set; }
+    public IResourceManager ResourceManager { get; private set; }
+    private GraphicsDevice _graphicsDevice;
+    private GraphicsManager _graphicsManager;
+
+    public VeldridBackend() { }
+
+    public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
+    {
+        var window = new GameWindow(windowTitle, width, height, startWithMouseLocked);
+
+        GraphicsDeviceOptions options = new GraphicsDeviceOptions
+        {
+            PreferStandardClipSpaceYDirection = true,
+            PreferDepthRangeZeroToOne = true,
+            SwapchainDepthFormat = PixelFormat.R16_UNorm
+        };
+        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(window.SdlWindow, options);
+        window.SetGraphicsDevice(_graphicsDevice);
+
+        _graphicsManager = new GraphicsManager(_graphicsDevice, window.SdlWindow, TextureSampleCount.Count4);
+
+        GameWindow = window;
+        ResourceManager = new ResourceManager(_graphicsDevice);
+        Renderer = new Renderer(_graphicsManager, _graphicsDevice);
+    }
+
+    public void Dispose()
+    {
+        Renderer?.Dispose();
+        ResourceManager?.Dispose();
+        _graphicsDevice?.Dispose();
+        GameWindow?.Dispose();
     }
 }
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameLoop.cs">
+using System;
 using System.Diagnostics;
+using Cherris.Rendering;
 
 namespace Cherris;
 
 public class GameLoop
 {
-    private readonly GameWindow _gameWindow;
+    private readonly IGameWindow _gameWindow;
     private readonly Action<float> _updateAction;
     private readonly Action _drawAction;
     private readonly Stopwatch _stopwatch;
 
-    public GameLoop(GameWindow gameWindow, Action<float> updateAction, Action drawAction)
+    public GameLoop(IGameWindow gameWindow, Action<float> updateAction, Action drawAction)
     {
         _gameWindow = gameWindow;
         _updateAction = updateAction;
@@ -898,7 +883,7 @@ public class GameLoop
     public void Run()
     {
         _stopwatch.Start();
-        
+
         while (_gameWindow.Exists)
         {
             _gameWindow.ProcessEvents();
@@ -1002,22 +987,39 @@ public class GameObject
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GameWindow.cs">
+using System;
 using System.Numerics;
+using Cherris.Rendering;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
-public class GameWindow
+public class GameWindow : IGameWindow
 {
     public Sdl2Window SdlWindow { get; }
     private readonly Vector2 _windowCenter;
-    private bool _escapePressedLastFrame = false;
+    private GraphicsDevice _graphicsDevice;
 
     public bool Exists => SdlWindow.Exists;
     public float Width => SdlWindow.Width;
     public float Height => SdlWindow.Height;
+    public event Action Resized;
+
+    public bool IsMouseLocked
+    {
+        get => Input.IsMouseLocked;
+        set
+        {
+            Input.IsMouseLocked = value;
+            Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
+            if (Input.IsMouseLocked)
+            {
+                Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
+            }
+        }
+    }
 
     public GameWindow(string title, int width, int height, bool startWithMouseLocked)
     {
@@ -1030,43 +1032,135 @@ public class GameWindow
             WindowTitle = title
         };
         SdlWindow = VeldridStartup.CreateWindow(ref windowCI);
+        SdlWindow.Resized += () => Resized?.Invoke();
         _windowCenter = new Vector2(SdlWindow.Width / 2f, SdlWindow.Height / 2f);
 
-        // Initial mouse setup
-        Input.IsMouseLocked = startWithMouseLocked;
-        Sdl2Native.SDL_ShowCursor(startWithMouseLocked ? 0 : 1);
-        if (startWithMouseLocked)
+        SdlWindow.KeyDown += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), true);
+        SdlWindow.KeyUp += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), false);
+        SdlWindow.MouseDown += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), true);
+        SdlWindow.MouseUp += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), false);
+        SdlWindow.MouseMove += OnMouseMove;
+
+        IsMouseLocked = startWithMouseLocked;
+        Input.ClearState();
+    }
+
+    public void SetGraphicsDevice(GraphicsDevice gd) => _graphicsDevice = gd;
+
+    private void OnMouseMove(MouseMoveEventArgs e)
+    {
+        Input.SetMousePosition(e.MousePosition);
+        if (IsMouseLocked)
         {
-            Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-            SdlWindow.PumpEvents(); // Pump once to clear the warp event
+            Input.SetMouseDelta(e.MousePosition - _windowCenter);
         }
     }
 
     public void ProcessEvents()
     {
-        InputSnapshot snapshot = SdlWindow.PumpEvents();
-        Input.UpdateSnapshot(snapshot, _windowCenter);
+        Input.FrameStarted();
+        SdlWindow.PumpEvents();
 
-        // Toggle mouse lock state on Escape key press
-        bool isEscapeDown = Input.IsKeyDown(Key.Escape);
-        if (isEscapeDown && !_escapePressedLastFrame)
+        if (Input.WasKeyPressed(Key.Escape))
         {
-            Input.IsMouseLocked = !Input.IsMouseLocked;
-            Sdl2Native.SDL_ShowCursor(Input.IsMouseLocked ? 0 : 1);
-            if (Input.IsMouseLocked)
-            {
-                // When re-locking, center mouse immediately.
-                Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
-            }
+            IsMouseLocked = !IsMouseLocked;
         }
-        _escapePressedLastFrame = isEscapeDown;
 
-        // If mouse is locked, re-center it for next frame's delta calculation.
-        if (Input.IsMouseLocked && SdlWindow.Exists)
+        if (IsMouseLocked && SdlWindow.Exists)
         {
             Sdl2Native.SDL_WarpMouseInWindow(SdlWindow.SdlWindowHandle, (int)_windowCenter.X, (int)_windowCenter.Y);
         }
     }
+
+    public void SwapBuffers()
+    {
+        if (_graphicsDevice != null)
+        {
+            _graphicsDevice.SwapBuffers();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (SdlWindow.Exists)
+        {
+            SdlWindow.Close();
+        }
+    }
+}
+
+// Helper class to map Veldrid inputs to engine inputs.
+public static class VeldridKeyMapper
+{
+    public static Key ToEngineKey(Veldrid.Key key)
+    {
+        if (key >= Veldrid.Key.F1 && key <= Veldrid.Key.F35) return (Key)((int)Key.F1 + (int)key - (int)Veldrid.Key.F1);
+        if (key >= Veldrid.Key.Keypad0 && key <= Veldrid.Key.KeypadEnter) return (Key)((int)Key.Keypad0 + (int)key - (int)Veldrid.Key.Keypad0);
+        if (key >= Veldrid.Key.A && key <= Veldrid.Key.Z) return (Key)((int)Key.A + (int)key - (int)Veldrid.Key.A);
+        if (key >= Veldrid.Key.Number0 && key <= Veldrid.Key.Number9) return (Key)((int)Key.Number0 + (int)key - (int)Veldrid.Key.Number9);
+
+        switch (key)
+        {
+            case Veldrid.Key.ShiftLeft: return Key.ShiftLeft;
+            case Veldrid.Key.ShiftRight: return Key.ShiftRight;
+            case Veldrid.Key.ControlLeft: return Key.ControlLeft;
+            case Veldrid.Key.ControlRight: return Key.ControlRight;
+            case Veldrid.Key.AltLeft: return Key.AltLeft;
+            case Veldrid.Key.AltRight: return Key.AltRight;
+            case Veldrid.Key.WinLeft: return Key.WinLeft;
+            case Veldrid.Key.WinRight: return Key.WinRight;
+            case Veldrid.Key.Menu: return Key.Menu;
+            case Veldrid.Key.Up: return Key.Up;
+            case Veldrid.Key.Down: return Key.Down;
+            case Veldrid.Key.Left: return Key.Left;
+            case Veldrid.Key.Right: return Key.Right;
+            case Veldrid.Key.Enter: return Key.Enter;
+            case Veldrid.Key.Escape: return Key.Escape;
+            case Veldrid.Key.Space: return Key.Space;
+            case Veldrid.Key.Tab: return Key.Tab;
+            case Veldrid.Key.BackSpace: return Key.BackSpace;
+            case Veldrid.Key.Insert: return Key.Insert;
+            case Veldrid.Key.Delete: return Key.Delete;
+            case Veldrid.Key.PageUp: return Key.PageUp;
+            case Veldrid.Key.PageDown: return Key.PageDown;
+            case Veldrid.Key.Home: return Key.Home;
+            case Veldrid.Key.End: return Key.End;
+            case Veldrid.Key.CapsLock: return Key.CapsLock;
+            case Veldrid.Key.ScrollLock: return Key.ScrollLock;
+            case Veldrid.Key.PrintScreen: return Key.PrintScreen;
+            case Veldrid.Key.Pause: return Key.Pause;
+            case Veldrid.Key.NumLock: return Key.NumLock;
+            case Veldrid.Key.Clear: return Key.Clear;
+            case Veldrid.Key.Sleep: return Key.Sleep;
+            case Veldrid.Key.Tilde: return Key.Tilde;
+            case Veldrid.Key.Minus: return Key.Minus;
+            case Veldrid.Key.Plus: return Key.Plus;
+            case Veldrid.Key.BracketLeft: return Key.BracketLeft;
+            case Veldrid.Key.BracketRight: return Key.BracketRight;
+            case Veldrid.Key.Semicolon: return Key.Semicolon;
+            case Veldrid.Key.Quote: return Key.Quote;
+            case Veldrid.Key.Comma: return Key.Comma;
+            case Veldrid.Key.Period: return Key.Period;
+            case Veldrid.Key.Slash: return Key.Slash;
+            case Veldrid.Key.BackSlash: return Key.BackSlash;
+            default: return Key.Unknown;
+        }
+    }
+
+    public static MouseButton ToEngineButton(Veldrid.MouseButton button)
+    {
+        return (MouseButton)button;
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\GraphicsAPI.cs">
+namespace Cherris;
+
+public enum GraphicsAPI
+{
+    Veldrid,
+    OpenTK
 }
 </file>
 
@@ -1074,7 +1168,6 @@ public class GameWindow
 using System;
 using Veldrid;
 using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
@@ -1109,17 +1202,10 @@ public class GraphicsManager : IDisposable
 
     private readonly TextureSampleCount _msaaSampleCount;
 
-    public GraphicsManager(Sdl2Window window, TextureSampleCount msaaSampleCount = TextureSampleCount.Count4)
+    public GraphicsManager(GraphicsDevice graphicsDevice, Sdl2Window window, TextureSampleCount msaaSampleCount)
     {
         _msaaSampleCount = msaaSampleCount;
-
-        GraphicsDeviceOptions options = new GraphicsDeviceOptions
-        {
-            PreferStandardClipSpaceYDirection = true,
-            PreferDepthRangeZeroToOne = true,
-            SwapchainDepthFormat = PixelFormat.R16_UNorm
-        };
-        GraphicsDevice = VeldridStartup.CreateGraphicsDevice(window, options);
+        GraphicsDevice = graphicsDevice;
         CommandList = GraphicsDevice.ResourceFactory.CreateCommandList();
 
         CreateResources((int)window.Width, (int)window.Height);
@@ -1127,7 +1213,8 @@ public class GraphicsManager : IDisposable
 
     public void Resize(int width, int height)
     {
-        GraphicsDevice.ResizeMainWindow((uint)width, (uint)height);
+        // The swapchain is resized automatically by the window resize event handler in VeldridStartup.
+        // We only need to recreate our intermediate buffers.
         DisposeResources();
         CreateResources(width, height);
     }
@@ -1163,8 +1250,8 @@ public class GraphicsManager : IDisposable
         FinalFramebuffer = GraphicsDevice.ResourceFactory.CreateFramebuffer(new FramebufferDescription(null, FinalColorTarget));
 
         // Bloom Target (half res)
-        uint bloomWidth = (uint)width / 2;
-        uint bloomHeight = (uint)height / 2;
+        uint bloomWidth = (uint)Math.Max(1, width / 2);
+        uint bloomHeight = (uint)Math.Max(1, height / 2);
         BloomColorTarget = GraphicsDevice.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             bloomWidth, bloomHeight, 1, 1, colorFormat,
             TextureUsage.RenderTarget | TextureUsage.Sampled));
@@ -1207,123 +1294,173 @@ public class GraphicsManager : IDisposable
     {
         DisposeResources();
         CommandList.Dispose();
-        GraphicsDevice.Dispose();
+        // The GraphicsDevice is managed by the backend, so we don't dispose it here.
     }
 }
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Input.cs">
-using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Veldrid;
 
 namespace Cherris;
 
 public static class Input
 {
     private static readonly HashSet<Key> _pressedKeys = new();
-    private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
+    private static readonly HashSet<Key> _justPressedKeys = new();
+
     private static readonly HashSet<MouseButton> _pressedMouseButtons = new();
+    private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
 
-    // This flag tracks whether we are waiting for the OS to process a mouse warp
-    // that brings the cursor back to the center of the screen after re-locking.
-    private static bool _awaitingMouseCentering;
-
-    public static bool IsMouseLocked { get; internal set; } = true;
+    public static bool IsMouseLocked { get; internal set; }
     public static Vector2 MouseDelta { get; private set; }
     public static Vector2 MousePosition { get; private set; }
 
-    internal static void UpdateSnapshot(InputSnapshot snapshot, Vector2 windowCenter)
+    // Called by the active windowing system at the start of each frame.
+    internal static void FrameStarted()
     {
+        _justPressedKeys.Clear();
         _justPressedMouseButtons.Clear();
-
-        foreach (var keyEvent in snapshot.KeyEvents)
-        {
-            if (keyEvent.Down)
-            {
-                _pressedKeys.Add(keyEvent.Key);
-            }
-            else
-            {
-                _pressedKeys.Remove(keyEvent.Key);
-            }
-        }
-
-        foreach (var mouseEvent in snapshot.MouseEvents)
-        {
-            if (mouseEvent.Down)
-            {
-                if (_pressedMouseButtons.Add(mouseEvent.MouseButton))
-                {
-                    _justPressedMouseButtons.Add(mouseEvent.MouseButton);
-                }
-            }
-            else
-            {
-                _pressedMouseButtons.Remove(mouseEvent.MouseButton);
-            }
-        }
-
-        MousePosition = snapshot.MousePosition;
-
-        if (!IsMouseLocked)
-        {
-            MouseDelta = Vector2.Zero;
-            // When the mouse is unlocked, we will need to confirm it has been
-            // centered again after it is re-locked.
-            _awaitingMouseCentering = true;
-            return;
-        }
-
-        // At this point, the mouse is locked.
-
-        if (_awaitingMouseCentering)
-        {
-            // Check if the mouse has been centered by the warp. A small tolerance is used.
-            float distanceFromCenter = Vector2.Distance(snapshot.MousePosition, windowCenter);
-            if (distanceFromCenter > 1.0f)
-            {
-                // The warp hasn't been processed by the OS yet. The mouse position is stale.
-                // We ignore the delta for this frame and wait for a centered position.
-                MouseDelta = Vector2.Zero;
-                return;
-            }
-            else
-            {
-                // The mouse is now centered. We can stop waiting.
-                _awaitingMouseCentering = false;
-            }
-        }
-
-        // The delta is the difference between the current mouse position
-        // and the center of the screen (where it was warped to last frame).
-        MouseDelta = snapshot.MousePosition - windowCenter;
+        if (!IsMouseLocked) MouseDelta = Vector2.Zero; // Reset delta when not locked
     }
 
-    public static bool IsKeyDown(Key key)
+    internal static void ClearState()
     {
-        return _pressedKeys.Contains(key);
+        _pressedKeys.Clear();
+        _justPressedKeys.Clear();
+        _pressedMouseButtons.Clear();
+        _justPressedMouseButtons.Clear();
     }
 
-    public static bool WasMouseButtonPressed(MouseButton button)
+    internal static void SetKeyState(Key key, bool isDown)
     {
-        return _justPressedMouseButtons.Contains(button);
+        if (key == Key.Unknown) return;
+
+        if (isDown)
+        {
+            if (_pressedKeys.Add(key))
+            {
+                _justPressedKeys.Add(key);
+            }
+        }
+        else
+        {
+            _pressedKeys.Remove(key);
+        }
     }
+
+    internal static void SetMouseButtonState(MouseButton button, bool isDown)
+    {
+        if (isDown)
+        {
+            if (_pressedMouseButtons.Add(button))
+            {
+                _justPressedMouseButtons.Add(button);
+            }
+        }
+        else
+        {
+            _pressedMouseButtons.Remove(button);
+        }
+    }
+
+    internal static void SetMouseDelta(Vector2 delta) => MouseDelta = delta;
+    internal static void SetMousePosition(Vector2 position) => MousePosition = position;
+
+    public static bool IsKeyDown(Key key) => _pressedKeys.Contains(key);
+    public static bool WasKeyPressed(Key key) => _justPressedKeys.Contains(key);
+    public static bool WasMouseButtonPressed(MouseButton button) => _justPressedMouseButtons.Contains(button);
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\InputEnums.cs">
+namespace Cherris;
+
+// Based on Veldrid.Key, but now backend-agnostic.
+public enum Key
+{
+    Unknown,
+    ShiftLeft,
+    ShiftRight,
+    ControlLeft,
+    ControlRight,
+    AltLeft,
+    AltRight,
+    WinLeft,
+    WinRight,
+    Menu,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35,
+    Up, Down, Left, Right,
+    Enter,
+    Escape,
+    Space,
+    Tab,
+    BackSpace,
+    Insert,
+    Delete,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    CapsLock,
+    ScrollLock,
+    PrintScreen,
+    Pause,
+    NumLock,
+    Clear,
+    Sleep,
+    Keypad0, Keypad1, Keypad2, Keypad3, Keypad4, Keypad5, Keypad6, Keypad7, Keypad8, Keypad9,
+    KeypadDivide, KeypadMultiply, KeypadSubtract, KeypadAdd, KeypadDecimal, KeypadEnter,
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    Number0, Number1, Number2, Number3, Number4, Number5, Number6, Number7, Number8, Number9,
+    Tilde,
+    Minus,
+    Plus,
+    BracketLeft,
+    BracketRight,
+    Semicolon,
+    Quote,
+    Comma,
+    Period,
+    Slash,
+    BackSlash,
+    LastKey
+}
+
+public enum MouseButton
+{
+    Left,
+    Middle,
+    Right,
+    Button1,
+    Button2,
+    Button3,
+    Button4,
+    Button5,
+    Button6,
+    Button7,
+    Button8,
+    Button9,
+    LastButton
 }
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Renderer.cs">
+using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Cherris.Rendering;
 using Veldrid;
 using Veldrid.SPIRV;
 
 namespace Cherris;
 
-public class Renderer : IDisposable
+// This class now acts as the Veldrid implementation of IRenderer
+public class Renderer : IRenderer
 {
     private readonly GraphicsManager _graphicsManager;
+    private readonly GraphicsDevice _graphicsDevice;
     private SceneRenderer _sceneRenderer;
     private SkyboxRenderer _skyboxRenderer;
     private ResolveRenderer _resolveRenderer;
@@ -1334,19 +1471,55 @@ public class Renderer : IDisposable
     private bool _snapshotRequested;
     private string _snapshotPath;
 
-    public ResourceLayout TextureLayout => _sceneRenderer.TextureLayout;
-    public ResourceLayout MaterialLayout => _sceneRenderer.MaterialLayout;
-    public Sampler Sampler => _sampler;
-
-    public Renderer(GraphicsManager graphicsManager)
+    // Veldrid-specific data associated with a MeshRenderer component
+    internal class VeldridMeshRendererData : IDisposable
     {
-        _graphicsManager = graphicsManager;
-        CreateResources();
+        public readonly DeviceBuffer VertexBuffer;
+        public readonly DeviceBuffer IndexBuffer;
+        public readonly uint IndexCount;
+        public readonly ResourceSet TextureResourceSet;
+        public readonly DeviceBuffer MaterialPropertiesBuffer;
+        public readonly ResourceSet MaterialResourceSet;
+
+        public VeldridMeshRendererData(GraphicsDevice gd, MeshRenderer meshRenderer, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+        {
+            var texture = (Texture)meshRenderer.Texture.GetBackendHandle();
+            ResourceFactory factory = gd.ResourceFactory;
+
+            VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
+            gd.UpdateBuffer(VertexBuffer, 0, meshRenderer.Mesh.Vertices);
+
+            IndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * meshRenderer.Mesh.Indices.Length), BufferUsage.IndexBuffer));
+            gd.UpdateBuffer(IndexBuffer, 0, meshRenderer.Mesh.Indices);
+            IndexCount = (uint)meshRenderer.Mesh.Indices.Length;
+
+            TextureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(textureLayout, texture.VeldridTextureView, sampler));
+
+            MaterialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
+            var materialData = new Vector4[2];
+            materialData[0] = new Vector4(meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y, 0, 0);
+            materialData[1] = new Vector4(meshRenderer.EmissiveColor, 1.0f);
+            gd.UpdateBuffer(MaterialPropertiesBuffer, 0, materialData);
+
+            MaterialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(materialLayout, MaterialPropertiesBuffer));
+        }
+
+        public void Dispose()
+        {
+            VertexBuffer.Dispose();
+            IndexBuffer.Dispose();
+            TextureResourceSet.Dispose();
+            MaterialPropertiesBuffer.Dispose();
+            MaterialResourceSet.Dispose();
+        }
     }
 
-    public void SetSnapshotter(Snapshotter snapshotter)
+    public Renderer(GraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
     {
-        _snapshotter = snapshotter;
+        _graphicsManager = graphicsManager;
+        _graphicsDevice = graphicsDevice;
+        _snapshotter = new Snapshotter(_graphicsDevice);
+        CreateResources();
     }
 
     public void RequestSnapshot(string path)
@@ -1360,19 +1533,16 @@ public class Renderer : IDisposable
         _snapshotter?.SaveCopiedData(_snapshotPath);
     }
 
-
-
     private void CreateResources()
     {
-        GraphicsDevice gd = _graphicsManager.GraphicsDevice;
-        ResourceFactory factory = gd.ResourceFactory;
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
 
         VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
             new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
             new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
 
-        _sampler = factory.CreateSampler(new Veldrid.SamplerDescription
+        _sampler = factory.CreateSampler(new SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,
             AddressModeV = SamplerAddressMode.Wrap,
@@ -1384,13 +1554,24 @@ public class Renderer : IDisposable
             MaximumLod = uint.MaxValue
         });
 
-        _sceneRenderer = new SceneRenderer(gd, vertexLayout);
-        _skyboxRenderer = new SkyboxRenderer(gd, _sampler, vertexLayout);
-        _resolveRenderer = new ResolveRenderer(gd);
-        _finalPassRenderer = new FinalPassRenderer(gd);
-        _bloomRenderer = new BloomRenderer(gd);
+        _sceneRenderer = new SceneRenderer(_graphicsDevice, vertexLayout);
+        _skyboxRenderer = new SkyboxRenderer(_graphicsDevice, _sampler, vertexLayout);
+        _resolveRenderer = new ResolveRenderer(_graphicsDevice);
+        _finalPassRenderer = new FinalPassRenderer(_graphicsDevice);
+        _bloomRenderer = new BloomRenderer(_graphicsDevice);
 
         OnWindowResized();
+    }
+
+    private VeldridMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
+    {
+        if (mr.BackendData is VeldridMeshRendererData data)
+        {
+            return data;
+        }
+        var newData = new VeldridMeshRendererData(_graphicsDevice, mr, _sceneRenderer.TextureLayout, _sceneRenderer.MaterialLayout, _sampler);
+        mr.BackendData = newData;
+        return newData;
     }
 
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
@@ -1399,8 +1580,8 @@ public class Renderer : IDisposable
 
         Matrix4x4 view = mainCamera.GetViewMatrix();
         Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
-
         CommandList cl = _graphicsManager.CommandList;
+
         cl.Begin();
 
         // Pass 1: Render scene to MSAA framebuffer
@@ -1409,66 +1590,50 @@ public class Renderer : IDisposable
         cl.ClearColorTarget(0, RgbaFloat.Black);
         cl.ClearDepthStencil(1f, 0);
 
-        if (skybox is not null)
+        if (skybox is not null) _skyboxRenderer.Render(cl, skybox, view, projection);
+
+        _sceneRenderer.Render(cl, view, projection, gameObjects, GetOrCreateBackendData);
+        if (selectedObject?.GetComponent<MeshRenderer>() != null)
         {
-            _skyboxRenderer.Render(cl, skybox, view, projection);
-        }
-        _sceneRenderer.Render(cl, view, projection, gameObjects);
-        if (selectedObject is not null)
-        {
-            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject);
+            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
         }
 
-        // Pass 2: Resolve MSAA to our final intermediate texture
+        // Pass 2: Resolve MSAA
         cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
 
-        // Pass 3: Extract bright parts and blur them for the bloom effect
+        // Pass 3: Bloom
         var bloomViewport = new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1);
         cl.SetViewport(0, bloomViewport);
-
-        // 3a: Bright Pass
         cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
         _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
+        _bloomRenderer.RenderBlur(cl, _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
 
-        // 3b: Blur Pass
-        _bloomRenderer.RenderBlur(cl,
-            _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer,
-            _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
-
-        // Pass 4: Composite scene and bloom, tonemap, and draw to screen
+        // Pass 4: Composite and draw to screen
         cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
-
-        // 4a: Draw the main scene with tonemapping
         _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
-
-        // 4b: Additively blend the bloom on top
         _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
-
 
         if (_snapshotRequested && _snapshotter != null)
         {
-            // Copy from our stable intermediate texture, not the swapchain
             _snapshotter.RecordCopyCommand(cl, _graphicsManager.FinalColorTarget);
             _snapshotRequested = false;
         }
 
         cl.End();
-        _graphicsManager.GraphicsDevice.SubmitCommands(cl);
-        _graphicsManager.GraphicsDevice.SwapBuffers();
+        _graphicsDevice.SubmitCommands(cl);
     }
 
     public void OnWindowResized()
     {
+        _graphicsManager.Resize((int)_graphicsManager.SwapchainFramebuffer.Width, (int)_graphicsManager.SwapchainFramebuffer.Height);
         _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _bloomRenderer.OnWindowResized(
-            _graphicsManager.BloomFramebuffer,
-            _graphicsManager.BloomTempFramebuffer);
+        _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempFramebuffer);
     }
 
     public void Dispose()
@@ -1479,6 +1644,8 @@ public class Renderer : IDisposable
         _finalPassRenderer.Dispose();
         _bloomRenderer.Dispose();
         _sampler.Dispose();
+        _snapshotter.Dispose();
+        _graphicsManager.Dispose();
     }
 
     /// <summary>
@@ -1661,6 +1828,57 @@ public class Renderer : IDisposable
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface.cs">
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Veldrid; // We still need this for types like BoundingBox if we don't redefine everything
+
+namespace Cherris.Rendering
+{
+    public interface ITexture : IDisposable
+    {
+        object GetBackendHandle();
+    }
+
+    public interface IGameWindow : IDisposable
+    {
+        bool Exists { get; }
+        float Width { get; }
+        float Height { get; }
+        bool IsMouseLocked { get; set; }
+        void ProcessEvents();
+        void SwapBuffers();
+        event Action Resized;
+    }
+
+    public interface IResourceManager : IDisposable
+    {
+        void LoadInitialAssets();
+        Mesh GetMesh(string name);
+        ITexture GetTexture(string name);
+        Skybox GetSkybox(string name);
+    }
+
+    public interface IRenderer : IDisposable
+    {
+        void OnWindowResized();
+        void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure);
+        void RequestSnapshot(string path);
+        void ProcessSnapshot();
+    }
+
+    public interface IGraphicsBackend : IDisposable
+    {
+        IGameWindow GameWindow { get; }
+        IRenderer Renderer { get; }
+        IResourceManager ResourceManager { get; }
+
+        void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked);
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResolveRenderer.cs">
 using System.Numerics;
 using Veldrid;
@@ -1790,14 +2008,15 @@ void main()
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\ResourceManager.cs">
 using System;
 using System.Collections.Generic;
+using Cherris.Rendering;
 using Veldrid;
 
 namespace Cherris;
 
-public class ResourceManager
+public class ResourceManager : IResourceManager
 {
     private readonly Dictionary<string, Mesh> _meshes = new();
-    private readonly Dictionary<string, Texture> _textures = new();
+    private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
     private readonly GraphicsDevice _graphicsDevice;
 
@@ -1816,7 +2035,6 @@ public class ResourceManager
         _meshes.Add("Plane", planeMesh);
 
         // Textures
-        // Create a default white texture for untextured objects or if a texture fails to load.
         var white = CreateWhiteTexture("White");
         _textures.Add("White", white);
     }
@@ -1826,14 +2044,13 @@ public class ResourceManager
         return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
     }
 
-    public Texture GetTexture(string name)
+    public ITexture GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out var texture))
         {
             return texture;
         }
 
-        // Texture not in cache, try to load it from file by searching the asset directory.
         string? filePath = AssetFinder.FindAssetPath(name);
 
         if (filePath is not null)
@@ -1846,7 +2063,6 @@ public class ResourceManager
             }
         }
 
-        // Fallback to the default white texture if loading fails or file doesn't exist.
         Console.WriteLine($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
         return _textures["White"];
     }
@@ -1902,6 +2118,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using Cherris.Rendering;
 using Veldrid;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -1910,25 +2127,20 @@ namespace Cherris;
 
 public class SceneLoader
 {
-    private readonly ResourceManager _resourceManager;
-    private readonly GraphicsDevice _graphicsDevice;
+    private readonly IResourceManager _resourceManager;
     private readonly Dictionary<string, Func<object, Component>> _componentFactories = new();
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;
 
-    public SceneLoader(ResourceManager resourceManager, GraphicsDevice graphicsDevice)
+    public SceneLoader(IResourceManager resourceManager)
     {
         _resourceManager = resourceManager;
-        _graphicsDevice = graphicsDevice;
 
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
             .Build();
 
-        // A serializer is used to re-serialize parts of the YAML object graph.
-        // This allows us to leverage the deserializer's type conversion capabilities
-        // (e.g., for Vector3) without writing manual, reflection-based conversion logic.
         _serializer = new SerializerBuilder().Build();
     }
 
@@ -1941,19 +2153,15 @@ public class SceneLoader
     {
         var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
-
-        // Instead of custom data classes, deserialize into a generic dictionary structure.
-        // This is more flexible and avoids a rigid coupling to the YAML file structure.
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return sceneObjects; // Return empty list if no game objects are defined
+            return sceneObjects;
         }
 
         foreach (var goData in gameObjectDatas)
         {
-            // Extract name, defaulting if not present.
             string name = "GameObject";
             if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
             {
@@ -1967,13 +2175,11 @@ public class SceneLoader
                 continue;
             }
 
-            // Find and apply the Transform first, as it's fundamental.
             if (componentsDict.TryGetValue("Transform", out var transformProperties))
             {
                 ApplyTransformProperties(go.Transform, transformProperties);
             }
 
-            // Create and add all other components
             foreach (var componentKvp in componentsDict)
             {
                 if (componentKvp.Key as string == "Transform") continue;
@@ -1988,23 +2194,13 @@ public class SceneLoader
 
     private void ApplyTransformProperties(Transform transform, object properties)
     {
-        // This is a pragmatic way to reuse our Vector3YamlTypeConverter without reflection.
-        // We serialize the properties object back to a YAML string and then
-        // deserialize it into a dictionary where we know the values will be Vector3.
         var yaml = _serializer.Serialize(properties);
         var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
 
-        if (props.TryGetValue("Position", out var pos))
-        {
-            transform.Position = pos;
-        }
-        if (props.TryGetValue("Scale", out var scale))
-        {
-            transform.Scale = scale;
-        }
+        if (props.TryGetValue("Position", out var pos)) transform.Position = pos;
+        if (props.TryGetValue("Scale", out var scale)) transform.Scale = scale;
         if (props.TryGetValue("Rotation", out var rotDegrees))
         {
-            // Convert Euler angles from degrees to radians for quaternion creation.
             var rotRadians = rotDegrees * (MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
         }
@@ -2113,14 +2309,16 @@ public class SceneManager
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneRenderer.cs">
+using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
 
 namespace Cherris;
 
-public class SceneRenderer
+public class SceneRenderer : IDisposable
 {
     private readonly DeviceBuffer _mvpBuffer;
     private Pipeline _pipeline;
@@ -2229,27 +2427,34 @@ public class SceneRenderer
         });
     }
 
-    public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene)
+    public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, Func<MeshRenderer, object> backendDataProvider)
     {
+        commandList.SetPipeline(_pipeline);
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
             if (meshRenderer is null) continue;
 
+            var backendData = backendDataProvider(meshRenderer) as dynamic;
+            if (backendData is null) continue;
+
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
-            meshRenderer.Render(commandList, _pipeline, _mvpResourceSet);
+            commandList.SetVertexBuffer(0, backendData.VertexBuffer);
+            commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt16);
+            commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
+            commandList.SetGraphicsResourceSet(1, backendData.TextureResourceSet);
+            commandList.SetGraphicsResourceSet(2, backendData.MaterialResourceSet);
+            commandList.DrawIndexed(backendData.IndexCount, 1, 0, 0, 0);
         }
     }
 
-    public void RenderOutline(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, GameObject gameObject)
+    public void RenderOutline(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, GameObject gameObject, dynamic backendData)
     {
-        var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-        if (meshRenderer is null) return;
+        if (backendData is null) return;
 
         var transform = gameObject.Transform;
-
         const float outlineFactor = 1.05f;
         var outlineModelMatrix =
             Matrix4x4.CreateScale(transform.Scale * outlineFactor) *
@@ -2260,10 +2465,10 @@ public class SceneRenderer
         commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
         commandList.SetPipeline(_outlinePipeline);
-        commandList.SetVertexBuffer(0, meshRenderer.VertexBuffer);
-        commandList.SetIndexBuffer(meshRenderer.IndexBuffer, IndexFormat.UInt16);
+        commandList.SetVertexBuffer(0, backendData.VertexBuffer);
+        commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt16);
         commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
-        commandList.DrawIndexed(meshRenderer.IndexCount, 1, 0, 0, 0);
+        commandList.DrawIndexed(backendData.IndexCount, 1, 0, 0, 0);
     }
 
     private (Shader, Shader) LoadShaders(ResourceFactory factory)
@@ -2308,9 +2513,9 @@ public class SceneRenderer
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+            ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertexCode), "main");
         ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+            ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragmentCode), "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
@@ -2341,9 +2546,9 @@ public class SceneRenderer
                 }";
 
         ShaderDescription vertexShaderDesc = new ShaderDescription(
-            ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+            ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertexCode), "main");
         ShaderDescription fragmentShaderDesc = new ShaderDescription(
-            ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main");
+            ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragmentCode), "main");
 
         Shader[] shaders = factory.CreateFromSpirv(vertexShaderDesc, fragmentShaderDesc);
         return (shaders[0], shaders[1]);
@@ -2802,11 +3007,12 @@ public class Snapshotter : IDisposable
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Texture.cs">
 using System;
+using Cherris.Rendering;
 using Veldrid;
 
 namespace Cherris;
 
-public class Texture : IDisposable
+public class Texture : ITexture
 {
     public Veldrid.Texture VeldridTexture { get; }
     public TextureView VeldridTextureView { get; }
@@ -2822,6 +3028,8 @@ public class Texture : IDisposable
         VeldridTextureView.Dispose();
         VeldridTexture.Dispose();
     }
+
+    public object GetBackendHandle() => this;
 }
 </file>
 
@@ -3041,7 +3249,6 @@ public abstract class Script : Component
 using Cherris;
 using System;
 using System.Numerics;
-using Veldrid;
 
 namespace Apexverse;
 
@@ -3055,7 +3262,6 @@ public class EditorController : Script
 
     public override void Start()
     {
-        // Initialize yaw and pitch from the camera's starting rotation
         var initialRotation = GameObject.Transform.Rotation;
         var direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
         _yaw = MathF.Atan2(direction.X, -direction.Z);
@@ -3066,20 +3272,14 @@ public class EditorController : Script
     {
         if (Input.IsMouseLocked)
         {
-            // --- Mouse Look ---
             Vector2 mouseDelta = Input.MouseDelta;
             _yaw -= mouseDelta.X * MouseSensitivity;
             _pitch -= mouseDelta.Y * MouseSensitivity;
-
-            // Clamp the pitch to prevent the camera from flipping upside down
             _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-            // Update rotation from yaw and pitch
             GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
         }
 
-        // --- Keyboard Movement ---
         var localMove = Vector3.Zero;
         if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
         if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
@@ -3092,16 +3292,10 @@ public class EditorController : Script
 
         if (localMove != Vector3.Zero || worldVerticalMove != 0)
         {
-            // Create a rotation that only includes the horizontal (yaw) component.
             var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-            // Transform local horizontal movement into world space.
             var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-
-            // Combine with world vertical movement.
             var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
 
-            // Normalize the final vector to ensure consistent speed in all directions.
             if (finalMove.LengthSquared() > 0)
             {
                 GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
@@ -3234,114 +3428,34 @@ public class Mesh
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
+using System;
 using System.Numerics;
-using Veldrid;
+using Cherris.Rendering;
 
 namespace Cherris;
 
-public class MeshRenderer : Component
+public class MeshRenderer : Component, IDisposable
 {
-    private DeviceBuffer _vertexBuffer;
-    private DeviceBuffer _indexBuffer;
-    private uint _indexCount;
-    private ResourceSet _textureResourceSet;
-    private DeviceBuffer _materialPropertiesBuffer;
-    private ResourceSet _materialResourceSet;
+    public Mesh Mesh { get; }
+    public ITexture Texture { get; }
+    public Vector2 TextureTiling { get; }
+    public Vector3 EmissiveColor { get; }
 
-    public Mesh Mesh => _mesh;
-    public DeviceBuffer VertexBuffer => _vertexBuffer;
-    public DeviceBuffer IndexBuffer => _indexBuffer;
-    public uint IndexCount => _indexCount;
+    // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
+    public object BackendData { get; set; }
 
-    private readonly Mesh _mesh;
-    private readonly Texture _texture;
-    private readonly Vector2 _textureTiling;
-    private readonly Vector3 _emissiveColor;
-    private readonly GraphicsDevice _gd;
-
-    public MeshRenderer(Mesh mesh, GraphicsDevice gd, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler, Texture texture, Vector2 textureTiling, Vector3 emissiveColor)
+    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor)
     {
-        _mesh = mesh;
-        _gd = gd;
-        _texture = texture;
-        _textureTiling = textureTiling;
-        _emissiveColor = emissiveColor;
-
-        CreateDeviceBuffers();
-        CreateResourceSets(textureLayout, materialLayout, sampler);
-    }
-
-    private void CreateDeviceBuffers()
-    {
-        ResourceFactory factory = _gd.ResourceFactory;
-
-        _vertexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(Vertex.SizeInBytes * _mesh.Vertices.Length),
-            BufferUsage.VertexBuffer));
-        _gd.UpdateBuffer(_vertexBuffer, 0, _mesh.Vertices);
-
-        _indexBuffer = factory.CreateBuffer(new BufferDescription(
-            (uint)(sizeof(ushort) * _mesh.Indices.Length),
-            BufferUsage.IndexBuffer));
-        _gd.UpdateBuffer(_indexBuffer, 0, _mesh.Indices);
-
-        _indexCount = (uint)_mesh.Indices.Length;
-    }
-
-    private void CreateResourceSets(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
-    {
-        ResourceFactory factory = _gd.ResourceFactory;
-
-        _textureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-            textureLayout,
-            _texture.VeldridTextureView,
-            sampler));
-
-        // Uniform buffer now holds 2 Vector4s (tiling and emissive color)
-        _materialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
-        var materialData = new Vector4[2];
-        materialData[0] = new Vector4(_textureTiling.X, _textureTiling.Y, 0, 0); // Tiling in xy
-        materialData[1] = new Vector4(_emissiveColor, 1.0f); // Emissive color in xyz
-        _gd.UpdateBuffer(_materialPropertiesBuffer, 0, materialData);
-
-        _materialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-            materialLayout,
-            _materialPropertiesBuffer));
-    }
-
-    public void RecreateResources(ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
-    {
-        _textureResourceSet?.Dispose();
-        _materialResourceSet?.Dispose();
-        _materialPropertiesBuffer?.Dispose();
-
-        CreateResourceSets(textureLayout, materialLayout, sampler);
-    }
-
-    public void Render(CommandList cl, Pipeline pipeline, ResourceSet mvpResourceSet)
-    {
-        cl.SetVertexBuffer(0, _vertexBuffer);
-        cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
-        cl.SetPipeline(pipeline);
-        cl.SetGraphicsResourceSet(0, mvpResourceSet);
-        cl.SetGraphicsResourceSet(1, _textureResourceSet);
-        cl.SetGraphicsResourceSet(2, _materialResourceSet);
-
-        cl.DrawIndexed(
-            indexCount: _indexCount,
-            instanceCount: 1,
-            indexStart: 0,
-            vertexOffset: 0,
-            instanceStart: 0);
+        Mesh = mesh;
+        Texture = texture;
+        TextureTiling = textureTiling;
+        EmissiveColor = emissiveColor;
     }
 
     public void Dispose()
     {
-        _vertexBuffer?.Dispose();
-        _indexBuffer?.Dispose();
-        _textureResourceSet?.Dispose();
-        _materialPropertiesBuffer?.Dispose();
-        _materialResourceSet?.Dispose();
+        (BackendData as IDisposable)?.Dispose();
+        BackendData = null;
     }
 }
 </file>
@@ -3391,6 +3505,478 @@ public class Transform
         return Matrix4x4.CreateScale(Scale) *
                Matrix4x4.CreateFromQuaternion(Rotation) *
                Matrix4x4.CreateTranslation(Position);
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKBackend.cs">
+using Cherris.Rendering;
+using OpenTK.Graphics.OpenGL;
+using OpenTK.Windowing.Desktop;
+
+namespace Cherris;
+
+public class OpenTKBackend : IGraphicsBackend
+{
+    public IGameWindow GameWindow { get; private set; }
+    public IRenderer Renderer { get; private set; }
+    public IResourceManager ResourceManager { get; private set; }
+
+    public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
+    {
+        var window = new OpenTKGameWindow(windowTitle, width, height, startWithMouseLocked);
+        GameWindow = window;
+
+        // The GameWindow's context is made current in its constructor,
+        // and function pointers are loaded automatically.
+        // The explicit GL.LoadBindings call is no longer needed.
+
+        Renderer = new OpenTKRenderer();
+        ResourceManager = new OpenTKResourceManager();
+    }
+
+    public void Dispose()
+    {
+        GameWindow?.Dispose();
+        Renderer?.Dispose();
+        ResourceManager?.Dispose();
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKGameWindow.cs">
+using System;
+using Cherris.Rendering;
+using OpenTK.Windowing.Desktop;
+using OpenTK.Windowing.Common;
+using OpenTK.Mathematics;
+using OpenTK.Graphics.OpenGL;
+using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
+using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
+using OpenTKMouseButton = OpenTK.Windowing.GraphicsLibraryFramework.MouseButton;
+
+namespace Cherris;
+
+public class OpenTKGameWindow : IGameWindow
+{
+    private readonly OTKGameWindow _window;
+    private bool _isMouseLocked;
+    private Vector2 _lastMousePos;
+    private bool _firstMove = true;
+
+    public bool Exists => _window.Exists && !_window.IsExiting;
+    public float Width => _window.ClientSize.X;
+    public float Height => _window.ClientSize.Y;
+    public event Action Resized;
+
+    public bool IsMouseLocked
+    {
+        get => _isMouseLocked;
+        set
+        {
+            _isMouseLocked = value;
+            _window.CursorState = _isMouseLocked ? CursorState.Grabbed : CursorState.Normal;
+            if (_isMouseLocked)
+            {
+                _firstMove = true; // Reset on re-lock to avoid large delta jumps
+            }
+        }
+    }
+
+    public OpenTKGameWindow(string title, int width, int height, bool startWithMouseLocked)
+    {
+        var gameWindowSettings = GameWindowSettings.Default;
+        var nativeWindowSettings = new NativeWindowSettings()
+        {
+            ClientSize = new Vector2i(width, height),
+            Title = title,
+        };
+        _window = new OTKGameWindow(gameWindowSettings, nativeWindowSettings);
+
+        _window.Load += OnLoad;
+        _window.Resize += OnResize;
+        _window.KeyDown += OnKeyDown;
+        _window.KeyUp += OnKeyUp;
+        _window.MouseDown += OnMouseDown;
+        _window.MouseUp += OnMouseUp;
+        _window.MouseMove += OnMouseMove;
+
+        // This makes the OpenGL context current on this thread.
+        _window.MakeCurrent();
+
+        IsMouseLocked = startWithMouseLocked;
+    }
+
+    private void OnLoad()
+    {
+        Input.ClearState(); // Ensure clean state on startup
+        _lastMousePos = new Vector2(_window.MouseState.X, _window.MouseState.Y);
+    }
+
+    private void OnResize(ResizeEventArgs obj)
+    {
+        Resized?.Invoke();
+        GL.Viewport(0, 0, obj.Width, obj.Height);
+    }
+
+    public void ProcessEvents()
+    {
+        Input.FrameStarted();
+        // OpenTK's GameWindow processes events on its own thread via Run(),
+        // but we need to process them manually for our game loop. A timeout of 0
+        // processes all pending events and returns immediately.
+        _window.ProcessEvents(0);
+
+        if (Input.WasKeyPressed(Key.Escape))
+        {
+            IsMouseLocked = !IsMouseLocked;
+        }
+    }
+
+    public void SwapBuffers()
+    {
+        _window.SwapBuffers();
+    }
+
+    private void OnMouseMove(MouseMoveEventArgs e)
+    {
+        if (IsMouseLocked)
+        {
+            if (_firstMove)
+            {
+                _lastMousePos = new Vector2(e.X, e.Y);
+                _firstMove = false;
+            }
+
+            var deltaX = e.X - _lastMousePos.X;
+            var deltaY = e.Y - _lastMousePos.Y; // OpenTK's Y-axis is inverted compared to Veldrid for mouse movement
+            _lastMousePos = new Vector2(e.X, e.Y);
+
+            Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
+        }
+        else
+        {
+            Input.SetMouseDelta(System.Numerics.Vector2.Zero);
+        }
+        Input.SetMousePosition(new System.Numerics.Vector2(e.X, e.Y));
+    }
+
+    private void OnMouseDown(MouseButtonEventArgs e) => Input.SetMouseButtonState(MapButton(e.Button), true);
+    private void OnMouseUp(MouseButtonEventArgs e) => Input.SetMouseButtonState(MapButton(e.Button), false);
+    private void OnKeyDown(KeyboardKeyEventArgs e) => Input.SetKeyState(MapKey(e.Key), true);
+    private void OnKeyUp(KeyboardKeyEventArgs e) => Input.SetKeyState(MapKey(e.Key), false);
+
+    public void Dispose()
+    {
+        _window?.Dispose();
+    }
+
+    // --- Input Mapping ---
+    private static MouseButton MapButton(OpenTKMouseButton button)
+    {
+        return button switch
+        {
+            OpenTKMouseButton.Left => MouseButton.Left,
+            OpenTKMouseButton.Right => MouseButton.Right,
+            OpenTKMouseButton.Middle => MouseButton.Middle,
+            _ => MouseButton.LastButton // Indicates an unhandled button
+        };
+    }
+
+    private static Key MapKey(OpenTKKey key)
+    {
+        // This is a partial mapping. A full implementation would be much larger.
+        return key switch
+        {
+            OpenTKKey.Space => Key.Space,
+            OpenTKKey.A => Key.A,
+            OpenTKKey.D => Key.D,
+            OpenTKKey.S => Key.S,
+            OpenTKKey.W => Key.W,
+            OpenTKKey.LeftShift => Key.ShiftLeft,
+            OpenTKKey.RightShift => Key.ShiftRight,
+            OpenTKKey.Escape => Key.Escape,
+            OpenTKKey.F12 => Key.F12,
+            OpenTKKey.Up => Key.Up,
+            OpenTKKey.Down => Key.Down,
+            OpenTKKey.Left => Key.Left,
+            OpenTKKey.Right => Key.Right,
+            _ => Key.Unknown
+        };
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKRenderer.cs">
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using System.Text;
+using Cherris.Rendering;
+using OpenTK.Graphics.OpenGL;
+using OpenTK.Mathematics;
+using Matrix4 = OpenTK.Mathematics.Matrix4;
+using Vector3 = System.Numerics.Vector3;
+
+namespace Cherris;
+
+public class OpenTKRenderer : IRenderer
+{
+    private ShaderProgram _shaderProgram;
+    private int _mvpLocation;
+
+    #region Shader Program Helper
+    private class ShaderProgram : IDisposable
+    {
+        public readonly int Handle;
+
+        public ShaderProgram(string vertexSource, string fragmentSource)
+        {
+            var vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
+            var fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
+
+            Handle = GL.CreateProgram();
+            GL.AttachShader(Handle, vertexShader);
+            GL.AttachShader(Handle, fragmentShader);
+            GL.LinkProgram(Handle);
+
+            int success;
+            GL.GetProgrami(Handle, ProgramProperty.LinkStatus, out success);
+            if (success == 0)
+            {
+                string info = GL.GetProgramInfoLog(Handle);
+                throw new InvalidOperationException($"Failed to link shader program: {info}");
+            }
+
+            GL.DetachShader(Handle, vertexShader);
+            GL.DetachShader(Handle, fragmentShader);
+            GL.DeleteShader(vertexShader);
+            GL.DeleteShader(fragmentShader);
+        }
+
+        private static int CompileShader(ShaderType type, string source)
+        {
+            var shader = GL.CreateShader(type);
+            GL.ShaderSource(shader, source);
+            GL.CompileShader(shader);
+
+            int success;
+            GL.GetShaderi(shader, ShaderParameterName.CompileStatus, out success);
+            if (success == 0)
+            {
+                string info = GL.GetShaderInfoLog(shader);
+                throw new InvalidOperationException($"Failed to compile {type}: {info}");
+            }
+            return shader;
+        }
+
+        public void Use() => GL.UseProgram(Handle);
+        public int GetUniformLocation(string name) => GL.GetUniformLocation(Handle, name);
+
+        public void Dispose()
+        {
+            GL.DeleteProgram(Handle);
+        }
+    }
+    #endregion
+
+    #region Mesh Data Helper
+    internal class OpenGLMeshRendererData : IDisposable
+    {
+        public readonly int VaoHandle;
+        public readonly int VboHandle;
+        public readonly int EboHandle;
+        public readonly int IndexCount;
+
+        public OpenGLMeshRendererData(Mesh mesh)
+        {
+            IndexCount = mesh.Indices.Length;
+
+            VboHandle = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, VboHandle);
+            GL.BufferData(BufferTarget.ArrayBuffer, (IntPtr)(Vertex.SizeInBytes * mesh.Vertices.Length), mesh.Vertices, BufferUsage.StaticDraw);
+
+            EboHandle = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, EboHandle);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, (IntPtr)(sizeof(ushort) * mesh.Indices.Length), mesh.Indices, BufferUsage.StaticDraw);
+
+            VaoHandle = GL.GenVertexArray();
+            GL.BindVertexArray(VaoHandle);
+
+            GL.BindBuffer(BufferTarget.ArrayBuffer, VboHandle);
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, EboHandle);
+
+            // Position
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, 0);
+
+            // Color
+            GL.EnableVertexAttribArray(1);
+            GL.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, 12);
+
+            // TexCoord
+            GL.EnableVertexAttribArray(2);
+            GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, 12 + 16);
+
+            GL.BindVertexArray(0);
+        }
+
+        public void Dispose()
+        {
+            GL.DeleteBuffer(VboHandle);
+            GL.DeleteBuffer(EboHandle);
+            GL.DeleteVertexArray(VaoHandle);
+        }
+    }
+    #endregion
+
+    public OpenTKRenderer()
+    {
+        // Simple shaders for now
+        const string vertSource = @"
+            #version 330 core
+            layout (location = 0) in vec3 aPosition;
+            layout (location = 1) in vec4 aColor;
+            
+            uniform mat4 mvp;
+            out vec4 fsin_Color;
+
+            void main()
+            {
+                gl_Position = mvp * vec4(aPosition, 1.0);
+                fsin_Color = aColor;
+            }";
+        const string fragSource = @"
+            #version 330 core
+            in vec4 fsin_Color;
+            out vec4 FragColor;
+
+            void main()
+            {
+                FragColor = fsin_Color;
+            }";
+
+        _shaderProgram = new ShaderProgram(vertSource, fragSource);
+        _mvpLocation = _shaderProgram.GetUniformLocation("mvp");
+
+        GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f); // Dark blue
+        GL.Enable(EnableCap.DepthTest);
+    }
+
+    private OpenGLMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
+    {
+        if (mr.BackendData is OpenGLMeshRendererData data)
+        {
+            return data;
+        }
+        var newData = new OpenGLMeshRendererData(mr.Mesh);
+        mr.BackendData = newData;
+        return newData;
+    }
+
+    public void OnWindowResized()
+    {
+        // Viewport is handled by OpenTKGameWindow
+    }
+
+    // Helper to convert System.Numerics.Matrix4x4 to OpenTK.Mathematics.Matrix4
+    private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
+    {
+        return new Matrix4(
+            m.M11, m.M12, m.M13, m.M14,
+            m.M21, m.M22, m.M23, m.M24,
+            m.M31, m.M32, m.M33, m.M34,
+            m.M41, m.M42, m.M43, m.M44
+        );
+    }
+
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
+    {
+        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+        if (mainCamera is null) return;
+
+        _shaderProgram.Use();
+
+        var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
+        var projection = ToOpenTKMatrix(mainCamera.GetProjectionMatrix(windowWidth / windowHeight));
+
+        foreach (var go in gameObjects)
+        {
+            var meshRenderer = go.GetComponent<MeshRenderer>();
+            if (meshRenderer?.Mesh is null) continue;
+
+            var data = GetOrCreateBackendData(meshRenderer);
+
+            var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
+            var mvp = model * view * projection;
+
+            // System.Numerics matrices are row-major, but OpenGL expects column-major.
+            // We must set the 'transpose' argument to true.
+            GL.UniformMatrix4d(_mvpLocation, true, ref mvp);
+
+            GL.BindVertexArray(data.VaoHandle);
+            GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
+        }
+    }
+
+    public void RequestSnapshot(string path)
+    {
+        Console.WriteLine("[OpenTKRenderer] Snapshots not yet implemented.");
+    }
+
+    public void ProcessSnapshot()
+    {
+        // Not implemented
+    }
+
+    public void Dispose()
+    {
+        _shaderProgram?.Dispose();
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKResourceManager.cs">
+using System;
+using System.Collections.Generic;
+using Cherris.Rendering;
+
+namespace Cherris;
+
+public class OpenTKResourceManager : IResourceManager
+{
+    private readonly Dictionary<string, Mesh> _meshes = new();
+
+    public void LoadInitialAssets()
+    {
+        Console.WriteLine("[OpenTKResourceManager] Initial assets loaded.");
+        var cubeMesh = Mesh.CreateCube();
+        _meshes.Add("Cube", cubeMesh);
+
+        var planeMesh = Mesh.CreatePlane(20f);
+        _meshes.Add("Plane", planeMesh);
+    }
+
+    public Mesh GetMesh(string name)
+    {
+        return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
+    }
+
+    public ITexture GetTexture(string name)
+    {
+        Console.WriteLine($"[OpenTKResourceManager] Stub: GetTexture '{name}'");
+        return null; // Stubbed for now
+    }
+
+    public Skybox GetSkybox(string name)
+    {
+        Console.WriteLine($"[OpenTKResourceManager] Stub: GetSkybox '{name}'");
+        return null; // Stubbed for now
+    }
+
+    public void Dispose()
+    {
     }
 }
 </file>
