@@ -23,17 +23,17 @@ GameObjects:
       PlayerController:
       Camera:
 
-#  - Name: SpinningCube
-#    Components:
-#      Transform:
-#        Position: [0, 0, 0]
-#        Rotation: [0, 0, 0]
-#        Scale: [1, 1, 1]
-#      MeshRenderer:
-#        Mesh: Cube
-#        Texture: crate
-#        EmissiveColor: [20, 2, 2] # Intense Red
-#      Spinner:
+  - Name: SpinningCube
+    Components:
+      Transform:
+        Position: [0, 0, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Cube
+        Texture: crate
+        EmissiveColor: [20, 2, 2] # Intense Red
+      Spinner:
 
   - Name: StaticCube
     Components:

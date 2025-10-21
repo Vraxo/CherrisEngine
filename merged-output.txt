@@ -176,17 +176,17 @@ GameObjects:
       PlayerController:
       Camera:
 
-#  - Name: SpinningCube
-#    Components:
-#      Transform:
-#        Position: [0, 0, 0]
-#        Rotation: [0, 0, 0]
-#        Scale: [1, 1, 1]
-#      MeshRenderer:
-#        Mesh: Cube
-#        Texture: crate
-#        EmissiveColor: [20, 2, 2] # Intense Red
-#      Spinner:
+  - Name: SpinningCube
+    Components:
+      Transform:
+        Position: [0, 0, 0]
+        Rotation: [0, 0, 0]
+        Scale: [1, 1, 1]
+      MeshRenderer:
+        Mesh: Cube
+        Texture: crate
+        EmissiveColor: [20, 2, 2] # Intense Red
+      Spinner:
 
   - Name: StaticCube
     Components:
@@ -207,7 +207,7 @@ GameObjects:
       MeshRenderer:
         Mesh: Plane
         Texture: Asphalt
-        TextureTiling: [10, 10]
+        TextureTiling: [1, 1]
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\AssetFinder.cs">
@@ -3602,6 +3602,7 @@ public class OpenTKGameWindow : IGameWindow
         {
             ClientSize = new Vector2i(width, height),
             Title = title,
+            NumberOfSamples = 4 // Request 4x MSAA
         };
         _window = new OTKGameWindow(gameWindowSettings, nativeWindowSettings);
 
@@ -3940,6 +3941,7 @@ void main()
             GL.FrontFace(FrontFaceDirection.Cw);
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Enable(EnableCap.Multisample);
 
             CheckGLError("Setup");
         }
