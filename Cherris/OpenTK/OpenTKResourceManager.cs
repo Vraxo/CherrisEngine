@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL;
+using OpenTK.Windowing.Common.Input;
 using StbImageSharp;
 
 namespace Cherris;
@@ -19,7 +20,7 @@ public class OpenTKTexture : ITexture
     public void Bind(TextureUnit unit = TextureUnit.Texture0)
     {
         GL.ActiveTexture(unit);
-        GL.BindTexture(TextureTarget.Texture2d, Handle);
+        GL.BindTexture(TextureTarget.Texture2D, Handle);
     }
 
 
@@ -50,10 +51,10 @@ public class OpenTKResourceManager : IResourceManager
     private ITexture CreateWhiteTexture()
     {
         int handle = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2d, handle);
+        GL.BindTexture(TextureTarget.Texture2D, handle);
 
         byte[] pixel = { 255, 255, 255, 255 };
-        GL.TexImage2D(TextureTarget.Texture2d, 0, InternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, (PixelInternalFormat)InternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
 
         SetTextureParameters();
         return new OpenTKTexture(handle);
@@ -86,12 +87,12 @@ public class OpenTKResourceManager : IResourceManager
             ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
 
             int handle = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2d, handle);
+            GL.BindTexture(TextureTarget.Texture2D, handle);
 
-            GL.TexImage2D(TextureTarget.Texture2d, 0, InternalFormat.Rgba,
-                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, (Image)image.Data);
 
-            GL.GenerateMipmap(TextureTarget.Texture2d);
+            GL.GenerateMipmap((GenerateMipmapTarget)TextureTarget.Texture2D);
             SetTextureParameters();
 
             var newTexture = new OpenTKTexture(handle);
@@ -107,10 +108,10 @@ public class OpenTKResourceManager : IResourceManager
 
     private void SetTextureParameters()
     {
-        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-        GL.TexParameteri(TextureTarget.Texture2d, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
     }
 
     public Skybox GetSkybox(string name)
