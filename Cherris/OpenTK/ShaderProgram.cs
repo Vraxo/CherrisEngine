@@ -1,0 +1,57 @@
+﻿using OpenTK.Graphics.OpenGL;
+
+public class ShaderProgram : IDisposable
+{
+    public readonly int Handle;
+    private bool _disposed;
+
+    public ShaderProgram(string vertexSource, string fragmentSource)
+    {
+        var vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
+        var fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
+
+        Handle = GL.CreateProgram();
+        GL.AttachShader(Handle, vertexShader);
+        GL.AttachShader(Handle, fragmentShader);
+        GL.LinkProgram(Handle);
+
+        GL.GetProgram(Handle, GetProgramParameterName.LinkStatus, out int linkStatus);
+        if (linkStatus == 0)
+        {
+            var info = GL.GetProgramInfoLog(Handle);
+            throw new InvalidOperationException($"Failed to link shader program: {info}");
+        }
+
+        GL.DetachShader(Handle, vertexShader);
+        GL.DetachShader(Handle, fragmentShader);
+        GL.DeleteShader(vertexShader);
+        GL.DeleteShader(fragmentShader);
+    }
+
+    private static int CompileShader(ShaderType type, string source)
+    {
+        var shader = GL.CreateShader(type);
+        GL.ShaderSource(shader, source);
+        GL.CompileShader(shader);
+
+        GL.GetShader(shader, ShaderParameter.CompileStatus, out int compileStatus);
+        if (compileStatus == 0)
+        {
+            var info = GL.GetShaderInfoLog(shader);
+            throw new InvalidOperationException($"Failed to compile {type}: {info}");
+        }
+        return shader;
+    }
+
+    public void Use() => GL.UseProgram(Handle);
+    public int GetUniformLocation(string name) => GL.GetUniformLocation(Handle, name);
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            GL.DeleteProgram(Handle);
+            _disposed = true;
+        }
+    }
+}
