@@ -97,7 +97,7 @@ public abstract class Engine
     private bool _snapshotsEnabled;
 
     // Engine Systems
-    private readonly IGraphicsBackend _backend;
+    protected readonly IGraphicsBackend _backend;
     protected readonly IResourceManager ResourceManager;
     protected readonly SceneLoader SceneLoader;
     protected readonly SceneManager SceneManager;

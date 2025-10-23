@@ -2,6 +2,7 @@ outputFilePath: merged-output.txt
 sourceDirectoryPaths:
   - Apexverse
   - Cherris
+  - E:\Parsa Stuff\Visual Studio\DirectUI\Directui
 includeExtensions:
   - .cs
   - .c

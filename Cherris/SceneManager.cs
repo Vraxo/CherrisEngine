@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using Newtonsoft.Json.Linq;
 using Veldrid.StartupUtilities;
 using Veldrid;
 
