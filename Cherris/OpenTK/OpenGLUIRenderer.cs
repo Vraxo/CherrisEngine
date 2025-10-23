@@ -48,6 +48,10 @@ internal class OpenGLUIRenderer : IDisposable
     {
         if (_appEngine != null && _skSurface != null)
         {
+            // Reset Skia's internal state tracking because raw OpenGL calls
+            // in the scene renderer/post-processor might have changed it.
+            _grContext.ResetContext();
+
             // GL state for 2D UI
             GL.Disable(EnableCap.DepthTest);
             GL.Disable(EnableCap.CullFace);
