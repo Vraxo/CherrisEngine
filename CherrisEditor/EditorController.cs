@@ -9,7 +9,7 @@ namespace CherrisEditor;
 public class EditorController : Script
 {
     public float Speed { get; set; } = 5.0f;
-    public float MouseSensitivity { get; set; } = 0.0004f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
     public float ZoomSensitivity { get; set; } = 0.5f;
 
     private float _yaw;
@@ -25,38 +25,31 @@ public class EditorController : Script
 
     public override void Update(float deltaTime)
     {
-        // Don't process camera controls if an ImGui window has focus or the gizmo is active
-        if (ImGui.GetIO().WantCaptureMouse || ImGui.GetIO().WantCaptureKeyboard || ImGuizmo.IsUsing())
+        // This pattern of Begin/End is safe to use for getting context on an existing window.
+        ImGui.Begin("Viewport");
+        bool isViewportHovered = ImGui.IsWindowHovered();
+        ImGui.End();
+
+        // Only process controls if the viewport is hovered and the gizmo is not in use.
+        if (!isViewportHovered || ImGuizmo.IsUsing())
         {
-            if (Input.IsMouseLocked)
-            {
-                Input.IsMouseLocked = false;
-            }
             return;
         }
 
+        var io = ImGui.GetIO();
+
         // --- Mouse Wheel Zoom ---
-        if (Input.MouseWheelDelta.Y != 0)
+        if (io.MouseWheel != 0)
         {
             var forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
-            GameObject.Transform.Position += forward * Input.MouseWheelDelta.Y * ZoomSensitivity;
+            GameObject.Transform.Position += forward * io.MouseWheel * ZoomSensitivity;
         }
 
-        bool rightMouseDown = Input.IsMouseButtonDown(MouseButton.Right);
-
-        if (rightMouseDown && !Input.IsMouseLocked)
-        {
-            Input.IsMouseLocked = true;
-        }
-        else if (!rightMouseDown && Input.IsMouseLocked)
-        {
-            Input.IsMouseLocked = false;
-        }
-
-        if (Input.IsMouseLocked)
+        // --- Mouse Look and Keyboard Movement (only when right mouse button is down) ---
+        if (ImGui.IsMouseDown(ImGuiMouseButton.Right))
         {
             // --- Mouse Look ---
-            Vector2 mouseDelta = Input.MouseDelta;
+            Vector2 mouseDelta = io.MouseDelta;
             _yaw -= mouseDelta.X * MouseSensitivity;
             _pitch -= mouseDelta.Y * MouseSensitivity;
             _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
@@ -65,20 +58,20 @@ public class EditorController : Script
 
             // --- Keyboard Movement ---
             float currentSpeed = Speed;
-            if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
+            if (io.KeyShift)
             {
                 currentSpeed *= 3.0f; // Speed boost
             }
 
             var localMove = Vector3.Zero;
-            if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
-            if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
-            if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
-            if (Input.IsKeyDown(Key.D)) localMove.X += 1;
+            if (ImGui.IsKeyDown(ImGuiKey.W)) localMove.Z -= 1;
+            if (ImGui.IsKeyDown(ImGuiKey.S)) localMove.Z += 1;
+            if (ImGui.IsKeyDown(ImGuiKey.A)) localMove.X -= 1;
+            if (ImGui.IsKeyDown(ImGuiKey.D)) localMove.X += 1;
 
             var worldVerticalMove = 0f;
-            if (Input.IsKeyDown(Key.E)) worldVerticalMove += 1; // Up
-            if (Input.IsKeyDown(Key.Q)) worldVerticalMove -= 1; // Down
+            if (ImGui.IsKeyDown(ImGuiKey.E)) worldVerticalMove += 1; // Up
+            if (ImGui.IsKeyDown(ImGuiKey.Q)) worldVerticalMove -= 1; // Down
 
             if (localMove != Vector3.Zero || worldVerticalMove != 0)
             {

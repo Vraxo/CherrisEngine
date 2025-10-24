@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 
 namespace CherrisEditor;
@@ -16,6 +17,40 @@ public class Editor : Engine
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
         Exposure = 0.5f;
+    }
+
+    public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
+    {
+        Camera camera = SceneManager.MainCamera;
+        if (camera is null) return new Ray();
+
+        Vector2 relativeMouse = mousePos - viewportPos;
+
+        // Check if mouse is inside viewport. If not, return an invalid ray.
+        if (relativeMouse.X < 0 || relativeMouse.Y < 0 || relativeMouse.X > viewportSize.X || relativeMouse.Y > viewportSize.Y)
+        {
+            return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
+        }
+
+        // Normalize mouse coordinates to NDC [-1, 1] for X and [1, -1] for Y
+        float x = (2.0f * relativeMouse.X) / viewportSize.X - 1.0f;
+        float y = 1.0f - (2.0f * relativeMouse.Y) / viewportSize.Y;
+        Vector4 ndc = new(x, y, 1.0f, 1.0f);
+
+        // We need the correct projection matrix for the viewport's aspect ratio
+        Matrix4x4.Invert(camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y), out var invProjection);
+
+        Vector4 viewRay = Vector4.Transform(ndc, invProjection);
+        viewRay.Z = -1.0f;
+        viewRay.W = 0.0f;
+
+        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        Vector4 worldRay = Vector4.Transform(viewRay, invView);
+
+        Vector3 rayDir = Vector3.Normalize(new(worldRay.X, worldRay.Y, worldRay.Z));
+        Vector3 rayOrigin = camera.GameObject.Transform.Position;
+
+        return new Ray(rayOrigin, rayDir);
     }
 
     public void SetSelectedGameObject(GameObject? go)

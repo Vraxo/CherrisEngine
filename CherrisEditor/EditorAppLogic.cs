@@ -200,35 +200,37 @@ public class EditorAppLogic : IDisposable
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.Begin("Viewport");
 
-        var currentSize = ImGui.GetContentRegionAvail();
+        bool isViewportHovered = ImGui.IsWindowHovered();
 
+        var currentSize = ImGui.GetContentRegionAvail();
+        if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+        {
+            _viewportSize = currentSize;
+            if (_editor.Renderer is OpenTKRenderer _otkRenderer)
+            {
+                _otkRenderer.SetViewportSize(_viewportSize);
+            }
+        }
+
+        IntPtr textureHandle = IntPtr.Zero;
         if (_editor.Renderer is OpenTKRenderer otkRenderer)
         {
-            // Check if viewport size has changed, and is valid
-            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
-            {
-                _viewportSize = currentSize;
-                otkRenderer.SetViewportSize(_viewportSize);
-            }
-
-            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
-            if (textureHandle != IntPtr.Zero)
-            {
-                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
-            }
+            textureHandle = otkRenderer.GetSceneTextureHandle();
         }
-        else
+
+        if (textureHandle != IntPtr.Zero)
         {
-            // Fallback for non-OpenGL renderers, just update size
-            if (currentSize.X > 0 && currentSize.Y > 0)
-            {
-                _viewportSize = currentSize;
-            }
+            ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
         }
-
 
         var viewportPos = ImGui.GetItemRectMin();
         var viewportSize = ImGui.GetItemRectSize();
+
+        // Handle object selection directly within the UI context
+        if (isViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
+        {
+            HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
+        }
 
         ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
         ImGuizmo.SetDrawlist();
@@ -288,30 +290,18 @@ public class EditorAppLogic : IDisposable
     {
         if (_editor.State == EditorState.Editing)
         {
-            // Do not use gizmo movement keys if ImGui is using the keyboard
             if (!ImGui.GetIO().WantCaptureKeyboard)
             {
-                if (Input.WasKeyPressed(Key.W)) _currentOperation = OPERATION.TRANSLATE;
-                if (Input.WasKeyPressed(Key.E)) _currentOperation = OPERATION.ROTATE;
-                if (Input.WasKeyPressed(Key.R)) _currentOperation = OPERATION.SCALE;
-            }
-
-            // Object selection should only happen if the gizmo is not being used
-            if (!ImGuizmo.IsUsing())
-            {
-                HandleObjectSelection();
+                if (ImGui.IsKeyPressed(ImGuiKey.W)) _currentOperation = OPERATION.TRANSLATE;
+                if (ImGui.IsKeyPressed(ImGuiKey.E)) _currentOperation = OPERATION.ROTATE;
+                if (ImGui.IsKeyPressed(ImGuiKey.R)) _currentOperation = OPERATION.SCALE;
             }
         }
     }
 
-    private void HandleObjectSelection()
+    private void HandleObjectSelection(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
-        if (!Input.WasMouseButtonPressed(MouseButton.Left) || ImGui.GetIO().WantCaptureMouse)
-        {
-            return;
-        }
-
-        Ray ray = _editor.CreateRayFromMouse();
+        Ray ray = _editor.CreateRayFromViewport(mousePos, viewportPos, viewportSize);
         GameObject? closestObject = null;
         float closestDistance = float.MaxValue;
 
