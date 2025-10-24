@@ -38,8 +38,13 @@ public class EditorAppLogic
         ImGui.SetNextWindowSize(viewport.Size);
         ImGui.SetNextWindowViewport(viewport.ID);
 
+        // --- Start of Fix ---
+        // We push style variables to remove padding and borders for the main dockspace window.
+        // This makes the dockable area fill the entire application window, removing gaps.
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        // --- End of Fix ---
 
         ImGuiWindowFlags windowFlags =
               ImGuiWindowFlags.NoTitleBar
@@ -49,10 +54,15 @@ public class EditorAppLogic
             | ImGuiWindowFlags.NoBringToFrontOnFocus
             | ImGuiWindowFlags.NoNavFocus
             | ImGuiWindowFlags.MenuBar
-            | ImGuiWindowFlags.NoBackground; // <<< THE FIX IS HERE!
+            | ImGuiWindowFlags.NoBackground;
 
         ImGui.Begin("MainDockspace", windowFlags);
-        ImGui.PopStyleVar(2);
+
+        // --- Start of Fix ---
+        // We must pop the style variables back to their original values before we end the window.
+        // We pop 3 because we pushed 3 (Rounding, BorderSize, Padding).
+        ImGui.PopStyleVar(3);
+        // --- End of Fix ---
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
 
