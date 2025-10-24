@@ -34,7 +34,7 @@ public static class Input
     {
         _justPressedKeys.Clear();
         _justPressedMouseButtons.Clear();
-        if (!IsMouseLocked) MouseDelta = Vector2.Zero; // Reset delta when not locked
+        MouseDelta = Vector2.Zero; // Always reset delta at the start of a frame.
     }
 
     internal static void ClearState()

@@ -8,7 +8,7 @@ namespace CherrisEditor;
 public class EditorController : Script
 {
     public float Speed { get; set; } = 5.0f;
-    public float MouseSensitivity { get; set; } = 0.0015f;
+    public float MouseSensitivity { get; set; } = 0.0004f;
 
     private float _yaw;
     private float _pitch;
@@ -30,7 +30,6 @@ public class EditorController : Script
             if (Input.IsMouseLocked)
             {
                 Input.IsMouseLocked = false;
-                Console.WriteLine("[EditorController] Mouse unlocked due to ImGui focus.");
             }
             return;
         }
@@ -41,13 +40,11 @@ public class EditorController : Script
         if (rightMouseDown && !Input.IsMouseLocked)
         {
             Input.IsMouseLocked = true;
-            Console.WriteLine("[EditorController] Right-click held. Mouse locked for camera control.");
         }
         // If the right mouse button is released, unlock.
         else if (!rightMouseDown && Input.IsMouseLocked)
         {
             Input.IsMouseLocked = false;
-            Console.WriteLine("[EditorController] Right-click released. Mouse unlocked.");
         }
 
         if (Input.IsMouseLocked)
@@ -61,6 +58,12 @@ public class EditorController : Script
                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
 
             // --- Keyboard Movement ---
+            float currentSpeed = Speed;
+            if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
+            {
+                currentSpeed *= 3.0f; // Speed boost
+            }
+
             var localMove = Vector3.Zero;
             if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
             if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
@@ -68,8 +71,8 @@ public class EditorController : Script
             if (Input.IsKeyDown(Key.D)) localMove.X += 1;
 
             var worldVerticalMove = 0f;
-            if (Input.IsKeyDown(Key.E) || Input.IsKeyDown(Key.Space)) worldVerticalMove += 1;
-            if (Input.IsKeyDown(Key.Q) || Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)) worldVerticalMove -= 1;
+            if (Input.IsKeyDown(Key.E)) worldVerticalMove += 1; // Up
+            if (Input.IsKeyDown(Key.Q)) worldVerticalMove -= 1; // Down
 
             if (localMove != Vector3.Zero || worldVerticalMove != 0)
             {
@@ -79,7 +82,7 @@ public class EditorController : Script
 
                 if (finalMove.LengthSquared() > 0)
                 {
-                    GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
+                    GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
                 }
             }
         }

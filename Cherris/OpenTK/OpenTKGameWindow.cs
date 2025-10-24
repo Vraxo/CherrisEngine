@@ -136,8 +136,6 @@ public class OpenTKGameWindow : IGameWindow
     private void OnMouseDown(MouseButtonEventArgs e)
     {
         bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
-        Console.WriteLine($"[Window] Mouse Down: {e.Button}. ImGui wants capture: {wantCapture}");
-
         _imGuiController?.MouseButton(e.Button, true);
 
         // For editor controls, we only want to prevent left-clicks from passing through to the game world.
@@ -153,8 +151,6 @@ public class OpenTKGameWindow : IGameWindow
     private void OnMouseUp(MouseButtonEventArgs e)
     {
         bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
-        Console.WriteLine($"[Window] Mouse Up: {e.Button}. ImGui wants capture: {wantCapture}");
-
         _imGuiController?.MouseButton(e.Button, false);
 
         if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
