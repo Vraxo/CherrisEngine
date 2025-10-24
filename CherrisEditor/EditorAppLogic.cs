@@ -4,6 +4,7 @@ using System.Numerics;
 using System;
 using ImGuizmoNET;
 using System.Runtime.CompilerServices;
+using Cherris.OpenTK;
 
 namespace CherrisEditor;
 
@@ -15,6 +16,7 @@ public class EditorAppLogic : IDisposable
     private readonly EditorTextureManager _editorTextureManager;
     private readonly SceneSerializer _sceneSerializer;
     private OPERATION _currentOperation = OPERATION.TRANSLATE;
+    private Vector2 _viewportSize = Vector2.Zero;
 
     public EditorAppLogic(Editor editor)
     {
@@ -84,7 +86,7 @@ public class EditorAppLogic : IDisposable
         ImGui.PopStyleVar();
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
-        ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
+        ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
 
         ImGui.End();
     }
@@ -196,14 +198,39 @@ public class EditorAppLogic : IDisposable
     private void DrawViewportAndGizmo()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        ImGui.Begin("Viewport", ImGuiWindowFlags.NoBackground);
+        ImGui.Begin("Viewport");
 
-        // Get the viewport boundaries to feed to ImGuizmo
-        var viewportPos = ImGui.GetCursorScreenPos();
-        var viewportSize = ImGui.GetContentRegionAvail();
+        var currentSize = ImGui.GetContentRegionAvail();
+
+        if (_editor.Renderer is OpenTKRenderer otkRenderer)
+        {
+            // Check if viewport size has changed, and is valid
+            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+            {
+                _viewportSize = currentSize;
+                otkRenderer.SetViewportSize(_viewportSize);
+            }
+
+            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
+            if (textureHandle != IntPtr.Zero)
+            {
+                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+            }
+        }
+        else
+        {
+            // Fallback for non-OpenGL renderers, just update size
+            if (currentSize.X > 0 && currentSize.Y > 0)
+            {
+                _viewportSize = currentSize;
+            }
+        }
+
+
+        var viewportPos = ImGui.GetItemRectMin();
+        var viewportSize = ImGui.GetItemRectSize();
+
         ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
-
-        // CRITICAL FIX: Set the draw list for ImGuizmo to render onto.
         ImGuizmo.SetDrawlist();
 
         GameObject? selectedObject = _editor.GetSelectedGameObject();
@@ -215,7 +242,6 @@ public class EditorAppLogic : IDisposable
             var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
             var objectMatrix = selectedObject.Transform.GetModelMatrix();
 
-            // Use Unsafe.As to pass a ref float from our matrix structs, which is what the C++ backend expects
             if (ImGuizmo.Manipulate(
                 ref Unsafe.As<Matrix4x4, float>(ref cameraView),
                 ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),

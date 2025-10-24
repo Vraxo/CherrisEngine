@@ -14,7 +14,8 @@ namespace Cherris
         private readonly OpenGLPostProcessor _postProcessor;
         private readonly ImGuiController _imGuiController;
 
-        private int _width, _height;
+        private Vector2i _viewportSize = new(1, 1);
+        private Vector2i _windowSize;
 
         public OpenTKRenderer(ImGuiController imGuiController)
         {
@@ -23,66 +24,62 @@ namespace Cherris
             _postProcessor = new OpenGLPostProcessor();
             _imGuiController = imGuiController;
 
-            GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
             GL.FrontFace(FrontFaceDirection.Cw);
+        }
+
+        public IntPtr GetSceneTextureHandle() => (IntPtr)_postProcessor.FinalSceneTexture;
+
+        public void SetViewportSize(System.Numerics.Vector2 size)
+        {
+            var newSize = new Vector2i((int)Math.Max(size.X, 1), (int)Math.Max(size.Y, 1));
+            if (newSize != _viewportSize)
+            {
+                _viewportSize = newSize;
+                _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
+            }
         }
 
         public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
         {
-            if ((int)windowWidth != _width || (int)windowHeight != _height)
+            _windowSize = new Vector2i((int)windowWidth, (int)windowHeight);
+
+            // 1. Render scene to texture if the viewport is visible
+            if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
             {
-                OnWindowResized((int)windowWidth, (int)windowHeight);
+                _postProcessor.BeginFrame();
+                GL.Enable(EnableCap.DepthTest);
+                GL.Enable(EnableCap.CullFace);
+                GL.CullFace(CullFaceMode.Back);
+                GL.Disable(EnableCap.Blend);
+
+                var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
+                var projection = Matrix4.CreatePerspectiveFieldOfView(
+                    mainCamera.FieldOfView * (float)Math.PI / 180.0f,
+                    (float)_viewportSize.X / _viewportSize.Y,
+                    mainCamera.NearClipPlane,
+                    mainCamera.FarClipPlane);
+
+                if (skybox?.CubeMapTexture is not null)
+                {
+                    _skyboxRenderer.Render(skybox, view, projection);
+                }
+
+                _sceneRenderer.Render(gameObjects, view, projection);
+
+                _postProcessor.ResolveMsaa();
+                _postProcessor.RenderBloom();
+                _postProcessor.Composite(exposure);
             }
-            if (mainCamera is null) return;
 
-            // 1. Scene Pass: Render scene to offscreen MSAA framebuffer
-            _postProcessor.BeginFrame();
-            GL.Enable(EnableCap.DepthTest);
-            GL.Enable(EnableCap.CullFace);
-            GL.CullFace(CullFaceMode.Back);
-            GL.Disable(EnableCap.Blend);
+            // 2. Clear main window and render UI
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GL.Viewport(0, 0, _windowSize.X, _windowSize.Y);
+            GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
+            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
-            var projection = Matrix4.CreatePerspectiveFieldOfView(
-                mainCamera.FieldOfView * (float)Math.PI / 180.0f,
-                windowWidth / windowHeight,
-                mainCamera.NearClipPlane,
-                mainCamera.FarClipPlane);
-
-            if (skybox?.CubeMapTexture is not null)
-            {
-                _skyboxRenderer.Render(skybox, view, projection);
-            }
-
-            _sceneRenderer.Render(gameObjects, view, projection);
-
-            // Note: selectedObject outline rendering is omitted in this refactor for simplicity.
-            // It would require stencil logic within the OpenGLSceneRenderer.
-
-            // 2. Resolve MSAA Framebuffer
-            _postProcessor.ResolveMsaa();
-
-            // 3. Bloom / Post-Processing
-            _postProcessor.RenderBloom();
-
-            // 4. Final Composite Pass: Render to screen
-            _postProcessor.CompositeToScreen(exposure);
-
-            // 5. ImGui Pass
             _imGuiController.Render();
         }
 
-        private void OnWindowResized(int width, int height)
-        {
-            _width = width;
-            _height = height;
-            GL.Viewport(0, 0, width, height);
-            _postProcessor.OnResize(width, height);
-            _imGuiController.WindowResized(width, height);
-        }
-
-        // This is the implementation for the IRenderer interface method.
-        // It's not called by the OpenTK backend loop, which uses the width/height version.
         public void OnWindowResized() { }
 
         public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }

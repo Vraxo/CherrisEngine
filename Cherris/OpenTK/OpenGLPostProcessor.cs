@@ -14,6 +14,10 @@ internal class OpenGLPostProcessor : IDisposable
     private int _resolvedFbo;
     private int _resolvedColorTexture;
 
+    private int _compositeFbo;
+    private int _compositeTexture;
+    public int FinalSceneTexture => _compositeTexture;
+
     private readonly int[] _bloomFbos = new int[2];
     private readonly int[] _bloomTextures = new int[2];
 
@@ -84,10 +88,11 @@ internal class OpenGLPostProcessor : IDisposable
         }
     }
 
-    public void CompositeToScreen(float exposure)
+    public void Composite(float exposure)
     {
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
         GL.Viewport(0, 0, _width, _height);
+        GL.Clear(ClearBufferMask.ColorBufferBit);
 
         _finalCompositeShader.Use();
         var imageLoc = _finalCompositeShader.GetUniformLocation("image");
@@ -114,6 +119,7 @@ internal class OpenGLPostProcessor : IDisposable
         RenderQuad();
 
         GL.Disable(EnableCap.Blend); // Reset blend state
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
     private void RenderQuad()
@@ -268,6 +274,18 @@ void main()
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _bloomTextures[i], 0);
             if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) Console.WriteLine($"ERROR::FRAMEBUFFER:: Bloom Framebuffer {i} is not complete!");
         }
+
+        // Final composite FBO for ImGui
+        _compositeFbo = GL.GenFramebuffer();
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
+        _compositeTexture = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, _compositeTexture);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _compositeTexture, 0);
+        if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) Console.WriteLine("ERROR::FRAMEBUFFER:: Composite Framebuffer is not complete!");
+
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
@@ -278,6 +296,8 @@ void main()
         GL.DeleteRenderbuffer(_rboDepthStencil);
         GL.DeleteFramebuffer(_resolvedFbo);
         GL.DeleteTexture(_resolvedColorTexture);
+        GL.DeleteFramebuffer(_compositeFbo);
+        GL.DeleteTexture(_compositeTexture);
         GL.DeleteFramebuffers(_bloomFbos.Length, _bloomFbos);
         GL.DeleteTextures(_bloomTextures.Length, _bloomTextures);
     }

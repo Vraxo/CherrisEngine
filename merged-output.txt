@@ -2314,7 +2314,10 @@ public class SceneManager
         {
             foreach (var script in gameObject.GetComponents<Script>())
             {
-                script.Update(deltaTime);
+                if (script.Enabled)
+                {
+                    script.Update(deltaTime);
+                }
             }
         }
     }
@@ -3444,6 +3447,7 @@ public abstract class Component
 
 public abstract class Script : Component
 {
+    public bool Enabled { get; set; } = true;
     public virtual void Start() { }
     public virtual void Update(float deltaTime) { }
 }
@@ -3712,9 +3716,6 @@ namespace Cherris.OpenTK
 
         private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
 
-        public bool WantCaptureKeyboard { get; private set; }
-        public bool WantCaptureMouse { get; private set; }
-
         public ImGuiController(int width, int height)
         {
             _windowWidth = width;
@@ -3865,17 +3866,9 @@ void main()
             }
 
             SetPerFrameImGuiData(deltaSeconds);
-            UpdateImGuiInput();
 
             _frameBegun = true;
             ImGui.NewFrame();
-        }
-
-        private void UpdateImGuiInput()
-        {
-            ImGuiIOPtr io = ImGui.GetIO();
-            WantCaptureMouse = io.WantCaptureMouse;
-            WantCaptureKeyboard = io.WantCaptureKeyboard;
         }
 
         private void SetPerFrameImGuiData(float deltaSeconds)
@@ -3921,7 +3914,7 @@ void main()
             }
         }
 
-        private void RenderImDrawData(ImDrawDataPtr draw_data)
+        private unsafe void RenderImDrawData(ImDrawDataPtr draw_data)
         {
             if (draw_data.CmdListsCount == 0) return;
 
@@ -3954,7 +3947,7 @@ void main()
 
             for (int i = 0; i < draw_data.CmdListsCount; i++)
             {
-                ImDrawListPtr cmd_list = draw_data.CmdLists[i];
+                ImDrawListPtr cmd_list = ((ImDrawListPtr*)draw_data.CmdLists)[i];
 
                 GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
                 GL.BufferData(BufferTarget.ArrayBuffer, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data, BufferUsageHint.StreamDraw);
@@ -4064,9 +4057,9 @@ void main()
             { Keys.D0, ImGuiKey._0 }, { Keys.D1, ImGuiKey._1 }, { Keys.D2, ImGuiKey._2 }, { Keys.D3, ImGuiKey._3 },
             { Keys.D4, ImGuiKey._4 }, { Keys.D5, ImGuiKey._5 }, { Keys.D6, ImGuiKey._6 }, { Keys.D7, ImGuiKey._7 },
             { Keys.D8, ImGuiKey._8 }, { Keys.D9, ImGuiKey._9 },
-            { Keys.LeftShift, ImGuiKey.ModShift }, { Keys.RightShift, ImGuiKey.ModShift },
-            { Keys.LeftControl, ImGuiKey.ModCtrl }, { Keys.RightControl, ImGuiKey.ModCtrl },
-            { Keys.LeftAlt, ImGuiKey.ModAlt }, { Keys.RightAlt, ImGuiKey.ModAlt },
+            { Keys.LeftShift, ImGuiKey.LeftShift }, { Keys.RightShift, ImGuiKey.RightShift },
+            { Keys.LeftControl, ImGuiKey.LeftCtrl }, { Keys.RightControl, ImGuiKey.RightCtrl },
+            { Keys.LeftAlt, ImGuiKey.LeftAlt }, { Keys.RightAlt, ImGuiKey.RightAlt },
         };
     }
 }
@@ -4779,6 +4772,7 @@ using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
+using ImGuiNET;
 
 namespace Cherris.OpenTK;
 
@@ -4880,7 +4874,7 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseMove(new Vector2(e.X, e.Y));
 
-        if (_imGuiController?.WantCaptureMouse == true)
+        if (ImGui.GetIO().WantCaptureMouse)
         {
             Input.SetMouseDelta(System.Numerics.Vector2.Zero);
             return;
@@ -4909,7 +4903,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseDown(MouseButtonEventArgs e)
     {
-        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, true);
 
         // For editor controls, we only want to prevent left-clicks from passing through to the game world.
@@ -4924,7 +4918,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseUp(MouseButtonEventArgs e)
     {
-        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, false);
 
         if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
@@ -4938,14 +4932,14 @@ public class OpenTKGameWindow : IGameWindow
     private void OnKeyDown(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, true);
-        if (_imGuiController?.WantCaptureKeyboard == true) return;
+        if (ImGui.GetIO().WantCaptureKeyboard) return;
         Input.SetKeyState(MapKey(e.Key), true);
     }
 
     private void OnKeyUp(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, false);
-        if (_imGuiController?.WantCaptureKeyboard == true) return;
+        if (ImGui.GetIO().WantCaptureKeyboard) return;
         Input.SetKeyState(MapKey(e.Key), false);
     }
 
@@ -4957,7 +4951,7 @@ public class OpenTKGameWindow : IGameWindow
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
-        if (_imGuiController?.WantCaptureMouse == true) return;
+        if (ImGui.GetIO().WantCaptureMouse) return;
 
         Input.SetMouseWheelDelta(new System.Numerics.Vector2(e.OffsetX, e.OffsetY));
     }
@@ -4992,6 +4986,7 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.W => Key.W,
             OpenTKKey.Q => Key.Q,
             OpenTKKey.E => Key.E,
+            OpenTKKey.R => Key.R,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
             OpenTKKey.Escape => Key.Escape,
@@ -5549,6 +5544,7 @@ public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
     public List<Type> AvailableScriptTypes { get; } = new();
+    public EditorState State { get; private set; } = EditorState.Editing;
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
@@ -5607,7 +5603,7 @@ public class Editor : Engine
         }
     }
 
-    private void LoadScene()
+    public void LoadScene()
     {
         string scenePath = "Assets/Scene.yaml";
         List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
@@ -5620,33 +5616,78 @@ public class Editor : Engine
         _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
 
-        SetupEditorCamera();
+        // Set initial state to Editing, which disables all game scripts
+        // and sets up the editor camera correctly.
+        SetEditingState();
     }
 
-    private void SetupEditorCamera()
+    public void Play()
     {
-        if (SceneManager.MainCamera?.GameObject is null)
+        if (State == EditorState.Playing) return;
+
+        // If starting from scratch, call Start() on scripts.
+        if (State == EditorState.Editing)
         {
-            Console.WriteLine("[Editor] No camera found in scene. Editor controller will not be attached.");
-            return;
+            // TODO: Snapshot scene state for restoration on Stop.
+            SceneManager.Start();
         }
 
-        GameObject cameraGo = SceneManager.MainCamera.GameObject;
+        State = EditorState.Playing;
+        SelectedGameObject = null; // Deselect object when entering play mode.
 
-        // Remove any game-specific scripts from the camera to replace them with the editor controller.
-        var gameScripts = cameraGo.GetComponents<Script>()
-            .Where(s => s.GetType() != typeof(EditorController))
-            .ToList(); // Use ToList to create a copy for safe removal.
-
-        foreach (var script in gameScripts)
+        // Enable game scripts, disable editor script
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            cameraGo.RemoveComponent(script);
+            script.Enabled = script is not EditorController;
+        }
+    }
+
+    public void Pause()
+    {
+        if (State != EditorState.Playing) return;
+        State = EditorState.Paused;
+
+        // Disable game scripts, enable editor script for camera movement
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        {
+            script.Enabled = script is EditorController;
+        }
+    }
+
+    public void Stop()
+    {
+        State = EditorState.Editing;
+        // Reload the scene to revert any changes made during play mode
+        LoadScene();
+        SceneManager.Start(); // This is for components that need Start(), not scripts
+        SetEditingState();
+    }
+
+    public void Restart()
+    {
+        if (State == EditorState.Editing) return;
+        Stop();
+        Play();
+    }
+
+    private void SetEditingState()
+    {
+        // Disable all game scripts
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        {
+            script.Enabled = false;
         }
 
-        // Ensure an EditorController is present.
-        if (cameraGo.GetComponent<EditorController>() is null)
+        // Find the camera and enable its EditorController
+        var cameraGo = SceneManager.MainCamera?.GameObject;
+        if (cameraGo != null)
         {
-            cameraGo.AddComponent(new EditorController());
+            var editorController = cameraGo.GetComponent<EditorController>();
+            if (editorController == null)
+            {
+                editorController = cameraGo.AddComponent(new EditorController());
+            }
+            editorController.Enabled = true;
         }
     }
 
@@ -5665,6 +5706,8 @@ using Cherris;
 using ImGuiNET;
 using System.Numerics;
 using System;
+using ImGuizmoNET;
+using System.Runtime.CompilerServices;
 
 namespace CherrisEditor;
 
@@ -5675,6 +5718,7 @@ public class EditorAppLogic : IDisposable
     private readonly ContentBrowserPanel _contentBrowserPanel;
     private readonly EditorTextureManager _editorTextureManager;
     private readonly SceneSerializer _sceneSerializer;
+    private OPERATION _currentOperation = OPERATION.TRANSLATE;
 
     public EditorAppLogic(Editor editor)
     {
@@ -5684,6 +5728,15 @@ public class EditorAppLogic : IDisposable
         _contentBrowserPanel = new ContentBrowserPanel(_editorTextureManager);
         _sceneSerializer = new SceneSerializer();
         EditorTheme.ApplyUnrealEngineStyle();
+
+        // Load the new icons needed for the toolbar
+        _editorTextureManager.LoadTexture("Play", "Assets/Icons/play.png");
+        _editorTextureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
+        _editorTextureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
+        _editorTextureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
+
+        // Initialize ImGuizmo
+        ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
     }
 
     public Action<float> DrawUI()
@@ -5692,14 +5745,17 @@ public class EditorAppLogic : IDisposable
         {
             SetupDockspace();
 
+            // Set up ImGuizmo for the new frame
+            ImGuizmo.BeginFrame();
+
+            // Draw all editor panels
+            DrawViewportAndGizmo();
             DrawOutlinerPanel();
             DrawConsolePanel();
-            _contentBrowserPanel.Draw(); // Call the new panel's Draw method
+            _contentBrowserPanel.Draw();
             _inspectorPanel.DrawInspectorPanel();
         };
     }
-
-    // The old DrawContentBrowserPanel() method has been completely removed.
 
     private void SetupDockspace()
     {
@@ -5725,9 +5781,15 @@ public class EditorAppLogic : IDisposable
         ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);
 
+        DrawMainMenuBar();
+
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f));
+        DrawToolbar();
+        ImGui.PopStyleVar();
+
         uint dockspaceId = ImGui.GetID("MyDockSpace");
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
-        DrawMainMenuBar();
+
         ImGui.End();
     }
 
@@ -5764,6 +5826,118 @@ public class EditorAppLogic : IDisposable
         ImGui.EndMenuBar();
     }
 
+    private void DrawToolbar()
+    {
+        // Use a child window to create a distinct bar area.
+        float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
+        ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
+        var style = ImGui.GetStyle();
+        float size = ImGui.GetContentRegionAvail().Y;
+
+        float totalWidth = (size * 3) + (style.ItemSpacing.X * 2);
+        ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (totalWidth * 0.5f));
+
+        bool isPlaying = _editor.State == EditorState.Playing;
+        bool isEditing = _editor.State == EditorState.Editing;
+
+        IntPtr playPauseIcon = isPlaying ? _editorTextureManager.GetTexture("Pause") : _editorTextureManager.GetTexture("Play");
+        if (ImGui.ImageButton("PlayPause", playPauseIcon, new Vector2(size, size)))
+        {
+            if (isPlaying)
+            {
+                _editor.Pause();
+            }
+            else
+            {
+                _editor.Play();
+            }
+        }
+
+        ImGui.SameLine();
+
+        if (isEditing)
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
+            ImGui.BeginDisabled();
+        }
+
+        IntPtr stopIcon = _editorTextureManager.GetTexture("Stop");
+        if (ImGui.ImageButton("Stop", stopIcon, new Vector2(size, size)))
+        {
+            _editor.Stop();
+        }
+
+        if (isEditing)
+        {
+            ImGui.EndDisabled();
+            ImGui.PopStyleVar();
+        }
+
+        ImGui.SameLine();
+
+        if (isEditing)
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
+            ImGui.BeginDisabled();
+        }
+
+        IntPtr restartIcon = _editorTextureManager.GetTexture("Restart");
+        if (ImGui.ImageButton("Restart", restartIcon, new Vector2(size, size)))
+        {
+            _editor.Restart();
+        }
+
+        if (isEditing)
+        {
+            ImGui.EndDisabled();
+            ImGui.PopStyleVar();
+        }
+
+        ImGui.EndChild();
+    }
+
+    private void DrawViewportAndGizmo()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.Begin("Viewport", ImGuiWindowFlags.NoBackground);
+
+        // Get the viewport boundaries to feed to ImGuizmo
+        var viewportPos = ImGui.GetCursorScreenPos();
+        var viewportSize = ImGui.GetContentRegionAvail();
+        ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
+
+        // CRITICAL FIX: Set the draw list for ImGuizmo to render onto.
+        ImGuizmo.SetDrawlist();
+
+        GameObject? selectedObject = _editor.GetSelectedGameObject();
+        Camera? camera = _editor.SceneManager.MainCamera;
+
+        if (selectedObject != null && camera != null && viewportSize.X > 0 && viewportSize.Y > 0)
+        {
+            var cameraView = camera.GetViewMatrix();
+            var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
+            var objectMatrix = selectedObject.Transform.GetModelMatrix();
+
+            // Use Unsafe.As to pass a ref float from our matrix structs, which is what the C++ backend expects
+            if (ImGuizmo.Manipulate(
+                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
+                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
+                _currentOperation,
+                MODE.LOCAL,
+                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+            {
+                Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
+                selectedObject.Transform.Position = position;
+                selectedObject.Transform.Rotation = rotation;
+                selectedObject.Transform.Scale = scale;
+            }
+        }
+
+        ImGui.End();
+        ImGui.PopStyleVar();
+    }
+
     private void DrawOutlinerPanel()
     {
         ImGui.Begin("Outliner");
@@ -5790,8 +5964,22 @@ public class EditorAppLogic : IDisposable
 
     public void UpdateEditorLogic(float deltaTime)
     {
-        HandleObjectSelection();
-        HandleMovement(deltaTime);
+        if (_editor.State == EditorState.Editing)
+        {
+            // Do not use gizmo movement keys if ImGui is using the keyboard
+            if (!ImGui.GetIO().WantCaptureKeyboard)
+            {
+                if (Input.WasKeyPressed(Key.W)) _currentOperation = OPERATION.TRANSLATE;
+                if (Input.WasKeyPressed(Key.E)) _currentOperation = OPERATION.ROTATE;
+                if (Input.WasKeyPressed(Key.R)) _currentOperation = OPERATION.SCALE;
+            }
+
+            // Object selection should only happen if the gizmo is not being used
+            if (!ImGuizmo.IsUsing())
+            {
+                HandleObjectSelection();
+            }
+        }
     }
 
     private void HandleObjectSelection()
@@ -5831,35 +6019,6 @@ public class EditorAppLogic : IDisposable
         _editor.SetSelectedGameObject(closestObject);
     }
 
-    private void HandleMovement(float deltaTime)
-    {
-        GameObject? selectedGameObject = _editor.GetSelectedGameObject();
-        if (selectedGameObject is null) return;
-
-        const float moveSpeed = 2.0f;
-        Vector3 moveDirection = Vector3.Zero;
-        bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
-
-        if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
-        if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
-
-        if (shiftHeld)
-        {
-            if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
-            if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
-        }
-        else
-        {
-            if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
-            if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
-        }
-
-        if (moveDirection != Vector3.Zero)
-        {
-            selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
-        }
-    }
-
     public void Dispose()
     {
         _contentBrowserPanel.Dispose();
@@ -5873,6 +6032,7 @@ using Cherris;
 using System;
 using System.Numerics;
 using ImGuiNET;
+using ImGuizmoNET;
 
 namespace CherrisEditor;
 
@@ -5895,10 +6055,9 @@ public class EditorController : Script
 
     public override void Update(float deltaTime)
     {
-        // Don't do anything if an ImGui window has focus
-        if (ImGui.GetIO().WantCaptureMouse || ImGui.GetIO().WantCaptureKeyboard)
+        // Don't process camera controls if an ImGui window has focus or the gizmo is active
+        if (ImGui.GetIO().WantCaptureMouse || ImGui.GetIO().WantCaptureKeyboard || ImGuizmo.IsUsing())
         {
-            // If we were looking around, unlock the mouse
             if (Input.IsMouseLocked)
             {
                 Input.IsMouseLocked = false;
@@ -5915,12 +6074,10 @@ public class EditorController : Script
 
         bool rightMouseDown = Input.IsMouseButtonDown(MouseButton.Right);
 
-        // If the right mouse button is pressed, lock the mouse for looking.
         if (rightMouseDown && !Input.IsMouseLocked)
         {
             Input.IsMouseLocked = true;
         }
-        // If the right mouse button is released, unlock.
         else if (!rightMouseDown && Input.IsMouseLocked)
         {
             Input.IsMouseLocked = false;
@@ -5966,6 +6123,17 @@ public class EditorController : Script
             }
         }
     }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorState.cs">
+namespace CherrisEditor;
+
+public enum EditorState
+{
+    Editing,
+    Playing,
+    Paused
 }
 </file>
 
@@ -6353,7 +6521,15 @@ internal class InspectorPanel
             {
                 if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
                 {
-                    go.AddComponent((Component)Activator.CreateInstance(scriptType));
+                    var newComponent = (Script)Activator.CreateInstance(scriptType);
+                    go.AddComponent(newComponent);
+
+                    // If we're not playing, the script shouldn't start running automatically.
+                    if (_editor.State != EditorState.Playing)
+                    {
+                        newComponent.Enabled = false;
+                    }
+
                     ImGui.CloseCurrentPopup();
                 }
             }

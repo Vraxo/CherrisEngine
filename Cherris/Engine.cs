@@ -13,13 +13,13 @@ public abstract class Engine
     public readonly IResourceManager ResourceManager;
     public readonly SceneLoader SceneLoader;
     public readonly SceneManager SceneManager;
+    public IRenderer Renderer { get; }
     public string CurrentScenePath { get; protected set; }
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly IGraphicsBackend _backend;
 
     private readonly IGameWindow _gameWindow;
-    private readonly IRenderer _renderer;
     private readonly GameLoop _gameLoop;
 
     private float _lastDeltaTime;
@@ -62,7 +62,7 @@ public abstract class Engine
 
         _gameWindow = _backend.GameWindow;
         ResourceManager = _backend.ResourceManager;
-        _renderer = _backend.Renderer;
+        Renderer = _backend.Renderer;
 
         // Initialize systems that depend on the backend
         SceneLoader = new(ResourceManager);
@@ -222,21 +222,21 @@ public abstract class Engine
                 _snapshotTimer -= SnapshotInterval;
                 string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
 
-                _renderer.RequestSnapshot(path);
+                Renderer.RequestSnapshot(path);
             }
         }
 
-        _renderer.RenderFrame(
+        Renderer.RenderFrame(
             SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
             SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
 
-        _renderer.ProcessSnapshot();
+        Renderer.ProcessSnapshot();
         _gameWindow.SwapBuffers();
     }
 
     private void OnWindowResized()
     {
-        _renderer.OnWindowResized();
+        Renderer.OnWindowResized();
     }
 
     private void DisposeResources()
