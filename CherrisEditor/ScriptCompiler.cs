@@ -48,7 +48,9 @@ public static class ScriptCompiler
             // Add engine assembly
             typeof(Cherris.Engine).Assembly.Location,
             // Add Numerics for Vector3, etc.
-            typeof(System.Numerics.Vector3).Assembly.Location
+            typeof(System.Numerics.Vector3).Assembly.Location,
+            // Explicitly add the assembly mentioned in the error log to ensure it's included
+            Assembly.Load("System.Numerics.Vectors").Location
         };
 
         var references = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
