@@ -5,6 +5,7 @@ using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
+using ImGuiNET;
 
 namespace Cherris.OpenTK;
 
@@ -106,7 +107,7 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseMove(new Vector2(e.X, e.Y));
 
-        if (_imGuiController?.WantCaptureMouse == true)
+        if (ImGui.GetIO().WantCaptureMouse)
         {
             Input.SetMouseDelta(System.Numerics.Vector2.Zero);
             return;
@@ -135,7 +136,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseDown(MouseButtonEventArgs e)
     {
-        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, true);
 
         // For editor controls, we only want to prevent left-clicks from passing through to the game world.
@@ -150,7 +151,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseUp(MouseButtonEventArgs e)
     {
-        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, false);
 
         if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
@@ -164,14 +165,14 @@ public class OpenTKGameWindow : IGameWindow
     private void OnKeyDown(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, true);
-        if (_imGuiController?.WantCaptureKeyboard == true) return;
+        if (ImGui.GetIO().WantCaptureKeyboard) return;
         Input.SetKeyState(MapKey(e.Key), true);
     }
 
     private void OnKeyUp(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, false);
-        if (_imGuiController?.WantCaptureKeyboard == true) return;
+        if (ImGui.GetIO().WantCaptureKeyboard) return;
         Input.SetKeyState(MapKey(e.Key), false);
     }
 
@@ -183,7 +184,7 @@ public class OpenTKGameWindow : IGameWindow
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
-        if (_imGuiController?.WantCaptureMouse == true) return;
+        if (ImGui.GetIO().WantCaptureMouse) return;
 
         Input.SetMouseWheelDelta(new System.Numerics.Vector2(e.OffsetX, e.OffsetY));
     }
@@ -218,6 +219,7 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.W => Key.W,
             OpenTKKey.Q => Key.Q,
             OpenTKKey.E => Key.E,
+            OpenTKKey.R => Key.R,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
             OpenTKKey.Escape => Key.Escape,

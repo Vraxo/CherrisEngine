@@ -2,6 +2,7 @@
 using System;
 using System.Numerics;
 using ImGuiNET;
+using ImGuizmoNET;
 
 namespace CherrisEditor;
 
@@ -24,10 +25,9 @@ public class EditorController : Script
 
     public override void Update(float deltaTime)
     {
-        // Don't do anything if an ImGui window has focus
-        if (ImGui.GetIO().WantCaptureMouse || ImGui.GetIO().WantCaptureKeyboard)
+        // Don't process camera controls if an ImGui window has focus or the gizmo is active
+        if (ImGui.GetIO().WantCaptureMouse || ImGui.GetIO().WantCaptureKeyboard || ImGuizmo.IsUsing())
         {
-            // If we were looking around, unlock the mouse
             if (Input.IsMouseLocked)
             {
                 Input.IsMouseLocked = false;
@@ -44,12 +44,10 @@ public class EditorController : Script
 
         bool rightMouseDown = Input.IsMouseButtonDown(MouseButton.Right);
 
-        // If the right mouse button is pressed, lock the mouse for looking.
         if (rightMouseDown && !Input.IsMouseLocked)
         {
             Input.IsMouseLocked = true;
         }
-        // If the right mouse button is released, unlock.
         else if (!rightMouseDown && Input.IsMouseLocked)
         {
             Input.IsMouseLocked = false;

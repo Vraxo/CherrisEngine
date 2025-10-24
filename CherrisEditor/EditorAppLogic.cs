@@ -2,6 +2,8 @@
 using ImGuiNET;
 using System.Numerics;
 using System;
+using ImGuizmoNET;
+using System.Runtime.CompilerServices;
 
 namespace CherrisEditor;
 
@@ -12,6 +14,7 @@ public class EditorAppLogic : IDisposable
     private readonly ContentBrowserPanel _contentBrowserPanel;
     private readonly EditorTextureManager _editorTextureManager;
     private readonly SceneSerializer _sceneSerializer;
+    private OPERATION _currentOperation = OPERATION.TRANSLATE;
 
     public EditorAppLogic(Editor editor)
     {
@@ -27,16 +30,22 @@ public class EditorAppLogic : IDisposable
         _editorTextureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
         _editorTextureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
         _editorTextureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
+
+        // Initialize ImGuizmo
+        ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
     }
 
     public Action<float> DrawUI()
     {
         return (deltaTime) =>
         {
-            // The toolbar is now drawn inside SetupDockspace to ensure correct layout
             SetupDockspace();
 
-            // These panels will be docked within the space created above
+            // Set up ImGuizmo for the new frame
+            ImGuizmo.BeginFrame();
+
+            // Draw all editor panels
+            DrawViewportAndGizmo();
             DrawOutlinerPanel();
             DrawConsolePanel();
             _contentBrowserPanel.Draw();
@@ -70,13 +79,10 @@ public class EditorAppLogic : IDisposable
 
         DrawMainMenuBar();
 
-        // A child window is an item. The parent's ItemSpacing.Y is applied after it,
-        // creating a gap. We remove this vertical spacing just for the toolbar.
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f));
         DrawToolbar();
         ImGui.PopStyleVar();
 
-        // Create the area where other windows can be docked
         uint dockspaceId = ImGui.GetID("MyDockSpace");
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
 
@@ -118,21 +124,18 @@ public class EditorAppLogic : IDisposable
 
     private void DrawToolbar()
     {
-        // Use a child window to create a distinct bar area.
         float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
         ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
         var style = ImGui.GetStyle();
         float size = ImGui.GetContentRegionAvail().Y;
 
-        // The group of three buttons is always present and centered for a stable layout
         float totalWidth = (size * 3) + (style.ItemSpacing.X * 2);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (totalWidth * 0.5f));
 
         bool isPlaying = _editor.State == EditorState.Playing;
         bool isEditing = _editor.State == EditorState.Editing;
 
-        // --- Play / Pause Button ---
         IntPtr playPauseIcon = isPlaying ? _editorTextureManager.GetTexture("Pause") : _editorTextureManager.GetTexture("Play");
         if (ImGui.ImageButton("PlayPause", playPauseIcon, new Vector2(size, size)))
         {
@@ -140,7 +143,7 @@ public class EditorAppLogic : IDisposable
             {
                 _editor.Pause();
             }
-            else // State is Editing or Paused, both should trigger Play/Resume
+            else
             {
                 _editor.Play();
             }
@@ -148,7 +151,6 @@ public class EditorAppLogic : IDisposable
 
         ImGui.SameLine();
 
-        // --- Stop Button ---
         if (isEditing)
         {
             ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
@@ -169,7 +171,6 @@ public class EditorAppLogic : IDisposable
 
         ImGui.SameLine();
 
-        // --- Restart Button ---
         if (isEditing)
         {
             ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
@@ -189,6 +190,47 @@ public class EditorAppLogic : IDisposable
         }
 
         ImGui.EndChild();
+    }
+
+    private void DrawViewportAndGizmo()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.Begin("Viewport", ImGuiWindowFlags.NoBackground);
+
+        // Get the viewport boundaries to feed to ImGuizmo
+        var viewportPos = ImGui.GetCursorScreenPos();
+        var viewportSize = ImGui.GetContentRegionAvail();
+        ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
+
+        // CRITICAL FIX: Set the draw list for ImGuizmo to render onto.
+        ImGuizmo.SetDrawlist();
+
+        GameObject? selectedObject = _editor.GetSelectedGameObject();
+        Camera? camera = _editor.SceneManager.MainCamera;
+
+        if (selectedObject != null && camera != null && viewportSize.X > 0 && viewportSize.Y > 0)
+        {
+            var cameraView = camera.GetViewMatrix();
+            var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
+            var objectMatrix = selectedObject.Transform.GetModelMatrix();
+
+            // Use Unsafe.As to pass a ref float from our matrix structs, which is what the C++ backend expects
+            if (ImGuizmo.Manipulate(
+                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
+                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
+                _currentOperation,
+                MODE.LOCAL,
+                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+            {
+                Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
+                selectedObject.Transform.Position = position;
+                selectedObject.Transform.Rotation = rotation;
+                selectedObject.Transform.Scale = scale;
+            }
+        }
+
+        ImGui.End();
+        ImGui.PopStyleVar();
     }
 
     private void DrawOutlinerPanel()
@@ -217,11 +259,21 @@ public class EditorAppLogic : IDisposable
 
     public void UpdateEditorLogic(float deltaTime)
     {
-        // Only allow object selection when not in play mode
         if (_editor.State == EditorState.Editing)
         {
-            HandleObjectSelection();
-            HandleMovement(deltaTime);
+            // Do not use gizmo movement keys if ImGui is using the keyboard
+            if (!ImGui.GetIO().WantCaptureKeyboard)
+            {
+                if (Input.WasKeyPressed(Key.W)) _currentOperation = OPERATION.TRANSLATE;
+                if (Input.WasKeyPressed(Key.E)) _currentOperation = OPERATION.ROTATE;
+                if (Input.WasKeyPressed(Key.R)) _currentOperation = OPERATION.SCALE;
+            }
+
+            // Object selection should only happen if the gizmo is not being used
+            if (!ImGuizmo.IsUsing())
+            {
+                HandleObjectSelection();
+            }
         }
     }
 
@@ -260,35 +312,6 @@ public class EditorAppLogic : IDisposable
         }
 
         _editor.SetSelectedGameObject(closestObject);
-    }
-
-    private void HandleMovement(float deltaTime)
-    {
-        GameObject? selectedGameObject = _editor.GetSelectedGameObject();
-        if (selectedGameObject is null) return;
-
-        const float moveSpeed = 2.0f;
-        Vector3 moveDirection = Vector3.Zero;
-        bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
-
-        if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
-        if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
-
-        if (shiftHeld)
-        {
-            if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
-            if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
-        }
-        else
-        {
-            if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
-            if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
-        }
-
-        if (moveDirection != Vector3.Zero)
-        {
-            selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
-        }
     }
 
     public void Dispose()

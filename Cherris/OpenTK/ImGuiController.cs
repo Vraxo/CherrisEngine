@@ -30,9 +30,6 @@ namespace Cherris.OpenTK
 
         private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
 
-        public bool WantCaptureKeyboard { get; private set; }
-        public bool WantCaptureMouse { get; private set; }
-
         public ImGuiController(int width, int height)
         {
             _windowWidth = width;
@@ -183,17 +180,9 @@ void main()
             }
 
             SetPerFrameImGuiData(deltaSeconds);
-            UpdateImGuiInput();
 
             _frameBegun = true;
             ImGui.NewFrame();
-        }
-
-        private void UpdateImGuiInput()
-        {
-            ImGuiIOPtr io = ImGui.GetIO();
-            WantCaptureMouse = io.WantCaptureMouse;
-            WantCaptureKeyboard = io.WantCaptureKeyboard;
         }
 
         private void SetPerFrameImGuiData(float deltaSeconds)
@@ -382,9 +371,9 @@ void main()
             { Keys.D0, ImGuiKey._0 }, { Keys.D1, ImGuiKey._1 }, { Keys.D2, ImGuiKey._2 }, { Keys.D3, ImGuiKey._3 },
             { Keys.D4, ImGuiKey._4 }, { Keys.D5, ImGuiKey._5 }, { Keys.D6, ImGuiKey._6 }, { Keys.D7, ImGuiKey._7 },
             { Keys.D8, ImGuiKey._8 }, { Keys.D9, ImGuiKey._9 },
-            { Keys.LeftShift, ImGuiKey.ModShift }, { Keys.RightShift, ImGuiKey.ModShift },
-            { Keys.LeftControl, ImGuiKey.ModCtrl }, { Keys.RightControl, ImGuiKey.ModCtrl },
-            { Keys.LeftAlt, ImGuiKey.ModAlt }, { Keys.RightAlt, ImGuiKey.ModAlt },
+            { Keys.LeftShift, ImGuiKey.LeftShift }, { Keys.RightShift, ImGuiKey.RightShift },
+            { Keys.LeftControl, ImGuiKey.LeftCtrl }, { Keys.RightControl, ImGuiKey.RightCtrl },
+            { Keys.LeftAlt, ImGuiKey.LeftAlt }, { Keys.RightAlt, ImGuiKey.RightAlt },
         };
     }
 }
