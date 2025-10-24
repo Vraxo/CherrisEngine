@@ -85,6 +85,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnResize(ResizeEventArgs obj)
     {
+        _imGuiController?.WindowResized(obj.Width, obj.Height);
         Resized?.Invoke();
         GL.Viewport(0, 0, obj.Width, obj.Height);
     }
