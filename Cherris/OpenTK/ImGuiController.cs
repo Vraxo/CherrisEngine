@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.CompilerServices;
 using Cherris.Rendering;
 using ImGuiNET;
@@ -40,14 +41,34 @@ namespace Cherris.OpenTK
             IntPtr context = ImGui.CreateContext();
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
-            io.Fonts.AddFontDefault();
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
 
-            // Enable Docking
+            // --- FONT LOADING LOGIC (FINAL TUNED VALUE) ---
+            // This is the single value you should change to fine-tune the font size.
+            // 18.0f is a standard, comfortable size for 1440p monitors.
+            const string fontPath = "Assets/Fonts/RobotoMono-Regular.ttf";
+
+            // <<< YOUR CONTROL KNOB IS HERE >>>
+            const float baseFontSize = 18.0f;
+
+            if (File.Exists(fontPath))
+            {
+                io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+            }
+            else
+            {
+                // Fallback if the font is not found
+                Console.WriteLine($"[ImGuiController] Warning: Font not found at '{fontPath}'. Using default font.");
+                io.Fonts.AddFontDefault();
+            }
+
+            // Keep scale at 1.0f and control size with baseFontSize.
+            io.FontGlobalScale = 1.0f;
+            // --- END FONT LOADING ---
+
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
 
             CreateDeviceResources();
-
             SetPerFrameImGuiData(1f / 60f);
 
             ImGui.NewFrame();
