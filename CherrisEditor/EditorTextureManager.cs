@@ -3,6 +3,7 @@ using StbImageSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace CherrisEditor;
 
@@ -13,6 +14,7 @@ public class EditorTextureManager : IDisposable
 {
     private readonly Dictionary<string, int> _textures = new();
     private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+    private static readonly string[] ScriptExtensions = { ".cs" };
 
     /// <summary>
     /// Loads an image from a file into an OpenGL texture and caches it.
@@ -58,26 +60,30 @@ public class EditorTextureManager : IDisposable
         }
 
         string extension = Path.GetExtension(path).ToLowerInvariant();
-        if (!ImageExtensions.Contains(extension))
+
+        if (ScriptExtensions.Contains(extension))
         {
-            return GetTexture("File");
+            return GetTexture("Script");
         }
 
-        // It's an image file, try to load it as a thumbnail.
-        if (_textures.TryGetValue(path, out int handle))
+        if (ImageExtensions.Contains(extension))
         {
-            return (IntPtr)handle; // Return cached thumbnail
+            // It's an image file, try to load it as a thumbnail.
+            if (_textures.TryGetValue(path, out int handle))
+            {
+                return (IntPtr)handle; // Return cached thumbnail
+            }
+
+            // Not cached, load it now.
+            int newHandle = LoadTextureFromFile(path);
+            if (newHandle != 0)
+            {
+                _textures[path] = newHandle;
+                return (IntPtr)newHandle;
+            }
         }
 
-        // Not cached, load it now.
-        int newHandle = LoadTextureFromFile(path);
-        if (newHandle != 0)
-        {
-            _textures[path] = newHandle;
-            return (IntPtr)newHandle;
-        }
-
-        return GetTexture("File"); // Fallback on load failure
+        return GetTexture("File"); // Fallback for any other file type
     }
 
     private int LoadTextureFromFile(string path)

@@ -43,6 +43,9 @@
     <None Update="Assets\Icons\folder.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Assets\Icons\script.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Assets\Scene.yaml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

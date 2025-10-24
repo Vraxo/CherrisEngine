@@ -18,6 +18,7 @@ public class ContentBrowserPanel : IDisposable
         _textureManager = new EditorTextureManager();
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
+        _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
 
         _assetRootPath = Path.GetFullPath("Assets");
         _currentAssetPath = _assetRootPath;

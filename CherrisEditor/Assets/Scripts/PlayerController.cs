@@ -28,7 +28,7 @@ namespace Apexverse
 
             // --- Keyboard Movement ---
             var moveDirection = Vector3.Zero;
-
+            
             if (Input.IsKeyDown(Key.W))
             {
                 moveDirection -= Vector3.UnitZ;
