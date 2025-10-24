@@ -77,7 +77,7 @@ internal class InspectorPanel
         if (!ImGui.BeginTable("TransformTable", 2, ImGuiTableFlags.Resizable))
             return;
 
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 70.0f);
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
 
         // Position
@@ -119,56 +119,104 @@ internal class InspectorPanel
 
     private void DrawMeshRendererComponent(MeshRenderer mr)
     {
-        // NOTE: Displaying Mesh/Texture asset names would require a more advanced asset system.
-        // For now, we show that the objects exist and make other properties editable.
-        ImGui.Text($"Mesh: [Cube/Plane]"); // Placeholder
-        ImGui.Text($"Texture: [Loaded Texture]"); // Placeholder
+        if (!ImGui.BeginTable("MeshRendererTable", 2, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
 
+        // Tiling
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Tiling");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
         var tiling = mr.TextureTiling;
-        if (ImGui.DragFloat2("Tiling", ref tiling, 0.1f))
+        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
         {
             mr.TextureTiling = tiling;
         }
+        ImGui.PopItemWidth();
 
+        // Emissive Color
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Emissive");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
         var emissive = mr.EmissiveColor;
-        if (ImGui.ColorEdit3("Emissive", ref emissive))
+        if (ImGui.ColorEdit3("##Emissive", ref emissive))
         {
             mr.EmissiveColor = emissive;
         }
+        ImGui.PopItemWidth();
+
+        ImGui.EndTable();
     }
 
     private void DrawCameraComponent(Camera cam)
     {
+        if (!ImGui.BeginTable("CameraTable", 2, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+
+        // Field of View
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Field of View");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
         float fov = cam.FieldOfView;
-        if (ImGui.DragFloat("Field of View", ref fov, 1.0f, 1.0f, 179.0f))
+        if (ImGui.DragFloat("##FOV", ref fov, 1.0f, 1.0f, 179.0f))
         {
             cam.FieldOfView = fov;
         }
+        ImGui.PopItemWidth();
 
+        // Near Plane
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Near Plane");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
         float near = cam.NearClipPlane;
-        if (ImGui.DragFloat("Near Plane", ref near, 0.01f, 0.01f, 1000.0f))
+        if (ImGui.DragFloat("##NearPlane", ref near, 0.01f, 0.01f, 1000.0f))
         {
             cam.NearClipPlane = near;
         }
+        ImGui.PopItemWidth();
 
+        // Far Plane
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Far Plane");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
         float far = cam.FarClipPlane;
-        if (ImGui.DragFloat("Far Plane", ref far, 1.0f, 1.0f, 5000.0f))
+        if (ImGui.DragFloat("##FarPlane", ref far, 1.0f, 1.0f, 5000.0f))
         {
             cam.FarClipPlane = far;
         }
+        ImGui.PopItemWidth();
+
+        ImGui.EndTable();
     }
 
-    /// <summary>
-    /// Uses reflection to automatically generate UI for any Script component.
-    /// </summary>
     private void DrawScriptComponent(Script script)
     {
+        if (!ImGui.BeginTable(script.GetType().Name + "Table", 2, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+
         var properties = script.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
         foreach (var prop in properties)
         {
-            // We only want to show properties we can read and write to.
             if (!prop.CanRead || !prop.CanWrite) continue;
+
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.Text(prop.Name);
+            ImGui.TableSetColumnIndex(1);
+            ImGui.PushItemWidth(-1.0f);
 
             object currentValue = prop.GetValue(script);
 
@@ -176,7 +224,7 @@ internal class InspectorPanel
             if (prop.PropertyType == typeof(float))
             {
                 float val = (float)currentValue;
-                if (ImGui.DragFloat(prop.Name, ref val, 0.01f))
+                if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
                 {
                     prop.SetValue(script, val);
                 }
@@ -184,17 +232,20 @@ internal class InspectorPanel
             else if (prop.PropertyType == typeof(bool))
             {
                 bool val = (bool)currentValue;
-                if (ImGui.Checkbox(prop.Name, ref val))
+                if (ImGui.Checkbox($"##{prop.Name}", ref val))
                 {
                     prop.SetValue(script, val);
                 }
             }
-            // Add more types here as needed (e.g., int, Vector3, etc.)
             else
             {
-                ImGui.Text($"{prop.Name}: {currentValue}");
+                ImGui.Text(currentValue.ToString());
             }
+
+            ImGui.PopItemWidth();
         }
+
+        ImGui.EndTable();
     }
 
     private static bool DrawVector3Control(string label, ref Vector3 values)
