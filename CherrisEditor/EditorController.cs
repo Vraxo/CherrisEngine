@@ -1,8 +1,7 @@
 ﻿using Cherris;
-using System;
-using System.Numerics;
 using ImGuiNET;
 using ImGuizmoNET;
+using System.Numerics;
 
 namespace CherrisEditor;
 
@@ -17,72 +16,115 @@ public class EditorController : Script
 
     public override void Start()
     {
-        var initialRotation = GameObject.Transform.Rotation;
-        var direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
-        _yaw = MathF.Atan2(direction.X, -direction.Z);
-        _pitch = MathF.Asin(direction.Y);
+        Quaternion initialRotation = GameObject.Transform.Rotation;
+        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
+        
+        _yaw = float.Atan2(direction.X, -direction.Z);
+        _pitch = float.Asin(direction.Y);
     }
 
     public override void Update(float deltaTime)
     {
-        // This pattern of Begin/End is safe to use for getting context on an existing window.
         ImGui.Begin("Viewport");
         bool isViewportHovered = ImGui.IsWindowHovered();
         ImGui.End();
 
-        // Only process controls if the viewport is hovered and the gizmo is not in use.
         if (!isViewportHovered || ImGuizmo.IsUsing())
         {
             return;
         }
 
-        var io = ImGui.GetIO();
+        HandleInput(deltaTime);
+    }
 
-        // --- Mouse Wheel Zoom ---
-        if (io.MouseWheel != 0)
+    private void HandleInput(float deltaTime)
+    {
+        ImGuiIOPtr io = ImGui.GetIO();
+
+        HandleMouseZoom(ref io);
+        HandleKeyboardMovement(deltaTime, Speed, io);
+        HandleMouseLook(io);
+    }
+
+    private void HandleMouseZoom(ref ImGuiIOPtr io)
+    {
+        if (io.MouseWheel == 0)
         {
-            var forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
-            GameObject.Transform.Position += forward * io.MouseWheel * ZoomSensitivity;
+            return;
         }
 
-        // --- Keyboard Movement (when viewport is hovered) ---
-        float currentSpeed = Speed;
+        Vector3 forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
+        GameObject.Transform.Position += forward * io.MouseWheel * ZoomSensitivity;
+    }
+
+    private void HandleKeyboardMovement(float deltaTime, float currentSpeed, ImGuiIOPtr io)
+    {
         if (io.KeyShift)
         {
             currentSpeed *= 3.0f; // Speed boost
         }
 
-        var localMove = Vector3.Zero;
-        if (ImGui.IsKeyDown(ImGuiKey.W)) localMove.Z -= 1;
-        if (ImGui.IsKeyDown(ImGuiKey.S)) localMove.Z += 1;
-        if (ImGui.IsKeyDown(ImGuiKey.A)) localMove.X -= 1;
-        if (ImGui.IsKeyDown(ImGuiKey.D)) localMove.X += 1;
+        Vector3 localMove = Vector3.Zero;
 
-        var worldVerticalMove = 0f;
-        if (ImGui.IsKeyDown(ImGuiKey.E)) worldVerticalMove += 1; // Up
-        if (ImGui.IsKeyDown(ImGuiKey.Q)) worldVerticalMove -= 1; // Down
-
-        if (localMove != Vector3.Zero || worldVerticalMove != 0)
+        if (ImGui.IsKeyDown(ImGuiKey.W))
         {
-            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
-
-            if (finalMove.LengthSquared() > 0)
-            {
-                GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
-            }
+            localMove.Z -= 1;
         }
 
-        // --- Mouse Look (only when right mouse button is down) ---
-        if (ImGui.IsMouseDown(ImGuiMouseButton.Right))
+        if (ImGui.IsKeyDown(ImGuiKey.S))
         {
-            Vector2 mouseDelta = io.MouseDelta;
-            _yaw -= mouseDelta.X * MouseSensitivity;
-            _pitch -= mouseDelta.Y * MouseSensitivity;
-            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+            localMove.Z += 1;
         }
+
+        if (ImGui.IsKeyDown(ImGuiKey.A))
+        {
+            localMove.X -= 1;
+        }
+
+        if (ImGui.IsKeyDown(ImGuiKey.D))
+        {
+            localMove.X += 1;
+        }
+
+        float worldVerticalMove = 0f;
+
+        if (ImGui.IsKeyDown(ImGuiKey.E))
+        {
+            worldVerticalMove += 1; // Up
+        }
+
+        if (ImGui.IsKeyDown(ImGuiKey.Q))
+        {
+            worldVerticalMove -= 1; // Down
+        }
+
+        if (localMove == Vector3.Zero && worldVerticalMove == 0)
+        {
+            return;
+        }
+
+        Quaternion yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+        Vector3 worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
+        Vector3 finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+
+        if (finalMove.LengthSquared() > 0)
+        {
+            GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
+        }
+    }
+
+    private void HandleMouseLook(ImGuiIOPtr io)
+    {
+        if (!ImGui.IsMouseDown(ImGuiMouseButton.Right))
+        {
+            return;
+        }
+
+        Vector2 mouseDelta = io.MouseDelta;
+        _yaw -= mouseDelta.X * MouseSensitivity;
+        _pitch -= mouseDelta.Y * MouseSensitivity;
+        _pitch = float.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
+                                        Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
     }
 }
