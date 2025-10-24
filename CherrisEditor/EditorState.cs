@@ -3,5 +3,6 @@
 public enum EditorState
 {
     Editing,
-    Playing
+    Playing,
+    Paused
 }

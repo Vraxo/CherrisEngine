@@ -90,16 +90,35 @@ public class Editor : Engine
 
     public void Play()
     {
-        State = EditorState.Playing;
-        SelectedGameObject = null;
+        if (State == EditorState.Playing) return;
 
-        // Enable all game scripts, disable editor script
+        // If starting from scratch, call Start() on scripts.
+        if (State == EditorState.Editing)
+        {
+            // TODO: Snapshot scene state for restoration on Stop.
+            SceneManager.Start();
+        }
+
+        State = EditorState.Playing;
+        SelectedGameObject = null; // Deselect object when entering play mode.
+
+        // Enable game scripts, disable editor script
         foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
             script.Enabled = script is not EditorController;
         }
+    }
 
-        SceneManager.Start(); // Re-run Start() for game scripts
+    public void Pause()
+    {
+        if (State != EditorState.Playing) return;
+        State = EditorState.Paused;
+
+        // Disable game scripts, enable editor script for camera movement
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        {
+            script.Enabled = script is EditorController;
+        }
     }
 
     public void Stop()
@@ -109,6 +128,13 @@ public class Editor : Engine
         LoadScene();
         SceneManager.Start(); // This is for components that need Start(), not scripts
         SetEditingState();
+    }
+
+    public void Restart()
+    {
+        if (State == EditorState.Editing) return;
+        Stop();
+        Play();
     }
 
     private void SetEditingState()

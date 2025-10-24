@@ -27,16 +27,16 @@ public class EditorAppLogic : IDisposable
     {
         return (deltaTime) =>
         {
+            // The toolbar is now drawn inside SetupDockspace to ensure correct layout
             SetupDockspace();
-            DrawToolbar();
+
+            // These panels will be docked within the space created above
             DrawOutlinerPanel();
             DrawConsolePanel();
-            _contentBrowserPanel.Draw(); // Call the new panel's Draw method
+            _contentBrowserPanel.Draw();
             _inspectorPanel.DrawInspectorPanel();
         };
     }
-
-    // The old DrawContentBrowserPanel() method has been completely removed.
 
     private void SetupDockspace()
     {
@@ -62,9 +62,18 @@ public class EditorAppLogic : IDisposable
         ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);
 
+        DrawMainMenuBar();
+
+        // A child window is an item. The parent's ItemSpacing.Y is applied after it,
+        // creating a gap. We remove this vertical spacing just for the toolbar.
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f));
+        DrawToolbar();
+        ImGui.PopStyleVar();
+
+        // Create the area where other windows can be docked
         uint dockspaceId = ImGui.GetID("MyDockSpace");
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
-        DrawMainMenuBar();
+
         ImGui.End();
     }
 
@@ -103,30 +112,75 @@ public class EditorAppLogic : IDisposable
 
     private void DrawToolbar()
     {
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 2));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemInnerSpacing, new Vector2(0, 0));
-        ImGui.Begin("Toolbar", ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        // Use a child window to create a distinct bar area.
+        float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
+        ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-        float size = ImGui.GetWindowHeight() - 4.0f;
-        ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (size * 0.5f));
+        var style = ImGui.GetStyle();
+        float size = ImGui.GetContentRegionAvail().Y;
 
-        if (_editor.State == EditorState.Editing)
+        // The group of three buttons is always present and centered for a stable layout
+        float totalWidth = (size * 3) + (style.ItemSpacing.X * 2);
+        ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (totalWidth * 0.5f));
+
+        bool isPlaying = _editor.State == EditorState.Playing;
+        bool isEditing = _editor.State == EditorState.Editing;
+
+        // --- Play / Pause Button ---
+        string playPauseText = isPlaying ? "Pause" : "Play";
+        if (ImGui.Button(playPauseText, new Vector2(size, size)))
         {
-            if (ImGui.Button("Play", new Vector2(size, size)))
+            if (isPlaying)
+            {
+                _editor.Pause();
+            }
+            else // State is Editing or Paused, both should trigger Play/Resume
             {
                 _editor.Play();
             }
         }
-        else
+
+        ImGui.SameLine();
+
+        // --- Stop Button ---
+        if (isEditing)
         {
-            if (ImGui.Button("Stop", new Vector2(size, size)))
-            {
-                _editor.Stop();
-            }
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
+            ImGui.BeginDisabled();
         }
 
-        ImGui.PopStyleVar(2);
-        ImGui.End();
+        if (ImGui.Button("Stop", new Vector2(size, size)))
+        {
+            _editor.Stop();
+        }
+
+        if (isEditing)
+        {
+            ImGui.EndDisabled();
+            ImGui.PopStyleVar();
+        }
+
+        ImGui.SameLine();
+
+        // --- Restart Button ---
+        if (isEditing)
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Restart", new Vector2(size, size)))
+        {
+            _editor.Restart();
+        }
+
+        if (isEditing)
+        {
+            ImGui.EndDisabled();
+            ImGui.PopStyleVar();
+        }
+
+        ImGui.EndChild();
     }
 
     private void DrawOutlinerPanel()
