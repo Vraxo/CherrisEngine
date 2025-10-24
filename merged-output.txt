@@ -485,6 +485,7 @@ public abstract class Engine
     public readonly IResourceManager ResourceManager;
     public readonly SceneLoader SceneLoader;
     public readonly SceneManager SceneManager;
+    public string CurrentScenePath { get; protected set; }
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly IGraphicsBackend _backend;
@@ -591,9 +592,11 @@ public abstract class Engine
             }
 
             Mesh? mesh = null;
+            string meshName = string.Empty;
 
-            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
+            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string parsedMeshName)
             {
+                meshName = parsedMeshName;
                 mesh = ResourceManager.GetMesh(meshName);
             }
 
@@ -642,7 +645,7 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName);
+            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>
@@ -712,6 +715,45 @@ public abstract class Engine
     {
         SceneManager.Dispose();
         _backend.Dispose();
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\EngineMath.cs">
+using System;
+using System.Numerics;
+
+namespace Cherris;
+
+public static class EngineMath
+{
+    // Helper to convert Quaternion to Euler angles (in radians) for display
+    public static Vector3 ToEulerAngles(Quaternion q)
+    {
+        Vector3 angles = new();
+
+        // Roll (x-axis rotation)
+        float sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        float cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        angles.X = float.Atan2(sinr_cosp, cosr_cosp);
+
+        // Pitch (y-axis rotation)
+        float sinp = 2 * (q.W * q.Y - q.Z * q.X);
+        if (float.Abs(sinp) >= 1)
+        {
+            angles.Y = float.CopySign(MathF.PI / 2, sinp); // use 90 degrees if out of range
+        }
+        else
+        {
+            angles.Y = float.Asin(sinp);
+        }
+
+        // Yaw (z-axis rotation)
+        float siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        float cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        angles.Z = float.Atan2(siny_cosp, cosy_cosp);
+
+        return angles;
     }
 }
 </file>
@@ -1165,6 +1207,19 @@ public class GraphicsManager : IDisposable
         CommandList.Dispose();
         // The GraphicsDevice is managed by the backend, so we don't dispose it here.
     }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\HideInInspectorAttribute.cs">
+namespace Cherris;
+
+/// <summary>
+/// When placed on a public property of a Component, this attribute prevents
+/// the property from being displayed in the editor's inspector panel.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public class HideInInspectorAttribute : Attribute
+{
 }
 </file>
 
@@ -2108,6 +2163,7 @@ public class SceneLoader
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
+            .WithTypeConverter(new Vector2YamlTypeConverter())
             .Build();
 
         _serializer = new SerializerBuilder().Build();
@@ -2536,92 +2592,100 @@ public class SceneRenderer : IDisposable
 }
 </file>
 
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\ScriptCompiler.cs">
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneSerializer.cs">
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.Loader;
+using System.Numerics;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
-namespace CherrisEditor;
+namespace Cherris;
 
-/// <summary>
-/// A service that uses Roslyn to find and compile C# script files from the Assets folder
-/// into a dynamic, in-memory assembly at runtime.
-/// </summary>
-public static class ScriptCompiler
+public class SceneSerializer
 {
-    public static Assembly? Compile(string rootAssetPath)
+    private readonly ISerializer _serializer;
+
+    public SceneSerializer()
     {
-        string scriptsPath = Path.Combine(rootAssetPath, "Scripts");
-        if (!Directory.Exists(scriptsPath))
+        _serializer = new SerializerBuilder()
+            .WithNamingConvention(PascalCaseNamingConvention.Instance)
+            .WithTypeConverter(new Vector3YamlTypeConverter())
+            .WithTypeConverter(new Vector2YamlTypeConverter())
+            .Build();
+    }
+
+    public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
+    {
+        var gameObjectsData = new List<Dictionary<string, object>>();
+
+        foreach (var go in gameObjects)
         {
-            Console.WriteLine("[ScriptCompiler] 'Assets/Scripts' directory not found. No scripts to compile.");
-            return null;
+            // Don't save the editor-only camera controller if it exists
+            if (go.Components.Any(c => c.GetType().Name == "EditorController")) continue;
+
+            var goData = new Dictionary<string, object> { ["Name"] = go.Name };
+
+            var componentsData = new Dictionary<string, object>();
+
+            // --- Transform ---
+            var transformData = new Dictionary<string, object>
+            {
+                ["Position"] = go.Transform.Position
+            };
+
+            var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
+            // Loader expects Pitch(X), Yaw(Y), Roll(Z). Our math gives Roll(X), Pitch(Y), Yaw(Z).
+            // So we create a new Vector3 with components in the correct order for the loader.
+            transformData["Rotation"] = new Vector3(eulerDegrees.Y, eulerDegrees.Z, eulerDegrees.X);
+            transformData["Scale"] = go.Transform.Scale;
+            componentsData["Transform"] = transformData;
+
+            // --- Other Components ---
+            foreach (var component in go.Components)
+            {
+                switch (component)
+                {
+                    case MeshRenderer mr:
+                        var mrData = new Dictionary<string, object>
+                        {
+                            ["Mesh"] = mr.MeshName,
+                            ["Texture"] = mr.TextureName
+                        };
+                        if (mr.TextureTiling != Vector2.One)
+                            mrData["TextureTiling"] = mr.TextureTiling;
+                        if (mr.EmissiveColor != Vector3.Zero)
+                            mrData["EmissiveColor"] = mr.EmissiveColor;
+                        componentsData["MeshRenderer"] = mrData;
+                        break;
+
+                    case Camera:
+                        componentsData["Camera"] = new Dictionary<string, object>(); // No properties yet
+                        break;
+
+                    case Skybox skybox:
+                        var skyboxData = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
+                        componentsData["Skybox"] = skyboxData;
+                        break;
+
+                    case Script script:
+                        // Properties of scripts are not yet serialized, just their presence on the GameObject.
+                        componentsData[script.GetType().Name] = new Dictionary<string, object>();
+                        break;
+                }
+            }
+            goData["Components"] = componentsData;
+            gameObjectsData.Add(goData);
         }
 
-        var scriptFiles = Directory.GetFiles(scriptsPath, "*.cs", SearchOption.AllDirectories);
-        if (scriptFiles.Length == 0)
+        var root = new Dictionary<string, object>
         {
-            Console.WriteLine("[ScriptCompiler] No C# script files found in 'Assets/Scripts'.");
-            return null;
-        }
-
-        Console.WriteLine($"[ScriptCompiler] Found {scriptFiles.Length} script(s). Starting compilation...");
-
-        // 1. Parse all script files into Roslyn syntax trees
-        var syntaxTrees = scriptFiles
-            .Select(file => CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file))
-            .ToList();
-
-        // 2. Define the references our scripts will need to compile
-        // This is the crucial part: scripts need to know about the .NET runtime and our engine.
-        var assemblyPaths = new HashSet<string>
-        {
-            // Add core .NET assemblies
-            typeof(object).Assembly.Location,
-            Assembly.Load("System.Runtime").Location,
-            // Add engine assembly
-            typeof(Cherris.Engine).Assembly.Location,
-            // Add Numerics for Vector3, etc.
-            typeof(System.Numerics.Vector3).Assembly.Location
+            { "GameObjects", gameObjectsData }
         };
 
-        var references = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
-
-        // 3. Set up the compilation
-        var compilation = CSharpCompilation.Create(
-            "GameScriptsAssembly", // The name of our dynamic DLL
-            syntaxTrees,
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        // 4. Compile into a memory stream
-        using var ms = new MemoryStream();
-        var result = compilation.Emit(ms);
-
-        // 5. Check for compilation errors
-        if (!result.Success)
-        {
-            Console.WriteLine("[ScriptCompiler] Compilation failed!");
-            var failures = result.Diagnostics.Where(diagnostic =>
-                diagnostic.IsWarningAsError || diagnostic.Severity == DiagnosticSeverity.Error);
-
-            foreach (var diagnostic in failures)
-            {
-                Console.Error.WriteLine($"  {diagnostic.Id}: {diagnostic.GetMessage()} at {diagnostic.Location}");
-            }
-            return null;
-        }
-
-        Console.WriteLine("[ScriptCompiler] Compilation successful.");
-
-        // 6. Load the compiled assembly from the memory stream
-        ms.Seek(0, SeekOrigin.Begin);
-        return AssemblyLoadContext.Default.LoadFromStream(ms);
+        var yaml = _serializer.Serialize(root);
+        File.WriteAllText(filePath, yaml);
     }
 }
 </file>
@@ -2639,14 +2703,14 @@ public static class SkyboxLoader
     public static Skybox? LoadSkybox(GraphicsDevice gd, string name)
     {
         string[]? facePaths = FindFacePaths(name);
-        
+
         if (facePaths is null)
         {
             return null;
         }
 
         ImageResult[]? faceImages = LoadFaceImages(facePaths);
-        
+
         if (faceImages is null || !ValidateImageDimensions(faceImages, facePaths))
         {
             return null;
@@ -2654,17 +2718,17 @@ public static class SkyboxLoader
 
         Texture cubemapTexture = CreateCubemapTexture(gd, faceImages);
 
-        return new(cubemapTexture);
+        return new(cubemapTexture, name);
     }
 
     private static string[]? FindFacePaths(string baseName)
     {
         string[] facePaths = new string[6];
-        
+
         for (int i = 0; i < FaceSuffixes.Length; i++)
         {
             string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
-            
+
             if (path is null)
             {
                 Console.WriteLine($"[SkyboxLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
@@ -2684,7 +2748,7 @@ public static class SkyboxLoader
         try
         {
             StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps do not need flipping
-            
+
             for (int i = 0; i < paths.Length; i++)
             {
                 using var stream = File.OpenRead(paths[i]);
@@ -2707,7 +2771,7 @@ public static class SkyboxLoader
     private static bool ValidateImageDimensions(ImageResult[] images, string[] paths)
     {
         ImageResult firstImage = images[0];
-        
+
         if (firstImage.Width != firstImage.Height)
         {
             Console.WriteLine(
@@ -2744,7 +2808,7 @@ public static class SkyboxLoader
         for (uint i = 0; i < images.Length; i++)
         {
             ImageResult img = images[i];
-            
+
             gd.UpdateTexture(
                 cubemap,
                 img.Data,
@@ -2759,7 +2823,7 @@ public static class SkyboxLoader
         }
 
         TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
-        
+
         return new(cubemap, textureView);
     }
 }
@@ -3161,6 +3225,43 @@ public static class TextureLoader
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vector2YamlTypeConverter.cs">
+using System;
+using System.Globalization;
+using System.Numerics;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
+using YamlDotNet.Serialization;
+
+namespace Cherris;
+
+public class Vector2YamlTypeConverter : IYamlTypeConverter
+{
+    public bool Accepts(Type type)
+    {
+        return type == typeof(Vector2);
+    }
+
+    public object ReadYaml(IParser parser, Type type, ObjectDeserializer nestedObjectDeserializer)
+    {
+        parser.Consume<SequenceStart>();
+        var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        parser.Consume<SequenceEnd>();
+        return new Vector2(x, y);
+    }
+
+    public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
+    {
+        var vector = (Vector2)value;
+        emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow));
+        emitter.Emit(new Scalar(vector.X.ToString(CultureInfo.InvariantCulture)));
+        emitter.Emit(new Scalar(vector.Y.ToString(CultureInfo.InvariantCulture)));
+        emitter.Emit(new SequenceEnd());
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Vector3YamlTypeConverter.cs">
 using System;
 using System.Globalization;
@@ -3333,17 +3434,11 @@ public class Camera : Component
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Component.cs">
-using System.Diagnostics;
-using System.Numerics;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
-using Veldrid;
-
 namespace Cherris;
 
-// MODIFIED: Added "new()" constraint to allow Activator.CreateInstance
 public abstract class Component
 {
+    [HideInInspector]
     public GameObject GameObject { get; internal set; }
 }
 
@@ -3486,6 +3581,7 @@ namespace Cherris;
 public class MeshRenderer : Component, IDisposable
 {
     public Mesh Mesh { get; }
+    public string MeshName { get; }
 
     private ITexture _texture;
     public ITexture Texture
@@ -3509,9 +3605,10 @@ public class MeshRenderer : Component, IDisposable
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }
 
-    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor, string textureName)
+    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor, string textureName, string meshName)
     {
         Mesh = mesh;
+        MeshName = meshName;
         _texture = texture; // Set backing field directly to avoid invalidation in constructor
         TextureName = textureName;
         TextureTiling = textureTiling;
@@ -3539,10 +3636,12 @@ namespace Cherris;
 public class Skybox : Component
 {
     public ITexture CubeMapTexture { get; }
+    public string CubeMapName { get; }
 
-    public Skybox(ITexture cubeMapTexture)
+    public Skybox(ITexture cubeMapTexture, string cubeMapName)
     {
         CubeMapTexture = cubeMapTexture;
+        CubeMapName = cubeMapName;
     }
 
     public void Dispose()
@@ -5192,7 +5291,7 @@ public class OpenTKResourceManager : IResourceManager
             SetTextureParameters(TextureTarget.TextureCubeMap);
 
             var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
-            var newSkybox = new Skybox(newTexture);
+            var newSkybox = new Skybox(newTexture, name);
             _skyboxes.Add(name, newSkybox);
             return newSkybox;
         }
@@ -5449,6 +5548,7 @@ namespace CherrisEditor;
 public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
+    public List<Type> AvailableScriptTypes { get; } = new();
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
@@ -5476,6 +5576,7 @@ public class Editor : Engine
     {
         // Instead of loading a pre-compiled DLL, we now compile .cs files at runtime.
         var gameAssembly = ScriptCompiler.Compile("Assets");
+        AvailableScriptTypes.Clear();
 
         if (gameAssembly is null)
         {
@@ -5491,6 +5592,7 @@ public class Editor : Engine
             int count = 0;
             foreach (var type in scriptTypes)
             {
+                AvailableScriptTypes.Add(type);
                 // The factory function creates a new instance of the script type.
                 Func<object, Component> factory = _ => (Component)Activator.CreateInstance(type);
                 SceneLoader.RegisterComponentFactory(type.Name, factory);
@@ -5507,8 +5609,10 @@ public class Editor : Engine
 
     private void LoadScene()
     {
-        List<GameObject> loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
+        string scenePath = "Assets/Scene.yaml";
+        List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
         SceneManager.SetScene(loadedObjects);
+        CurrentScenePath = scenePath;
     }
 
     protected override void OnStart()
@@ -5570,6 +5674,7 @@ public class EditorAppLogic : IDisposable
     private readonly InspectorPanel _inspectorPanel;
     private readonly ContentBrowserPanel _contentBrowserPanel;
     private readonly EditorTextureManager _editorTextureManager;
+    private readonly SceneSerializer _sceneSerializer;
 
     public EditorAppLogic(Editor editor)
     {
@@ -5577,6 +5682,7 @@ public class EditorAppLogic : IDisposable
         _editorTextureManager = new EditorTextureManager();
         _inspectorPanel = new(_editor, _editorTextureManager);
         _contentBrowserPanel = new ContentBrowserPanel(_editorTextureManager);
+        _sceneSerializer = new SceneSerializer();
         EditorTheme.ApplyUnrealEngineStyle();
     }
 
@@ -5625,7 +5731,7 @@ public class EditorAppLogic : IDisposable
         ImGui.End();
     }
 
-    private static void DrawMainMenuBar()
+    private void DrawMainMenuBar()
     {
         if (!ImGui.BeginMenuBar()) return;
 
@@ -5634,8 +5740,22 @@ public class EditorAppLogic : IDisposable
             if (ImGui.MenuItem("New Scene")) { }
             if (ImGui.MenuItem("Open Scene")) { }
             ImGui.Separator();
-            if (ImGui.MenuItem("Save")) { }
-            if (ImGui.MenuItem("Save As...")) { }
+            if (ImGui.MenuItem("Save"))
+            {
+                if (!string.IsNullOrEmpty(_editor.CurrentScenePath))
+                {
+                    _sceneSerializer.SaveScene(_editor.SceneManager.GameObjects, _editor.CurrentScenePath);
+                    Console.WriteLine($"[Editor] Scene saved to '{_editor.CurrentScenePath}'");
+                }
+                else
+                {
+                    Console.WriteLine("[Editor] No scene path set. Use 'Save As...' first.");
+                }
+            }
+            if (ImGui.MenuItem("Save As..."))
+            {
+                Console.WriteLine("[Editor] 'Save As...' is not implemented yet.");
+            }
             ImGui.Separator();
             if (ImGui.MenuItem("Exit")) { Console.WriteLine("Exit clicked!"); }
             ImGui.EndMenu();
@@ -6080,44 +6200,6 @@ public static class EditorTheme
 }
 </file>
 
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EngineMath.cs">
-using System.Numerics;
-
-namespace CherrisEditor;
-
-internal static class EngineMath
-{
-    // Helper to convert Quaternion to Euler angles (in radians) for display
-    public static Vector3 ToEulerAngles(Quaternion q)
-    {
-        Vector3 angles = new();
-
-        // Roll (x-axis rotation)
-        float sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
-        float cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
-        angles.X = float.Atan2(sinr_cosp, cosr_cosp);
-
-        // Pitch (y-axis rotation)
-        float sinp = 2 * (q.W * q.Y - q.Z * q.X);
-        if (float.Abs(sinp) >= 1)
-        {
-            angles.Y = float.CopySign(MathF.PI / 2, sinp); // use 90 degrees if out of range
-        }
-        else
-        {
-            angles.Y = float.Asin(sinp);
-        }
-
-        // Yaw (z-axis rotation)
-        float siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
-        float cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
-        angles.Z = float.Atan2(siny_cosp, cosy_cosp);
-
-        return angles;
-    }
-}
-</file>
-
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\InspectorPanel.cs">
 using Cherris;
 using ImGuiNET;
@@ -6127,36 +6209,74 @@ using System.Collections.Generic;
 using System;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using CherrisEditor.Inspectors;
 
 namespace CherrisEditor;
 
 internal class InspectorPanel
 {
     private readonly Editor _editor;
-    private readonly EditorTextureManager _textureManager;
-    private readonly Dictionary<Type, object> _defaultComponentCache = new();
+    private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
+    private readonly DefaultInspector _defaultInspector;
+    private readonly TransformInspector _transformInspector;
 
     public InspectorPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
-        _textureManager = textureManager;
+        _defaultInspector = new DefaultInspector();
+        _transformInspector = new TransformInspector();
+        RegisterCustomInspectors(editor, textureManager);
+    }
+
+    private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager)
+    {
+        // Find all types in the editor assembly that have the CustomInspector attribute
+        var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
+            .Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
+
+        foreach (var inspectorType in inspectorTypes)
+        {
+            var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
+            try
+            {
+                // Create an instance of the inspector, passing constructor arguments if needed
+                object[] constructorArgs = { editor, textureManager };
+                var constructor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
+
+                IComponentInspector instance;
+                if (constructor != null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, constructorArgs);
+                }
+                else
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
+                }
+
+                _customInspectors[attribute.InspectedType] = instance;
+                Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Inspector] Failed to register custom inspector '{inspectorType.Name}': {ex.Message}");
+            }
+        }
     }
 
     public void DrawInspectorPanel()
     {
         ImGui.Begin("Details");
-
         GameObject? selectedObject = _editor.GetSelectedGameObject();
-
-        if (selectedObject is null)
-        {
-            ImGui.Text("No object selected.");
-        }
-        else
+        if (selectedObject != null)
         {
             DrawGameObjectProperties(selectedObject);
         }
-
+        else
+        {
+            ImGui.Text("No object selected.");
+        }
         ImGui.End();
     }
 
@@ -6167,316 +6287,81 @@ internal class InspectorPanel
 
         if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            DrawTransformControl(go.Transform);
+            _transformInspector.Draw(go.Transform);
         }
 
-        foreach (var component in go.Components)
+        foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
-            string componentName = component.GetType().Name;
+            string componentName = SplitPascalCase(component.GetType().Name);
+            bool headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
 
-            if (ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen))
+            if (ImGui.BeginPopupContextItem())
             {
-                switch (component)
+                if (ImGui.MenuItem("Remove Component"))
                 {
-                    case MeshRenderer mr:
-                        DrawMeshRendererComponent(mr);
-                        break;
-                    case Camera cam:
-                        DrawCameraComponent(cam);
-                        break;
-                    case Script script:
-                        DrawScriptComponent(script);
-                        break;
-                    default:
-                        ImGui.Text($"No custom inspector for {componentName}.");
-                        break;
+                    go.RemoveComponent(component);
+                    // Important: return here because the component list is now modified.
+                    ImGui.EndPopup();
+                    return;
                 }
+                ImGui.EndPopup();
             }
-        }
-    }
 
-    private void DrawTransformControl(Transform transform)
-    {
-        if (!ImGui.BeginTable("TransformTable", 3, ImGuiTableFlags.Resizable)) return;
-
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
-
-        // Position
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Position");
-        ImGui.TableSetColumnIndex(1);
-        Vector3 position = transform.Position;
-        if (DrawVector3Control("Position", ref position))
-        {
-            transform.Position = position;
-        }
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Pos")) transform.Position = Vector3.Zero;
-
-        // Rotation
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Rotation");
-        ImGui.TableSetColumnIndex(1);
-        Vector3 eulerDegrees = EngineMath.ToEulerAngles(transform.Rotation) * (180.0f / MathF.PI);
-        if (DrawVector3Control("Rotation", ref eulerDegrees))
-        {
-            Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
-            transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
-        }
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Rot")) transform.Rotation = Quaternion.Identity;
-
-
-        // Scale
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Scale");
-        ImGui.TableSetColumnIndex(1);
-        Vector3 scale = transform.Scale;
-        if (DrawVector3Control("Scale", ref scale))
-        {
-            transform.Scale = scale;
-        }
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Sca")) transform.Scale = Vector3.One;
-
-        ImGui.EndTable();
-    }
-
-    private void DrawMeshRendererComponent(MeshRenderer mr)
-    {
-        if (!ImGui.BeginTable("MRTable", 3, ImGuiTableFlags.Resizable)) return;
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
-
-        // Texture
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Texture");
-        ImGui.TableSetColumnIndex(1);
-
-        IntPtr textureHandle = IntPtr.Zero;
-        if (mr.Texture?.GetBackendHandle() is int handle && handle != 0)
-        {
-            textureHandle = (IntPtr)handle;
-        }
-        else
-        {
-            textureHandle = _textureManager.GetTexture("File");
-        }
-
-        // Use flipped UVs because game textures are loaded upside-down for OpenGL.
-        ImGui.ImageButton("TextureThumb", textureHandle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
-
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
-            if (payload.Data != IntPtr.Zero)
+            if (headerOpen)
             {
-                string path = Marshal.PtrToStringAnsi(payload.Data);
-                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                // Find the appropriate inspector
+                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
                 {
-                    string textureName = Path.GetFileNameWithoutExtension(path);
-                    var newTexture = _editor.ResourceManager.GetTexture(textureName);
-                    mr.TextureName = textureName;
-                    mr.Texture = newTexture;
+                    customInspector.Draw(component);
                 }
-            }
-            ImGui.EndDragDropTarget();
-        }
-
-        ImGui.SameLine();
-        ImGui.Text(mr.TextureName);
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Texture"))
-        {
-            mr.TextureName = "White";
-            mr.Texture = _editor.ResourceManager.GetTexture("White");
-        }
-
-
-        // Tiling
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Tiling");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var tiling = mr.TextureTiling;
-        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
-        {
-            mr.TextureTiling = tiling;
-        }
-        ImGui.PopItemWidth();
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Tiling")) mr.TextureTiling = Vector2.One;
-
-        // Emissive Color
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Emissive");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var emissive = mr.EmissiveColor;
-        if (ImGui.ColorEdit3("##Emissive", ref emissive))
-        {
-            mr.EmissiveColor = emissive;
-        }
-        ImGui.PopItemWidth();
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Emissive")) mr.EmissiveColor = Vector3.Zero;
-
-        ImGui.EndTable();
-    }
-
-    private void DrawCameraComponent(Camera cam)
-    {
-        if (!ImGui.BeginTable("CamTable", 3, ImGuiTableFlags.Resizable)) return;
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
-
-        // Field of View
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Field of View");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        float fov = cam.FieldOfView;
-        if (ImGui.DragFloat("##FOV", ref fov, 1.0f, 1.0f, 179.0f))
-        {
-            cam.FieldOfView = fov;
-        }
-        ImGui.PopItemWidth();
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##FOV")) cam.FieldOfView = (float)GetDefaultValue(typeof(Camera), "FieldOfView");
-
-        // Near & Far Planes... (repeat pattern for other properties)
-        ImGui.EndTable();
-    }
-
-    private void DrawScriptComponent(Script script)
-    {
-        Type scriptType = script.GetType();
-        if (!ImGui.BeginTable(scriptType.Name + "Table", 3, ImGuiTableFlags.Resizable)) return;
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
-
-        var properties = scriptType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-
-        foreach (var prop in properties)
-        {
-            if (!prop.CanRead || !prop.CanWrite) continue;
-
-            ImGui.TableNextRow();
-            ImGui.TableSetColumnIndex(0);
-            ImGui.Text(prop.Name);
-            ImGui.TableSetColumnIndex(1);
-            ImGui.PushItemWidth(-1.0f);
-
-            object currentValue = prop.GetValue(script);
-            bool valueChanged = false;
-
-            if (prop.PropertyType == typeof(float))
-            {
-                float val = (float)currentValue;
-                if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
+                else
                 {
-                    prop.SetValue(script, val);
-                    valueChanged = true;
-                }
-            }
-            // ... other types
-
-            ImGui.PopItemWidth();
-
-            // Reset Button Column
-            ImGui.TableSetColumnIndex(2);
-            if (ImGui.Button($"R##{prop.Name}"))
-            {
-                object defaultValue = GetDefaultValue(scriptType, prop.Name);
-                if (defaultValue != null)
-                {
-                    prop.SetValue(script, defaultValue);
+                    // Fallback to the default reflection-based inspector
+                    _defaultInspector.Draw(component);
                 }
             }
         }
 
-        ImGui.EndTable();
+        DrawAddComponentButton(go);
     }
 
-    /// <summary>
-    /// Gets the default value of a property from a cached default instance of a component.
-    /// </summary>
-    private object GetDefaultValue(Type componentType, string propertyName)
+    private void DrawAddComponentButton(GameObject go)
     {
-        if (!_defaultComponentCache.TryGetValue(componentType, out object defaultInstance))
-        {
-            try
-            {
-                // Create and cache a new default instance if not found.
-                defaultInstance = Activator.CreateInstance(componentType);
-                _defaultComponentCache[componentType] = defaultInstance;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Inspector] Could not create default instance of {componentType.Name}: {ex.Message}");
-                return null;
-            }
-        }
-
-        return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
-    }
-
-    private static bool DrawVector3Control(string label, ref Vector3 values)
-    {
-        // ... (this function remains unchanged)
-        bool valueChanged = false;
-        ImGui.PushID(label);
-
-        var style = ImGui.GetStyle();
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
         float availableWidth = ImGui.GetContentRegionAvail().X;
-        float totalLabelWidth = ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X + ImGui.CalcTextSize("Z").X;
-        float totalSpacingWidth = style.ItemSpacing.X * 5;
-        float totalInputWidth = availableWidth - totalLabelWidth - totalSpacingWidth;
-        float itemWidth = totalInputWidth / 3.0f;
+        float buttonWidth = 120.0f;
+        float buttonPosX = (availableWidth - buttonWidth) * 0.5f;
+        if (buttonPosX > 0) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + buttonPosX);
 
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f));
-        ImGui.Text("X");
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
-        ImGui.PopItemWidth();
-        ImGui.SameLine();
+        if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
+        {
+            ImGui.OpenPopup("AddComponentPopup");
+        }
 
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f));
-        ImGui.Text("Y");
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
-        ImGui.PopItemWidth();
-        ImGui.SameLine();
-
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f));
-        ImGui.Text("Z");
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true;
-        ImGui.PopItemWidth();
-        ImGui.PopID();
-
-        return valueChanged;
+        if (ImGui.BeginPopup("AddComponentPopup"))
+        {
+            if (go.GetComponent<Camera>() == null && ImGui.MenuItem("Camera"))
+            {
+                go.AddComponent(new Camera());
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.Separator();
+            foreach (var scriptType in _editor.AvailableScriptTypes)
+            {
+                if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
+                {
+                    go.AddComponent((Component)Activator.CreateInstance(scriptType));
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+            ImGui.EndPopup();
+        }
     }
+
+    private static string SplitPascalCase(string input) => Regex.Replace(input, "(?<!^)([A-Z])", " $1");
 }
 </file>
 
@@ -6545,7 +6430,9 @@ public static class ScriptCompiler
             // Add engine assembly
             typeof(Cherris.Engine).Assembly.Location,
             // Add Numerics for Vector3, etc.
-            typeof(System.Numerics.Vector3).Assembly.Location
+            typeof(System.Numerics.Vector3).Assembly.Location,
+            // Explicitly add the assembly mentioned in the error log to ensure it's included
+            Assembly.Load("System.Numerics.Vectors").Location
         };
 
         var references = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
@@ -6642,6 +6529,360 @@ GameObjects:
         Mesh: Plane
         Texture: Asphalt
         TextureTiling: [1, 1]
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Attributes\CustomInspectorAttribute.cs">
+using System;
+using Cherris;
+
+namespace CherrisEditor;
+
+/// <summary>
+/// Marks a class as a custom inspector for a specific component type.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class)]
+public class CustomInspectorAttribute : Attribute
+{
+    public Type InspectedType { get; }
+
+    public CustomInspectorAttribute(Type inspectedType)
+    {
+        InspectedType = inspectedType;
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\DefaultInspector.cs">
+using Cherris;
+using ImGuiNET;
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using System.Reflection;
+using System.Text.RegularExpressions;
+
+namespace CherrisEditor.Inspectors;
+
+public class DefaultInspector : IComponentInspector
+{
+    private static readonly Dictionary<Type, object> _defaultComponentCache = new();
+
+    public void Draw(Component component)
+    {
+        Type componentType = component.GetType();
+        if (!ImGui.BeginTable(componentType.Name + "Table", 3, ImGuiTableFlags.Resizable)) return;
+
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        foreach (var prop in properties)
+        {
+            if (!prop.CanRead || !prop.CanWrite || prop.IsDefined(typeof(HideInInspectorAttribute), false))
+                continue;
+
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.Text(SplitPascalCase(prop.Name));
+
+            ImGui.TableSetColumnIndex(1);
+            ImGui.PushItemWidth(-1.0f);
+            DrawPropertyControl(component, prop);
+            ImGui.PopItemWidth();
+
+            ImGui.TableSetColumnIndex(2);
+            if (ImGui.Button($"R##{prop.Name}"))
+            {
+                object defaultValue = GetDefaultValue(componentType, prop.Name);
+                if (defaultValue != null)
+                {
+                    prop.SetValue(component, defaultValue);
+                }
+            }
+        }
+
+        ImGui.EndTable();
+    }
+
+    private void DrawPropertyControl(object instance, PropertyInfo prop)
+    {
+        object currentValue = prop.GetValue(instance);
+
+        if (prop.PropertyType == typeof(float))
+        {
+            float val = (float)currentValue;
+            if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else if (prop.PropertyType == typeof(int))
+        {
+            int val = (int)currentValue;
+            if (ImGui.DragInt($"##{prop.Name}", ref val))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else if (prop.PropertyType == typeof(bool))
+        {
+            bool val = (bool)currentValue;
+            if (ImGui.Checkbox($"##{prop.Name}", ref val))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else if (prop.PropertyType == typeof(string))
+        {
+            string val = (string)currentValue ?? "";
+            if (ImGui.InputText($"##{prop.Name}", ref val, 256))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else if (prop.PropertyType == typeof(Vector2))
+        {
+            var val = (Vector2)currentValue;
+            if (ImGui.DragFloat2($"##{prop.Name}", ref val, 0.1f))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else if (prop.PropertyType == typeof(Vector3))
+        {
+            var val = (Vector3)currentValue;
+            if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else
+        {
+            ImGui.Text(currentValue?.ToString() ?? "null");
+        }
+    }
+
+    private object GetDefaultValue(Type componentType, string propertyName)
+    {
+        if (!_defaultComponentCache.TryGetValue(componentType, out object defaultInstance))
+        {
+            try
+            {
+                defaultInstance = Activator.CreateInstance(componentType);
+                _defaultComponentCache[componentType] = defaultInstance;
+            }
+            catch { return null; }
+        }
+        return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
+    }
+
+    private static string SplitPascalCase(string input)
+    {
+        return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\IComponentInspector.cs">
+using Cherris;
+
+namespace CherrisEditor.Inspectors;
+
+public interface IComponentInspector
+{
+    void Draw(Component component);
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\MeshRendererInspector.cs">
+using Cherris;
+using ImGuiNET;
+using System;
+using System.IO;
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace CherrisEditor.Inspectors;
+
+[CustomInspector(typeof(MeshRenderer))]
+public class MeshRendererInspector : IComponentInspector
+{
+    private readonly Editor _editor;
+    private readonly EditorTextureManager _textureManager;
+
+    // We need access to the editor's systems, so we'll pass them in.
+    public MeshRendererInspector(Editor editor, EditorTextureManager textureManager)
+    {
+        _editor = editor;
+        _textureManager = textureManager;
+    }
+
+    public unsafe void Draw(Component component)
+    {
+        var mr = (MeshRenderer)component;
+
+        if (!ImGui.BeginTable("MRTable", 3, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        // Texture
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture");
+        ImGui.TableSetColumnIndex(1);
+
+        IntPtr textureHandle = IntPtr.Zero;
+        if (mr.Texture?.GetBackendHandle() is int handle && handle != 0)
+        {
+            textureHandle = (IntPtr)handle;
+        }
+        else
+        {
+            textureHandle = _textureManager.GetTexture("File");
+        }
+
+        ImGui.ImageButton("TextureThumb", textureHandle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
+            if (payload.NativePtr != null)
+            {
+                string path = Marshal.PtrToStringAnsi(payload.Data);
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    string textureName = Path.GetFileNameWithoutExtension(path);
+                    var newTexture = _editor.ResourceManager.GetTexture(textureName);
+                    mr.TextureName = textureName;
+                    mr.Texture = newTexture;
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        ImGui.SameLine();
+        ImGui.Text(mr.TextureName);
+
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Texture"))
+        {
+            mr.TextureName = "White";
+            mr.Texture = _editor.ResourceManager.GetTexture("White");
+        }
+
+        // Tiling
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture Tiling");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        var tiling = mr.TextureTiling;
+        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
+        {
+            mr.TextureTiling = tiling;
+        }
+        ImGui.PopItemWidth();
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Tiling")) mr.TextureTiling = Vector2.One;
+
+        // Emissive Color
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Emissive Color");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        var emissive = mr.EmissiveColor;
+        if (ImGui.ColorEdit3("##Emissive", ref emissive))
+        {
+            mr.EmissiveColor = emissive;
+        }
+        ImGui.PopItemWidth();
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Emissive")) mr.EmissiveColor = Vector3.Zero;
+
+        ImGui.EndTable();
+    }
+
+    // This method is required by the interface but isn't used for custom inspectors.
+    void IComponentInspector.Draw(Component component) => Draw(component);
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\TransformInspector.cs">
+using Cherris;
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.Inspectors;
+
+public class TransformInspector
+{
+    public void Draw(Transform transform)
+    {
+        if (!ImGui.BeginTable("TransformTable", 3, ImGuiTableFlags.Resizable)) return;
+
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        // Position
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Position");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 position = transform.Position;
+        if (DrawVector3Control("Position", ref position)) transform.Position = position;
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Pos")) transform.Position = Vector3.Zero;
+
+        // Rotation
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Rotation");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 eulerDegrees = EngineMath.ToEulerAngles(transform.Rotation) * (180.0f / System.MathF.PI);
+        if (DrawVector3Control("Rotation", ref eulerDegrees))
+        {
+            Vector3 eulerRadians = eulerDegrees * (System.MathF.PI / 180.0f);
+            transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+        }
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Rot")) transform.Rotation = Quaternion.Identity;
+
+        // Scale
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Scale");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 scale = transform.Scale;
+        if (DrawVector3Control("Scale", ref scale)) transform.Scale = scale;
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Sca")) transform.Scale = Vector3.One;
+
+        ImGui.EndTable();
+    }
+
+    private static bool DrawVector3Control(string label, ref Vector3 values)
+    {
+        bool valueChanged = false;
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - ImGui.CalcTextSize("X").X * 3) / 3.0f;
+
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("Z"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true; ImGui.PopItemWidth();
+        ImGui.PopID();
+
+        return valueChanged;
+    }
+}
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scripts\PlayerController.cs">

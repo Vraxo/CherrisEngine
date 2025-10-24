@@ -11,6 +11,7 @@ public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
     public List<Type> AvailableScriptTypes { get; } = new();
+    public EditorState State { get; private set; } = EditorState.Editing;
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
@@ -69,7 +70,7 @@ public class Editor : Engine
         }
     }
 
-    private void LoadScene()
+    public void LoadScene()
     {
         string scenePath = "Assets/Scene.yaml";
         List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
@@ -82,33 +83,52 @@ public class Editor : Engine
         _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
 
-        SetupEditorCamera();
+        // Set initial state to Editing, which disables all game scripts
+        // and sets up the editor camera correctly.
+        SetEditingState();
     }
 
-    private void SetupEditorCamera()
+    public void Play()
     {
-        if (SceneManager.MainCamera?.GameObject is null)
+        State = EditorState.Playing;
+        SelectedGameObject = null;
+
+        // Enable all game scripts, disable editor script
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            Console.WriteLine("[Editor] No camera found in scene. Editor controller will not be attached.");
-            return;
+            script.Enabled = script is not EditorController;
         }
 
-        GameObject cameraGo = SceneManager.MainCamera.GameObject;
+        SceneManager.Start(); // Re-run Start() for game scripts
+    }
 
-        // Remove any game-specific scripts from the camera to replace them with the editor controller.
-        var gameScripts = cameraGo.GetComponents<Script>()
-            .Where(s => s.GetType() != typeof(EditorController))
-            .ToList(); // Use ToList to create a copy for safe removal.
+    public void Stop()
+    {
+        State = EditorState.Editing;
+        // Reload the scene to revert any changes made during play mode
+        LoadScene();
+        SceneManager.Start(); // This is for components that need Start(), not scripts
+        SetEditingState();
+    }
 
-        foreach (var script in gameScripts)
+    private void SetEditingState()
+    {
+        // Disable all game scripts
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            cameraGo.RemoveComponent(script);
+            script.Enabled = false;
         }
 
-        // Ensure an EditorController is present.
-        if (cameraGo.GetComponent<EditorController>() is null)
+        // Find the camera and enable its EditorController
+        var cameraGo = SceneManager.MainCamera?.GameObject;
+        if (cameraGo != null)
         {
-            cameraGo.AddComponent(new EditorController());
+            var editorController = cameraGo.GetComponent<EditorController>();
+            if (editorController == null)
+            {
+                editorController = cameraGo.AddComponent(new EditorController());
+            }
+            editorController.Enabled = true;
         }
     }
 

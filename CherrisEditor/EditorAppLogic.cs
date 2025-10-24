@@ -28,7 +28,7 @@ public class EditorAppLogic : IDisposable
         return (deltaTime) =>
         {
             SetupDockspace();
-
+            DrawToolbar();
             DrawOutlinerPanel();
             DrawConsolePanel();
             _contentBrowserPanel.Draw(); // Call the new panel's Draw method
@@ -101,6 +101,34 @@ public class EditorAppLogic : IDisposable
         ImGui.EndMenuBar();
     }
 
+    private void DrawToolbar()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 2));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemInnerSpacing, new Vector2(0, 0));
+        ImGui.Begin("Toolbar", ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
+        float size = ImGui.GetWindowHeight() - 4.0f;
+        ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (size * 0.5f));
+
+        if (_editor.State == EditorState.Editing)
+        {
+            if (ImGui.Button("Play", new Vector2(size, size)))
+            {
+                _editor.Play();
+            }
+        }
+        else
+        {
+            if (ImGui.Button("Stop", new Vector2(size, size)))
+            {
+                _editor.Stop();
+            }
+        }
+
+        ImGui.PopStyleVar(2);
+        ImGui.End();
+    }
+
     private void DrawOutlinerPanel()
     {
         ImGui.Begin("Outliner");
@@ -127,8 +155,12 @@ public class EditorAppLogic : IDisposable
 
     public void UpdateEditorLogic(float deltaTime)
     {
-        HandleObjectSelection();
-        HandleMovement(deltaTime);
+        // Only allow object selection when not in play mode
+        if (_editor.State == EditorState.Editing)
+        {
+            HandleObjectSelection();
+            HandleMovement(deltaTime);
+        }
     }
 
     private void HandleObjectSelection()

@@ -150,7 +150,15 @@ internal class InspectorPanel
             {
                 if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
                 {
-                    go.AddComponent((Component)Activator.CreateInstance(scriptType));
+                    var newComponent = (Script)Activator.CreateInstance(scriptType);
+                    go.AddComponent(newComponent);
+
+                    // If we're not playing, the script shouldn't start running automatically.
+                    if (_editor.State != EditorState.Playing)
+                    {
+                        newComponent.Enabled = false;
+                    }
+
                     ImGui.CloseCurrentPopup();
                 }
             }

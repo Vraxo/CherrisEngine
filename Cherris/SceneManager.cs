@@ -60,7 +60,10 @@ public class SceneManager
         {
             foreach (var script in gameObject.GetComponents<Script>())
             {
-                script.Update(deltaTime);
+                if (script.Enabled)
+                {
+                    script.Update(deltaTime);
+                }
             }
         }
     }
