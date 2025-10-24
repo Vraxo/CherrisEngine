@@ -1,14 +1,8 @@
-﻿using System.Diagnostics;
-using System.Numerics;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
-using Veldrid;
+﻿namespace Cherris;
 
-namespace Cherris;
-
-// MODIFIED: Added "new()" constraint to allow Activator.CreateInstance
 public abstract class Component
 {
+    [HideInInspector]
     public GameObject GameObject { get; internal set; }
 }
 

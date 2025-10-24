@@ -323,6 +323,9 @@ internal class InspectorPanel
         {
             if (!prop.CanRead || !prop.CanWrite) continue;
 
+            // Check for the HideInInspector attribute
+            if (prop.IsDefined(typeof(HideInInspectorAttribute), false)) continue;
+
             ImGui.TableNextRow();
             ImGui.TableSetColumnIndex(0);
             ImGui.Text(SplitPascalCase(prop.Name));
