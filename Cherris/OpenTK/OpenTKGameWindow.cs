@@ -11,7 +11,6 @@ namespace Cherris.OpenTK;
 public class OpenTKGameWindow : IGameWindow
 {
     internal readonly OTKGameWindow _window;
-    private bool _isMouseLocked;
     private Vector2 _lastMousePos;
     private bool _firstMove = true;
     private ImGuiController _imGuiController;
@@ -25,22 +24,8 @@ public class OpenTKGameWindow : IGameWindow
 
     public bool IsMouseLocked
     {
-        get => _isMouseLocked;
-        set
-        {
-            _isMouseLocked = value;
-
-            _window.CursorState = _isMouseLocked 
-                ? CursorState.Grabbed 
-                : CursorState.Normal;
-            
-            if (!_isMouseLocked)
-            {
-                return;
-            }
-
-            _firstMove = true; // Reset on re-lock to avoid large delta jumps
-        }
+        get => Input.IsMouseLocked;
+        set => Input.IsMouseLocked = value;
     }
 
     public OpenTKGameWindow(string title, int width, int height, bool startWithMouseLocked)
@@ -65,12 +50,25 @@ public class OpenTKGameWindow : IGameWindow
         _window.MouseMove += OnMouseMove;
         _window.TextInput += OnTextInput;
         _window.MouseWheel += OnMouseWheel;
+        Input.OnLockStateChanged += OnLockStateChanged;
 
 
         // This makes the OpenGL context current on this thread.
         _window.MakeCurrent();
 
         IsMouseLocked = startWithMouseLocked;
+    }
+
+    private void OnLockStateChanged(bool locked)
+    {
+        _window.CursorState = locked
+            ? CursorState.Grabbed
+            : CursorState.Normal;
+
+        if (locked)
+        {
+            _firstMove = true; // Reset on re-lock to avoid large delta jumps
+        }
     }
 
     public void SetImGuiController(ImGuiController controller)
@@ -97,15 +95,6 @@ public class OpenTKGameWindow : IGameWindow
         // but we need to process them manually for our game loop. A timeout of 0
         // processes all pending events and returns immediately.
         _window.ProcessEvents(0);
-
-        if (Input.WasKeyPressed(Key.Escape))
-        {
-            // Let ImGui handle a potential Escape key press before we toggle mouse lock
-            if (_imGuiController?.WantCaptureKeyboard != true)
-            {
-                IsMouseLocked = !IsMouseLocked;
-            }
-        }
     }
 
     public void SwapBuffers()
@@ -146,16 +135,34 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseDown(MouseButtonEventArgs e)
     {
-        _imGuiController?.MouseButton((MouseButton)e.Button, true);
-        if (_imGuiController?.WantCaptureMouse == true) return;
-        Input.SetMouseButtonState(MapButton((MouseButton)e.Button), true);
+        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        Console.WriteLine($"[Window] Mouse Down: {e.Button}. ImGui wants capture: {wantCapture}");
+
+        _imGuiController?.MouseButton(e.Button, true);
+
+        // For editor controls, we only want to prevent left-clicks from passing through to the game world.
+        // Right-clicks and other buttons should always be processed for viewport navigation.
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
+        {
+            return;
+        }
+
+        Input.SetMouseButtonState(MapButton(e.Button), true);
     }
 
     private void OnMouseUp(MouseButtonEventArgs e)
     {
-        _imGuiController?.MouseButton((MouseButton)e.Button, false);
-        if (_imGuiController?.WantCaptureMouse == true) return;
-        Input.SetMouseButtonState(MapButton((MouseButton)e.Button), false);
+        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        Console.WriteLine($"[Window] Mouse Up: {e.Button}. ImGui wants capture: {wantCapture}");
+
+        _imGuiController?.MouseButton(e.Button, false);
+
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
+        {
+            return;
+        }
+
+        Input.SetMouseButtonState(MapButton(e.Button), false);
     }
 
     private void OnKeyDown(KeyboardKeyEventArgs e)
@@ -185,17 +192,18 @@ public class OpenTKGameWindow : IGameWindow
 
     public void Dispose()
     {
+        Input.OnLockStateChanged -= OnLockStateChanged;
         _window?.Dispose();
     }
 
     // --- Input Mapping ---
-    private static Cherris.MouseButton MapButton(MouseButton button)
+    private static Cherris.MouseButton MapButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button)
     {
         return button switch
         {
-            MouseButton.Left => Cherris.MouseButton.Left,
-            MouseButton.Right => Cherris.MouseButton.Right,
-            MouseButton.Middle => Cherris.MouseButton.Middle,
+            global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left => Cherris.MouseButton.Left,
+            global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right => Cherris.MouseButton.Right,
+            global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Middle => Cherris.MouseButton.Middle,
             _ => Cherris.MouseButton.LastButton // Indicates an unhandled button
         };
     }
@@ -210,6 +218,8 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.D => Key.D,
             OpenTKKey.S => Key.S,
             OpenTKKey.W => Key.W,
+            OpenTKKey.Q => Key.Q,
+            OpenTKKey.E => Key.E,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
             OpenTKKey.Escape => Key.Escape,

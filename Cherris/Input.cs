@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Cherris;
@@ -11,7 +12,20 @@ public static class Input
     private static readonly HashSet<MouseButton> _pressedMouseButtons = new();
     private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
 
-    public static bool IsMouseLocked { get; internal set; }
+    private static bool _isMouseLocked;
+    public static event Action<bool> OnLockStateChanged;
+
+    public static bool IsMouseLocked
+    {
+        get => _isMouseLocked;
+        set
+        {
+            if (_isMouseLocked == value) return;
+            _isMouseLocked = value;
+            OnLockStateChanged?.Invoke(value);
+        }
+    }
+
     public static Vector2 MouseDelta { get; private set; }
     public static Vector2 MousePosition { get; private set; }
 
@@ -68,5 +82,6 @@ public static class Input
 
     public static bool IsKeyDown(Key key) => _pressedKeys.Contains(key);
     public static bool WasKeyPressed(Key key) => _justPressedKeys.Contains(key);
+    public static bool IsMouseButtonDown(MouseButton button) => _pressedMouseButtons.Contains(button);
     public static bool WasMouseButtonPressed(MouseButton button) => _justPressedMouseButtons.Contains(button);
 }

@@ -218,7 +218,7 @@ void main()
             io.AddMouseWheelEvent(offset.X, offset.Y);
         }
 
-        public void MouseButton(MouseButton button, bool down)
+        public void MouseButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button, bool down)
         {
             ImGuiIOPtr io = ImGui.GetIO();
             io.AddMouseButtonEvent((int)button, down);
