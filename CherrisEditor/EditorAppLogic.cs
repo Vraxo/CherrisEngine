@@ -1,9 +1,7 @@
 ﻿using Cherris;
 using ImGuiNET;
 using System.Numerics;
-using System.IO;
 using System;
-using System.Linq;
 
 namespace CherrisEditor;
 
@@ -11,28 +9,14 @@ public class EditorAppLogic : IDisposable
 {
     private readonly Editor _editor;
     private readonly InspectorPanel _inspectorPanel;
-    private readonly IconManager _iconManager;
-
-    private readonly string _assetRootPath;
-    private string _currentAssetPath;
+    private readonly ContentBrowserPanel _contentBrowserPanel; // Use the new panel class
 
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
         _inspectorPanel = new(_editor);
+        _contentBrowserPanel = new ContentBrowserPanel(); // Instantiate the new panel
         EditorTheme.ApplyUnrealEngineStyle();
-
-        _iconManager = new IconManager();
-        _iconManager.LoadIcon("Folder", "Assets/Icons/folder.png");
-        _iconManager.LoadIcon("File", "Assets/Icons/file.png");
-
-        _assetRootPath = Path.GetFullPath("Assets");
-        _currentAssetPath = _assetRootPath;
-    }
-
-    public void Dispose()
-    {
-        _iconManager.Dispose();
     }
 
     public Action<float> DrawUI()
@@ -43,10 +27,12 @@ public class EditorAppLogic : IDisposable
 
             DrawOutlinerPanel();
             DrawConsolePanel();
-            DrawContentBrowserPanel();
+            _contentBrowserPanel.Draw(); // Call the new panel's Draw method
             _inspectorPanel.DrawInspectorPanel();
         };
     }
+
+    // The old DrawContentBrowserPanel() method has been completely removed.
 
     private void SetupDockspace()
     {
@@ -121,77 +107,6 @@ public class EditorAppLogic : IDisposable
         ImGui.End();
     }
 
-    private void DrawContentBrowserPanel()
-    {
-        ImGui.Begin("Content Browser");
-
-        if (_currentAssetPath != _assetRootPath)
-        {
-            if (ImGui.Button("<- Back"))
-            {
-                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
-            }
-            ImGui.SameLine();
-        }
-        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
-        ImGui.Separator();
-
-        float thumbnailSize = 80.0f;
-        float padding = 16.0f;
-        float cellSize = thumbnailSize + padding;
-        float panelWidth = ImGui.GetContentRegionAvail().X;
-        int columnCount = (int)(panelWidth / cellSize);
-        if (columnCount < 1) columnCount = 1;
-
-        if (ImGui.BeginTable("ContentGrid", columnCount))
-        {
-            var directories = Directory.GetDirectories(_currentAssetPath);
-            var files = Directory.GetFiles(_currentAssetPath);
-
-            foreach (var path in directories.Concat(files))
-            {
-                ImGui.TableNextColumn();
-                ImGui.PushID(path);
-
-                bool isDirectory = Directory.Exists(path);
-                IntPtr iconHandle = isDirectory ? _iconManager.GetIcon("Folder") : _iconManager.GetIcon("File");
-                string itemName = Path.GetFileName(path);
-
-                ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
-
-                // --- REVISED CENTERING LOGIC ---
-                float columnWidth = ImGui.GetColumnWidth();
-
-                // 1. Center the icon. The initial cursor position is at the start of the cell.
-                float iconOffsetX = (columnWidth - thumbnailSize) * 0.5f;
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + iconOffsetX);
-
-                if (ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize)))
-                {
-                    // Single-click logic can go here
-                }
-                if (isDirectory && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-                {
-                    _currentAssetPath = path;
-                }
-
-                // 2. Center the text. The cursor is now on a new line, at the start of the cell.
-                float textWidth = ImGui.CalcTextSize(itemName).X;
-                float textOffsetX = (columnWidth - textWidth) * 0.5f;
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
-                ImGui.Text(itemName);
-                // --- END OF REVISED CENTERING LOGIC ---
-
-                ImGui.PopStyleColor();
-                ImGui.PopID();
-            }
-
-            ImGui.EndTable();
-        }
-
-        ImGui.End();
-    }
-
     public void UpdateEditorLogic(float deltaTime)
     {
         HandleObjectSelection();
@@ -233,64 +148,39 @@ public class EditorAppLogic : IDisposable
         }
 
         _editor.SetSelectedGameObject(closestObject);
-
-        if (closestObject is not null)
-        {
-            Console.WriteLine($"Selected '{closestObject.Name}'");
-        }
     }
 
     private void HandleMovement(float deltaTime)
     {
         GameObject? selectedGameObject = _editor.GetSelectedGameObject();
-
-        if (selectedGameObject is null)
-        {
-            return;
-        }
+        if (selectedGameObject is null) return;
 
         const float moveSpeed = 2.0f;
         Vector3 moveDirection = Vector3.Zero;
         bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
 
-        if (Input.IsKeyDown(Key.Left))
-        {
-            moveDirection.X -= 1;
-        }
-
-        if (Input.IsKeyDown(Key.Right))
-        {
-            moveDirection.X += 1;
-        }
+        if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
+        if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
 
         if (shiftHeld)
         {
-            if (Input.IsKeyDown(Key.Up))
-            {
-                moveDirection.Y += 1;
-            }
-
-            if (Input.IsKeyDown(Key.Down))
-            {
-                moveDirection.Y -= 1;
-            }
+            if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
+            if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
         }
         else
         {
-            if (Input.IsKeyDown(Key.Up))
-            {
-                moveDirection.Z -= 1;
-            }
-
-            if (Input.IsKeyDown(Key.Down))
-            {
-                moveDirection.Z += 1;
-            }
+            if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
+            if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
         }
 
         if (moveDirection != Vector3.Zero)
         {
             selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
         }
+    }
+
+    public void Dispose()
+    {
+        _contentBrowserPanel.Dispose(); // Dispose the new panel
     }
 }

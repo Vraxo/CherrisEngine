@@ -1,19 +1,23 @@
-﻿using ImGuiNET;
+﻿using Cherris;
+using ImGuiNET;
+using System;
+using System.IO;
+using System.Linq;
 using System.Numerics;
 
 namespace CherrisEditor;
 
 public class ContentBrowserPanel : IDisposable
 {
-    private readonly IconManager _iconManager;
+    private readonly EditorTextureManager _textureManager;
     private readonly string _assetRootPath;
     private string _currentAssetPath;
 
     public ContentBrowserPanel()
     {
-        _iconManager = new IconManager();
-        _iconManager.LoadIcon("Folder", "Assets/Icons/folder.png");
-        _iconManager.LoadIcon("File", "Assets/Icons/file.png");
+        _textureManager = new EditorTextureManager();
+        _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
+        _textureManager.LoadTexture("File", "Assets/Icons/file.png");
 
         _assetRootPath = Path.GetFullPath("Assets");
         _currentAssetPath = _assetRootPath;
@@ -71,17 +75,16 @@ public class ContentBrowserPanel : IDisposable
         ImGui.PushID(path);
         ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
 
-        bool isDirectory = Directory.Exists(path);
-        IntPtr iconHandle = isDirectory ? _iconManager.GetIcon("Folder") : _iconManager.GetIcon("File");
+        IntPtr textureHandle = _textureManager.GetTextureForPath(path);
         string itemName = Path.GetFileName(path);
 
         CenterAlignItem(thumbnailSize);
-        if (ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize)))
+        if (ImGui.ImageButton(itemName, textureHandle, new Vector2(thumbnailSize, thumbnailSize)))
         {
             // Handle single-click
         }
 
-        if (isDirectory && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        if (Directory.Exists(path) && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
             _currentAssetPath = path;
         }
@@ -110,6 +113,6 @@ public class ContentBrowserPanel : IDisposable
 
     public void Dispose()
     {
-        _iconManager.Dispose();
+        _textureManager.Dispose();
     }
 }
