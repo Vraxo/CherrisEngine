@@ -160,7 +160,7 @@ public class OpenTKResourceManager : IResourceManager
             SetTextureParameters(TextureTarget.TextureCubeMap);
 
             var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
-            var newSkybox = new Skybox(newTexture);
+            var newSkybox = new Skybox(newTexture, name);
             _skyboxes.Add(name, newSkybox);
             return newSkybox;
         }

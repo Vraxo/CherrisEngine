@@ -71,8 +71,10 @@ public class Editor : Engine
 
     private void LoadScene()
     {
-        List<GameObject> loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
+        string scenePath = "Assets/Scene.yaml";
+        List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
         SceneManager.SetScene(loadedObjects);
+        CurrentScenePath = scenePath;
     }
 
     protected override void OnStart()

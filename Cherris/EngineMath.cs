@@ -1,8 +1,9 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Numerics;
 
-namespace CherrisEditor;
+namespace Cherris;
 
-internal static class EngineMath
+public static class EngineMath
 {
     // Helper to convert Quaternion to Euler angles (in radians) for display
     public static Vector3 ToEulerAngles(Quaternion q)

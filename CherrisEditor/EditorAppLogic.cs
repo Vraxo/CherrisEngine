@@ -11,6 +11,7 @@ public class EditorAppLogic : IDisposable
     private readonly InspectorPanel _inspectorPanel;
     private readonly ContentBrowserPanel _contentBrowserPanel;
     private readonly EditorTextureManager _editorTextureManager;
+    private readonly SceneSerializer _sceneSerializer;
 
     public EditorAppLogic(Editor editor)
     {
@@ -18,6 +19,7 @@ public class EditorAppLogic : IDisposable
         _editorTextureManager = new EditorTextureManager();
         _inspectorPanel = new(_editor, _editorTextureManager);
         _contentBrowserPanel = new ContentBrowserPanel(_editorTextureManager);
+        _sceneSerializer = new SceneSerializer();
         EditorTheme.ApplyUnrealEngineStyle();
     }
 
@@ -66,7 +68,7 @@ public class EditorAppLogic : IDisposable
         ImGui.End();
     }
 
-    private static void DrawMainMenuBar()
+    private void DrawMainMenuBar()
     {
         if (!ImGui.BeginMenuBar()) return;
 
@@ -75,8 +77,22 @@ public class EditorAppLogic : IDisposable
             if (ImGui.MenuItem("New Scene")) { }
             if (ImGui.MenuItem("Open Scene")) { }
             ImGui.Separator();
-            if (ImGui.MenuItem("Save")) { }
-            if (ImGui.MenuItem("Save As...")) { }
+            if (ImGui.MenuItem("Save"))
+            {
+                if (!string.IsNullOrEmpty(_editor.CurrentScenePath))
+                {
+                    _sceneSerializer.SaveScene(_editor.SceneManager.GameObjects, _editor.CurrentScenePath);
+                    Console.WriteLine($"[Editor] Scene saved to '{_editor.CurrentScenePath}'");
+                }
+                else
+                {
+                    Console.WriteLine("[Editor] No scene path set. Use 'Save As...' first.");
+                }
+            }
+            if (ImGui.MenuItem("Save As..."))
+            {
+                Console.WriteLine("[Editor] 'Save As...' is not implemented yet.");
+            }
             ImGui.Separator();
             if (ImGui.MenuItem("Exit")) { Console.WriteLine("Exit clicked!"); }
             ImGui.EndMenu();

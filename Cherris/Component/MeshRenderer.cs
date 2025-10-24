@@ -7,6 +7,7 @@ namespace Cherris;
 public class MeshRenderer : Component, IDisposable
 {
     public Mesh Mesh { get; }
+    public string MeshName { get; }
 
     private ITexture _texture;
     public ITexture Texture
@@ -30,9 +31,10 @@ public class MeshRenderer : Component, IDisposable
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }
 
-    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor, string textureName)
+    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor, string textureName, string meshName)
     {
         Mesh = mesh;
+        MeshName = meshName;
         _texture = texture; // Set backing field directly to avoid invalidation in constructor
         TextureName = textureName;
         TextureTiling = textureTiling;

@@ -13,6 +13,7 @@ public abstract class Engine
     public readonly IResourceManager ResourceManager;
     public readonly SceneLoader SceneLoader;
     public readonly SceneManager SceneManager;
+    public string CurrentScenePath { get; protected set; }
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly IGraphicsBackend _backend;
@@ -119,9 +120,11 @@ public abstract class Engine
             }
 
             Mesh? mesh = null;
+            string meshName = string.Empty;
 
-            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
+            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string parsedMeshName)
             {
+                meshName = parsedMeshName;
                 mesh = ResourceManager.GetMesh(meshName);
             }
 
@@ -170,7 +173,7 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName);
+            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>

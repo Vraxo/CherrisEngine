@@ -10,14 +10,14 @@ public static class SkyboxLoader
     public static Skybox? LoadSkybox(GraphicsDevice gd, string name)
     {
         string[]? facePaths = FindFacePaths(name);
-        
+
         if (facePaths is null)
         {
             return null;
         }
 
         ImageResult[]? faceImages = LoadFaceImages(facePaths);
-        
+
         if (faceImages is null || !ValidateImageDimensions(faceImages, facePaths))
         {
             return null;
@@ -25,17 +25,17 @@ public static class SkyboxLoader
 
         Texture cubemapTexture = CreateCubemapTexture(gd, faceImages);
 
-        return new(cubemapTexture);
+        return new(cubemapTexture, name);
     }
 
     private static string[]? FindFacePaths(string baseName)
     {
         string[] facePaths = new string[6];
-        
+
         for (int i = 0; i < FaceSuffixes.Length; i++)
         {
             string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
-            
+
             if (path is null)
             {
                 Console.WriteLine($"[SkyboxLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
@@ -55,7 +55,7 @@ public static class SkyboxLoader
         try
         {
             StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps do not need flipping
-            
+
             for (int i = 0; i < paths.Length; i++)
             {
                 using var stream = File.OpenRead(paths[i]);
@@ -78,7 +78,7 @@ public static class SkyboxLoader
     private static bool ValidateImageDimensions(ImageResult[] images, string[] paths)
     {
         ImageResult firstImage = images[0];
-        
+
         if (firstImage.Width != firstImage.Height)
         {
             Console.WriteLine(
@@ -115,7 +115,7 @@ public static class SkyboxLoader
         for (uint i = 0; i < images.Length; i++)
         {
             ImageResult img = images[i];
-            
+
             gd.UpdateTexture(
                 cubemap,
                 img.Data,
@@ -130,7 +130,7 @@ public static class SkyboxLoader
         }
 
         TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
-        
+
         return new(cubemap, textureView);
     }
 }
