@@ -23,6 +23,7 @@ public class SceneLoader
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
+            .WithTypeConverter(new Vector2YamlTypeConverter())
             .Build();
 
         _serializer = new SerializerBuilder().Build();

@@ -1,12 +1,8 @@
-﻿using Cherris.Rendering;
-using StbImageSharp;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Xml.Linq;
-using Vortice.Direct3D;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -20,6 +16,8 @@ public class SceneSerializer
     {
         _serializer = new SerializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
+            .WithTypeConverter(new Vector3YamlTypeConverter())
+            .WithTypeConverter(new Vector2YamlTypeConverter())
             .Build();
     }
 
@@ -39,14 +37,14 @@ public class SceneSerializer
             // --- Transform ---
             var transformData = new Dictionary<string, object>
             {
-                ["Position"] = new List<float> { go.Transform.Position.X, go.Transform.Position.Y, go.Transform.Position.Z }
+                ["Position"] = go.Transform.Position
             };
 
             var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
             // Loader expects Pitch(X), Yaw(Y), Roll(Z). Our math gives Roll(X), Pitch(Y), Yaw(Z).
-            // So we write them out in the correct order for the loader.
-            transformData["Rotation"] = new List<float> { eulerDegrees.Y, eulerDegrees.Z, eulerDegrees.X };
-            transformData["Scale"] = new List<float> { go.Transform.Scale.X, go.Transform.Scale.Y, go.Transform.Scale.Z };
+            // So we create a new Vector3 with components in the correct order for the loader.
+            transformData["Rotation"] = new Vector3(eulerDegrees.Y, eulerDegrees.Z, eulerDegrees.X);
+            transformData["Scale"] = go.Transform.Scale;
             componentsData["Transform"] = transformData;
 
             // --- Other Components ---
@@ -61,9 +59,9 @@ public class SceneSerializer
                             ["Texture"] = mr.TextureName
                         };
                         if (mr.TextureTiling != Vector2.One)
-                            mrData["TextureTiling"] = new List<float> { mr.TextureTiling.X, mr.TextureTiling.Y };
+                            mrData["TextureTiling"] = mr.TextureTiling;
                         if (mr.EmissiveColor != Vector3.Zero)
-                            mrData["EmissiveColor"] = new List<float> { mr.EmissiveColor.X, mr.EmissiveColor.Y, mr.EmissiveColor.Z };
+                            mrData["EmissiveColor"] = mr.EmissiveColor;
                         componentsData["MeshRenderer"] = mrData;
                         break;
 
