@@ -769,6 +769,9 @@ public class GameObject
     public Transform Transform { get; }
     private readonly List<Component> _components = new List<Component>();
 
+    // ADDED: Public accessor for the component list
+    public IEnumerable<Component> Components => _components;
+
     public GameObject(string name = "GameObject")
     {
         Name = name;
@@ -3216,6 +3219,7 @@ using Veldrid;
 
 namespace Cherris;
 
+// MODIFIED: Added "new()" constraint to allow Activator.CreateInstance
 public abstract class Component
 {
     public GameObject GameObject { get; internal set; }
@@ -3361,8 +3365,10 @@ public class MeshRenderer : Component, IDisposable
 {
     public Mesh Mesh { get; }
     public ITexture Texture { get; }
-    public Vector2 TextureTiling { get; }
-    public Vector3 EmissiveColor { get; }
+
+    // MODIFIED: Added setters to allow editing from the inspector
+    public Vector2 TextureTiling { get; set; }
+    public Vector3 EmissiveColor { get; set; }
 
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }
@@ -3435,6 +3441,7 @@ public class Transform
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\ImGuiController.cs">
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.CompilerServices;
 using Cherris.Rendering;
 using ImGuiNET;
@@ -3475,14 +3482,34 @@ namespace Cherris.OpenTK
             IntPtr context = ImGui.CreateContext();
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
-            io.Fonts.AddFontDefault();
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
 
-            // Enable Docking
+            // --- FONT LOADING LOGIC (FINAL TUNED VALUE) ---
+            // This is the single value you should change to fine-tune the font size.
+            // 18.0f is a standard, comfortable size for 1440p monitors.
+            const string fontPath = "Assets/Fonts/RobotoMono-Regular.ttf";
+
+            // <<< YOUR CONTROL KNOB IS HERE >>>
+            const float baseFontSize = 18.0f;
+
+            if (File.Exists(fontPath))
+            {
+                io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+            }
+            else
+            {
+                // Fallback if the font is not found
+                Console.WriteLine($"[ImGuiController] Warning: Font not found at '{fontPath}'. Using default font.");
+                io.Fonts.AddFontDefault();
+            }
+
+            // Keep scale at 1.0f and control size with baseFontSize.
+            io.FontGlobalScale = 1.0f;
+            // --- END FONT LOADING ---
+
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
 
             CreateDeviceResources();
-
             SetPerFrameImGuiData(1f / 60f);
 
             ImGui.NewFrame();
@@ -5189,19 +5216,38 @@ public class Editor : Engine
 using Cherris;
 using ImGuiNET;
 using System.Numerics;
+using System.IO;
+using System;
+using System.Linq;
 
 namespace CherrisEditor;
 
-public class EditorAppLogic
+public class EditorAppLogic : IDisposable
 {
     private readonly Editor _editor;
-
     private readonly InspectorPanel _inspectorPanel;
+    private readonly IconManager _iconManager;
+
+    private readonly string _assetRootPath;
+    private string _currentAssetPath;
 
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
         _inspectorPanel = new(_editor);
+        EditorTheme.ApplyUnrealEngineStyle();
+
+        _iconManager = new IconManager();
+        _iconManager.LoadIcon("Folder", "Assets/Icons/folder.png");
+        _iconManager.LoadIcon("File", "Assets/Icons/file.png");
+
+        _assetRootPath = Path.GetFullPath("Assets");
+        _currentAssetPath = _assetRootPath;
+    }
+
+    public void Dispose()
+    {
+        _iconManager.Dispose();
     }
 
     public Action<float> DrawUI()
@@ -5209,13 +5255,15 @@ public class EditorAppLogic
         return (deltaTime) =>
         {
             SetupDockspace();
-            DrawHierarchyPanel();
+
+            DrawOutlinerPanel();
             DrawConsolePanel();
+            DrawContentBrowserPanel();
             _inspectorPanel.DrawInspectorPanel();
         };
     }
 
-    private static void SetupDockspace()
+    private void SetupDockspace()
     {
         ImGuiViewportPtr viewport = ImGui.GetMainViewport();
         ImGui.SetNextWindowPos(viewport.Pos);
@@ -5224,56 +5272,54 @@ public class EditorAppLogic
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
 
-        ImGuiWindowFlags windowFlags = 
+        ImGuiWindowFlags windowFlags =
               ImGuiWindowFlags.NoTitleBar
             | ImGuiWindowFlags.NoCollapse
             | ImGuiWindowFlags.NoResize
             | ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoBringToFrontOnFocus
             | ImGuiWindowFlags.NoNavFocus
-            | ImGuiWindowFlags.MenuBar;
+            | ImGuiWindowFlags.MenuBar
+            | ImGuiWindowFlags.NoBackground;
 
         ImGui.Begin("MainDockspace", windowFlags);
-        ImGui.PopStyleVar(2);
+        ImGui.PopStyleVar(3);
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
-
         DrawMainMenuBar();
-
         ImGui.End();
     }
 
     private static void DrawMainMenuBar()
     {
-        if (!ImGui.BeginMenuBar())
-        {
-            return;
-        }
+        if (!ImGui.BeginMenuBar()) return;
 
         if (ImGui.BeginMenu("File"))
         {
-            if (ImGui.MenuItem("Exit"))
-            {
-                // This is a placeholder; a real implementation would close the app.
-                Console.WriteLine("Exit clicked!");
-            }
-
+            if (ImGui.MenuItem("New Scene")) { }
+            if (ImGui.MenuItem("Open Scene")) { }
+            ImGui.Separator();
+            if (ImGui.MenuItem("Save")) { }
+            if (ImGui.MenuItem("Save As...")) { }
+            ImGui.Separator();
+            if (ImGui.MenuItem("Exit")) { Console.WriteLine("Exit clicked!"); }
             ImGui.EndMenu();
         }
 
         ImGui.EndMenuBar();
     }
 
-    private void DrawHierarchyPanel()
+    private void DrawOutlinerPanel()
     {
-        ImGui.Begin("Hierarchy");
+        ImGui.Begin("Outliner");
 
         foreach (GameObject go in _editor.SceneManager.GameObjects)
         {
             bool isSelected = _editor.GetSelectedGameObject() == go;
-            
+
             if (ImGui.Selectable(go.Name, isSelected))
             {
                 _editor.SetSelectedGameObject(go);
@@ -5287,6 +5333,81 @@ public class EditorAppLogic
     {
         ImGui.Begin("Console");
         ImGui.Text("Log messages will appear here...");
+        ImGui.End();
+    }
+
+    private void DrawContentBrowserPanel()
+    {
+        ImGui.Begin("Content Browser");
+
+        if (_currentAssetPath != _assetRootPath)
+        {
+            if (ImGui.Button("<- Back"))
+            {
+                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
+            }
+            ImGui.SameLine();
+        }
+        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
+        ImGui.Separator();
+
+        float thumbnailSize = 80.0f;
+        float padding = 16.0f;
+        float cellSize = thumbnailSize + padding;
+        float panelWidth = ImGui.GetContentRegionAvail().X;
+        int columnCount = (int)(panelWidth / cellSize);
+        if (columnCount < 1) columnCount = 1;
+
+        if (ImGui.BeginTable("ContentGrid", columnCount))
+        {
+            var directories = Directory.GetDirectories(_currentAssetPath);
+            var files = Directory.GetFiles(_currentAssetPath);
+
+            foreach (var path in directories.Concat(files))
+            {
+                ImGui.TableNextColumn();
+                ImGui.PushID(path);
+
+                bool isDirectory = Directory.Exists(path);
+                IntPtr iconHandle = isDirectory ? _iconManager.GetIcon("Folder") : _iconManager.GetIcon("File");
+                string itemName = Path.GetFileName(path);
+
+                ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+
+                // --- START OF FINAL CENTERING LOGIC ---
+                // Get properties for the current column
+                float columnWidth = ImGui.GetColumnWidth();
+                float columnStartX = ImGui.GetCursorPosX();
+
+                // 1. Center the icon
+                float iconOffsetX = (columnWidth - thumbnailSize) * 0.5f;
+                ImGui.SetCursorPosX(columnStartX + iconOffsetX);
+
+                // Draw the button and handle interactions
+                if (ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize), new Vector2(0, 0), new Vector2(1, 1)))
+                {
+                    // Single-click logic can go here
+                }
+                if (isDirectory && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                {
+                    _currentAssetPath = path;
+                }
+
+                // 2. Center the text
+                float textWidth = ImGui.CalcTextSize(itemName).X;
+                float textOffsetX = (columnWidth - textWidth) * 0.5f;
+                // Set the cursor position relative to the column's start *again* for the text
+                ImGui.SetCursorPosX(columnStartX + textOffsetX);
+                ImGui.TextWrapped(itemName);
+                // --- END OF FINAL CENTERING LOGIC ---
+
+                ImGui.PopStyleColor();
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+
         ImGui.End();
     }
 
@@ -5332,12 +5453,10 @@ public class EditorAppLogic
 
         _editor.SetSelectedGameObject(closestObject);
 
-        if (closestObject is null)
+        if (closestObject is not null)
         {
-            return;
+            Console.WriteLine($"Selected '{closestObject.Name}'");
         }
-
-        Console.WriteLine($"Selected '{closestObject.Name}'");
     }
 
     private void HandleMovement(float deltaTime)
@@ -5456,6 +5575,108 @@ public class EditorController : Script
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorTheme.cs">
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor;
+
+/// <summary>
+/// A static class to apply a custom ImGui theme resembling Unreal Engine 5.
+/// </summary>
+public static class EditorTheme
+{
+    public static void ApplyUnrealEngineStyle()
+    {
+        ImGuiStylePtr style = ImGui.GetStyle();
+
+        // Colors
+        style.Colors[(int)ImGuiCol.Text] = new Vector4(1.00f, 1.00f, 1.00f, 1.00f);
+        style.Colors[(int)ImGuiCol.TextDisabled] = new Vector4(0.50f, 0.50f, 0.50f, 1.00f);
+        style.Colors[(int)ImGuiCol.WindowBg] = new Vector4(0.1f, 0.105f, 0.11f, 1.00f);
+        style.Colors[(int)ImGuiCol.ChildBg] = new Vector4(0.1f, 0.105f, 0.11f, 1.00f);
+        style.Colors[(int)ImGuiCol.PopupBg] = new Vector4(0.08f, 0.08f, 0.08f, 0.94f);
+        style.Colors[(int)ImGuiCol.Border] = new Vector4(0.08f, 0.08f, 0.08f, 1.00f);
+        style.Colors[(int)ImGuiCol.BorderShadow] = new Vector4(0.00f, 0.00f, 0.00f, 0.00f);
+        style.Colors[(int)ImGuiCol.FrameBg] = new Vector4(0.2f, 0.205f, 0.21f, 1.00f);
+        style.Colors[(int)ImGuiCol.FrameBgHovered] = new Vector4(0.3f, 0.305f, 0.31f, 1.00f);
+        style.Colors[(int)ImGuiCol.FrameBgActive] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.TitleBg] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.TitleBgActive] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.TitleBgCollapsed] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.MenuBarBg] = new Vector4(0.1f, 0.105f, 0.11f, 1.00f);
+        style.Colors[(int)ImGuiCol.ScrollbarBg] = new Vector4(0.2f, 0.205f, 0.21f, 1.00f);
+        style.Colors[(int)ImGuiCol.ScrollbarGrab] = new Vector4(0.3f, 0.305f, 0.31f, 1.00f);
+        style.Colors[(int)ImGuiCol.ScrollbarGrabHovered] = new Vector4(0.4f, 0.405f, 0.41f, 1.00f);
+        style.Colors[(int)ImGuiCol.ScrollbarGrabActive] = new Vector4(0.25f, 0.2505f, 0.251f, 1.00f);
+        style.Colors[(int)ImGuiCol.CheckMark] = new Vector4(0.9f, 0.905f, 0.91f, 1.00f);
+        style.Colors[(int)ImGuiCol.SliderGrab] = new Vector4(0.5f, 0.505f, 0.51f, 1.00f);
+        style.Colors[(int)ImGuiCol.SliderGrabActive] = new Vector4(0.6f, 0.605f, 0.61f, 1.00f);
+        style.Colors[(int)ImGuiCol.Button] = new Vector4(0.2f, 0.205f, 0.21f, 1.00f);
+        style.Colors[(int)ImGuiCol.ButtonHovered] = new Vector4(0.3f, 0.305f, 0.31f, 1.00f);
+        style.Colors[(int)ImGuiCol.ButtonActive] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.Header] = new Vector4(0.2f, 0.205f, 0.21f, 1.00f);
+        style.Colors[(int)ImGuiCol.HeaderHovered] = new Vector4(0.3f, 0.305f, 0.31f, 1.00f);
+        style.Colors[(int)ImGuiCol.HeaderActive] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.Separator] = new Vector4(0.2f, 0.205f, 0.21f, 1.00f);
+        style.Colors[(int)ImGuiCol.SeparatorHovered] = new Vector4(0.1f, 0.40f, 0.75f, 0.78f);
+        style.Colors[(int)ImGuiCol.SeparatorActive] = new Vector4(0.1f, 0.40f, 0.75f, 1.00f);
+        style.Colors[(int)ImGuiCol.ResizeGrip] = new Vector4(0.2f, 0.205f, 0.21f, 0.00f);
+        style.Colors[(int)ImGuiCol.ResizeGripHovered] = new Vector4(0.3f, 0.305f, 0.31f, 1.00f);
+        style.Colors[(int)ImGuiCol.ResizeGripActive] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.Tab] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        style.Colors[(int)ImGuiCol.TabHovered] = new Vector4(0.38f, 0.3805f, 0.381f, 1.00f);
+        // The following enums are not available in older ImGui.NET versions.
+        // style.Colors[(int)ImGuiCol.TabActive] = new Vector4(0.28f, 0.2805f, 0.281f, 1.00f);
+        // style.Colors[(int)ImGuiCol.TabUnfocused] = new Vector4(0.15f, 0.1505f, 0.151f, 1.00f);
+        // style.Colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.2f, 0.205f, 0.21f, 1.00f);
+        style.Colors[(int)ImGuiCol.DockingPreview] = new Vector4(0.26f, 0.59f, 0.98f, 0.70f);
+        style.Colors[(int)ImGuiCol.DockingEmptyBg] = new Vector4(0.20f, 0.20f, 0.20f, 1.00f);
+        style.Colors[(int)ImGuiCol.PlotLines] = new Vector4(0.61f, 0.61f, 0.61f, 1.00f);
+        style.Colors[(int)ImGuiCol.PlotLinesHovered] = new Vector4(1.00f, 0.43f, 0.35f, 1.00f);
+        style.Colors[(int)ImGuiCol.PlotHistogram] = new Vector4(0.90f, 0.70f, 0.00f, 1.00f);
+        style.Colors[(int)ImGuiCol.PlotHistogramHovered] = new Vector4(1.00f, 0.60f, 0.00f, 1.00f);
+        style.Colors[(int)ImGuiCol.TableHeaderBg] = new Vector4(0.19f, 0.19f, 0.20f, 1.00f);
+        style.Colors[(int)ImGuiCol.TableBorderStrong] = new Vector4(0.31f, 0.31f, 0.35f, 1.00f);
+        style.Colors[(int)ImGuiCol.TableBorderLight] = new Vector4(0.23f, 0.23f, 0.25f, 1.00f);
+        style.Colors[(int)ImGuiCol.TableRowBg] = new Vector4(0.00f, 0.00f, 0.00f, 0.00f);
+        style.Colors[(int)ImGuiCol.TableRowBgAlt] = new Vector4(1.00f, 1.00f, 1.00f, 0.06f);
+        style.Colors[(int)ImGuiCol.TextSelectedBg] = new Vector4(0.26f, 0.59f, 0.98f, 0.35f);
+        style.Colors[(int)ImGuiCol.DragDropTarget] = new Vector4(1.00f, 1.00f, 0.00f, 0.90f);
+        // style.Colors[(int)ImGuiCol.NavHighlight] = new Vector4(0.26f, 0.59f, 0.98f, 1.00f);
+        style.Colors[(int)ImGuiCol.NavWindowingHighlight] = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
+        style.Colors[(int)ImGuiCol.NavWindowingDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
+        style.Colors[(int)ImGuiCol.ModalWindowDimBg] = new Vector4(0.80f, 0.80f, 0.80f, 0.35f);
+
+        // Style vars
+        style.WindowPadding = new Vector2(8, 8);
+        style.FramePadding = new Vector2(5, 4);
+        style.CellPadding = new Vector2(4, 2);
+        style.ItemSpacing = new Vector2(8, 4);
+        style.ItemInnerSpacing = new Vector2(4, 4);
+        style.TouchExtraPadding = new Vector2(0, 0);
+        style.IndentSpacing = 21;
+        style.ScrollbarSize = 14;
+        style.GrabMinSize = 10;
+
+        style.WindowBorderSize = 1;
+        style.ChildBorderSize = 1;
+        style.PopupBorderSize = 1;
+        style.FrameBorderSize = 1;
+        style.TabBorderSize = 1;
+
+        style.WindowRounding = 0;
+        style.ChildRounding = 0;
+        style.FrameRounding = 0;
+        style.PopupRounding = 0;
+        style.ScrollbarRounding = 0;
+        style.GrabRounding = 0;
+        style.LogSliderDeadzone = 0;
+        style.TabRounding = 0;
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EngineMath.cs">
 using System.Numerics;
 
@@ -5494,16 +5715,90 @@ internal static class EngineMath
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\IconManager.cs">
+using OpenTK.Graphics.OpenGL4;
+using StbImageSharp;
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace CherrisEditor;
+
+/// <summary>
+/// A helper class to load and manage icon textures for the editor UI.
+/// </summary>
+public class IconManager : IDisposable
+{
+    private readonly Dictionary<string, int> _icons = new();
+
+    /// <summary>
+    /// Loads an image from a file into an OpenGL texture and caches it.
+    /// </summary>
+    /// <param name="key">A unique key to identify the icon (e.g., "Folder").</param>
+    /// <param name="path">The file path to the image.</param>
+    public void LoadIcon(string key, string path)
+    {
+        if (_icons.ContainsKey(key) || !File.Exists(path))
+        {
+            if (!File.Exists(path)) Console.WriteLine($"[IconManager] Icon not found at path: {path}");
+            return;
+        }
+
+        // We don't need to flip UI textures
+        StbImage.stbi_set_flip_vertically_on_load(0);
+        using var stream = File.OpenRead(path);
+        ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, handle);
+
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
+            image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+
+        // Set texture parameters for UI icons
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+        _icons[key] = handle;
+    }
+
+    /// <summary>
+    /// Gets the GPU texture handle for a loaded icon.
+    /// </summary>
+    /// <param name="key">The key of the icon to retrieve.</param>
+    /// <returns>An IntPtr to the texture, or IntPtr.Zero if not found.</returns>
+    public IntPtr GetIcon(string key)
+    {
+        return _icons.TryGetValue(key, out int handle) ? (IntPtr)handle : IntPtr.Zero;
+    }
+
+    public void Dispose()
+    {
+        foreach (var handle in _icons.Values)
+        {
+            GL.DeleteTexture(handle);
+        }
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\InspectorPanel.cs">
 using Cherris;
 using ImGuiNET;
 using System.Numerics;
+using System.Reflection;
+using System.Collections.Generic; // Required for Dictionary
+using System; // Required for Activator
 
 namespace CherrisEditor;
 
 internal class InspectorPanel
 {
     private readonly Editor _editor;
+    // Cache for default component instances to avoid creating them every frame.
+    private readonly Dictionary<Type, object> _defaultComponentCache = new();
 
     public InspectorPanel(Editor editor)
     {
@@ -5522,44 +5817,281 @@ internal class InspectorPanel
         }
         else
         {
-            DrawSelectObjectProperties(selectedObject);
+            DrawGameObjectProperties(selectedObject);
         }
 
         ImGui.End();
     }
 
-    private static void DrawSelectObjectProperties(GameObject selectedObject)
+    private void DrawGameObjectProperties(GameObject go)
     {
-        ImGui.Text($"Selected: {selectedObject.Name}");
+        ImGui.Text($"Selected: {go.Name}");
         ImGui.Separator();
 
-        if (!ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
+        if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            return;
+            DrawTransformControl(go.Transform);
         }
 
-        Vector3 position = selectedObject.Transform.Position;
-
-        if (ImGui.DragFloat3("Position", ref position, 0.1f))
+        foreach (var component in go.Components)
         {
-            selectedObject.Transform.Position = position;
+            ImGui.Separator();
+            string componentName = component.GetType().Name;
+
+            if (ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                switch (component)
+                {
+                    case MeshRenderer mr:
+                        DrawMeshRendererComponent(mr);
+                        break;
+                    case Camera cam:
+                        DrawCameraComponent(cam);
+                        break;
+                    case Script script:
+                        DrawScriptComponent(script);
+                        break;
+                    default:
+                        ImGui.Text($"No custom inspector for {componentName}.");
+                        break;
+                }
+            }
         }
+    }
 
-        // Convert quaternion to Euler angles for editing
-        Vector3 eulerDegrees = EngineMath.ToEulerAngles(selectedObject.Transform.Rotation) * (180.0f / MathF.PI);
+    private void DrawTransformControl(Transform transform)
+    {
+        if (!ImGui.BeginTable("TransformTable", 3, ImGuiTableFlags.Resizable)) return;
 
-        if (ImGui.DragFloat3("Rotation", ref eulerDegrees, 1.0f))
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        // Position
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Position");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 position = transform.Position;
+        if (DrawVector3Control("Position", ref position))
+        {
+            transform.Position = position;
+        }
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Pos")) transform.Position = Vector3.Zero;
+
+        // Rotation
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Rotation");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 eulerDegrees = EngineMath.ToEulerAngles(transform.Rotation) * (180.0f / MathF.PI);
+        if (DrawVector3Control("Rotation", ref eulerDegrees))
         {
             Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
-            selectedObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+            transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
         }
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Rot")) transform.Rotation = Quaternion.Identity;
 
-        Vector3 scale = selectedObject.Transform.Scale;
 
-        if (ImGui.DragFloat3("Scale", ref scale, 0.1f))
+        // Scale
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Scale");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 scale = transform.Scale;
+        if (DrawVector3Control("Scale", ref scale))
         {
-            selectedObject.Transform.Scale = scale;
+            transform.Scale = scale;
         }
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Sca")) transform.Scale = Vector3.One;
+
+        ImGui.EndTable();
+    }
+
+    private void DrawMeshRendererComponent(MeshRenderer mr)
+    {
+        if (!ImGui.BeginTable("MRTable", 3, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        // Tiling
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Tiling");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        var tiling = mr.TextureTiling;
+        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
+        {
+            mr.TextureTiling = tiling;
+        }
+        ImGui.PopItemWidth();
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Tiling")) mr.TextureTiling = Vector2.One;
+
+        // Emissive Color
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Emissive");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        var emissive = mr.EmissiveColor;
+        if (ImGui.ColorEdit3("##Emissive", ref emissive))
+        {
+            mr.EmissiveColor = emissive;
+        }
+        ImGui.PopItemWidth();
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Emissive")) mr.EmissiveColor = Vector3.Zero;
+
+        ImGui.EndTable();
+    }
+
+    private void DrawCameraComponent(Camera cam)
+    {
+        if (!ImGui.BeginTable("CamTable", 3, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        // Field of View
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Field of View");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        float fov = cam.FieldOfView;
+        if (ImGui.DragFloat("##FOV", ref fov, 1.0f, 1.0f, 179.0f))
+        {
+            cam.FieldOfView = fov;
+        }
+        ImGui.PopItemWidth();
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##FOV")) cam.FieldOfView = (float)GetDefaultValue(typeof(Camera), "FieldOfView");
+
+        // Near & Far Planes... (repeat pattern for other properties)
+        ImGui.EndTable();
+    }
+
+    private void DrawScriptComponent(Script script)
+    {
+        Type scriptType = script.GetType();
+        if (!ImGui.BeginTable(scriptType.Name + "Table", 3, ImGuiTableFlags.Resizable)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        var properties = scriptType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        foreach (var prop in properties)
+        {
+            if (!prop.CanRead || !prop.CanWrite) continue;
+
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.Text(prop.Name);
+            ImGui.TableSetColumnIndex(1);
+            ImGui.PushItemWidth(-1.0f);
+
+            object currentValue = prop.GetValue(script);
+            bool valueChanged = false;
+
+            if (prop.PropertyType == typeof(float))
+            {
+                float val = (float)currentValue;
+                if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
+                {
+                    prop.SetValue(script, val);
+                    valueChanged = true;
+                }
+            }
+            // ... other types
+
+            ImGui.PopItemWidth();
+
+            // Reset Button Column
+            ImGui.TableSetColumnIndex(2);
+            if (ImGui.Button($"R##{prop.Name}"))
+            {
+                object defaultValue = GetDefaultValue(scriptType, prop.Name);
+                if (defaultValue != null)
+                {
+                    prop.SetValue(script, defaultValue);
+                }
+            }
+        }
+
+        ImGui.EndTable();
+    }
+
+    /// <summary>
+    /// Gets the default value of a property from a cached default instance of a component.
+    /// </summary>
+    private object GetDefaultValue(Type componentType, string propertyName)
+    {
+        if (!_defaultComponentCache.TryGetValue(componentType, out object defaultInstance))
+        {
+            try
+            {
+                // Create and cache a new default instance if not found.
+                defaultInstance = Activator.CreateInstance(componentType);
+                _defaultComponentCache[componentType] = defaultInstance;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Inspector] Could not create default instance of {componentType.Name}: {ex.Message}");
+                return null;
+            }
+        }
+
+        return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
+    }
+
+    private static bool DrawVector3Control(string label, ref Vector3 values)
+    {
+        // ... (this function remains unchanged)
+        bool valueChanged = false;
+        ImGui.PushID(label);
+
+        var style = ImGui.GetStyle();
+        float availableWidth = ImGui.GetContentRegionAvail().X;
+        float totalLabelWidth = ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X + ImGui.CalcTextSize("Z").X;
+        float totalSpacingWidth = style.ItemSpacing.X * 5;
+        float totalInputWidth = availableWidth - totalLabelWidth - totalSpacingWidth;
+        float itemWidth = totalInputWidth / 3.0f;
+
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f));
+        ImGui.Text("X");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
+        ImGui.PopItemWidth();
+        ImGui.SameLine();
+
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f));
+        ImGui.Text("Y");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
+        ImGui.PopItemWidth();
+        ImGui.SameLine();
+
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f));
+        ImGui.Text("Z");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true;
+        ImGui.PopItemWidth();
+        ImGui.PopID();
+
+        return valueChanged;
     }
 }
 </file>

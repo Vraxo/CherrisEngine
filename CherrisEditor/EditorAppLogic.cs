@@ -155,28 +155,34 @@ public class EditorAppLogic : IDisposable
 
                 bool isDirectory = Directory.Exists(path);
                 IntPtr iconHandle = isDirectory ? _iconManager.GetIcon("Folder") : _iconManager.GetIcon("File");
-
                 string itemName = Path.GetFileName(path);
 
                 ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
 
-                // --- START OF FIX ---
-                // The correct overload requires a string ID as the first argument.
-                // We use the unique itemName for this purpose.
-                ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize), new Vector2(0, 0), new Vector2(1, 1));
-                // --- END OF FIX ---
+                // --- REVISED CENTERING LOGIC ---
+                float columnWidth = ImGui.GetColumnWidth();
 
-                ImGui.PopStyleColor();
+                // 1. Center the icon. The initial cursor position is at the start of the cell.
+                float iconOffsetX = (columnWidth - thumbnailSize) * 0.5f;
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + iconOffsetX);
 
+                if (ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize)))
+                {
+                    // Single-click logic can go here
+                }
                 if (isDirectory && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                 {
                     _currentAssetPath = path;
                 }
 
-                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + thumbnailSize);
-                ImGui.TextWrapped(itemName);
-                ImGui.PopTextWrapPos();
+                // 2. Center the text. The cursor is now on a new line, at the start of the cell.
+                float textWidth = ImGui.CalcTextSize(itemName).X;
+                float textOffsetX = (columnWidth - textWidth) * 0.5f;
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
+                ImGui.Text(itemName);
+                // --- END OF REVISED CENTERING LOGIC ---
 
+                ImGui.PopStyleColor();
                 ImGui.PopID();
             }
 
