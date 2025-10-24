@@ -5119,56 +5119,67 @@ public class Editor : Engine
         Exposure = 0.5f;
     }
 
-    // These methods allow EditorAppLogic to interact with the protected SelectedGameObject
-    public void SetSelectedGameObject(GameObject? go) => SelectedGameObject = go;
-    public GameObject? GetSelectedGameObject() => SelectedGameObject;
+    public void SetSelectedGameObject(GameObject? go)
+    {
+        SelectedGameObject = go;
+    }
+
+    public GameObject? GetSelectedGameObject()
+    {
+        return SelectedGameObject;
+    }
 
     protected override void LoadContent()
     {
-        // Load the game's assets and components
         ResourceManager.LoadInitialAssets();
+        RegisterComponents();
+        LoadScene();
+    }
 
-        // Register game-specific components from the Apexverse library
+    private void RegisterComponents()
+    {
         SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
         SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
+    }
 
-        // Load the scene to be edited
-        var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
+    private void LoadScene()
+    {
+        List<GameObject> loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
         SceneManager.SetScene(loadedObjects);
     }
 
     protected override void OnStart()
     {
-        // Setup the editor UI and camera controller
-        _editorAppLogic = new EditorAppLogic(this);
+        _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
 
-        if (SceneManager.MainCamera?.GameObject is not null)
+        if (SceneManager.MainCamera?.GameObject is null)
         {
-            var cameraGo = SceneManager.MainCamera.GameObject;
-
-            // If the scene camera is the player, remove its controller
-            // so it doesn't fight with the new editor controller.
-            var playerController = cameraGo.GetComponent<PlayerController>();
-            if (playerController is not null)
-            {
-                cameraGo.RemoveComponent<PlayerController>();
-            }
-
-            // Add our own editor-specific camera controller
-            cameraGo.AddComponent(new EditorController());
+            return;
         }
+
+        SetupEditorCamera();
+    }
+
+    private void SetupEditorCamera()
+    {
+        GameObject cameraGo = SceneManager.MainCamera.GameObject;
+
+        var playerController = cameraGo.GetComponent<PlayerController>();
+
+        if (playerController is not null)
+        {
+            cameraGo.RemoveComponent<PlayerController>();
+        }
+
+        cameraGo.AddComponent(new EditorController());
     }
 
     protected override void Update(float deltaTime)
     {
-        // Run editor-specific logic like picking
         _editorAppLogic?.UpdateEditorLogic(deltaTime);
-
-        // Run game logic simulations (e.g., animations, physics)
         SceneManager.Update(deltaTime);
 
-        // Run base engine updates (UI rendering, snapshots, etc.)
         base.Update(deltaTime);
     }
 }
@@ -5193,12 +5204,15 @@ public class EditorAppLogic
         _inspectorPanel = new(_editor);
     }
 
-    public void DrawUI()
+    public Action<float> DrawUI()
     {
-        SetupDockspace();
-        DrawHierarchyPanel();
-        DrawConsolePanel();
-        _inspectorPanel.DrawInspectorPanel();
+        return (deltaTime) =>
+        {
+            SetupDockspace();
+            DrawHierarchyPanel();
+            DrawConsolePanel();
+            _inspectorPanel.DrawInspectorPanel();
+        };
     }
 
     private static void SetupDockspace()
@@ -5481,15 +5495,15 @@ internal static class EngineMath
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\InspectorPanel.cs">
-using CherrisEditor;
+using Cherris;
 using ImGuiNET;
 using System.Numerics;
 
-namespace Cherris;
+namespace CherrisEditor;
 
 internal class InspectorPanel
 {
-    private Editor _editor;
+    private readonly Editor _editor;
 
     public InspectorPanel(Editor editor)
     {
@@ -5498,47 +5512,54 @@ internal class InspectorPanel
 
     public void DrawInspectorPanel()
     {
-        ImGui.Begin("Inspector");
+        ImGui.Begin("Details");
 
         GameObject? selectedObject = _editor.GetSelectedGameObject();
 
-        if (selectedObject is not null)
-        {
-            ImGui.Text($"Selected: {selectedObject.Name}");
-            ImGui.Separator();
-
-            // Transform Component
-            if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
-            {
-                Vector3 position = selectedObject.Transform.Position;
-                if (ImGui.DragFloat3("Position", ref position, 0.1f))
-                {
-                    selectedObject.Transform.Position = position;
-                }
-
-                // Convert quaternion to Euler angles for editing
-                Vector3 eulerDegrees = EngineMath.ToEulerAngles(selectedObject.Transform.Rotation) * (180.0f / MathF.PI);
-
-                if (ImGui.DragFloat3("Rotation", ref eulerDegrees, 1.0f))
-                {
-                    Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
-                    selectedObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
-                }
-
-                Vector3 scale = selectedObject.Transform.Scale;
-
-                if (ImGui.DragFloat3("Scale", ref scale, 0.1f))
-                {
-                    selectedObject.Transform.Scale = scale;
-                }
-            }
-        }
-        else
+        if (selectedObject is null)
         {
             ImGui.Text("No object selected.");
         }
+        else
+        {
+            DrawSelectObjectProperties(selectedObject);
+        }
 
         ImGui.End();
+    }
+
+    private static void DrawSelectObjectProperties(GameObject selectedObject)
+    {
+        ImGui.Text($"Selected: {selectedObject.Name}");
+        ImGui.Separator();
+
+        if (!ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            return;
+        }
+
+        Vector3 position = selectedObject.Transform.Position;
+
+        if (ImGui.DragFloat3("Position", ref position, 0.1f))
+        {
+            selectedObject.Transform.Position = position;
+        }
+
+        // Convert quaternion to Euler angles for editing
+        Vector3 eulerDegrees = EngineMath.ToEulerAngles(selectedObject.Transform.Rotation) * (180.0f / MathF.PI);
+
+        if (ImGui.DragFloat3("Rotation", ref eulerDegrees, 1.0f))
+        {
+            Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
+            selectedObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+        }
+
+        Vector3 scale = selectedObject.Transform.Scale;
+
+        if (ImGui.DragFloat3("Scale", ref scale, 0.1f))
+        {
+            selectedObject.Transform.Scale = scale;
+        }
     }
 }
 </file>

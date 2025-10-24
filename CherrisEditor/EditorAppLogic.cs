@@ -7,27 +7,31 @@ namespace CherrisEditor;
 public class EditorAppLogic
 {
     private readonly Editor _editor;
-
     private readonly InspectorPanel _inspectorPanel;
 
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
         _inspectorPanel = new(_editor);
+        EditorTheme.ApplyUnrealEngineStyle();
     }
 
     public Action<float> DrawUI()
     {
         return (deltaTime) =>
         {
+            // The main dockspace is now set up to allow manual docking.
+            // The layout will be saved to imgui.ini automatically.
             SetupDockspace();
-            DrawHierarchyPanel();
-            DrawConsolePanel();
+
+            // Draw all the editor panels. You can drag and drop these to create the desired layout.
+            DrawOutlinerPanel();
+            DrawConsoleAndContentBrowser();
             _inspectorPanel.DrawInspectorPanel();
         };
     }
 
-    private static void SetupDockspace()
+    private void SetupDockspace()
     {
         ImGuiViewportPtr viewport = ImGui.GetMainViewport();
         ImGui.SetNextWindowPos(viewport.Pos);
@@ -37,19 +41,23 @@ public class EditorAppLogic
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
 
-        ImGuiWindowFlags windowFlags = 
+        ImGuiWindowFlags windowFlags =
               ImGuiWindowFlags.NoTitleBar
             | ImGuiWindowFlags.NoCollapse
             | ImGuiWindowFlags.NoResize
             | ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoBringToFrontOnFocus
             | ImGuiWindowFlags.NoNavFocus
-            | ImGuiWindowFlags.MenuBar;
+            | ImGuiWindowFlags.MenuBar
+            | ImGuiWindowFlags.NoBackground; // <<< THE FIX IS HERE!
 
         ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(2);
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
+
+        // This enables the central node where you can dock windows.
+        // The programmatic layout building has been removed for compatibility.
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
 
         DrawMainMenuBar();
@@ -59,33 +67,44 @@ public class EditorAppLogic
 
     private static void DrawMainMenuBar()
     {
-        if (!ImGui.BeginMenuBar())
-        {
-            return;
-        }
+        if (!ImGui.BeginMenuBar()) return;
 
         if (ImGui.BeginMenu("File"))
         {
-            if (ImGui.MenuItem("Exit"))
-            {
-                // This is a placeholder; a real implementation would close the app.
-                Console.WriteLine("Exit clicked!");
-            }
-
+            if (ImGui.MenuItem("New Scene")) { }
+            if (ImGui.MenuItem("Open Scene")) { }
+            ImGui.Separator();
+            if (ImGui.MenuItem("Save")) { }
+            if (ImGui.MenuItem("Save As...")) { }
+            ImGui.Separator();
+            if (ImGui.MenuItem("Exit")) { Console.WriteLine("Exit clicked!"); }
             ImGui.EndMenu();
+        }
+
+        if (ImGui.BeginMenu("Edit"))
+        {
+            if (ImGui.MenuItem("Undo")) { }
+            if (ImGui.MenuItem("Redo")) { }
+            ImGui.EndMenu();
+        }
+
+        if (ImGui.BeginMenu("Window"))
+        {
+            // You can add logic here to show/hide panels
+            if (ImGui.MenuItem("Toggle Theme")) { }
         }
 
         ImGui.EndMenuBar();
     }
 
-    private void DrawHierarchyPanel()
+    private void DrawOutlinerPanel()
     {
-        ImGui.Begin("Hierarchy");
+        ImGui.Begin("Outliner");
 
         foreach (GameObject go in _editor.SceneManager.GameObjects)
         {
             bool isSelected = _editor.GetSelectedGameObject() == go;
-            
+
             if (ImGui.Selectable(go.Name, isSelected))
             {
                 _editor.SetSelectedGameObject(go);
@@ -95,10 +114,14 @@ public class EditorAppLogic
         ImGui.End();
     }
 
-    private static void DrawConsolePanel()
+    private static void DrawConsoleAndContentBrowser()
     {
         ImGui.Begin("Console");
         ImGui.Text("Log messages will appear here...");
+        ImGui.End();
+
+        ImGui.Begin("Content Browser");
+        ImGui.Text("Asset management will happen here...");
         ImGui.End();
     }
 
@@ -144,12 +167,10 @@ public class EditorAppLogic
 
         _editor.SetSelectedGameObject(closestObject);
 
-        if (closestObject is null)
+        if (closestObject is not null)
         {
-            return;
+            Console.WriteLine($"Selected '{closestObject.Name}'");
         }
-
-        Console.WriteLine($"Selected '{closestObject.Name}'");
     }
 
     private void HandleMovement(float deltaTime)
