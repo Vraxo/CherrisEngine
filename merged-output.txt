@@ -1155,6 +1155,7 @@ public class GraphicsManager : IDisposable
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Input.cs">
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -1168,16 +1169,31 @@ public static class Input
     private static readonly HashSet<MouseButton> _pressedMouseButtons = new();
     private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
 
-    public static bool IsMouseLocked { get; internal set; }
+    private static bool _isMouseLocked;
+    public static event Action<bool> OnLockStateChanged;
+
+    public static bool IsMouseLocked
+    {
+        get => _isMouseLocked;
+        set
+        {
+            if (_isMouseLocked == value) return;
+            _isMouseLocked = value;
+            OnLockStateChanged?.Invoke(value);
+        }
+    }
+
     public static Vector2 MouseDelta { get; private set; }
     public static Vector2 MousePosition { get; private set; }
+    public static Vector2 MouseWheelDelta { get; private set; }
 
     // Called by the active windowing system at the start of each frame.
     internal static void FrameStarted()
     {
         _justPressedKeys.Clear();
         _justPressedMouseButtons.Clear();
-        if (!IsMouseLocked) MouseDelta = Vector2.Zero; // Reset delta when not locked
+        MouseDelta = Vector2.Zero; // Always reset delta at the start of a frame.
+        MouseWheelDelta = Vector2.Zero;
     }
 
     internal static void ClearState()
@@ -1222,9 +1238,11 @@ public static class Input
 
     internal static void SetMouseDelta(Vector2 delta) => MouseDelta = delta;
     internal static void SetMousePosition(Vector2 position) => MousePosition = position;
+    internal static void SetMouseWheelDelta(Vector2 delta) => MouseWheelDelta = delta;
 
     public static bool IsKeyDown(Key key) => _pressedKeys.Contains(key);
     public static bool WasKeyPressed(Key key) => _justPressedKeys.Contains(key);
+    public static bool IsMouseButtonDown(MouseButton button) => _pressedMouseButtons.Contains(button);
     public static bool WasMouseButtonPressed(MouseButton button) => _justPressedMouseButtons.Contains(button);
 }
 </file>
@@ -3659,7 +3677,7 @@ void main()
             io.AddMouseWheelEvent(offset.X, offset.Y);
         }
 
-        public void MouseButton(MouseButton button, bool down)
+        public void MouseButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button, bool down)
         {
             ImGuiIOPtr io = ImGui.GetIO();
             io.AddMouseButtonEvent((int)button, down);
@@ -4544,7 +4562,6 @@ namespace Cherris.OpenTK;
 public class OpenTKGameWindow : IGameWindow
 {
     internal readonly OTKGameWindow _window;
-    private bool _isMouseLocked;
     private Vector2 _lastMousePos;
     private bool _firstMove = true;
     private ImGuiController _imGuiController;
@@ -4558,22 +4575,8 @@ public class OpenTKGameWindow : IGameWindow
 
     public bool IsMouseLocked
     {
-        get => _isMouseLocked;
-        set
-        {
-            _isMouseLocked = value;
-
-            _window.CursorState = _isMouseLocked 
-                ? CursorState.Grabbed 
-                : CursorState.Normal;
-            
-            if (!_isMouseLocked)
-            {
-                return;
-            }
-
-            _firstMove = true; // Reset on re-lock to avoid large delta jumps
-        }
+        get => Input.IsMouseLocked;
+        set => Input.IsMouseLocked = value;
     }
 
     public OpenTKGameWindow(string title, int width, int height, bool startWithMouseLocked)
@@ -4598,12 +4601,25 @@ public class OpenTKGameWindow : IGameWindow
         _window.MouseMove += OnMouseMove;
         _window.TextInput += OnTextInput;
         _window.MouseWheel += OnMouseWheel;
+        Input.OnLockStateChanged += OnLockStateChanged;
 
 
         // This makes the OpenGL context current on this thread.
         _window.MakeCurrent();
 
         IsMouseLocked = startWithMouseLocked;
+    }
+
+    private void OnLockStateChanged(bool locked)
+    {
+        _window.CursorState = locked
+            ? CursorState.Grabbed
+            : CursorState.Normal;
+
+        if (locked)
+        {
+            _firstMove = true; // Reset on re-lock to avoid large delta jumps
+        }
     }
 
     public void SetImGuiController(ImGuiController controller)
@@ -4630,15 +4646,6 @@ public class OpenTKGameWindow : IGameWindow
         // but we need to process them manually for our game loop. A timeout of 0
         // processes all pending events and returns immediately.
         _window.ProcessEvents(0);
-
-        if (Input.WasKeyPressed(Key.Escape))
-        {
-            // Let ImGui handle a potential Escape key press before we toggle mouse lock
-            if (_imGuiController?.WantCaptureKeyboard != true)
-            {
-                IsMouseLocked = !IsMouseLocked;
-            }
-        }
     }
 
     public void SwapBuffers()
@@ -4679,16 +4686,30 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseDown(MouseButtonEventArgs e)
     {
-        _imGuiController?.MouseButton((MouseButton)e.Button, true);
-        if (_imGuiController?.WantCaptureMouse == true) return;
-        Input.SetMouseButtonState(MapButton((MouseButton)e.Button), true);
+        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        _imGuiController?.MouseButton(e.Button, true);
+
+        // For editor controls, we only want to prevent left-clicks from passing through to the game world.
+        // Right-clicks and other buttons should always be processed for viewport navigation.
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
+        {
+            return;
+        }
+
+        Input.SetMouseButtonState(MapButton(e.Button), true);
     }
 
     private void OnMouseUp(MouseButtonEventArgs e)
     {
-        _imGuiController?.MouseButton((MouseButton)e.Button, false);
-        if (_imGuiController?.WantCaptureMouse == true) return;
-        Input.SetMouseButtonState(MapButton((MouseButton)e.Button), false);
+        bool wantCapture = _imGuiController?.WantCaptureMouse ?? false;
+        _imGuiController?.MouseButton(e.Button, false);
+
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
+        {
+            return;
+        }
+
+        Input.SetMouseButtonState(MapButton(e.Button), false);
     }
 
     private void OnKeyDown(KeyboardKeyEventArgs e)
@@ -4714,21 +4735,24 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
         if (_imGuiController?.WantCaptureMouse == true) return;
+
+        Input.SetMouseWheelDelta(new System.Numerics.Vector2(e.OffsetX, e.OffsetY));
     }
 
     public void Dispose()
     {
+        Input.OnLockStateChanged -= OnLockStateChanged;
         _window?.Dispose();
     }
 
     // --- Input Mapping ---
-    private static Cherris.MouseButton MapButton(MouseButton button)
+    private static Cherris.MouseButton MapButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button)
     {
         return button switch
         {
-            MouseButton.Left => Cherris.MouseButton.Left,
-            MouseButton.Right => Cherris.MouseButton.Right,
-            MouseButton.Middle => Cherris.MouseButton.Middle,
+            global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left => Cherris.MouseButton.Left,
+            global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right => Cherris.MouseButton.Right,
+            global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Middle => Cherris.MouseButton.Middle,
             _ => Cherris.MouseButton.LastButton // Indicates an unhandled button
         };
     }
@@ -4743,6 +4767,8 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.D => Key.D,
             OpenTKKey.S => Key.S,
             OpenTKKey.W => Key.W,
+            OpenTKKey.Q => Key.Q,
+            OpenTKKey.E => Key.E,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
             OpenTKKey.Escape => Key.Escape,
@@ -5131,6 +5157,127 @@ public class ShaderProgram : IDisposable
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\ContentBrowserPanel.cs">
+using Cherris;
+using ImGuiNET;
+using System;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+
+namespace CherrisEditor;
+
+public class ContentBrowserPanel : IDisposable
+{
+    private readonly EditorTextureManager _textureManager;
+    private readonly string _assetRootPath;
+    private string _currentAssetPath;
+
+    public ContentBrowserPanel()
+    {
+        _textureManager = new EditorTextureManager();
+        _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
+        _textureManager.LoadTexture("File", "Assets/Icons/file.png");
+
+        _assetRootPath = Path.GetFullPath("Assets");
+        _currentAssetPath = _assetRootPath;
+    }
+
+    public void Draw()
+    {
+        ImGui.Begin("Content Browser");
+        DrawHeader();
+        DrawGrid();
+        ImGui.End();
+    }
+
+    private void DrawHeader()
+    {
+        if (_currentAssetPath != _assetRootPath)
+        {
+            if (ImGui.Button("<- Back"))
+            {
+                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
+            }
+            ImGui.SameLine();
+        }
+        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
+        ImGui.Separator();
+    }
+
+    private void DrawGrid()
+    {
+        float thumbnailSize = 80.0f;
+        float padding = 16.0f;
+        float cellSize = thumbnailSize + padding;
+        float panelWidth = ImGui.GetContentRegionAvail().X;
+        int columnCount = Math.Max(1, (int)(panelWidth / cellSize));
+
+        if (!ImGui.BeginTable("ContentGrid", columnCount))
+        {
+            return;
+        }
+
+        var directories = Directory.GetDirectories(_currentAssetPath);
+        var files = Directory.GetFiles(_currentAssetPath);
+
+        foreach (var path in directories.Concat(files))
+        {
+            ImGui.TableNextColumn();
+            DrawItem(path, thumbnailSize);
+        }
+
+        ImGui.EndTable();
+    }
+
+    private void DrawItem(string path, float thumbnailSize)
+    {
+        ImGui.PushID(path);
+        ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+
+        IntPtr textureHandle = _textureManager.GetTextureForPath(path);
+        string itemName = Path.GetFileName(path);
+
+        CenterAlignItem(thumbnailSize);
+        if (ImGui.ImageButton(itemName, textureHandle, new Vector2(thumbnailSize, thumbnailSize)))
+        {
+            // Handle single-click
+        }
+
+        if (Directory.Exists(path) && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        {
+            _currentAssetPath = path;
+        }
+
+        CenterAlignText(itemName);
+        ImGui.Text(itemName);
+
+        ImGui.PopStyleColor();
+        ImGui.PopID();
+    }
+
+    private void CenterAlignItem(float itemWidth)
+    {
+        float columnWidth = ImGui.GetColumnWidth();
+        float offsetX = (columnWidth - itemWidth) * 0.5f;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+    }
+
+    private void CenterAlignText(string text)
+    {
+        float columnWidth = ImGui.GetColumnWidth();
+        float textWidth = ImGui.CalcTextSize(text).X;
+        float textOffsetX = (columnWidth - textWidth) * 0.5f;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
+    }
+
+    public void Dispose()
+    {
+        _textureManager.Dispose();
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Editor.cs">
 using Cherris;
 using Apexverse;
@@ -5216,9 +5363,7 @@ public class Editor : Engine
 using Cherris;
 using ImGuiNET;
 using System.Numerics;
-using System.IO;
 using System;
-using System.Linq;
 
 namespace CherrisEditor;
 
@@ -5226,28 +5371,14 @@ public class EditorAppLogic : IDisposable
 {
     private readonly Editor _editor;
     private readonly InspectorPanel _inspectorPanel;
-    private readonly IconManager _iconManager;
-
-    private readonly string _assetRootPath;
-    private string _currentAssetPath;
+    private readonly ContentBrowserPanel _contentBrowserPanel; // Use the new panel class
 
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
         _inspectorPanel = new(_editor);
+        _contentBrowserPanel = new ContentBrowserPanel(); // Instantiate the new panel
         EditorTheme.ApplyUnrealEngineStyle();
-
-        _iconManager = new IconManager();
-        _iconManager.LoadIcon("Folder", "Assets/Icons/folder.png");
-        _iconManager.LoadIcon("File", "Assets/Icons/file.png");
-
-        _assetRootPath = Path.GetFullPath("Assets");
-        _currentAssetPath = _assetRootPath;
-    }
-
-    public void Dispose()
-    {
-        _iconManager.Dispose();
     }
 
     public Action<float> DrawUI()
@@ -5258,10 +5389,12 @@ public class EditorAppLogic : IDisposable
 
             DrawOutlinerPanel();
             DrawConsolePanel();
-            DrawContentBrowserPanel();
+            _contentBrowserPanel.Draw(); // Call the new panel's Draw method
             _inspectorPanel.DrawInspectorPanel();
         };
     }
+
+    // The old DrawContentBrowserPanel() method has been completely removed.
 
     private void SetupDockspace()
     {
@@ -5336,77 +5469,6 @@ public class EditorAppLogic : IDisposable
         ImGui.End();
     }
 
-    private void DrawContentBrowserPanel()
-    {
-        ImGui.Begin("Content Browser");
-
-        if (_currentAssetPath != _assetRootPath)
-        {
-            if (ImGui.Button("<- Back"))
-            {
-                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
-            }
-            ImGui.SameLine();
-        }
-        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
-        ImGui.Separator();
-
-        float thumbnailSize = 80.0f;
-        float padding = 16.0f;
-        float cellSize = thumbnailSize + padding;
-        float panelWidth = ImGui.GetContentRegionAvail().X;
-        int columnCount = (int)(panelWidth / cellSize);
-        if (columnCount < 1) columnCount = 1;
-
-        if (ImGui.BeginTable("ContentGrid", columnCount))
-        {
-            var directories = Directory.GetDirectories(_currentAssetPath);
-            var files = Directory.GetFiles(_currentAssetPath);
-
-            foreach (var path in directories.Concat(files))
-            {
-                ImGui.TableNextColumn();
-                ImGui.PushID(path);
-
-                bool isDirectory = Directory.Exists(path);
-                IntPtr iconHandle = isDirectory ? _iconManager.GetIcon("Folder") : _iconManager.GetIcon("File");
-                string itemName = Path.GetFileName(path);
-
-                ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
-
-                // --- REVISED CENTERING LOGIC ---
-                float columnWidth = ImGui.GetColumnWidth();
-
-                // 1. Center the icon. The initial cursor position is at the start of the cell.
-                float iconOffsetX = (columnWidth - thumbnailSize) * 0.5f;
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + iconOffsetX);
-
-                if (ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize)))
-                {
-                    // Single-click logic can go here
-                }
-                if (isDirectory && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-                {
-                    _currentAssetPath = path;
-                }
-
-                // 2. Center the text. The cursor is now on a new line, at the start of the cell.
-                float textWidth = ImGui.CalcTextSize(itemName).X;
-                float textOffsetX = (columnWidth - textWidth) * 0.5f;
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
-                ImGui.Text(itemName);
-                // --- END OF REVISED CENTERING LOGIC ---
-
-                ImGui.PopStyleColor();
-                ImGui.PopID();
-            }
-
-            ImGui.EndTable();
-        }
-
-        ImGui.End();
-    }
-
     public void UpdateEditorLogic(float deltaTime)
     {
         HandleObjectSelection();
@@ -5448,65 +5510,40 @@ public class EditorAppLogic : IDisposable
         }
 
         _editor.SetSelectedGameObject(closestObject);
-
-        if (closestObject is not null)
-        {
-            Console.WriteLine($"Selected '{closestObject.Name}'");
-        }
     }
 
     private void HandleMovement(float deltaTime)
     {
         GameObject? selectedGameObject = _editor.GetSelectedGameObject();
-
-        if (selectedGameObject is null)
-        {
-            return;
-        }
+        if (selectedGameObject is null) return;
 
         const float moveSpeed = 2.0f;
         Vector3 moveDirection = Vector3.Zero;
         bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
 
-        if (Input.IsKeyDown(Key.Left))
-        {
-            moveDirection.X -= 1;
-        }
-
-        if (Input.IsKeyDown(Key.Right))
-        {
-            moveDirection.X += 1;
-        }
+        if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
+        if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
 
         if (shiftHeld)
         {
-            if (Input.IsKeyDown(Key.Up))
-            {
-                moveDirection.Y += 1;
-            }
-
-            if (Input.IsKeyDown(Key.Down))
-            {
-                moveDirection.Y -= 1;
-            }
+            if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
+            if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
         }
         else
         {
-            if (Input.IsKeyDown(Key.Up))
-            {
-                moveDirection.Z -= 1;
-            }
-
-            if (Input.IsKeyDown(Key.Down))
-            {
-                moveDirection.Z += 1;
-            }
+            if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
+            if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
         }
 
         if (moveDirection != Vector3.Zero)
         {
             selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
         }
+    }
+
+    public void Dispose()
+    {
+        _contentBrowserPanel.Dispose(); // Dispose the new panel
     }
 }
 </file>
@@ -5515,13 +5552,15 @@ public class EditorAppLogic : IDisposable
 using Cherris;
 using System;
 using System.Numerics;
+using ImGuiNET;
 
 namespace CherrisEditor;
 
 public class EditorController : Script
 {
     public float Speed { get; set; } = 5.0f;
-    public float MouseSensitivity { get; set; } = 0.0015f;
+    public float MouseSensitivity { get; set; } = 0.0004f;
+    public float ZoomSensitivity { get; set; } = 0.5f;
 
     private float _yaw;
     private float _pitch;
@@ -5536,37 +5575,199 @@ public class EditorController : Script
 
     public override void Update(float deltaTime)
     {
+        // Don't do anything if an ImGui window has focus
+        if (ImGui.GetIO().WantCaptureMouse || ImGui.GetIO().WantCaptureKeyboard)
+        {
+            // If we were looking around, unlock the mouse
+            if (Input.IsMouseLocked)
+            {
+                Input.IsMouseLocked = false;
+            }
+            return;
+        }
+
+        // --- Mouse Wheel Zoom ---
+        if (Input.MouseWheelDelta.Y != 0)
+        {
+            var forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
+            GameObject.Transform.Position += forward * Input.MouseWheelDelta.Y * ZoomSensitivity;
+        }
+
+        bool rightMouseDown = Input.IsMouseButtonDown(MouseButton.Right);
+
+        // If the right mouse button is pressed, lock the mouse for looking.
+        if (rightMouseDown && !Input.IsMouseLocked)
+        {
+            Input.IsMouseLocked = true;
+        }
+        // If the right mouse button is released, unlock.
+        else if (!rightMouseDown && Input.IsMouseLocked)
+        {
+            Input.IsMouseLocked = false;
+        }
+
         if (Input.IsMouseLocked)
         {
+            // --- Mouse Look ---
             Vector2 mouseDelta = Input.MouseDelta;
             _yaw -= mouseDelta.X * MouseSensitivity;
             _pitch -= mouseDelta.Y * MouseSensitivity;
             _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
             GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-        }
 
-        var localMove = Vector3.Zero;
-        if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
-        if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
-        if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
-        if (Input.IsKeyDown(Key.D)) localMove.X += 1;
-
-        var worldVerticalMove = 0f;
-        if (Input.IsKeyDown(Key.Space)) worldVerticalMove += 1;
-        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)) worldVerticalMove -= 1;
-
-        if (localMove != Vector3.Zero || worldVerticalMove != 0)
-        {
-            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
-
-            if (finalMove.LengthSquared() > 0)
+            // --- Keyboard Movement ---
+            float currentSpeed = Speed;
+            if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
             {
-                GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
+                currentSpeed *= 3.0f; // Speed boost
+            }
+
+            var localMove = Vector3.Zero;
+            if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
+            if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
+            if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
+            if (Input.IsKeyDown(Key.D)) localMove.X += 1;
+
+            var worldVerticalMove = 0f;
+            if (Input.IsKeyDown(Key.E)) worldVerticalMove += 1; // Up
+            if (Input.IsKeyDown(Key.Q)) worldVerticalMove -= 1; // Down
+
+            if (localMove != Vector3.Zero || worldVerticalMove != 0)
+            {
+                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+                var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
+                var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+
+                if (finalMove.LengthSquared() > 0)
+                {
+                    GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
+                }
             }
         }
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorTextureManager.cs">
+using OpenTK.Graphics.OpenGL4;
+using StbImageSharp;
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace CherrisEditor;
+
+/// <summary>
+/// A helper class to load, cache, and manage editor textures (icons and thumbnails).
+/// </summary>
+public class EditorTextureManager : IDisposable
+{
+    private readonly Dictionary<string, int> _textures = new();
+    private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+
+    /// <summary>
+    /// Loads an image from a file into an OpenGL texture and caches it.
+    /// </summary>
+    /// <param name="key">A unique key to identify the texture (e.g., "Folder" or a file path).</param>
+    /// <param name="path">The file path to the image.</param>
+    public void LoadTexture(string key, string path)
+    {
+        if (_textures.ContainsKey(key) || !File.Exists(path))
+        {
+            if (!File.Exists(path)) Console.WriteLine($"[TextureManager] Icon not found at path: {path}");
+            return;
+        }
+
+        int handle = LoadTextureFromFile(path);
+        if (handle != 0)
+        {
+            _textures[key] = handle;
+        }
+    }
+
+    /// <summary>
+    /// Gets the GPU texture handle for a loaded texture.
+    /// </summary>
+    /// <param name="key">The key of the texture to retrieve.</param>
+    /// <returns>An IntPtr to the texture, or IntPtr.Zero if not found.</returns>
+    public IntPtr GetTexture(string key)
+    {
+        return _textures.TryGetValue(key, out int handle) ? (IntPtr)handle : IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Gets a texture handle for a given asset path. If it's a supported image,
+    /// it loads it as a thumbnail. If not, it returns a default icon.
+    /// </summary>
+    /// <param name="path">The full file path of the asset.</param>
+    /// <returns>An IntPtr to the appropriate texture.</returns>
+    public IntPtr GetTextureForPath(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            return GetTexture("Folder");
+        }
+
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        if (!ImageExtensions.Contains(extension))
+        {
+            return GetTexture("File");
+        }
+
+        // It's an image file, try to load it as a thumbnail.
+        if (_textures.TryGetValue(path, out int handle))
+        {
+            return (IntPtr)handle; // Return cached thumbnail
+        }
+
+        // Not cached, load it now.
+        int newHandle = LoadTextureFromFile(path);
+        if (newHandle != 0)
+        {
+            _textures[path] = newHandle;
+            return (IntPtr)newHandle;
+        }
+
+        return GetTexture("File"); // Fallback on load failure
+    }
+
+    private int LoadTextureFromFile(string path)
+    {
+        try
+        {
+            // We don't need to flip UI textures
+            StbImage.stbi_set_flip_vertically_on_load(0);
+            using var stream = File.OpenRead(path);
+            ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+
+            int handle = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, handle);
+
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+            return handle;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[TextureManager] Failed to load texture from '{path}': {e.Message}");
+            return 0;
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var handle in _textures.Values)
+        {
+            GL.DeleteTexture(handle);
+        }
+        _textures.Clear();
     }
 }
 </file>
@@ -5707,75 +5908,6 @@ internal static class EngineMath
         angles.Z = float.Atan2(siny_cosp, cosy_cosp);
 
         return angles;
-    }
-}
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\IconManager.cs">
-using OpenTK.Graphics.OpenGL4;
-using StbImageSharp;
-using System;
-using System.Collections.Generic;
-using System.IO;
-
-namespace CherrisEditor;
-
-/// <summary>
-/// A helper class to load and manage icon textures for the editor UI.
-/// </summary>
-public class IconManager : IDisposable
-{
-    private readonly Dictionary<string, int> _icons = new();
-
-    /// <summary>
-    /// Loads an image from a file into an OpenGL texture and caches it.
-    /// </summary>
-    /// <param name="key">A unique key to identify the icon (e.g., "Folder").</param>
-    /// <param name="path">The file path to the image.</param>
-    public void LoadIcon(string key, string path)
-    {
-        if (_icons.ContainsKey(key) || !File.Exists(path))
-        {
-            if (!File.Exists(path)) Console.WriteLine($"[IconManager] Icon not found at path: {path}");
-            return;
-        }
-
-        // We don't need to flip UI textures
-        StbImage.stbi_set_flip_vertically_on_load(0);
-        using var stream = File.OpenRead(path);
-        ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-
-        int handle = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, handle);
-
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba,
-            image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
-
-        // Set texture parameters for UI icons
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
-
-        _icons[key] = handle;
-    }
-
-    /// <summary>
-    /// Gets the GPU texture handle for a loaded icon.
-    /// </summary>
-    /// <param name="key">The key of the icon to retrieve.</param>
-    /// <returns>An IntPtr to the texture, or IntPtr.Zero if not found.</returns>
-    public IntPtr GetIcon(string key)
-    {
-        return _icons.TryGetValue(key, out int handle) ? (IntPtr)handle : IntPtr.Zero;
-    }
-
-    public void Dispose()
-    {
-        foreach (var handle in _icons.Values)
-        {
-            GL.DeleteTexture(handle);
-        }
     }
 }
 </file>

@@ -46,6 +46,14 @@ public class GameObject
         }
     }
 
+    public void RemoveComponent(Component componentToRemove)
+    {
+        if (componentToRemove is not null)
+        {
+            _components.Remove(componentToRemove);
+        }
+    }
+
     public BoundingBox GetWorldSpaceAABB()
     {
         var meshRenderer = GetComponent<MeshRenderer>();

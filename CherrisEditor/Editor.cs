@@ -1,5 +1,9 @@
 ﻿using Cherris;
-using Apexverse;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 
 namespace CherrisEditor;
 
@@ -25,14 +29,41 @@ public class Editor : Engine
     protected override void LoadContent()
     {
         ResourceManager.LoadInitialAssets();
-        RegisterComponents();
+        LoadGameComponents();
         LoadScene();
     }
 
-    private void RegisterComponents()
+    private void LoadGameComponents()
     {
-        SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
-        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
+        // Instead of loading a pre-compiled DLL, we now compile .cs files at runtime.
+        var gameAssembly = ScriptCompiler.Compile("Assets");
+
+        if (gameAssembly is null)
+        {
+            Console.WriteLine("[Editor] Game script compilation failed. No custom components will be loaded.");
+            return;
+        }
+
+        try
+        {
+            var scriptTypes = gameAssembly.GetTypes()
+                .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
+
+            int count = 0;
+            foreach (var type in scriptTypes)
+            {
+                // The factory function creates a new instance of the script type.
+                Func<object, Component> factory = _ => (Component)Activator.CreateInstance(type);
+                SceneLoader.RegisterComponentFactory(type.Name, factory);
+                Console.WriteLine($"[Editor] Registered custom component: {type.Name}");
+                count++;
+            }
+            Console.WriteLine($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
+        }
     }
 
     private void LoadScene()
@@ -46,26 +77,34 @@ public class Editor : Engine
         _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
 
-        if (SceneManager.MainCamera?.GameObject is null)
-        {
-            return;
-        }
-
         SetupEditorCamera();
     }
 
     private void SetupEditorCamera()
     {
-        GameObject cameraGo = SceneManager.MainCamera.GameObject;
-
-        var playerController = cameraGo.GetComponent<PlayerController>();
-
-        if (playerController is not null)
+        if (SceneManager.MainCamera?.GameObject is null)
         {
-            cameraGo.RemoveComponent<PlayerController>();
+            Console.WriteLine("[Editor] No camera found in scene. Editor controller will not be attached.");
+            return;
         }
 
-        cameraGo.AddComponent(new EditorController());
+        GameObject cameraGo = SceneManager.MainCamera.GameObject;
+
+        // Remove any game-specific scripts from the camera to replace them with the editor controller.
+        var gameScripts = cameraGo.GetComponents<Script>()
+            .Where(s => s.GetType() != typeof(EditorController))
+            .ToList(); // Use ToList to create a copy for safe removal.
+
+        foreach (var script in gameScripts)
+        {
+            cameraGo.RemoveComponent(script);
+        }
+
+        // Ensure an EditorController is present.
+        if (cameraGo.GetComponent<EditorController>() is null)
+        {
+            cameraGo.AddComponent(new EditorController());
+        }
     }
 
     protected override void Update(float deltaTime)
