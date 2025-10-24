@@ -8,8 +8,10 @@ public class MeshRenderer : Component, IDisposable
 {
     public Mesh Mesh { get; }
     public ITexture Texture { get; }
-    public Vector2 TextureTiling { get; }
-    public Vector3 EmissiveColor { get; }
+
+    // MODIFIED: Added setters to allow editing from the inspector
+    public Vector2 TextureTiling { get; set; }
+    public Vector3 EmissiveColor { get; set; }
 
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }

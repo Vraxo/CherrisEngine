@@ -1,6 +1,7 @@
 ﻿using Cherris;
 using ImGuiNET;
 using System.Numerics;
+using System.Reflection; // Required for reflection
 
 namespace CherrisEditor;
 
@@ -25,120 +26,214 @@ internal class InspectorPanel
         }
         else
         {
-            DrawSelectObjectProperties(selectedObject);
+            DrawGameObjectProperties(selectedObject);
         }
 
         ImGui.End();
     }
 
-    private static void DrawSelectObjectProperties(GameObject selectedObject)
+    private void DrawGameObjectProperties(GameObject go)
     {
-        ImGui.Text($"Selected: {selectedObject.Name}");
+        // --- Name and Transform are part of the GameObject itself ---
+        ImGui.Text($"Selected: {go.Name}");
         ImGui.Separator();
 
-        if (!ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
+        if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            return;
+            DrawTransformControl(go.Transform);
         }
 
-        // Use a table for clean alignment
-        if (ImGui.BeginTable("TransformTable", 2, ImGuiTableFlags.Resizable))
+        // --- Loop through all attached components ---
+        foreach (var component in go.Components)
         {
-            ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 70.0f);
-            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.Separator();
+            string componentName = component.GetType().Name;
 
-            // --- Position ---
-            ImGui.TableNextRow();
-            ImGui.TableSetColumnIndex(0);
-            ImGui.Text("Position");
-            ImGui.TableSetColumnIndex(1);
-            Vector3 position = selectedObject.Transform.Position;
-            if (DrawVector3Control("Position", ref position))
+            if (ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen))
             {
-                selectedObject.Transform.Position = position;
+                // Use pattern matching to call the correct UI drawer
+                switch (component)
+                {
+                    case MeshRenderer mr:
+                        DrawMeshRendererComponent(mr);
+                        break;
+                    case Camera cam:
+                        DrawCameraComponent(cam);
+                        break;
+                    case Script script: // This will handle PlayerController, Spinner, etc.
+                        DrawScriptComponent(script);
+                        break;
+                    default:
+                        // Fallback for components with no custom inspector (e.g., Skybox)
+                        ImGui.Text($"No custom inspector for {componentName}.");
+                        break;
+                }
             }
+        }
+    }
 
-            // --- Rotation ---
-            ImGui.TableNextRow();
-            ImGui.TableSetColumnIndex(0);
-            ImGui.Text("Rotation");
-            ImGui.TableSetColumnIndex(1);
-            Vector3 eulerDegrees = EngineMath.ToEulerAngles(selectedObject.Transform.Rotation) * (180.0f / MathF.PI);
-            if (DrawVector3Control("Rotation", ref eulerDegrees))
-            {
-                Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
-                selectedObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
-            }
+    private void DrawTransformControl(Transform transform)
+    {
+        if (!ImGui.BeginTable("TransformTable", 2, ImGuiTableFlags.Resizable))
+            return;
 
-            // --- Scale ---
-            ImGui.TableNextRow();
-            ImGui.TableSetColumnIndex(0);
-            ImGui.Text("Scale");
-            ImGui.TableSetColumnIndex(1);
-            Vector3 scale = selectedObject.Transform.Scale;
-            if (DrawVector3Control("Scale", ref scale))
-            {
-                selectedObject.Transform.Scale = scale;
-            }
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 70.0f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
 
-            ImGui.EndTable();
+        // Position
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Position");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 position = transform.Position;
+        if (DrawVector3Control("Position", ref position))
+        {
+            transform.Position = position;
+        }
+
+        // Rotation
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Rotation");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 eulerDegrees = EngineMath.ToEulerAngles(transform.Rotation) * (180.0f / MathF.PI);
+        if (DrawVector3Control("Rotation", ref eulerDegrees))
+        {
+            Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
+            transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+        }
+
+        // Scale
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Scale");
+        ImGui.TableSetColumnIndex(1);
+        Vector3 scale = transform.Scale;
+        if (DrawVector3Control("Scale", ref scale))
+        {
+            transform.Scale = scale;
+        }
+
+        ImGui.EndTable();
+    }
+
+    private void DrawMeshRendererComponent(MeshRenderer mr)
+    {
+        // NOTE: Displaying Mesh/Texture asset names would require a more advanced asset system.
+        // For now, we show that the objects exist and make other properties editable.
+        ImGui.Text($"Mesh: [Cube/Plane]"); // Placeholder
+        ImGui.Text($"Texture: [Loaded Texture]"); // Placeholder
+
+        var tiling = mr.TextureTiling;
+        if (ImGui.DragFloat2("Tiling", ref tiling, 0.1f))
+        {
+            mr.TextureTiling = tiling;
+        }
+
+        var emissive = mr.EmissiveColor;
+        if (ImGui.ColorEdit3("Emissive", ref emissive))
+        {
+            mr.EmissiveColor = emissive;
+        }
+    }
+
+    private void DrawCameraComponent(Camera cam)
+    {
+        float fov = cam.FieldOfView;
+        if (ImGui.DragFloat("Field of View", ref fov, 1.0f, 1.0f, 179.0f))
+        {
+            cam.FieldOfView = fov;
+        }
+
+        float near = cam.NearClipPlane;
+        if (ImGui.DragFloat("Near Plane", ref near, 0.01f, 0.01f, 1000.0f))
+        {
+            cam.NearClipPlane = near;
+        }
+
+        float far = cam.FarClipPlane;
+        if (ImGui.DragFloat("Far Plane", ref far, 1.0f, 1.0f, 5000.0f))
+        {
+            cam.FarClipPlane = far;
         }
     }
 
     /// <summary>
-    /// A helper function to draw a styled X, Y, Z vector control that fits perfectly.
+    /// Uses reflection to automatically generate UI for any Script component.
     /// </summary>
+    private void DrawScriptComponent(Script script)
+    {
+        var properties = script.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        foreach (var prop in properties)
+        {
+            // We only want to show properties we can read and write to.
+            if (!prop.CanRead || !prop.CanWrite) continue;
+
+            object currentValue = prop.GetValue(script);
+
+            // Generate UI based on property type
+            if (prop.PropertyType == typeof(float))
+            {
+                float val = (float)currentValue;
+                if (ImGui.DragFloat(prop.Name, ref val, 0.01f))
+                {
+                    prop.SetValue(script, val);
+                }
+            }
+            else if (prop.PropertyType == typeof(bool))
+            {
+                bool val = (bool)currentValue;
+                if (ImGui.Checkbox(prop.Name, ref val))
+                {
+                    prop.SetValue(script, val);
+                }
+            }
+            // Add more types here as needed (e.g., int, Vector3, etc.)
+            else
+            {
+                ImGui.Text($"{prop.Name}: {currentValue}");
+            }
+        }
+    }
+
     private static bool DrawVector3Control(string label, ref Vector3 values)
     {
         bool valueChanged = false;
-
         ImGui.PushID(label);
 
-        // --- Start of Fix: Robust Width Calculation ---
         var style = ImGui.GetStyle();
         float availableWidth = ImGui.GetContentRegionAvail().X;
-
-        // Calculate the total width of all extra elements (labels and spacing)
         float totalLabelWidth = ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X + ImGui.CalcTextSize("Z").X;
-        float totalSpacingWidth = style.ItemSpacing.X * 5; // There are 5 gaps between the 6 items (L-I-L-I-L-I)
-
-        // The remaining width is divided among the 3 input boxes
+        float totalSpacingWidth = style.ItemSpacing.X * 5;
         float totalInputWidth = availableWidth - totalLabelWidth - totalSpacingWidth;
         float itemWidth = totalInputWidth / 3.0f;
-        // --- End of Fix ---
 
-        // X Component (Red)
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f));
         ImGui.Text("X");
         ImGui.PopStyleColor();
-
         ImGui.SameLine();
         ImGui.PushItemWidth(itemWidth);
         if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
         ImGui.PopItemWidth();
         ImGui.SameLine();
 
-        // Y Component (Green)
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f));
         ImGui.Text("Y");
         ImGui.PopStyleColor();
-
         ImGui.SameLine();
         ImGui.PushItemWidth(itemWidth);
         if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
         ImGui.PopItemWidth();
         ImGui.SameLine();
 
-        // Z Component (Blue)
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f));
         ImGui.Text("Z");
         ImGui.PopStyleColor();
-
         ImGui.SameLine();
         ImGui.PushItemWidth(itemWidth);
         if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true;
         ImGui.PopItemWidth();
-
         ImGui.PopID();
 
         return valueChanged;

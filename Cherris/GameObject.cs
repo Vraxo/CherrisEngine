@@ -11,6 +11,9 @@ public class GameObject
     public Transform Transform { get; }
     private readonly List<Component> _components = new List<Component>();
 
+    // ADDED: Public accessor for the component list
+    public IEnumerable<Component> Components => _components;
+
     public GameObject(string name = "GameObject")
     {
         Name = name;
