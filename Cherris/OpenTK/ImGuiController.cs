@@ -43,6 +43,9 @@ namespace Cherris.OpenTK
             io.Fonts.AddFontDefault();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
 
+            // Enable Docking
+            io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+
             CreateDeviceResources();
 
             SetPerFrameImGuiData(1f / 60f);

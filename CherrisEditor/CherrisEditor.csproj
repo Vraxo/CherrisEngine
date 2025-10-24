@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="ImGui.NET.Docking" Version="1.75.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Apexverse\Apexverse.csproj" />
     <ProjectReference Include="..\Cherris\Cherris.csproj" />
   </ItemGroup>
