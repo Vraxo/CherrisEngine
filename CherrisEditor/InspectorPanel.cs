@@ -52,34 +52,50 @@ internal class InspectorPanel
             ImGui.TableSetColumnIndex(0);
             ImGui.Text("Position");
             ImGui.TableSetColumnIndex(1);
+
+            // --- Start of Fix ---
+            // PushItemWidth(-1.0f) tells the next widget to fill all available horizontal space.
+            ImGui.PushItemWidth(-1.0f);
             Vector3 position = selectedObject.Transform.Position;
             if (ImGui.DragFloat3("##Position", ref position, 0.1f))
             {
                 selectedObject.Transform.Position = position;
             }
+            ImGui.PopItemWidth();
+            // --- End of Fix ---
 
             // Rotation
             ImGui.TableNextRow();
             ImGui.TableSetColumnIndex(0);
             ImGui.Text("Rotation");
             ImGui.TableSetColumnIndex(1);
+
+            // --- Start of Fix ---
+            ImGui.PushItemWidth(-1.0f);
             Vector3 eulerDegrees = EngineMath.ToEulerAngles(selectedObject.Transform.Rotation) * (180.0f / MathF.PI);
             if (ImGui.DragFloat3("##Rotation", ref eulerDegrees, 1.0f))
             {
                 Vector3 eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
                 selectedObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
             }
+            ImGui.PopItemWidth();
+            // --- End of Fix ---
 
             // Scale
             ImGui.TableNextRow();
             ImGui.TableSetColumnIndex(0);
             ImGui.Text("Scale");
             ImGui.TableSetColumnIndex(1);
+
+            // --- Start of Fix ---
+            ImGui.PushItemWidth(-1.0f);
             Vector3 scale = selectedObject.Transform.Scale;
             if (ImGui.DragFloat3("##Scale", ref scale, 0.1f))
             {
                 selectedObject.Transform.Scale = scale;
             }
+            ImGui.PopItemWidth();
+            // --- End of Fix ---
 
             ImGui.EndTable();
         }
