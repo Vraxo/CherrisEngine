@@ -13,7 +13,7 @@ namespace CherrisEditor;
 public class EditorTextureManager : IDisposable
 {
     private readonly Dictionary<string, int> _textures = new();
-    private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+    public static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
     private static readonly string[] ScriptExtensions = { ".cs" };
 
     /// <summary>

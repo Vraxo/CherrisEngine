@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace CherrisEditor;
 
@@ -12,10 +13,11 @@ public class ContentBrowserPanel : IDisposable
     private readonly EditorTextureManager _textureManager;
     private readonly string _assetRootPath;
     private string _currentAssetPath;
+    private static IntPtr _payloadPtr = IntPtr.Zero;
 
-    public ContentBrowserPanel()
+    public ContentBrowserPanel(EditorTextureManager textureManager)
     {
-        _textureManager = new EditorTextureManager();
+        _textureManager = textureManager;
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
         _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
@@ -26,6 +28,13 @@ public class ContentBrowserPanel : IDisposable
 
     public void Draw()
     {
+        // Free any unmanaged memory from the previous frame's drag-drop operation.
+        if (_payloadPtr != IntPtr.Zero)
+        {
+            Marshal.FreeHGlobal(_payloadPtr);
+            _payloadPtr = IntPtr.Zero;
+        }
+
         ImGui.Begin("Content Browser");
         DrawHeader();
         DrawGrid();
@@ -85,6 +94,25 @@ public class ContentBrowserPanel : IDisposable
             // Handle single-click
         }
 
+        // --- DRAG SOURCE LOGIC ---
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            if (ImGui.BeginDragDropSource())
+            {
+                // Set payload to be the file path
+                _payloadPtr = Marshal.StringToHGlobalAnsi(path);
+                ImGui.SetDragDropPayload("ASSET_PATH_TEXTURE", _payloadPtr, (uint)(path.Length + 1));
+
+                // Show a preview while dragging
+                ImGui.Image(textureHandle, new Vector2(50, 50));
+                ImGui.SameLine();
+                ImGui.Text(itemName);
+
+                ImGui.EndDragDropSource();
+            }
+        }
+
         if (Directory.Exists(path) && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
             _currentAssetPath = path;
@@ -114,6 +142,11 @@ public class ContentBrowserPanel : IDisposable
 
     public void Dispose()
     {
-        _textureManager.Dispose();
+        // Ensure we free the handle on shutdown if it's still allocated
+        if (_payloadPtr != IntPtr.Zero)
+        {
+            Marshal.FreeHGlobal(_payloadPtr);
+            _payloadPtr = IntPtr.Zero;
+        }
     }
 }

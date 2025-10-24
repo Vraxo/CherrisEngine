@@ -20,7 +20,7 @@ public abstract class Engine
     private readonly IGameWindow _gameWindow;
     private readonly IRenderer _renderer;
     private readonly GameLoop _gameLoop;
-    
+
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
@@ -113,38 +113,29 @@ public abstract class Engine
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) 
+            if (properties is not Dictionary<object, object> propsDict)
             {
                 return null;
             }
 
             Mesh? mesh = null;
-           
+
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
             {
                 mesh = ResourceManager.GetMesh(meshName);
             }
 
-            if (mesh is null) 
+            if (mesh is null)
             {
                 return null;
             }
 
-            ITexture texture;
-           
-            if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
+            string textureName = "White"; // Default value
+            if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
             {
-                texture = ResourceManager.GetTexture(textureName);
+                textureName = parsedTextureName;
             }
-            else
-            {
-                texture = ResourceManager.GetTexture("White");
-            }
-
-            if (texture is null) 
-            {
-                return null;
-            }
+            ITexture texture = ResourceManager.GetTexture(textureName);
 
             Vector2 textureTiling = Vector2.One;
 
@@ -163,7 +154,7 @@ public abstract class Engine
             }
 
             Vector3 emissiveColor = Vector3.Zero;
-            
+
             if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
             {
                 try
@@ -179,7 +170,7 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor);
+            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>
@@ -222,12 +213,12 @@ public abstract class Engine
         if (_snapshotsEnabled)
         {
             _snapshotTimer += _lastDeltaTime;
-            
+
             if (_snapshotTimer >= SnapshotInterval)
             {
                 _snapshotTimer -= SnapshotInterval;
                 string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
-                
+
                 _renderer.RequestSnapshot(path);
             }
         }

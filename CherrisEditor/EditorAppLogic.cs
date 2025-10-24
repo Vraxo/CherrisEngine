@@ -9,13 +9,15 @@ public class EditorAppLogic : IDisposable
 {
     private readonly Editor _editor;
     private readonly InspectorPanel _inspectorPanel;
-    private readonly ContentBrowserPanel _contentBrowserPanel; // Use the new panel class
+    private readonly ContentBrowserPanel _contentBrowserPanel;
+    private readonly EditorTextureManager _editorTextureManager;
 
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
-        _inspectorPanel = new(_editor);
-        _contentBrowserPanel = new ContentBrowserPanel(); // Instantiate the new panel
+        _editorTextureManager = new EditorTextureManager();
+        _inspectorPanel = new(_editor, _editorTextureManager);
+        _contentBrowserPanel = new ContentBrowserPanel(_editorTextureManager);
         EditorTheme.ApplyUnrealEngineStyle();
     }
 
@@ -181,6 +183,7 @@ public class EditorAppLogic : IDisposable
 
     public void Dispose()
     {
-        _contentBrowserPanel.Dispose(); // Dispose the new panel
+        _contentBrowserPanel.Dispose();
+        _editorTextureManager.Dispose();
     }
 }

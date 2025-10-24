@@ -2,20 +2,23 @@
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
-using System.Collections.Generic; // Required for Dictionary
-using System; // Required for Activator
+using System.Collections.Generic;
+using System;
+using System.Runtime.InteropServices;
+using System.IO;
 
 namespace CherrisEditor;
 
 internal class InspectorPanel
 {
     private readonly Editor _editor;
-    // Cache for default component instances to avoid creating them every frame.
+    private readonly EditorTextureManager _textureManager;
     private readonly Dictionary<Type, object> _defaultComponentCache = new();
 
-    public InspectorPanel(Editor editor)
+    public InspectorPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
+        _textureManager = textureManager;
     }
 
     public void DrawInspectorPanel()
@@ -124,12 +127,59 @@ internal class InspectorPanel
         ImGui.EndTable();
     }
 
-    private void DrawMeshRendererComponent(MeshRenderer mr)
+    private unsafe void DrawMeshRendererComponent(MeshRenderer mr)
     {
         if (!ImGui.BeginTable("MRTable", 3, ImGuiTableFlags.Resizable)) return;
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+
+        // Texture
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture");
+        ImGui.TableSetColumnIndex(1);
+
+        IntPtr textureHandle = IntPtr.Zero;
+        if (mr.Texture?.GetBackendHandle() is int handle && handle != 0)
+        {
+            textureHandle = (IntPtr)handle;
+        }
+        else
+        {
+            textureHandle = _textureManager.GetTexture("File");
+        }
+
+        // Use flipped UVs because game textures are loaded upside-down for OpenGL.
+        ImGui.ImageButton("TextureThumb", textureHandle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
+            if (payload.NativePtr != null)
+            {
+                string path = Marshal.PtrToStringAnsi(payload.Data);
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    string textureName = Path.GetFileNameWithoutExtension(path);
+                    var newTexture = _editor.ResourceManager.GetTexture(textureName);
+                    mr.TextureName = textureName;
+                    mr.Texture = newTexture;
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        ImGui.SameLine();
+        ImGui.Text(mr.TextureName);
+
+        ImGui.TableSetColumnIndex(2);
+        if (ImGui.Button("R##Texture"))
+        {
+            mr.TextureName = "White";
+            mr.Texture = _editor.ResourceManager.GetTexture("White");
+        }
+
 
         // Tiling
         ImGui.TableNextRow();
