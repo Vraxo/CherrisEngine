@@ -21,6 +21,12 @@ public class EditorAppLogic : IDisposable
         _contentBrowserPanel = new ContentBrowserPanel(_editorTextureManager);
         _sceneSerializer = new SceneSerializer();
         EditorTheme.ApplyUnrealEngineStyle();
+
+        // Load the new icons needed for the toolbar
+        _editorTextureManager.LoadTexture("Play", "Assets/Icons/play.png");
+        _editorTextureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
+        _editorTextureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
+        _editorTextureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
     }
 
     public Action<float> DrawUI()
@@ -127,8 +133,8 @@ public class EditorAppLogic : IDisposable
         bool isEditing = _editor.State == EditorState.Editing;
 
         // --- Play / Pause Button ---
-        string playPauseText = isPlaying ? "Pause" : "Play";
-        if (ImGui.Button(playPauseText, new Vector2(size, size)))
+        IntPtr playPauseIcon = isPlaying ? _editorTextureManager.GetTexture("Pause") : _editorTextureManager.GetTexture("Play");
+        if (ImGui.ImageButton("PlayPause", playPauseIcon, new Vector2(size, size)))
         {
             if (isPlaying)
             {
@@ -149,7 +155,8 @@ public class EditorAppLogic : IDisposable
             ImGui.BeginDisabled();
         }
 
-        if (ImGui.Button("Stop", new Vector2(size, size)))
+        IntPtr stopIcon = _editorTextureManager.GetTexture("Stop");
+        if (ImGui.ImageButton("Stop", stopIcon, new Vector2(size, size)))
         {
             _editor.Stop();
         }
@@ -169,7 +176,8 @@ public class EditorAppLogic : IDisposable
             ImGui.BeginDisabled();
         }
 
-        if (ImGui.Button("Restart", new Vector2(size, size)))
+        IntPtr restartIcon = _editorTextureManager.GetTexture("Restart");
+        if (ImGui.ImageButton("Restart", restartIcon, new Vector2(size, size)))
         {
             _editor.Restart();
         }
