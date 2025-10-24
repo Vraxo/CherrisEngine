@@ -50,12 +50,25 @@ internal class InspectorPanel
             DrawTransformControl(go.Transform);
         }
 
-        foreach (var component in go.Components)
+        // Use .ToList() to create a copy, allowing safe removal while iterating.
+        foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
             string componentName = component.GetType().Name;
 
-            if (ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen))
+            bool headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
+
+            // Add context menu for removing the component
+            if (ImGui.BeginPopupContextItem())
+            {
+                if (ImGui.MenuItem("Remove Component"))
+                {
+                    go.RemoveComponent(component);
+                }
+                ImGui.EndPopup();
+            }
+
+            if (headerOpen)
             {
                 switch (component)
                 {
