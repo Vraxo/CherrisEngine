@@ -2,12 +2,12 @@
 using System;
 using System.Numerics;
 
-namespace Apexverse;
+namespace CherrisEditor;
 
 public class EditorController : Script
 {
     public float Speed { get; set; } = 5.0f;
-    public float MouseSensitivity { get; set; } = 0.00015f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
 
     private float _yaw;
     private float _pitch;

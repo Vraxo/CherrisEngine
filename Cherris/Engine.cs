@@ -4,93 +4,87 @@ using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Cherris.Rendering;
+using Cherris.OpenTK;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
-public enum EngineMode
+// A simple ray for picking.
+public struct Ray
 {
-    Game,
-    Editor
+    public readonly Vector3 Origin;
+    public readonly Vector3 Direction;
+
+    public Ray(Vector3 origin, Vector3 direction)
+    {
+        Origin = origin;
+        Direction = Vector3.Normalize(direction);
+    }
+
+    // Slab method for ray-AABB intersection.
+    public bool Intersects(BoundingBox box, out float distance)
+    {
+        distance = 0.0f;
+        float tmin = 0.0f;
+        float tmax = float.MaxValue;
+
+        if (Math.Abs(Direction.X) < 1e-6)
+        {
+            if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
+        }
+        else
+        {
+            float ood = 1.0f / Direction.X;
+            float t1 = (box.Min.X - Origin.X) * ood;
+            float t2 = (box.Max.X - Origin.X) * ood;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.Max(tmin, t1);
+            tmax = Math.Min(tmax, t2);
+            if (tmin > tmax) return false;
+        }
+
+        if (Math.Abs(Direction.Y) < 1e-6)
+        {
+            if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
+        }
+        else
+        {
+            float ood = 1.0f / Direction.Y;
+            float t1 = (box.Min.Y - Origin.Y) * ood;
+            float t2 = (box.Max.Y - Origin.Y) * ood;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.Max(tmin, t1);
+            tmax = Math.Min(tmax, t2);
+            if (tmin > tmax) return false;
+        }
+
+        if (Math.Abs(Direction.Z) < 1e-6)
+        {
+            if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
+        }
+        else
+        {
+            float ood = 1.0f / Direction.Z;
+            float t1 = (box.Min.Z - Origin.Z) * ood;
+            float t2 = (box.Max.Z - Origin.Z) * ood;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.Max(tmin, t1);
+            tmax = Math.Min(tmax, t2);
+            if (tmin > tmax) return false;
+        }
+
+        distance = tmin;
+        return true;
+    }
 }
+
 
 public abstract class Engine
 {
-    // A simple ray for picking.
-    private struct Ray
-    {
-        public readonly Vector3 Origin;
-        public readonly Vector3 Direction;
-
-        public Ray(Vector3 origin, Vector3 direction)
-        {
-            Origin = origin;
-            Direction = Vector3.Normalize(direction);
-        }
-
-        // Slab method for ray-AABB intersection.
-        public bool Intersects(BoundingBox box, out float distance)
-        {
-            distance = 0.0f;
-            float tmin = 0.0f;
-            float tmax = float.MaxValue;
-
-            if (Math.Abs(Direction.X) < 1e-6)
-            {
-                if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
-            }
-            else
-            {
-                float ood = 1.0f / Direction.X;
-                float t1 = (box.Min.X - Origin.X) * ood;
-                float t2 = (box.Max.X - Origin.X) * ood;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                tmin = Math.Max(tmin, t1);
-                tmax = Math.Min(tmax, t2);
-                if (tmin > tmax) return false;
-            }
-
-            if (Math.Abs(Direction.Y) < 1e-6)
-            {
-                if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
-            }
-            else
-            {
-                float ood = 1.0f / Direction.Y;
-                float t1 = (box.Min.Y - Origin.Y) * ood;
-                float t2 = (box.Max.Y - Origin.Y) * ood;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                tmin = Math.Max(tmin, t1);
-                tmax = Math.Min(tmax, t2);
-                if (tmin > tmax) return false;
-            }
-
-            if (Math.Abs(Direction.Z) < 1e-6)
-            {
-                if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
-            }
-            else
-            {
-                float ood = 1.0f / Direction.Z;
-                float t1 = (box.Min.Z - Origin.Z) * ood;
-                float t2 = (box.Max.Z - Origin.Z) * ood;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                tmin = Math.Max(tmin, t1);
-                tmax = Math.Min(tmax, t2);
-                if (tmin > tmax) return false;
-            }
-
-            distance = tmin;
-            return true;
-        }
-    }
-
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
-    private GameObject _selectedGameObject;
-    private Script _editorController;
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
@@ -98,21 +92,20 @@ public abstract class Engine
 
     // Engine Systems
     protected readonly IGraphicsBackend _backend;
-    protected readonly IResourceManager ResourceManager;
-    protected readonly SceneLoader SceneLoader;
-    protected readonly SceneManager SceneManager;
+    public readonly IResourceManager ResourceManager;
+    public readonly SceneLoader SceneLoader;
+    public readonly SceneManager SceneManager;
     private readonly IRenderer _renderer;
 
-    protected EngineMode Mode { get; }
+    public Action<float>? OnDrawUI;
+    protected GameObject? SelectedGameObject { get; set; } // Accessible for editor subclasses
 
     public float Exposure { get; set; } = 1.0f;
 
-    protected Engine(string windowTitle, EngineMode mode, GraphicsAPI api)
+    protected Engine(string windowTitle, bool startWithMouseLocked, GraphicsAPI api)
     {
-        Mode = mode;
-
         _backend = CreateBackend(api);
-        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
+        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked);
 
         _gameWindow = _backend.GameWindow;
         ResourceManager = _backend.ResourceManager;
@@ -216,16 +209,10 @@ public abstract class Engine
 
     private void Start()
     {
-        SceneManager.Start(Mode);
+        SceneManager.Start();
     }
 
     protected virtual void OnStart() { }
-
-    protected void RegisterEditorController(Script controller)
-    {
-        _editorController = controller;
-        _editorController.Start();
-    }
 
     protected abstract void LoadContent();
 
@@ -233,72 +220,17 @@ public abstract class Engine
     {
         _lastDeltaTime = deltaTime;
 
+        _backend.UIController?.Update(deltaTime);
+        OnDrawUI?.Invoke(deltaTime);
+
         if (Input.WasKeyPressed(Key.F12))
         {
             _snapshotsEnabled = !_snapshotsEnabled;
             Console.WriteLine($"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. Press F12 to toggle.");
         }
-
-        if (Mode == EngineMode.Editor)
-        {
-            _editorController?.Update(deltaTime);
-            UpdateEditor(deltaTime);
-        }
-        else
-        {
-            SceneManager.Update(deltaTime);
-        }
     }
 
-    private void UpdateEditor(float deltaTime)
-    {
-        if (Input.WasMouseButtonPressed(MouseButton.Left))
-        {
-            Ray ray = CreateRayFromMouse();
-            GameObject closestObject = null;
-            float closestDistance = float.MaxValue;
-
-            foreach (var go in SceneManager.GameObjects)
-            {
-                if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
-                var aabb = go.GetWorldSpaceAABB();
-                if (ray.Intersects(aabb, out float distance))
-                {
-                    if (distance < closestDistance)
-                    {
-                        closestDistance = distance;
-                        closestObject = go;
-                    }
-                }
-            }
-            _selectedGameObject = closestObject;
-            if (_selectedGameObject is not null) Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
-        }
-
-        if (_selectedGameObject is not null)
-        {
-            const float moveSpeed = 2.0f;
-            var moveDirection = Vector3.Zero;
-            bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
-
-            if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
-            if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
-            if (shiftHeld)
-            {
-                if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
-                if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
-            }
-            else
-            {
-                if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
-                if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
-            }
-            if (moveDirection != Vector3.Zero)
-                _selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
-        }
-    }
-
-    private Ray CreateRayFromMouse()
+    public Ray CreateRayFromMouse()
     {
         Camera camera = SceneManager.MainCamera;
         if (camera is null) return new Ray();
@@ -334,7 +266,7 @@ public abstract class Engine
         }
         _renderer.RenderFrame(
             SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
-            _selectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
+            SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
 
         _renderer.ProcessSnapshot();
         _gameWindow.SwapBuffers();
@@ -358,6 +290,7 @@ public class VeldridBackend : IGraphicsBackend
     public IGameWindow GameWindow { get; private set; }
     public IRenderer Renderer { get; private set; }
     public IResourceManager ResourceManager { get; private set; }
+    public IUIController? UIController => null; // ImGui not implemented for Veldrid yet
     private GraphicsDevice _graphicsDevice;
     private GraphicsManager _graphicsManager;
 

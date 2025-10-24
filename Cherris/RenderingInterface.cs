@@ -5,6 +5,12 @@ using Veldrid; // We still need this for types like BoundingBox if we don't rede
 
 namespace Cherris.Rendering
 {
+    public interface IUIController : IDisposable
+    {
+        void Update(float deltaTime);
+        void Render();
+    }
+
     public interface ITexture : IDisposable
     {
         object GetBackendHandle();
@@ -42,6 +48,7 @@ namespace Cherris.Rendering
         IGameWindow GameWindow { get; }
         IRenderer Renderer { get; }
         IResourceManager ResourceManager { get; }
+        IUIController? UIController { get; }
 
         void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked);
     }

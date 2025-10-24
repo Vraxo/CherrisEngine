@@ -56,7 +56,13 @@ internal class OpenGLUIRenderer : IDisposable
             GL.Disable(EnableCap.DepthTest);
             GL.Disable(EnableCap.CullFace);
             GL.Enable(EnableCap.Blend);
-            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            // Use the correct blend function for premultiplied alpha, which Skia prefers.
+            GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
+
+            // This is the crucial step. We must clear the canvas to transparent before
+            // drawing the UI for the current frame. Otherwise, opaque pixels from
+            // previous frames will accumulate and obscure the 3D scene.
+            _skSurface.Canvas.Clear(SKColors.Transparent);
 
             _uiRenderer.SetCanvas(_skSurface.Canvas, new Vector2(_skRenderTarget.Width, _skRenderTarget.Height));
             _appEngine.UpdateAndRender(_uiRenderer, _uiTextService);

@@ -24,7 +24,7 @@ public class SceneManager
         Skybox = null;
     }
 
-    public void Start(EngineMode mode)
+    public void Start()
     {
         foreach (var gameObject in _gameObjects)
         {
@@ -38,12 +38,9 @@ public class SceneManager
                 Skybox = gameObject.GetComponent<Skybox>();
             }
 
-            if (mode == EngineMode.Game)
+            foreach (var script in gameObject.GetComponents<Script>())
             {
-                foreach (var script in gameObject.GetComponents<Script>())
-                {
-                    script.Start();
-                }
+                script.Start();
             }
         }
 

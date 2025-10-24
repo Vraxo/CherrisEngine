@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DirectUI", "..\DirectUI\DirectUI\DirectUI.csproj", "{70D27F8A-9E3F-D732-9CB9-71A440A221A9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CherrisEditor", "CherrisEditor\CherrisEditor.csproj", "{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -60,6 +62,18 @@ Global
 		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x64.Build.0 = Release|Any CPU
 		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x86.ActiveCfg = Release|Any CPU
 		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x86.Build.0 = Release|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|x64.Build.0 = Debug|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|x86.Build.0 = Debug|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Release|Any CPU.Build.0 = Release|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Release|x64.ActiveCfg = Release|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Release|x64.Build.0 = Release|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Release|x86.ActiveCfg = Release|Any CPU
+		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

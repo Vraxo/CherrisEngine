@@ -1,45 +1,39 @@
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
 using Cherris;
 using Cherris.Rendering;
-using DirectUI;
-using DirectUI.Core;
+using ImGuiNET;
 using System;
 using System.Numerics;
 
 namespace Apexverse;
 
-public class EditorAppLogic : IAppLogic
+public class EditorAppLogic
 {
-    private readonly IWindowHost _host;
     private float _sliderValue = 50f;
 
-    public EditorAppLogic(IWindowHost host)
+    public void DrawUI(float deltaTime)
     {
-        _host = host;
-    }
+        ImGui.Begin("Editor");
+        ImGui.Text($"Hello from ImGui.NET on Cherris!");
 
-    public void DrawUI(UIContext context)
-    {
-        UI.Text("hello_world", $"Hello from DirectUI on Cherris! Scale: {_host.AppEngine.UIScale:F2}", new Vector2(400, 25), new ButtonStyle { FontSize = 16 });
+        ImGui.Separator();
 
-        UI.BeginHBoxContainer("hbox1", new Vector2(0, 30), 10);
-        if (UI.Button("my_button", "Click Me!", new Vector2(100, 30)))
+        if (ImGui.Button("Click Me!"))
         {
             Console.WriteLine("Button clicked!");
         }
-        UI.Text("label1", "A UI Label", new Vector2(100, 30));
-        UI.EndHBoxContainer();
+        ImGui.SameLine();
+        ImGui.Text("A UI Label");
 
-        _sliderValue = UI.HSlider("slider1", _sliderValue, 0, 100, new Vector2(200, 20), new Vector2(0, 70));
-
+        ImGui.SliderFloat("Value", ref _sliderValue, 0, 100);
+        ImGui.End();
     }
-    public void SaveState() { }
 }
 
 
 public class Game : Engine
 {
-    public Game(EngineMode mode, GraphicsAPI api) : base("Cherris Engine (DirectUI Integration)", mode, api)
+    public Game(EngineMode mode, GraphicsAPI api) : base("Cherris Engine (ImGui.NET Integration)", mode, api)
     {
         Exposure = 0.5f;
     }
@@ -62,11 +56,8 @@ public class Game : Engine
     {
         if (Mode == EngineMode.Editor)
         {
-            if (_backend is OpenTKBackend otkBackend && _backend is IWindowHost host)
-            {
-                var uiLogic = new EditorAppLogic(host);
-                otkBackend.SetUILogic(uiLogic);
-            }
+            var uiLogic = new EditorAppLogic();
+            OnDrawUI = uiLogic.DrawUI;
 
             if (SceneManager.MainCamera?.GameObject != null)
             {
@@ -89,6 +80,7 @@ public class Game : Engine
     protected override void Update(float deltaTime)
     {
         // The base engine Update now handles calling Update on all Scripts
+        // and the UI controller.
         base.Update(deltaTime);
     }
 }
@@ -520,6 +512,7 @@ using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Cherris.Rendering;
+using Cherris.OpenTK;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
@@ -620,6 +613,7 @@ public abstract class Engine
     private readonly IRenderer _renderer;
 
     protected EngineMode Mode { get; }
+    public Action<float>? OnDrawUI;
 
     public float Exposure { get; set; } = 1.0f;
 
@@ -749,6 +743,9 @@ public abstract class Engine
     {
         _lastDeltaTime = deltaTime;
 
+        _backend.UIController?.Update(deltaTime);
+        OnDrawUI?.Invoke(deltaTime);
+
         if (Input.WasKeyPressed(Key.F12))
         {
             _snapshotsEnabled = !_snapshotsEnabled;
@@ -874,6 +871,7 @@ public class VeldridBackend : IGraphicsBackend
     public IGameWindow GameWindow { get; private set; }
     public IRenderer Renderer { get; private set; }
     public IResourceManager ResourceManager { get; private set; }
+    public IUIController? UIController => null; // ImGui not implemented for Veldrid yet
     private GraphicsDevice _graphicsDevice;
     private GraphicsManager _graphicsManager;
 
@@ -1887,6 +1885,12 @@ using Veldrid; // We still need this for types like BoundingBox if we don't rede
 
 namespace Cherris.Rendering
 {
+    public interface IUIController : IDisposable
+    {
+        void Update(float deltaTime);
+        void Render();
+    }
+
     public interface ITexture : IDisposable
     {
         object GetBackendHandle();
@@ -1924,6 +1928,7 @@ namespace Cherris.Rendering
         IGameWindow GameWindow { get; }
         IRenderer Renderer { get; }
         IResourceManager ResourceManager { get; }
+        IUIController? UIController { get; }
 
         void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked);
     }
@@ -3563,6 +3568,375 @@ public class Transform
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\ImGuiController.cs">
+using System;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using Cherris.Rendering;
+using ImGuiNET;
+using OpenTK.Graphics.OpenGL4;
+using OpenTK.Mathematics;
+using OpenTK.Windowing.GraphicsLibraryFramework;
+
+namespace Cherris.OpenTK
+{
+    public class ImGuiController : IUIController
+    {
+        private bool _frameBegun;
+
+        private int _vertexArray;
+        private int _vertexBuffer;
+        private int _vertexBufferSize;
+        private int _indexBuffer;
+        private int _indexBufferSize;
+
+        private int _fontTexture;
+        private int _shader;
+        private int _shaderFontTextureLocation;
+        private int _shaderProjectionMatrixLocation;
+
+        private int _windowWidth;
+        private int _windowHeight;
+
+        private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
+
+        public bool WantCaptureKeyboard { get; private set; }
+        public bool WantCaptureMouse { get; private set; }
+
+        public ImGuiController(int width, int height)
+        {
+            _windowWidth = width;
+            _windowHeight = height;
+
+            IntPtr context = ImGui.CreateContext();
+            ImGui.SetCurrentContext(context);
+            var io = ImGui.GetIO();
+            io.Fonts.AddFontDefault();
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+
+            CreateDeviceResources();
+
+            SetPerFrameImGuiData(1f / 60f);
+
+            ImGui.NewFrame();
+            _frameBegun = true;
+        }
+
+        public void WindowResized(int width, int height)
+        {
+            _windowWidth = width;
+            _windowHeight = height;
+        }
+
+        public void DestroyDeviceObjects()
+        {
+            GL.DeleteVertexArray(_vertexArray);
+            GL.DeleteBuffer(_vertexBuffer);
+            GL.DeleteBuffer(_indexBuffer);
+            GL.DeleteTexture(_fontTexture);
+            GL.DeleteProgram(_shader);
+        }
+
+        public void CreateDeviceResources()
+        {
+            _vertexBufferSize = 10000;
+            _indexBufferSize = 2000;
+
+            _vertexArray = GL.GenVertexArray();
+            GL.BindVertexArray(_vertexArray);
+
+            _vertexBuffer = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+            GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+
+            _indexBuffer = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+
+            RecreateFontDeviceTexture();
+
+            string VertexSource = @"#version 330 core
+uniform mat4 projection_matrix;
+layout(location = 0) in vec2 in_position;
+layout(location = 1) in vec2 in_texCoord;
+layout(location = 2) in vec4 in_color;
+out vec4 color;
+out vec2 texCoord;
+void main()
+{
+    gl_Position = projection_matrix * vec4(in_position, 0, 1);
+    color = in_color;
+    texCoord = in_texCoord;
+}";
+            string FragmentSource = @"#version 330 core
+uniform sampler2D in_fontTexture;
+in vec4 color;
+in vec2 texCoord;
+out vec4 outputColor;
+void main()
+{
+    outputColor = color * texture(in_fontTexture, texCoord);
+}";
+
+            _shader = CreateProgram("ImGui", VertexSource, FragmentSource);
+            _shaderProjectionMatrixLocation = GL.GetUniformLocation(_shader, "projection_matrix");
+            _shaderFontTextureLocation = GL.GetUniformLocation(_shader, "in_fontTexture");
+
+            int stride = Unsafe.SizeOf<ImDrawVert>();
+            GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, 0);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 8);
+            GL.VertexAttribPointer(2, 4, VertexAttribPointerType.UnsignedByte, true, stride, 16);
+
+            GL.EnableVertexAttribArray(0);
+            GL.EnableVertexAttribArray(1);
+            GL.EnableVertexAttribArray(2);
+
+            GL.BindVertexArray(0);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+        }
+
+        public void RecreateFontDeviceTexture()
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
+
+            _fontTexture = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, _fontTexture);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
+
+            io.Fonts.SetTexID((IntPtr)_fontTexture);
+            io.Fonts.ClearTexData();
+        }
+
+        public void Render()
+        {
+            if (_frameBegun)
+            {
+                _frameBegun = false;
+                ImGui.Render();
+                RenderImDrawData(ImGui.GetDrawData());
+            }
+        }
+
+        public void Update(float deltaSeconds)
+        {
+            if (_frameBegun)
+            {
+                ImGui.Render();
+            }
+
+            SetPerFrameImGuiData(deltaSeconds);
+            UpdateImGuiInput();
+
+            _frameBegun = true;
+            ImGui.NewFrame();
+        }
+
+        private void UpdateImGuiInput()
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            WantCaptureMouse = io.WantCaptureMouse;
+            WantCaptureKeyboard = io.WantCaptureKeyboard;
+        }
+
+        private void SetPerFrameImGuiData(float deltaSeconds)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.DisplaySize = new System.Numerics.Vector2(
+                _windowWidth / _scaleFactor.X,
+                _windowHeight / _scaleFactor.Y);
+            io.DisplayFramebufferScale = _scaleFactor;
+            io.DeltaTime = deltaSeconds;
+        }
+
+        public void MouseMove(Vector2 newPosition)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddMousePosEvent(newPosition.X, newPosition.Y);
+        }
+
+        public void MouseScroll(Vector2 offset)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddMouseWheelEvent(offset.X, offset.Y);
+        }
+
+        public void MouseButton(MouseButton button, bool down)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddMouseButtonEvent((int)button, down);
+        }
+
+        public void PressChar(char keyChar)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddInputCharacter(keyChar);
+        }
+
+        public void KeyEvent(Keys key, bool isRepeat, bool down)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            if (s_KeyMap.TryGetValue(key, out var imguikey))
+            {
+                io.AddKeyEvent(imguikey, down);
+            }
+        }
+
+        private void RenderImDrawData(ImDrawDataPtr draw_data)
+        {
+            if (draw_data.CmdListsCount == 0) return;
+
+            GL.GetInteger(GetPName.ActiveTexture, out int lastActiveTexture);
+            GL.ActiveTexture(TextureUnit.Texture0);
+
+            GL.GetInteger(GetPName.CurrentProgram, out int lastProgram);
+            GL.GetInteger(GetPName.ArrayBufferBinding, out int lastArrayBuffer);
+            GL.GetInteger(GetPName.VertexArrayBinding, out int lastVertexArray);
+
+            GL.Enable(EnableCap.Blend);
+            GL.BlendEquation(BlendEquationMode.FuncAdd);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Disable(EnableCap.CullFace);
+            GL.Disable(EnableCap.DepthTest);
+            GL.Enable(EnableCap.ScissorTest);
+
+            GL.BindVertexArray(_vertexArray);
+
+            Matrix4 projection = Matrix4.CreateOrthographicOffCenter(
+                0f, _windowWidth,
+                _windowHeight, 0.0f,
+                -1.0f, 1.0f);
+
+            GL.UseProgram(_shader);
+            GL.UniformMatrix4(_shaderProjectionMatrixLocation, false, ref projection);
+            GL.Uniform1(_shaderFontTextureLocation, 0);
+
+            draw_data.ScaleClipRects(_scaleFactor);
+
+            for (int i = 0; i < draw_data.CmdListsCount; i++)
+            {
+                ImDrawListPtr cmd_list = draw_data.CmdLists[i];
+
+                GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+                GL.BufferData(BufferTarget.ArrayBuffer, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data, BufferUsageHint.StreamDraw);
+
+                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
+                GL.BufferData(BufferTarget.ElementArrayBuffer, cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data, BufferUsageHint.StreamDraw);
+
+                for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
+                {
+                    ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
+                    if (pcmd.UserCallback != IntPtr.Zero)
+                    {
+                        throw new NotImplementedException();
+                    }
+
+                    GL.ActiveTexture(TextureUnit.Texture0);
+                    GL.BindTexture(TextureTarget.Texture2D, (int)pcmd.TextureId);
+
+                    var clip = pcmd.ClipRect;
+                    GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
+
+                    GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)(pcmd.IdxOffset * sizeof(ushort)), (int)pcmd.VtxOffset);
+                }
+            }
+
+            GL.Disable(EnableCap.Blend);
+            GL.Disable(EnableCap.ScissorTest);
+
+            GL.UseProgram(lastProgram);
+            GL.ActiveTexture((TextureUnit)lastActiveTexture);
+            GL.BindVertexArray(lastVertexArray);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, lastArrayBuffer);
+        }
+
+        private static int CreateProgram(string name, string vertexSource, string fragmentSource)
+        {
+            int program = GL.CreateProgram();
+
+            int vertex = CompileShader(name, ShaderType.VertexShader, vertexSource);
+            int fragment = CompileShader(name, ShaderType.FragmentShader, fragmentSource);
+
+            GL.AttachShader(program, vertex);
+            GL.AttachShader(program, fragment);
+
+            GL.LinkProgram(program);
+
+            GL.GetProgram(program, GetProgramParameterName.LinkStatus, out int success);
+            if (success == 0)
+            {
+                string info = GL.GetProgramInfoLog(program);
+                Console.WriteLine($"GL.LinkProgram had info log for '{name}':\n{info}");
+            }
+
+            GL.DetachShader(program, vertex);
+            GL.DetachShader(program, fragment);
+
+            GL.DeleteShader(vertex);
+            GL.DeleteShader(fragment);
+
+            return program;
+        }
+
+        private static int CompileShader(string name, ShaderType type, string source)
+        {
+            int shader = GL.CreateShader(type);
+            GL.ShaderSource(shader, source);
+            GL.CompileShader(shader);
+
+            GL.GetShader(shader, ShaderParameter.CompileStatus, out int success);
+            if (success == 0)
+            {
+                string info = GL.GetShaderInfoLog(shader);
+                Console.WriteLine($"GL.CompileShader for '{name}' ({type}) had info log:\n{info}");
+            }
+            return shader;
+        }
+
+        public void Dispose()
+        {
+            DestroyDeviceObjects();
+        }
+
+        private static readonly Dictionary<Keys, ImGuiKey> s_KeyMap = new()
+        {
+            { Keys.Tab, ImGuiKey.Tab },
+            { Keys.Left, ImGuiKey.LeftArrow },
+            { Keys.Right, ImGuiKey.RightArrow },
+            { Keys.Up, ImGuiKey.UpArrow },
+            { Keys.Down, ImGuiKey.DownArrow },
+            { Keys.PageUp, ImGuiKey.PageUp },
+            { Keys.PageDown, ImGuiKey.PageDown },
+            { Keys.Home, ImGuiKey.Home },
+            { Keys.End, ImGuiKey.End },
+            { Keys.Insert, ImGuiKey.Insert },
+            { Keys.Delete, ImGuiKey.Delete },
+            { Keys.Backspace, ImGuiKey.Backspace },
+            { Keys.Space, ImGuiKey.Space },
+            { Keys.Enter, ImGuiKey.Enter },
+            { Keys.Escape, ImGuiKey.Escape },
+            { Keys.A, ImGuiKey.A }, { Keys.B, ImGuiKey.B }, { Keys.C, ImGuiKey.C }, { Keys.D, ImGuiKey.D },
+            { Keys.E, ImGuiKey.E }, { Keys.F, ImGuiKey.F }, { Keys.G, ImGuiKey.G }, { Keys.H, ImGuiKey.H },
+            { Keys.I, ImGuiKey.I }, { Keys.J, ImGuiKey.J }, { Keys.K, ImGuiKey.K }, { Keys.L, ImGuiKey.L },
+            { Keys.M, ImGuiKey.M }, { Keys.N, ImGuiKey.N }, { Keys.O, ImGuiKey.O }, { Keys.P, ImGuiKey.P },
+            { Keys.Q, ImGuiKey.Q }, { Keys.R, ImGuiKey.R }, { Keys.S, ImGuiKey.S }, { Keys.T, ImGuiKey.T },
+            { Keys.U, ImGuiKey.U }, { Keys.V, ImGuiKey.V }, { Keys.W, ImGuiKey.W }, { Keys.X, ImGuiKey.X },
+            { Keys.Y, ImGuiKey.Y }, { Keys.Z, ImGuiKey.Z },
+            { Keys.D0, ImGuiKey._0 }, { Keys.D1, ImGuiKey._1 }, { Keys.D2, ImGuiKey._2 }, { Keys.D3, ImGuiKey._3 },
+            { Keys.D4, ImGuiKey._4 }, { Keys.D5, ImGuiKey._5 }, { Keys.D6, ImGuiKey._6 }, { Keys.D7, ImGuiKey._7 },
+            { Keys.D8, ImGuiKey._8 }, { Keys.D9, ImGuiKey._9 },
+            { Keys.LeftShift, ImGuiKey.ModShift }, { Keys.RightShift, ImGuiKey.ModShift },
+            { Keys.LeftControl, ImGuiKey.ModCtrl }, { Keys.RightControl, ImGuiKey.ModCtrl },
+            { Keys.LeftAlt, ImGuiKey.ModAlt }, { Keys.RightAlt, ImGuiKey.ModAlt },
+        };
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenGLMeshRendererData.cs">
 using Cherris;
 using OpenTK.Graphics.OpenGL;
@@ -4191,11 +4565,21 @@ internal class OpenGLUIRenderer : IDisposable
     {
         if (_appEngine != null && _skSurface != null)
         {
+            // Reset Skia's internal state tracking because raw OpenGL calls
+            // in the scene renderer/post-processor might have changed it.
+            _grContext.ResetContext();
+
             // GL state for 2D UI
             GL.Disable(EnableCap.DepthTest);
             GL.Disable(EnableCap.CullFace);
             GL.Enable(EnableCap.Blend);
-            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            // Use the correct blend function for premultiplied alpha, which Skia prefers.
+            GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
+
+            // This is the crucial step. We must clear the canvas to transparent before
+            // drawing the UI for the current frame. Otherwise, opaque pixels from
+            // previous frames will accumulate and obscure the 3D scene.
+            _skSurface.Canvas.Clear(SKColors.Transparent);
 
             _uiRenderer.SetCanvas(_skSurface.Canvas, new Vector2(_skRenderTarget.Width, _skRenderTarget.Height));
             _appEngine.UpdateAndRender(_uiRenderer, _uiTextService);
@@ -4218,84 +4602,39 @@ internal class OpenGLUIRenderer : IDisposable
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Desktop;
-using DirectUI;
-using DirectUI.Core;
-using DirectUI.Input;
 using System;
-using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
 
-namespace Cherris;
-
-public class OpenTKBackend : IGraphicsBackend, IWindowHost
+namespace Cherris.OpenTK
 {
-    public IGameWindow GameWindow { get; private set; }
-    public Cherris.Rendering.IRenderer Renderer { get; private set; }
-    public IResourceManager ResourceManager { get; private set; }
-    private AppEngine _appEngine;
-    private IAppLogic _uiLogic;
-
-    // --- IWindowHost Implementation ---
-    public AppEngine AppEngine => _appEngine;
-    public InputManager Input => _appEngine.Input;
-    public SizeI ClientSize => new((int)GameWindow.Width, (int)GameWindow.Height);
-    public bool ShowFpsCounter { get; set; }
-    public IModalWindowService ModalWindowService => null; // Not implemented for this demonstration
-    public IntPtr Handle => (GameWindow as OpenTKGameWindow)?.Handle ?? IntPtr.Zero;
-
-    public void SetUILogic(IAppLogic uiLogic)
+    public class OpenTKBackend : IGraphicsBackend
     {
-        _uiLogic = uiLogic;
-    }
+        public IGameWindow GameWindow { get; private set; }
+        public IRenderer Renderer { get; private set; }
+        public IResourceManager ResourceManager { get; private set; }
+        public IUIController? UIController { get; private set; }
 
-    public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
-    {
-        var window = new OpenTKGameWindow(windowTitle, width, height, startWithMouseLocked);
-        GameWindow = window;
+        private ImGuiController _imGuiController;
 
-        // The GameWindow's context is made current in its constructor.
-
-        _appEngine = new AppEngine(
-            context => _uiLogic?.DrawUI(context),
-            new Color4(0, 0, 0, 0) // Transparent background for UI layer
-        );
-
-        // Pass AppEngine to window for input forwarding
-        window.SetInputManager(_appEngine.Input);
-
-        Renderer = new OpenTKRenderer(_appEngine);
-        ResourceManager = new OpenTKResourceManager();
-
-        // AppEngine needs an IRenderer and ITextService to be initialized. We can get them from our OpenTKRenderer.
-        if (Renderer is OpenTKRenderer otkRenderer)
+        public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
         {
-            _appEngine.Initialize(otkRenderer.UiTextService, otkRenderer.UiRenderer);
+            var window = new OpenTKGameWindow(windowTitle, width, height, startWithMouseLocked);
+            GameWindow = window;
+
+            _imGuiController = new ImGuiController(width, height);
+            UIController = _imGuiController;
+            window.SetImGuiController(_imGuiController);
+
+            Renderer = new OpenTKRenderer(_imGuiController);
+            ResourceManager = new OpenTKResourceManager();
         }
-    }
 
-    // This is part of IWindowHost but not used in this integration pattern.
-    bool IWindowHost.Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale)
-    {
-        throw new NotSupportedException("This Initialize method is for standalone DirectUI applications.");
-    }
-
-    // RunLoop is handled by Cherris.Engine
-    void IWindowHost.RunLoop()
-    {
-        throw new NotSupportedException("RunLoop is managed by the Cherris Engine.");
-    }
-
-    void IWindowHost.Cleanup()
-    {
-        Dispose();
-    }
-
-    public void Dispose()
-    {
-        _appEngine?.Cleanup();
-        GameWindow?.Dispose();
-        Renderer?.Dispose();
-        ResourceManager?.Dispose();
+        public void Dispose()
+        {
+            _imGuiController?.Dispose();
+            GameWindow?.Dispose();
+            Renderer?.Dispose();
+            ResourceManager?.Dispose();
+        }
     }
 }
 </file>
@@ -4309,11 +4648,9 @@ using OpenTK.Mathematics;
 using OpenTK.Graphics.OpenGL4;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
-using OpenTKMouseButton = OpenTK.Windowing.GraphicsLibraryFramework.MouseButton;
-using DirectUI.Input;
-using DM = DirectUI;
+using OpenTK.Windowing.GraphicsLibraryFramework;
 
-namespace Cherris;
+namespace Cherris.OpenTK;
 
 public class OpenTKGameWindow : IGameWindow
 {
@@ -4321,7 +4658,7 @@ public class OpenTKGameWindow : IGameWindow
     private bool _isMouseLocked;
     private Vector2 _lastMousePos;
     private bool _firstMove = true;
-    private InputManager _directUIInputManager;
+    private ImGuiController _imGuiController;
 
     public bool Exists => _window.Exists && !_window.IsExiting;
     public float Width => _window.ClientSize.X;
@@ -4352,7 +4689,8 @@ public class OpenTKGameWindow : IGameWindow
             ClientSize = new Vector2i(width, height),
             Title = title,
             NumberOfSamples = 4, // Request 4x MSAA
-            StencilBits = 8 // Request an 8-bit stencil buffer for the default framebuffer
+            StencilBits = 8, // Request an 8-bit stencil buffer for the default framebuffer
+            AlphaBits = 8 // Request an 8-bit alpha channel for transparency compositing
         };
         _window = new OTKGameWindow(gameWindowSettings, nativeWindowSettings);
 
@@ -4373,9 +4711,9 @@ public class OpenTKGameWindow : IGameWindow
         IsMouseLocked = startWithMouseLocked;
     }
 
-    public void SetInputManager(InputManager manager)
+    public void SetImGuiController(ImGuiController controller)
     {
-        _directUIInputManager = manager;
+        _imGuiController = controller;
     }
 
     private void OnLoad()
@@ -4393,7 +4731,6 @@ public class OpenTKGameWindow : IGameWindow
     public void ProcessEvents()
     {
         Input.FrameStarted();
-        _directUIInputManager?.PrepareNextFrame();
         // OpenTK's GameWindow processes events on its own thread via Run(),
         // but we need to process them manually for our game loop. A timeout of 0
         // processes all pending events and returns immediately.
@@ -4401,7 +4738,11 @@ public class OpenTKGameWindow : IGameWindow
 
         if (Input.WasKeyPressed(Key.Escape))
         {
-            IsMouseLocked = !IsMouseLocked;
+            // Let ImGui handle a potential Escape key press before we toggle mouse lock
+            if (_imGuiController?.WantCaptureKeyboard != true)
+            {
+                IsMouseLocked = !IsMouseLocked;
+            }
         }
     }
 
@@ -4412,7 +4753,13 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseMove(MouseMoveEventArgs e)
     {
-        _directUIInputManager?.SetMousePosition((int)e.X, (int)e.Y);
+        _imGuiController?.MouseMove(new Vector2(e.X, e.Y));
+
+        if (_imGuiController?.WantCaptureMouse == true)
+        {
+            Input.SetMouseDelta(System.Numerics.Vector2.Zero);
+            return;
+        }
 
         if (IsMouseLocked)
         {
@@ -4423,7 +4770,7 @@ public class OpenTKGameWindow : IGameWindow
             }
 
             var deltaX = e.X - _lastMousePos.X;
-            var deltaY = e.Y - _lastMousePos.Y; // OpenTK's Y-axis is inverted compared to Veldrid for mouse movement
+            var deltaY = e.Y - _lastMousePos.Y;
             _lastMousePos = new Vector2(e.X, e.Y);
 
             Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
@@ -4437,36 +4784,41 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseDown(MouseButtonEventArgs e)
     {
-        _directUIInputManager?.SetMouseDown(MapDirectUIButton(e.Button));
-        Input.SetMouseButtonState(MapButton(e.Button), true);
+        _imGuiController?.MouseButton((MouseButton)e.Button, true);
+        if (_imGuiController?.WantCaptureMouse == true) return;
+        Input.SetMouseButtonState(MapButton((MouseButton)e.Button), true);
     }
 
     private void OnMouseUp(MouseButtonEventArgs e)
     {
-        _directUIInputManager?.SetMouseUp(MapDirectUIButton(e.Button));
-        Input.SetMouseButtonState(MapButton(e.Button), false);
+        _imGuiController?.MouseButton((MouseButton)e.Button, false);
+        if (_imGuiController?.WantCaptureMouse == true) return;
+        Input.SetMouseButtonState(MapButton((MouseButton)e.Button), false);
     }
 
     private void OnKeyDown(KeyboardKeyEventArgs e)
     {
-        _directUIInputManager?.AddKeyPressed(MapDirectUIKey(e.Key));
+        _imGuiController?.KeyEvent(e.Key, e.IsRepeat, true);
+        if (_imGuiController?.WantCaptureKeyboard == true) return;
         Input.SetKeyState(MapKey(e.Key), true);
     }
 
     private void OnKeyUp(KeyboardKeyEventArgs e)
     {
-        _directUIInputManager?.AddKeyReleased(MapDirectUIKey(e.Key));
+        _imGuiController?.KeyEvent(e.Key, e.IsRepeat, false);
+        if (_imGuiController?.WantCaptureKeyboard == true) return;
         Input.SetKeyState(MapKey(e.Key), false);
     }
 
     private void OnTextInput(TextInputEventArgs e)
     {
-        _directUIInputManager?.AddCharacterInput((char)e.Unicode);
+        _imGuiController?.PressChar((char)e.Unicode);
     }
 
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
-        _directUIInputManager?.AddMouseWheelDelta(e.OffsetY);
+        _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
+        if (_imGuiController?.WantCaptureMouse == true) return;
     }
 
     public void Dispose()
@@ -4475,25 +4827,14 @@ public class OpenTKGameWindow : IGameWindow
     }
 
     // --- Input Mapping ---
-    private static MouseButton MapButton(OpenTKMouseButton button)
+    private static Cherris.MouseButton MapButton(MouseButton button)
     {
         return button switch
         {
-            OpenTKMouseButton.Left => MouseButton.Left,
-            OpenTKMouseButton.Right => MouseButton.Right,
-            OpenTKMouseButton.Middle => MouseButton.Middle,
-            _ => MouseButton.LastButton // Indicates an unhandled button
-        };
-    }
-
-    private static DM.MouseButton MapDirectUIButton(OpenTKMouseButton button)
-    {
-        return button switch
-        {
-            OpenTKMouseButton.Left => DM.MouseButton.Left,
-            OpenTKMouseButton.Right => DM.MouseButton.Right,
-            OpenTKMouseButton.Middle => DM.MouseButton.Middle,
-            _ => DM.MouseButton.Left // default
+            MouseButton.Left => Cherris.MouseButton.Left,
+            MouseButton.Right => Cherris.MouseButton.Right,
+            MouseButton.Middle => Cherris.MouseButton.Middle,
+            _ => Cherris.MouseButton.LastButton // Indicates an unhandled button
         };
     }
 
@@ -4518,205 +4859,126 @@ public class OpenTKGameWindow : IGameWindow
             _ => Key.Unknown
         };
     }
-
-    private static DirectUI.Keys MapDirectUIKey(OpenTKKey key) => key switch
-    {
-        OpenTKKey.Space => DirectUI.Keys.Space,
-        OpenTKKey.D0 => DirectUI.Keys.D0,
-        OpenTKKey.D1 => DirectUI.Keys.D1,
-        OpenTKKey.D2 => DirectUI.Keys.D2,
-        OpenTKKey.D3 => DirectUI.Keys.D3,
-        OpenTKKey.D4 => DirectUI.Keys.D4,
-        OpenTKKey.D5 => DirectUI.Keys.D5,
-        OpenTKKey.D6 => DirectUI.Keys.D6,
-        OpenTKKey.D7 => DirectUI.Keys.D7,
-        OpenTKKey.D8 => DirectUI.Keys.D8,
-        OpenTKKey.D9 => DirectUI.Keys.D9,
-        OpenTKKey.A => DirectUI.Keys.A,
-        OpenTKKey.B => DirectUI.Keys.B,
-        OpenTKKey.C => DirectUI.Keys.C,
-        OpenTKKey.D => DirectUI.Keys.D,
-        OpenTKKey.E => DirectUI.Keys.E,
-        OpenTKKey.F => DirectUI.Keys.F,
-        OpenTKKey.G => DirectUI.Keys.G,
-        OpenTKKey.H => DirectUI.Keys.H,
-        OpenTKKey.I => DirectUI.Keys.I,
-        OpenTKKey.J => DirectUI.Keys.J,
-        OpenTKKey.K => DirectUI.Keys.K,
-        OpenTKKey.L => DirectUI.Keys.L,
-        OpenTKKey.M => DirectUI.Keys.M,
-        OpenTKKey.N => DirectUI.Keys.N,
-        OpenTKKey.O => DirectUI.Keys.O,
-        OpenTKKey.P => DirectUI.Keys.P,
-        OpenTKKey.Q => DirectUI.Keys.Q,
-        OpenTKKey.R => DirectUI.Keys.R,
-        OpenTKKey.S => DirectUI.Keys.S,
-        OpenTKKey.T => DirectUI.Keys.T,
-        OpenTKKey.U => DirectUI.Keys.U,
-        OpenTKKey.V => DirectUI.Keys.V,
-        OpenTKKey.W => DirectUI.Keys.W,
-        OpenTKKey.X => DirectUI.Keys.X,
-        OpenTKKey.Y => DirectUI.Keys.Y,
-        OpenTKKey.Z => DirectUI.Keys.Z,
-        OpenTKKey.Escape => DirectUI.Keys.Escape,
-        OpenTKKey.Enter => DirectUI.Keys.Enter,
-        OpenTKKey.Tab => DirectUI.Keys.Tab,
-        OpenTKKey.Backspace => DirectUI.Keys.Backspace,
-        OpenTKKey.Insert => DirectUI.Keys.Insert,
-        OpenTKKey.Delete => DirectUI.Keys.Delete,
-        OpenTKKey.Right => DirectUI.Keys.RightArrow,
-        OpenTKKey.Left => DirectUI.Keys.LeftArrow,
-        OpenTKKey.Down => DirectUI.Keys.DownArrow,
-        OpenTKKey.Up => DirectUI.Keys.UpArrow,
-        OpenTKKey.PageUp => DirectUI.Keys.PageUp,
-        OpenTKKey.PageDown => DirectUI.Keys.PageDown,
-        OpenTKKey.Home => DirectUI.Keys.Home,
-        OpenTKKey.End => DirectUI.Keys.End,
-        OpenTKKey.F1 => DirectUI.Keys.F1,
-        OpenTKKey.F2 => DirectUI.Keys.F2,
-        OpenTKKey.F3 => DirectUI.Keys.F3,
-        OpenTKKey.F4 => DirectUI.Keys.F4,
-        OpenTKKey.F5 => DirectUI.Keys.F5,
-        OpenTKKey.F6 => DirectUI.Keys.F6,
-        OpenTKKey.F7 => DirectUI.Keys.F7,
-        OpenTKKey.F8 => DirectUI.Keys.F8,
-        OpenTKKey.F9 => DirectUI.Keys.F9,
-        OpenTKKey.F10 => DirectUI.Keys.F10,
-        OpenTKKey.F11 => DirectUI.Keys.F11,
-        OpenTKKey.F12 => DirectUI.Keys.F12,
-        OpenTKKey.LeftShift => DirectUI.Keys.Shift,
-        OpenTKKey.RightShift => DirectUI.Keys.Shift,
-        OpenTKKey.LeftControl => DirectUI.Keys.Control,
-        OpenTKKey.RightControl => DirectUI.Keys.Control,
-        OpenTKKey.LeftAlt => DirectUI.Keys.Alt,
-        OpenTKKey.RightAlt => DirectUI.Keys.Alt,
-        _ => DirectUI.Keys.Unknown,
-    };
 }
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKRenderer.cs">
-using DirectUI;
-using DirectUI.Core;
+using Cherris.OpenTK;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
-namespace Cherris;
-
-public class OpenTKRenderer : Rendering.IRenderer, IDisposable
+namespace Cherris
 {
-    private readonly OpenGLSceneRenderer _sceneRenderer;
-    private readonly OpenGLSkyboxRenderer _skyboxRenderer;
-    private readonly OpenGLPostProcessor _postProcessor;
-    private readonly OpenGLUIRenderer _uiRenderer;
-
-    private int _width, _height;
-
-    public IRenderer UiRenderer => _uiRenderer.UiRenderer;
-    public ITextService UiTextService => _uiRenderer.UiTextService;
-
-    public OpenTKRenderer(AppEngine appEngine)
+    public class OpenTKRenderer : Rendering.IRenderer, IDisposable
     {
-        _sceneRenderer = new OpenGLSceneRenderer();
-        _skyboxRenderer = new OpenGLSkyboxRenderer();
-        _postProcessor = new OpenGLPostProcessor();
-        _uiRenderer = new OpenGLUIRenderer(appEngine);
+        private readonly OpenGLSceneRenderer _sceneRenderer;
+        private readonly OpenGLSkyboxRenderer _skyboxRenderer;
+        private readonly OpenGLPostProcessor _postProcessor;
+        private readonly ImGuiController _imGuiController;
 
-        GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
-        GL.FrontFace(FrontFaceDirection.Cw);
-        GL.Enable(EnableCap.FramebufferSrgb); // Enable automatic linear->sRGB conversion
-    }
+        private int _width, _height;
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
-    {
-        if ((int)windowWidth != _width || (int)windowHeight != _height)
+        public OpenTKRenderer(ImGuiController imGuiController)
         {
-            OnWindowResized((int)windowWidth, (int)windowHeight);
-        }
-        if (mainCamera is null) return;
+            _sceneRenderer = new OpenGLSceneRenderer();
+            _skyboxRenderer = new OpenGLSkyboxRenderer();
+            _postProcessor = new OpenGLPostProcessor();
+            _imGuiController = imGuiController;
 
-        // 1. Scene Pass: Render scene to offscreen MSAA framebuffer
-        _postProcessor.BeginFrame();
-        GL.Enable(EnableCap.DepthTest);
-        GL.Enable(EnableCap.CullFace);
-        GL.CullFace(CullFaceMode.Back);
-        GL.Disable(EnableCap.Blend);
-
-        var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
-        var projection = Matrix4.CreatePerspectiveFieldOfView(
-            mainCamera.FieldOfView * (float)Math.PI / 180.0f,
-            windowWidth / windowHeight,
-            mainCamera.NearClipPlane,
-            mainCamera.FarClipPlane);
-
-        if (skybox?.CubeMapTexture != null)
-        {
-            _skyboxRenderer.Render(skybox, view, projection);
+            GL.ClearColor(0.1f, 0.1f, 0.2f, 1.0f);
+            GL.FrontFace(FrontFaceDirection.Cw);
         }
 
-        _sceneRenderer.Render(gameObjects, view, projection);
-
-        // Note: selectedObject outline rendering is omitted in this refactor for simplicity.
-        // It would require stencil logic within the OpenGLSceneRenderer.
-
-        // 2. Resolve MSAA Framebuffer
-        _postProcessor.ResolveMsaa();
-
-        // 3. Bloom / Post-Processing
-        _postProcessor.RenderBloom();
-
-        // 4. Final Composite Pass: Render to screen
-        _postProcessor.CompositeToScreen(exposure);
-
-        // 5. DirectUI Pass
-        _uiRenderer.Render();
-    }
-
-    private void OnWindowResized(int width, int height)
-    {
-        _width = width;
-        _height = height;
-        GL.Viewport(0, 0, width, height);
-        _postProcessor.OnResize(width, height);
-        _uiRenderer.OnResize(width, height);
-    }
-
-    // This is the implementation for the IRenderer interface method.
-    // It's not called by the OpenTK backend loop, which uses the width/height version.
-    public void OnWindowResized() { }
-
-    public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
-    public void ProcessSnapshot() { /* Not implemented for OpenTK */ }
-
-    public void Dispose()
-    {
-        _sceneRenderer?.Dispose();
-        _skyboxRenderer?.Dispose();
-        _postProcessor?.Dispose();
-        _uiRenderer?.Dispose();
-    }
-
-    private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
-    {
-        return new Matrix4(
-            m.M11, m.M12, m.M13, m.M14,
-            m.M21, m.M22, m.M23, m.M24,
-            m.M31, m.M32, m.M33, m.M34,
-            m.M41, m.M42, m.M43, m.M44
-        );
-    }
-
-    [Conditional("DEBUG")]
-    private static void CheckGLError(string context)
-    {
-        var error = GL.GetError();
-        while (error != ErrorCode.NoError)
+        public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
         {
-            Console.WriteLine($"[OpenGL Error] After {context}: {error}");
-            error = GL.GetError();
+            if ((int)windowWidth != _width || (int)windowHeight != _height)
+            {
+                OnWindowResized((int)windowWidth, (int)windowHeight);
+            }
+            if (mainCamera is null) return;
+
+            // 1. Scene Pass: Render scene to offscreen MSAA framebuffer
+            _postProcessor.BeginFrame();
+            GL.Enable(EnableCap.DepthTest);
+            GL.Enable(EnableCap.CullFace);
+            GL.CullFace(CullFaceMode.Back);
+            GL.Disable(EnableCap.Blend);
+
+            var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
+            var projection = Matrix4.CreatePerspectiveFieldOfView(
+                mainCamera.FieldOfView * (float)Math.PI / 180.0f,
+                windowWidth / windowHeight,
+                mainCamera.NearClipPlane,
+                mainCamera.FarClipPlane);
+
+            if (skybox?.CubeMapTexture != null)
+            {
+                _skyboxRenderer.Render(skybox, view, projection);
+            }
+
+            _sceneRenderer.Render(gameObjects, view, projection);
+
+            // Note: selectedObject outline rendering is omitted in this refactor for simplicity.
+            // It would require stencil logic within the OpenGLSceneRenderer.
+
+            // 2. Resolve MSAA Framebuffer
+            _postProcessor.ResolveMsaa();
+
+            // 3. Bloom / Post-Processing
+            _postProcessor.RenderBloom();
+
+            // 4. Final Composite Pass: Render to screen
+            _postProcessor.CompositeToScreen(exposure);
+
+            // 5. ImGui Pass
+            _imGuiController.Render();
+        }
+
+        private void OnWindowResized(int width, int height)
+        {
+            _width = width;
+            _height = height;
+            GL.Viewport(0, 0, width, height);
+            _postProcessor.OnResize(width, height);
+            _imGuiController.WindowResized(width, height);
+        }
+
+        // This is the implementation for the IRenderer interface method.
+        // It's not called by the OpenTK backend loop, which uses the width/height version.
+        public void OnWindowResized() { }
+
+        public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
+        public void ProcessSnapshot() { /* Not implemented for OpenTK */ }
+
+        public void Dispose()
+        {
+            _sceneRenderer?.Dispose();
+            _skyboxRenderer?.Dispose();
+            _postProcessor?.Dispose();
+        }
+
+        private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
+        {
+            return new Matrix4(
+                m.M11, m.M12, m.M13, m.M14,
+                m.M21, m.M22, m.M23, m.M24,
+                m.M31, m.M32, m.M33, m.M34,
+                m.M41, m.M42, m.M43, m.M44
+            );
+        }
+
+        [Conditional("DEBUG")]
+        private static void CheckGLError(string context)
+        {
+            var error = GL.GetError();
+            while (error != ErrorCode.NoError)
+            {
+                Console.WriteLine($"[OpenGL Error] After {context}: {error}");
+                error = GL.GetError();
+            }
         }
     }
 }
