@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Linq;
 
 namespace CherrisEditor;
 
@@ -73,7 +74,61 @@ internal class InspectorPanel
                 }
             }
         }
+
+        DrawAddComponentButton(go);
     }
+
+    private void DrawAddComponentButton(GameObject go)
+    {
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        float availableWidth = ImGui.GetContentRegionAvail().X;
+        float buttonWidth = 120.0f;
+        float buttonPosX = (availableWidth - buttonWidth) * 0.5f;
+        if (buttonPosX > 0)
+        {
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + buttonPosX);
+        }
+
+        if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
+        {
+            ImGui.OpenPopup("AddComponentPopup");
+        }
+
+        if (ImGui.BeginPopup("AddComponentPopup"))
+        {
+            // Add Camera
+            if (go.GetComponent<Camera>() == null)
+            {
+                if (ImGui.MenuItem("Camera"))
+                {
+                    go.AddComponent(new Camera());
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+
+            ImGui.Separator();
+
+            // Add Scripts
+            foreach (var scriptType in _editor.AvailableScriptTypes)
+            {
+                if (!go.Components.Any(c => c.GetType() == scriptType))
+                {
+                    if (ImGui.MenuItem(scriptType.Name))
+                    {
+                        var newComponent = (Component)Activator.CreateInstance(scriptType);
+                        go.AddComponent(newComponent);
+                        ImGui.CloseCurrentPopup();
+                    }
+                }
+            }
+
+            ImGui.EndPopup();
+        }
+    }
+
 
     private void DrawTransformControl(Transform transform)
     {

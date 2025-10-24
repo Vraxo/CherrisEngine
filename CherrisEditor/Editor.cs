@@ -10,6 +10,7 @@ namespace CherrisEditor;
 public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
+    public List<Type> AvailableScriptTypes { get; } = new();
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
@@ -37,6 +38,7 @@ public class Editor : Engine
     {
         // Instead of loading a pre-compiled DLL, we now compile .cs files at runtime.
         var gameAssembly = ScriptCompiler.Compile("Assets");
+        AvailableScriptTypes.Clear();
 
         if (gameAssembly is null)
         {
@@ -52,6 +54,7 @@ public class Editor : Engine
             int count = 0;
             foreach (var type in scriptTypes)
             {
+                AvailableScriptTypes.Add(type);
                 // The factory function creates a new instance of the script type.
                 Func<object, Component> factory = _ => (Component)Activator.CreateInstance(type);
                 SceneLoader.RegisterComponentFactory(type.Name, factory);
