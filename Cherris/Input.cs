@@ -28,6 +28,7 @@ public static class Input
 
     public static Vector2 MouseDelta { get; private set; }
     public static Vector2 MousePosition { get; private set; }
+    public static Vector2 MouseWheelDelta { get; private set; }
 
     // Called by the active windowing system at the start of each frame.
     internal static void FrameStarted()
@@ -35,6 +36,7 @@ public static class Input
         _justPressedKeys.Clear();
         _justPressedMouseButtons.Clear();
         MouseDelta = Vector2.Zero; // Always reset delta at the start of a frame.
+        MouseWheelDelta = Vector2.Zero;
     }
 
     internal static void ClearState()
@@ -79,6 +81,7 @@ public static class Input
 
     internal static void SetMouseDelta(Vector2 delta) => MouseDelta = delta;
     internal static void SetMousePosition(Vector2 position) => MousePosition = position;
+    internal static void SetMouseWheelDelta(Vector2 delta) => MouseWheelDelta = delta;
 
     public static bool IsKeyDown(Key key) => _pressedKeys.Contains(key);
     public static bool WasKeyPressed(Key key) => _justPressedKeys.Contains(key);

@@ -9,6 +9,7 @@ public class EditorController : Script
 {
     public float Speed { get; set; } = 5.0f;
     public float MouseSensitivity { get; set; } = 0.0004f;
+    public float ZoomSensitivity { get; set; } = 0.5f;
 
     private float _yaw;
     private float _pitch;
@@ -32,6 +33,13 @@ public class EditorController : Script
                 Input.IsMouseLocked = false;
             }
             return;
+        }
+
+        // --- Mouse Wheel Zoom ---
+        if (Input.MouseWheelDelta.Y != 0)
+        {
+            var forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
+            GameObject.Transform.Position += forward * Input.MouseWheelDelta.Y * ZoomSensitivity;
         }
 
         bool rightMouseDown = Input.IsMouseButtonDown(MouseButton.Right);

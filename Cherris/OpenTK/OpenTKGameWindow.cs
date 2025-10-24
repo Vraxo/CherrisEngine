@@ -184,6 +184,8 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
         if (_imGuiController?.WantCaptureMouse == true) return;
+
+        Input.SetMouseWheelDelta(new System.Numerics.Vector2(e.OffsetX, e.OffsetY));
     }
 
     public void Dispose()
