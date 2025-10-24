@@ -7,6 +7,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace CherrisEditor;
 
@@ -54,7 +55,7 @@ internal class InspectorPanel
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
-            string componentName = component.GetType().Name;
+            string componentName = SplitPascalCase(component.GetType().Name);
 
             bool headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
 
@@ -129,7 +130,7 @@ internal class InspectorPanel
             {
                 if (!go.Components.Any(c => c.GetType() == scriptType))
                 {
-                    if (ImGui.MenuItem(scriptType.Name))
+                    if (ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
                     {
                         var newComponent = (Component)Activator.CreateInstance(scriptType);
                         go.AddComponent(newComponent);
@@ -198,7 +199,7 @@ internal class InspectorPanel
     private unsafe void DrawMeshRendererComponent(MeshRenderer mr)
     {
         if (!ImGui.BeginTable("MRTable", 3, ImGuiTableFlags.Resizable)) return;
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
 
@@ -252,7 +253,7 @@ internal class InspectorPanel
         // Tiling
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Tiling");
+        ImGui.Text("Texture Tiling");
         ImGui.TableSetColumnIndex(1);
         ImGui.PushItemWidth(-1.0f);
         var tiling = mr.TextureTiling;
@@ -267,7 +268,7 @@ internal class InspectorPanel
         // Emissive Color
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Emissive");
+        ImGui.Text("Emissive Color");
         ImGui.TableSetColumnIndex(1);
         ImGui.PushItemWidth(-1.0f);
         var emissive = mr.EmissiveColor;
@@ -285,7 +286,7 @@ internal class InspectorPanel
     private void DrawCameraComponent(Camera cam)
     {
         if (!ImGui.BeginTable("CamTable", 3, ImGuiTableFlags.Resizable)) return;
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
 
@@ -324,7 +325,7 @@ internal class InspectorPanel
 
             ImGui.TableNextRow();
             ImGui.TableSetColumnIndex(0);
-            ImGui.Text(prop.Name);
+            ImGui.Text(SplitPascalCase(prop.Name));
             ImGui.TableSetColumnIndex(1);
             ImGui.PushItemWidth(-1.0f);
 
@@ -423,5 +424,10 @@ internal class InspectorPanel
         ImGui.PopID();
 
         return valueChanged;
+    }
+
+    private static string SplitPascalCase(string input)
+    {
+        return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
     }
 }
