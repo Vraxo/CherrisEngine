@@ -45,45 +45,44 @@ public class EditorController : Script
             GameObject.Transform.Position += forward * io.MouseWheel * ZoomSensitivity;
         }
 
-        // --- Mouse Look and Keyboard Movement (only when right mouse button is down) ---
+        // --- Keyboard Movement (when viewport is hovered) ---
+        float currentSpeed = Speed;
+        if (io.KeyShift)
+        {
+            currentSpeed *= 3.0f; // Speed boost
+        }
+
+        var localMove = Vector3.Zero;
+        if (ImGui.IsKeyDown(ImGuiKey.W)) localMove.Z -= 1;
+        if (ImGui.IsKeyDown(ImGuiKey.S)) localMove.Z += 1;
+        if (ImGui.IsKeyDown(ImGuiKey.A)) localMove.X -= 1;
+        if (ImGui.IsKeyDown(ImGuiKey.D)) localMove.X += 1;
+
+        var worldVerticalMove = 0f;
+        if (ImGui.IsKeyDown(ImGuiKey.E)) worldVerticalMove += 1; // Up
+        if (ImGui.IsKeyDown(ImGuiKey.Q)) worldVerticalMove -= 1; // Down
+
+        if (localMove != Vector3.Zero || worldVerticalMove != 0)
+        {
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
+            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+
+            if (finalMove.LengthSquared() > 0)
+            {
+                GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
+            }
+        }
+
+        // --- Mouse Look (only when right mouse button is down) ---
         if (ImGui.IsMouseDown(ImGuiMouseButton.Right))
         {
-            // --- Mouse Look ---
             Vector2 mouseDelta = io.MouseDelta;
             _yaw -= mouseDelta.X * MouseSensitivity;
             _pitch -= mouseDelta.Y * MouseSensitivity;
             _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
             GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
                                               Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-
-            // --- Keyboard Movement ---
-            float currentSpeed = Speed;
-            if (io.KeyShift)
-            {
-                currentSpeed *= 3.0f; // Speed boost
-            }
-
-            var localMove = Vector3.Zero;
-            if (ImGui.IsKeyDown(ImGuiKey.W)) localMove.Z -= 1;
-            if (ImGui.IsKeyDown(ImGuiKey.S)) localMove.Z += 1;
-            if (ImGui.IsKeyDown(ImGuiKey.A)) localMove.X -= 1;
-            if (ImGui.IsKeyDown(ImGuiKey.D)) localMove.X += 1;
-
-            var worldVerticalMove = 0f;
-            if (ImGui.IsKeyDown(ImGuiKey.E)) worldVerticalMove += 1; // Up
-            if (ImGui.IsKeyDown(ImGuiKey.Q)) worldVerticalMove -= 1; // Down
-
-            if (localMove != Vector3.Zero || worldVerticalMove != 0)
-            {
-                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-                var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-                var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
-
-                if (finalMove.LengthSquared() > 0)
-                {
-                    GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
-                }
-            }
         }
     }
 }
