@@ -84,16 +84,14 @@ public abstract class Engine
         _backend.UIController?.Update(deltaTime);
         OnDrawUI?.Invoke(deltaTime);
 
-        if (!Input.WasKeyPressed(Key.F12))
+        if (Input.WasKeyPressed(Key.F12))
         {
-            return;
+            _snapshotsEnabled = !_snapshotsEnabled;
+
+            Console.WriteLine(
+                $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
+                $"Press F12 to toggle.");
         }
-
-        _snapshotsEnabled = !_snapshotsEnabled;
-
-        Console.WriteLine(
-            $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
-            $"Press F12 to toggle.");
     }
 
     protected virtual void OnStart() { }

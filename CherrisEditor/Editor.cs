@@ -195,9 +195,11 @@ public class Editor : Engine
 
     protected override void Update(float deltaTime)
     {
+        // Call base first to update ImGui inputs and draw the UI shell.
+        base.Update(deltaTime);
+
+        // Now update editor/game logic which might depend on ImGui state from this frame.
         _editorAppLogic?.UpdateEditorLogic(deltaTime);
         SceneManager.Update(deltaTime);
-
-        base.Update(deltaTime);
     }
 }
