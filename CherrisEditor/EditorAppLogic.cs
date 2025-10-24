@@ -1,20 +1,20 @@
 ﻿using Cherris;
 using ImGuiNET;
 using System.Numerics;
-using System.IO; // Required for file system operations
-using System; // Required for Path
+using System.IO;
+using System;
+using System.Linq;
 
 namespace CherrisEditor;
 
-public class EditorAppLogic
+public class EditorAppLogic : IDisposable
 {
     private readonly Editor _editor;
     private readonly InspectorPanel _inspectorPanel;
+    private readonly IconManager _iconManager;
 
-    // --- State for the Content Browser ---
     private readonly string _assetRootPath;
     private string _currentAssetPath;
-    // ------------------------------------
 
     public EditorAppLogic(Editor editor)
     {
@@ -22,10 +22,17 @@ public class EditorAppLogic
         _inspectorPanel = new(_editor);
         EditorTheme.ApplyUnrealEngineStyle();
 
-        // --- Initialize Content Browser Path ---
+        _iconManager = new IconManager();
+        _iconManager.LoadIcon("Folder", "Assets/Icons/folder.png");
+        _iconManager.LoadIcon("File", "Assets/Icons/file.png");
+
         _assetRootPath = Path.GetFullPath("Assets");
         _currentAssetPath = _assetRootPath;
-        // ---------------------------------------
+    }
+
+    public void Dispose()
+    {
+        _iconManager.Dispose();
     }
 
     public Action<float> DrawUI()
@@ -36,7 +43,7 @@ public class EditorAppLogic
 
             DrawOutlinerPanel();
             DrawConsolePanel();
-            DrawContentBrowserPanel(); // <-- This is now the new, functional browser
+            DrawContentBrowserPanel();
             _inspectorPanel.DrawInspectorPanel();
         };
     }
@@ -114,19 +121,14 @@ public class EditorAppLogic
         ImGui.End();
     }
 
-    /// <summary>
-    /// Draws a navigable file browser for the Assets directory.
-    /// </summary>
     private void DrawContentBrowserPanel()
     {
         ImGui.Begin("Content Browser");
 
-        // Back button and current path display
         if (_currentAssetPath != _assetRootPath)
         {
             if (ImGui.Button("<- Back"))
             {
-                // Navigate to the parent directory
                 _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
             }
             ImGui.SameLine();
@@ -134,42 +136,54 @@ public class EditorAppLogic
         ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
         ImGui.Separator();
 
-        // Display subdirectories
-        foreach (var directory in Directory.GetDirectories(_currentAssetPath))
-        {
-            // Use Selectable for folder navigation
-            if (ImGui.Selectable($"[F] {Path.GetFileName(directory)}", false, ImGuiSelectableFlags.AllowDoubleClick))
-            {
-                if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-                {
-                    _currentAssetPath = directory;
-                }
-            }
-        }
+        float thumbnailSize = 80.0f;
+        float padding = 16.0f;
+        float cellSize = thumbnailSize + padding;
+        float panelWidth = ImGui.GetContentRegionAvail().X;
+        int columnCount = (int)(panelWidth / cellSize);
+        if (columnCount < 1) columnCount = 1;
 
-        // Display files
-        foreach (var file in Directory.GetFiles(_currentAssetPath))
+        if (ImGui.BeginTable("ContentGrid", columnCount))
         {
-            string icon = GetIconForFile(file);
-            // Future: Implement drag-and-drop from here
-            ImGui.Selectable($"{icon} {Path.GetFileName(file)}");
+            var directories = Directory.GetDirectories(_currentAssetPath);
+            var files = Directory.GetFiles(_currentAssetPath);
+
+            foreach (var path in directories.Concat(files))
+            {
+                ImGui.TableNextColumn();
+                ImGui.PushID(path);
+
+                bool isDirectory = Directory.Exists(path);
+                IntPtr iconHandle = isDirectory ? _iconManager.GetIcon("Folder") : _iconManager.GetIcon("File");
+
+                string itemName = Path.GetFileName(path);
+
+                ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+
+                // --- START OF FIX ---
+                // The correct overload requires a string ID as the first argument.
+                // We use the unique itemName for this purpose.
+                ImGui.ImageButton(itemName, iconHandle, new Vector2(thumbnailSize, thumbnailSize), new Vector2(0, 0), new Vector2(1, 1));
+                // --- END OF FIX ---
+
+                ImGui.PopStyleColor();
+
+                if (isDirectory && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                {
+                    _currentAssetPath = path;
+                }
+
+                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + thumbnailSize);
+                ImGui.TextWrapped(itemName);
+                ImGui.PopTextWrapPos();
+
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
         }
 
         ImGui.End();
-    }
-
-    /// <summary>
-    /// Helper to return a simple text "icon" based on file extension.
-    /// </summary>
-    private string GetIconForFile(string filePath)
-    {
-        return Path.GetExtension(filePath).ToLowerInvariant() switch
-        {
-            ".png" or ".jpg" or ".jpeg" or ".tga" => "[T]", // Texture
-            ".yaml" or ".scene" => "[S]", // Scene
-            ".cs" => "[C#]", // Script
-            _ => "[?]" // Unknown
-        };
     }
 
     public void UpdateEditorLogic(float deltaTime)
