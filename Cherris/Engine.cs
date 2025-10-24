@@ -1,85 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Numerics;
+﻿using Cherris.OpenTK;
 using Cherris.Rendering;
-using Cherris.OpenTK;
-using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
+using System.Globalization;
+using System.Numerics;
 
 namespace Cherris;
-
-// A simple ray for picking.
-public struct Ray
-{
-    public readonly Vector3 Origin;
-    public readonly Vector3 Direction;
-
-    public Ray(Vector3 origin, Vector3 direction)
-    {
-        Origin = origin;
-        Direction = Vector3.Normalize(direction);
-    }
-
-    // Slab method for ray-AABB intersection.
-    public bool Intersects(BoundingBox box, out float distance)
-    {
-        distance = 0.0f;
-        float tmin = 0.0f;
-        float tmax = float.MaxValue;
-
-        if (Math.Abs(Direction.X) < 1e-6)
-        {
-            if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.X;
-            float t1 = (box.Min.X - Origin.X) * ood;
-            float t2 = (box.Max.X - Origin.X) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
-
-        if (Math.Abs(Direction.Y) < 1e-6)
-        {
-            if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.Y;
-            float t1 = (box.Min.Y - Origin.Y) * ood;
-            float t2 = (box.Max.Y - Origin.Y) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
-
-        if (Math.Abs(Direction.Z) < 1e-6)
-        {
-            if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.Z;
-            float t1 = (box.Min.Z - Origin.Z) * ood;
-            float t2 = (box.Max.Z - Origin.Z) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
-
-        distance = tmin;
-        return true;
-    }
-}
-
 
 public abstract class Engine
 {
@@ -105,7 +29,7 @@ public abstract class Engine
     protected Engine(string windowTitle, bool startWithMouseLocked, GraphicsAPI api)
     {
         _backend = CreateBackend(api);
-        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked);
+        _backend.Initialize(windowTitle, 1920, 1080, startWithMouseLocked);
 
         _gameWindow = _backend.GameWindow;
         ResourceManager = _backend.ResourceManager;
@@ -281,46 +205,5 @@ public abstract class Engine
     {
         SceneManager.Dispose();
         _backend.Dispose();
-    }
-}
-
-// Concrete Veldrid backend implementation, nested here to avoid creating new files.
-public class VeldridBackend : IGraphicsBackend
-{
-    public IGameWindow GameWindow { get; private set; }
-    public IRenderer Renderer { get; private set; }
-    public IResourceManager ResourceManager { get; private set; }
-    public IUIController? UIController => null; // ImGui not implemented for Veldrid yet
-    private GraphicsDevice _graphicsDevice;
-    private GraphicsManager _graphicsManager;
-
-    public VeldridBackend() { }
-
-    public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
-    {
-        var window = new GameWindow(windowTitle, width, height, startWithMouseLocked);
-
-        GraphicsDeviceOptions options = new GraphicsDeviceOptions
-        {
-            PreferStandardClipSpaceYDirection = true,
-            PreferDepthRangeZeroToOne = true,
-            SwapchainDepthFormat = PixelFormat.R16_UNorm
-        };
-        _graphicsDevice = VeldridStartup.CreateGraphicsDevice(window.SdlWindow, options);
-        window.SetGraphicsDevice(_graphicsDevice);
-
-        _graphicsManager = new GraphicsManager(_graphicsDevice, window.SdlWindow, TextureSampleCount.Count4);
-
-        GameWindow = window;
-        ResourceManager = new ResourceManager(_graphicsDevice);
-        Renderer = new Renderer(_graphicsManager, _graphicsDevice);
-    }
-
-    public void Dispose()
-    {
-        Renderer?.Dispose();
-        ResourceManager?.Dispose();
-        _graphicsDevice?.Dispose();
-        GameWindow?.Dispose();
     }
 }

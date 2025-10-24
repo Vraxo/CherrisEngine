@@ -1,39 +1,11 @@
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
 using Cherris;
-using Cherris.Rendering;
-using ImGuiNET;
-using System;
-using System.Numerics;
 
 namespace Apexverse;
 
-public class EditorAppLogic
-{
-    private float _sliderValue = 50f;
-
-    public void DrawUI(float deltaTime)
-    {
-        ImGui.Begin("Editor");
-        ImGui.Text($"Hello from ImGui.NET on Cherris!");
-
-        ImGui.Separator();
-
-        if (ImGui.Button("Click Me!"))
-        {
-            Console.WriteLine("Button clicked!");
-        }
-        ImGui.SameLine();
-        ImGui.Text("A UI Label");
-
-        ImGui.SliderFloat("Value", ref _sliderValue, 0, 100);
-        ImGui.End();
-    }
-}
-
-
 public class Game : Engine
 {
-    public Game(EngineMode mode, GraphicsAPI api) : base("Cherris Engine (ImGui.NET Integration)", mode, api)
+    public Game(GraphicsAPI api) : base("Apexverse", true, api)
     {
         Exposure = 0.5f;
     }
@@ -52,35 +24,12 @@ public class Game : Engine
         SceneManager.SetScene(loadedObjects);
     }
 
-    protected override void OnStart()
-    {
-        if (Mode == EngineMode.Editor)
-        {
-            var uiLogic = new EditorAppLogic();
-            OnDrawUI = uiLogic.DrawUI;
-
-            if (SceneManager.MainCamera?.GameObject != null)
-            {
-                var cameraGo = SceneManager.MainCamera.GameObject;
-
-                // If the scene camera is the player, remove its controller
-                // so it doesn't fight with the new editor controller.
-                var playerController = cameraGo.GetComponent<PlayerController>();
-                if (playerController != null)
-                {
-                    cameraGo.RemoveComponent<PlayerController>();
-                }
-
-                var editorController = cameraGo.AddComponent(new EditorController());
-                RegisterEditorController(editorController);
-            }
-        }
-    }
-
     protected override void Update(float deltaTime)
     {
-        // The base engine Update now handles calling Update on all Scripts
-        // and the UI controller.
+        // Update all game scripts and logic
+        SceneManager.Update(deltaTime);
+
+        // The base engine Update now handles calling Update on the UI controller, etc.
         base.Update(deltaTime);
     }
 }
@@ -160,7 +109,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        var game = new Game(EngineMode.Editor, GraphicsAPI.OpenTK);
+        Game game = new(GraphicsAPI.OpenTK);
         game.Run();
     }
 }
@@ -519,87 +468,80 @@ using Veldrid.StartupUtilities;
 
 namespace Cherris;
 
-public enum EngineMode
+// A simple ray for picking.
+public struct Ray
 {
-    Game,
-    Editor
+    public readonly Vector3 Origin;
+    public readonly Vector3 Direction;
+
+    public Ray(Vector3 origin, Vector3 direction)
+    {
+        Origin = origin;
+        Direction = Vector3.Normalize(direction);
+    }
+
+    // Slab method for ray-AABB intersection.
+    public bool Intersects(BoundingBox box, out float distance)
+    {
+        distance = 0.0f;
+        float tmin = 0.0f;
+        float tmax = float.MaxValue;
+
+        if (Math.Abs(Direction.X) < 1e-6)
+        {
+            if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
+        }
+        else
+        {
+            float ood = 1.0f / Direction.X;
+            float t1 = (box.Min.X - Origin.X) * ood;
+            float t2 = (box.Max.X - Origin.X) * ood;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.Max(tmin, t1);
+            tmax = Math.Min(tmax, t2);
+            if (tmin > tmax) return false;
+        }
+
+        if (Math.Abs(Direction.Y) < 1e-6)
+        {
+            if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
+        }
+        else
+        {
+            float ood = 1.0f / Direction.Y;
+            float t1 = (box.Min.Y - Origin.Y) * ood;
+            float t2 = (box.Max.Y - Origin.Y) * ood;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.Max(tmin, t1);
+            tmax = Math.Min(tmax, t2);
+            if (tmin > tmax) return false;
+        }
+
+        if (Math.Abs(Direction.Z) < 1e-6)
+        {
+            if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
+        }
+        else
+        {
+            float ood = 1.0f / Direction.Z;
+            float t1 = (box.Min.Z - Origin.Z) * ood;
+            float t2 = (box.Max.Z - Origin.Z) * ood;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.Max(tmin, t1);
+            tmax = Math.Min(tmax, t2);
+            if (tmin > tmax) return false;
+        }
+
+        distance = tmin;
+        return true;
+    }
 }
+
 
 public abstract class Engine
 {
-    // A simple ray for picking.
-    private struct Ray
-    {
-        public readonly Vector3 Origin;
-        public readonly Vector3 Direction;
-
-        public Ray(Vector3 origin, Vector3 direction)
-        {
-            Origin = origin;
-            Direction = Vector3.Normalize(direction);
-        }
-
-        // Slab method for ray-AABB intersection.
-        public bool Intersects(BoundingBox box, out float distance)
-        {
-            distance = 0.0f;
-            float tmin = 0.0f;
-            float tmax = float.MaxValue;
-
-            if (Math.Abs(Direction.X) < 1e-6)
-            {
-                if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
-            }
-            else
-            {
-                float ood = 1.0f / Direction.X;
-                float t1 = (box.Min.X - Origin.X) * ood;
-                float t2 = (box.Max.X - Origin.X) * ood;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                tmin = Math.Max(tmin, t1);
-                tmax = Math.Min(tmax, t2);
-                if (tmin > tmax) return false;
-            }
-
-            if (Math.Abs(Direction.Y) < 1e-6)
-            {
-                if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
-            }
-            else
-            {
-                float ood = 1.0f / Direction.Y;
-                float t1 = (box.Min.Y - Origin.Y) * ood;
-                float t2 = (box.Max.Y - Origin.Y) * ood;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                tmin = Math.Max(tmin, t1);
-                tmax = Math.Min(tmax, t2);
-                if (tmin > tmax) return false;
-            }
-
-            if (Math.Abs(Direction.Z) < 1e-6)
-            {
-                if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
-            }
-            else
-            {
-                float ood = 1.0f / Direction.Z;
-                float t1 = (box.Min.Z - Origin.Z) * ood;
-                float t2 = (box.Max.Z - Origin.Z) * ood;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                tmin = Math.Max(tmin, t1);
-                tmax = Math.Min(tmax, t2);
-                if (tmin > tmax) return false;
-            }
-
-            distance = tmin;
-            return true;
-        }
-    }
-
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
-    private GameObject _selectedGameObject;
-    private Script _editorController;
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
@@ -607,22 +549,20 @@ public abstract class Engine
 
     // Engine Systems
     protected readonly IGraphicsBackend _backend;
-    protected readonly IResourceManager ResourceManager;
-    protected readonly SceneLoader SceneLoader;
-    protected readonly SceneManager SceneManager;
+    public readonly IResourceManager ResourceManager;
+    public readonly SceneLoader SceneLoader;
+    public readonly SceneManager SceneManager;
     private readonly IRenderer _renderer;
 
-    protected EngineMode Mode { get; }
     public Action<float>? OnDrawUI;
+    protected GameObject? SelectedGameObject { get; set; } // Accessible for editor subclasses
 
     public float Exposure { get; set; } = 1.0f;
 
-    protected Engine(string windowTitle, EngineMode mode, GraphicsAPI api)
+    protected Engine(string windowTitle, bool startWithMouseLocked, GraphicsAPI api)
     {
-        Mode = mode;
-
         _backend = CreateBackend(api);
-        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked: Mode == EngineMode.Game);
+        _backend.Initialize(windowTitle, 960, 540, startWithMouseLocked);
 
         _gameWindow = _backend.GameWindow;
         ResourceManager = _backend.ResourceManager;
@@ -726,16 +666,10 @@ public abstract class Engine
 
     private void Start()
     {
-        SceneManager.Start(Mode);
+        SceneManager.Start();
     }
 
     protected virtual void OnStart() { }
-
-    protected void RegisterEditorController(Script controller)
-    {
-        _editorController = controller;
-        _editorController.Start();
-    }
 
     protected abstract void LoadContent();
 
@@ -751,67 +685,9 @@ public abstract class Engine
             _snapshotsEnabled = !_snapshotsEnabled;
             Console.WriteLine($"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. Press F12 to toggle.");
         }
-
-        if (Mode == EngineMode.Editor)
-        {
-            _editorController?.Update(deltaTime);
-            UpdateEditor(deltaTime);
-        }
-        else
-        {
-            SceneManager.Update(deltaTime);
-        }
     }
 
-    private void UpdateEditor(float deltaTime)
-    {
-        if (Input.WasMouseButtonPressed(MouseButton.Left))
-        {
-            Ray ray = CreateRayFromMouse();
-            GameObject closestObject = null;
-            float closestDistance = float.MaxValue;
-
-            foreach (var go in SceneManager.GameObjects)
-            {
-                if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
-                var aabb = go.GetWorldSpaceAABB();
-                if (ray.Intersects(aabb, out float distance))
-                {
-                    if (distance < closestDistance)
-                    {
-                        closestDistance = distance;
-                        closestObject = go;
-                    }
-                }
-            }
-            _selectedGameObject = closestObject;
-            if (_selectedGameObject is not null) Console.WriteLine($"Selected '{_selectedGameObject.Name}'");
-        }
-
-        if (_selectedGameObject is not null)
-        {
-            const float moveSpeed = 2.0f;
-            var moveDirection = Vector3.Zero;
-            bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
-
-            if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
-            if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
-            if (shiftHeld)
-            {
-                if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
-                if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
-            }
-            else
-            {
-                if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
-                if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
-            }
-            if (moveDirection != Vector3.Zero)
-                _selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
-        }
-    }
-
-    private Ray CreateRayFromMouse()
+    public Ray CreateRayFromMouse()
     {
         Camera camera = SceneManager.MainCamera;
         if (camera is null) return new Ray();
@@ -847,7 +723,7 @@ public abstract class Engine
         }
         _renderer.RenderFrame(
             SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
-            _selectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
+            SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
 
         _renderer.ProcessSnapshot();
         _gameWindow.SwapBuffers();
@@ -2309,7 +2185,7 @@ public class SceneManager
         Skybox = null;
     }
 
-    public void Start(EngineMode mode)
+    public void Start()
     {
         foreach (var gameObject in _gameObjects)
         {
@@ -2323,12 +2199,9 @@ public class SceneManager
                 Skybox = gameObject.GetComponent<Skybox>();
             }
 
-            if (mode == EngineMode.Game)
+            foreach (var script in gameObject.GetComponents<Script>())
             {
-                foreach (var script in gameObject.GetComponents<Script>())
-                {
-                    script.Start();
-                }
+                script.Start();
             }
         }
 
@@ -3304,66 +3177,6 @@ public abstract class Script : Component
 }
 </file>
 
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\EditorController.cs">
-using Cherris;
-using System;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class EditorController : Script
-{
-    public float Speed { get; set; } = 5.0f;
-    public float MouseSensitivity { get; set; } = 0.00015f;
-
-    private float _yaw;
-    private float _pitch;
-
-    public override void Start()
-    {
-        var initialRotation = GameObject.Transform.Rotation;
-        var direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
-        _yaw = MathF.Atan2(direction.X, -direction.Z);
-        _pitch = MathF.Asin(direction.Y);
-    }
-
-    public override void Update(float deltaTime)
-    {
-        if (Input.IsMouseLocked)
-        {
-            Vector2 mouseDelta = Input.MouseDelta;
-            _yaw -= mouseDelta.X * MouseSensitivity;
-            _pitch -= mouseDelta.Y * MouseSensitivity;
-            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-        }
-
-        var localMove = Vector3.Zero;
-        if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
-        if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
-        if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
-        if (Input.IsKeyDown(Key.D)) localMove.X += 1;
-
-        var worldVerticalMove = 0f;
-        if (Input.IsKeyDown(Key.Space)) worldVerticalMove += 1;
-        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)) worldVerticalMove -= 1;
-
-        if (localMove != Vector3.Zero || worldVerticalMove != 0)
-        {
-            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
-
-            if (finalMove.LengthSquared() > 0)
-            {
-                GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
-            }
-        }
-    }
-}
-</file>
-
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Mesh.cs">
 using System.Numerics;
 using Veldrid;
@@ -3613,6 +3426,9 @@ namespace Cherris.OpenTK
             var io = ImGui.GetIO();
             io.Fonts.AddFontDefault();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+
+            // Enable Docking
+            io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
 
             CreateDeviceResources();
 
@@ -4600,9 +4416,6 @@ internal class OpenGLUIRenderer : IDisposable
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKBackend.cs">
 using Cherris.Rendering;
-using OpenTK.Graphics.OpenGL4;
-using OpenTK.Windowing.Desktop;
-using System;
 
 namespace Cherris.OpenTK
 {
@@ -4640,15 +4453,13 @@ namespace Cherris.OpenTK
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenTKGameWindow.cs">
-using System;
 using Cherris.Rendering;
-using OpenTK.Windowing.Desktop;
-using OpenTK.Windowing.Common;
-using OpenTK.Mathematics;
 using OpenTK.Graphics.OpenGL4;
-using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
+using OpenTK.Mathematics;
+using OpenTK.Windowing.Common;
+using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
-using OpenTK.Windowing.GraphicsLibraryFramework;
+using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 
 namespace Cherris.OpenTK;
 
@@ -4673,11 +4484,17 @@ public class OpenTKGameWindow : IGameWindow
         set
         {
             _isMouseLocked = value;
-            _window.CursorState = _isMouseLocked ? CursorState.Grabbed : CursorState.Normal;
-            if (_isMouseLocked)
+
+            _window.CursorState = _isMouseLocked 
+                ? CursorState.Grabbed 
+                : CursorState.Normal;
+            
+            if (!_isMouseLocked)
             {
-                _firstMove = true; // Reset on re-lock to avoid large delta jumps
+                return;
             }
+
+            _firstMove = true; // Reset on re-lock to avoid large delta jumps
         }
     }
 
@@ -5232,6 +5049,366 @@ public class ShaderProgram : IDisposable
             GL.DeleteProgram(Handle);
             _disposed = true;
         }
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Editor.cs">
+using Cherris;
+using Apexverse;
+
+namespace CherrisEditor;
+
+public class Editor : Engine
+{
+    private EditorAppLogic? _editorAppLogic;
+
+    public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
+    {
+        Exposure = 0.5f;
+    }
+
+    // These methods allow EditorAppLogic to interact with the protected SelectedGameObject
+    public void SetSelectedGameObject(GameObject? go) => SelectedGameObject = go;
+    public GameObject? GetSelectedGameObject() => SelectedGameObject;
+
+    protected override void LoadContent()
+    {
+        // Load the game's assets and components
+        ResourceManager.LoadInitialAssets();
+
+        // Register game-specific components from the Apexverse library
+        SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
+        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
+
+        // Load the scene to be edited
+        var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
+        SceneManager.SetScene(loadedObjects);
+    }
+
+    protected override void OnStart()
+    {
+        // Setup the editor UI and camera controller
+        _editorAppLogic = new EditorAppLogic(this);
+        OnDrawUI = _editorAppLogic.DrawUI;
+
+        if (SceneManager.MainCamera?.GameObject != null)
+        {
+            var cameraGo = SceneManager.MainCamera.GameObject;
+
+            // If the scene camera is the player, remove its controller
+            // so it doesn't fight with the new editor controller.
+            var playerController = cameraGo.GetComponent<PlayerController>();
+            if (playerController != null)
+            {
+                cameraGo.RemoveComponent<PlayerController>();
+            }
+
+            // Add our own editor-specific camera controller
+            cameraGo.AddComponent(new EditorController());
+        }
+    }
+
+    protected override void Update(float deltaTime)
+    {
+        // Run editor-specific logic like picking
+        _editorAppLogic?.UpdateEditorLogic(deltaTime);
+
+        // Run game logic simulations (e.g., animations, physics)
+        SceneManager.Update(deltaTime);
+
+        // Run base engine updates (UI rendering, snapshots, etc.)
+        base.Update(deltaTime);
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorAppLogic.cs">
+using Cherris;
+using ImGuiNET;
+using System;
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace CherrisEditor;
+
+public class EditorAppLogic
+{
+    private readonly Editor _editor;
+
+    public EditorAppLogic(Editor editor)
+    {
+        _editor = editor;
+    }
+
+    public void DrawUI(float deltaTime)
+    {
+        // Setup the main dockspace
+        SetupDockspace();
+
+        // Draw the individual editor panels. They will be floating on first launch
+        // and can be docked manually. ImGui will save the layout for subsequent runs.
+        DrawHierarchyPanel();
+        DrawInspectorPanel();
+        DrawConsolePanel();
+    }
+
+    private void SetupDockspace()
+    {
+        var viewport = ImGui.GetMainViewport();
+        ImGui.SetNextWindowPos(viewport.Pos);
+        ImGui.SetNextWindowSize(viewport.Size);
+        ImGui.SetNextWindowViewport(viewport.ID);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
+
+        var windowFlags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove |
+                          ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus | ImGuiWindowFlags.MenuBar;
+
+        ImGui.Begin("MainDockspace", windowFlags);
+        ImGui.PopStyleVar(2);
+
+        var dockspaceId = ImGui.GetID("MyDockSpace");
+        ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
+
+        DrawMainMenuBar();
+
+        ImGui.End();
+    }
+
+    private void DrawMainMenuBar()
+    {
+        if (ImGui.BeginMenuBar())
+        {
+            if (ImGui.BeginMenu("File"))
+            {
+                if (ImGui.MenuItem("Exit"))
+                {
+                    // This is a placeholder; a real implementation would close the app.
+                    Console.WriteLine("Exit clicked!");
+                }
+                ImGui.EndMenu();
+            }
+            ImGui.EndMenuBar();
+        }
+    }
+
+    private void DrawHierarchyPanel()
+    {
+        ImGui.Begin("Hierarchy");
+
+        foreach (var go in _editor.SceneManager.GameObjects)
+        {
+            bool isSelected = _editor.GetSelectedGameObject() == go;
+            if (ImGui.Selectable(go.Name, isSelected))
+            {
+                _editor.SetSelectedGameObject(go);
+            }
+        }
+
+        ImGui.End();
+    }
+
+    private void DrawInspectorPanel()
+    {
+        ImGui.Begin("Inspector");
+
+        var selectedObject = _editor.GetSelectedGameObject();
+        if (selectedObject != null)
+        {
+            ImGui.Text($"Selected: {selectedObject.Name}");
+            ImGui.Separator();
+
+            // Transform Component
+            if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                var position = selectedObject.Transform.Position;
+                if (ImGui.DragFloat3("Position", ref position, 0.1f))
+                {
+                    selectedObject.Transform.Position = position;
+                }
+
+                // Convert quaternion to Euler angles for editing
+                var eulerDegrees = ToEulerAngles(selectedObject.Transform.Rotation) * (180.0f / MathF.PI);
+                if (ImGui.DragFloat3("Rotation", ref eulerDegrees, 1.0f))
+                {
+                    var eulerRadians = eulerDegrees * (MathF.PI / 180.0f);
+                    selectedObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+                }
+
+                var scale = selectedObject.Transform.Scale;
+                if (ImGui.DragFloat3("Scale", ref scale, 0.1f))
+                {
+                    selectedObject.Transform.Scale = scale;
+                }
+            }
+        }
+        else
+        {
+            ImGui.Text("No object selected.");
+        }
+
+        ImGui.End();
+    }
+
+    private void DrawConsolePanel()
+    {
+        ImGui.Begin("Console");
+        ImGui.Text("Log messages will appear here...");
+        ImGui.End();
+    }
+
+    public void UpdateEditorLogic(float deltaTime)
+    {
+        if (Input.WasMouseButtonPressed(MouseButton.Left))
+        {
+            // Only process scene clicks if the mouse is not over an ImGui window
+            if (!ImGui.GetIO().WantCaptureMouse)
+            {
+                Ray ray = _editor.CreateRayFromMouse();
+                GameObject? closestObject = null;
+                float closestDistance = float.MaxValue;
+
+                foreach (var go in _editor.SceneManager.GameObjects)
+                {
+                    if (go.GetComponent<Skybox>() != null || go.GetComponent<Camera>() != null) continue;
+                    var aabb = go.GetWorldSpaceAABB();
+                    if (ray.Intersects(aabb, out float distance))
+                    {
+                        if (distance < closestDistance)
+                        {
+                            closestDistance = distance;
+                            closestObject = go;
+                        }
+                    }
+                }
+                _editor.SetSelectedGameObject(closestObject);
+                if (closestObject is not null) Console.WriteLine($"Selected '{closestObject.Name}'");
+            }
+        }
+
+        var selectedGameObject = _editor.GetSelectedGameObject();
+        if (selectedGameObject is not null)
+        {
+            const float moveSpeed = 2.0f;
+            var moveDirection = Vector3.Zero;
+            bool shiftHeld = Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight);
+
+            if (Input.IsKeyDown(Key.Left)) moveDirection.X -= 1;
+            if (Input.IsKeyDown(Key.Right)) moveDirection.X += 1;
+            if (shiftHeld)
+            {
+                if (Input.IsKeyDown(Key.Up)) moveDirection.Y += 1;
+                if (Input.IsKeyDown(Key.Down)) moveDirection.Y -= 1;
+            }
+            else
+            {
+                if (Input.IsKeyDown(Key.Up)) moveDirection.Z -= 1;
+                if (Input.IsKeyDown(Key.Down)) moveDirection.Z += 1;
+            }
+            if (moveDirection != Vector3.Zero)
+                selectedGameObject.Transform.Position += Vector3.Normalize(moveDirection) * moveSpeed * deltaTime;
+        }
+    }
+
+    // Helper to convert Quaternion to Euler angles (in radians) for display
+    private Vector3 ToEulerAngles(Quaternion q)
+    {
+        Vector3 angles = new();
+
+        // Roll (x-axis rotation)
+        float sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        float cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        angles.X = MathF.Atan2(sinr_cosp, cosr_cosp);
+
+        // Pitch (y-axis rotation)
+        float sinp = 2 * (q.W * q.Y - q.Z * q.X);
+        if (Math.Abs(sinp) >= 1)
+            angles.Y = MathF.CopySign(MathF.PI / 2, sinp); // use 90 degrees if out of range
+        else
+            angles.Y = MathF.Asin(sinp);
+
+        // Yaw (z-axis rotation)
+        float siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        float cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        angles.Z = MathF.Atan2(siny_cosp, cosy_cosp);
+
+        return angles;
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorController.cs">
+using Cherris;
+using System;
+using System.Numerics;
+
+namespace CherrisEditor;
+
+public class EditorController : Script
+{
+    public float Speed { get; set; } = 5.0f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Start()
+    {
+        var initialRotation = GameObject.Transform.Rotation;
+        var direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
+        _yaw = MathF.Atan2(direction.X, -direction.Z);
+        _pitch = MathF.Asin(direction.Y);
+    }
+
+    public override void Update(float deltaTime)
+    {
+        if (Input.IsMouseLocked)
+        {
+            Vector2 mouseDelta = Input.MouseDelta;
+            _yaw -= mouseDelta.X * MouseSensitivity;
+            _pitch -= mouseDelta.Y * MouseSensitivity;
+            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
+                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+        }
+
+        var localMove = Vector3.Zero;
+        if (Input.IsKeyDown(Key.W)) localMove.Z -= 1;
+        if (Input.IsKeyDown(Key.S)) localMove.Z += 1;
+        if (Input.IsKeyDown(Key.A)) localMove.X -= 1;
+        if (Input.IsKeyDown(Key.D)) localMove.X += 1;
+
+        var worldVerticalMove = 0f;
+        if (Input.IsKeyDown(Key.Space)) worldVerticalMove += 1;
+        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)) worldVerticalMove -= 1;
+
+        if (localMove != Vector3.Zero || worldVerticalMove != 0)
+        {
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+            var worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
+            var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+
+            if (finalMove.LengthSquared() > 0)
+            {
+                GameObject.Transform.Position += Vector3.Normalize(finalMove) * Speed * deltaTime;
+            }
+        }
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Program.cs">
+using Cherris;
+using CherrisEditor;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        var editor = new Editor(GraphicsAPI.OpenTK);
+        editor.Run();
     }
 }
 </file>
