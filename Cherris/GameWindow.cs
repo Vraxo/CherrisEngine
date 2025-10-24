@@ -85,7 +85,7 @@ public class GameWindow : IGameWindow
 
     public void SwapBuffers()
     {
-        if (_graphicsDevice != null)
+        if (_graphicsDevice is not null)
         {
             _graphicsDevice.SwapBuffers();
         }

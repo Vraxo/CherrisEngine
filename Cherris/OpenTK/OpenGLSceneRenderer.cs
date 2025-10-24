@@ -66,7 +66,7 @@ void main()
         foreach (var go in gameObjects)
         {
             var mr = go.GetComponent<MeshRenderer>();
-            if (mr?.Mesh is null || go.GetComponent<Skybox>() != null) continue;
+            if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null) continue;
             var data = GetOrCreateBackendData(mr);
             DrawObject(go, mr, data, view, projection);
         }

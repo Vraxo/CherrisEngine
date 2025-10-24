@@ -3,7 +3,7 @@ sourceDirectoryPaths:
   - Apexverse
   - Cherris
   - CherrisEditor
-  - E:\Parsa Stuff\Visual Studio\DirectUI\Directui
+  #- E:\Parsa Stuff\Visual Studio\DirectUI\Directui
 includeExtensions:
   - .cs
   - .c

@@ -144,7 +144,7 @@ public class Renderer : IRenderer
         if (skybox is not null) _skyboxRenderer.Render(cl, skybox, view, projection);
 
         _sceneRenderer.Render(cl, view, projection, gameObjects, GetOrCreateBackendData);
-        if (selectedObject?.GetComponent<MeshRenderer>() != null)
+        if (selectedObject?.GetComponent<MeshRenderer>() is not null)
         {
             _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
         }
@@ -167,7 +167,7 @@ public class Renderer : IRenderer
         _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
         _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
 
-        if (_snapshotRequested && _snapshotter != null)
+        if (_snapshotRequested && _snapshotter is not null)
         {
             _snapshotter.RecordCopyCommand(cl, _graphicsManager.FinalColorTarget);
             _snapshotRequested = false;

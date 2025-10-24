@@ -23,7 +23,7 @@ public class Snapshotter : IDisposable
         if (source is null) return;
 
         // Ensure the staging texture is the correct size
-        if (_stagingTexture == null || _width != source.Width || _height != source.Height)
+        if (_stagingTexture is null || _width != source.Width || _height != source.Height)
         {
             _stagingTexture?.Dispose();
             _width = source.Width;

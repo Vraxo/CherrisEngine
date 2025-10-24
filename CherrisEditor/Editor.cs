@@ -34,16 +34,16 @@ public class Editor : Engine
     {
         // Setup the editor UI and camera controller
         _editorAppLogic = new EditorAppLogic(this);
-        OnDrawUI = _editorAppLogic.DrawUI;
+        OnDrawUI = _editorAppLogic.DrawUI();
 
-        if (SceneManager.MainCamera?.GameObject != null)
+        if (SceneManager.MainCamera?.GameObject is not null)
         {
             var cameraGo = SceneManager.MainCamera.GameObject;
 
             // If the scene camera is the player, remove its controller
             // so it doesn't fight with the new editor controller.
             var playerController = cameraGo.GetComponent<PlayerController>();
-            if (playerController != null)
+            if (playerController is not null)
             {
                 cameraGo.RemoveComponent<PlayerController>();
             }

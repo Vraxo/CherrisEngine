@@ -76,7 +76,7 @@ public class OpenTKResourceManager : IResourceManager
         }
 
         string path = AssetFinder.FindAssetPath(name);
-        if (path == null)
+        if (path is null)
         {
             Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find texture '{name}'.");
             return _textures["White"];
@@ -136,7 +136,7 @@ public class OpenTKResourceManager : IResourceManager
         }
 
         var facePaths = FaceSuffixes.Select(suffix => AssetFinder.FindAssetPath(name + suffix)).ToArray();
-        if (facePaths.Any(p => p == null))
+        if (facePaths.Any(p => p is null))
         {
             Console.WriteLine($"[OpenTKResourceManager] Error: Could not find all 6 faces for skybox '{name}'.");
             return null;

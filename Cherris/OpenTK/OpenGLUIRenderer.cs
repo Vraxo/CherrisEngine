@@ -46,7 +46,7 @@ internal class OpenGLUIRenderer : IDisposable
 
     public void Render()
     {
-        if (_appEngine != null && _skSurface != null)
+        if (_appEngine is not null && _skSurface is not null)
         {
             // Reset Skia's internal state tracking because raw OpenGL calls
             // in the scene renderer/post-processor might have changed it.

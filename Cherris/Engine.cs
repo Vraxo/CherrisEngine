@@ -7,24 +7,52 @@ namespace Cherris;
 
 public abstract class Engine
 {
+    public Action<float>? OnDrawUI;
+    public float Exposure { get; set; } = 1.0f;
+
+    public readonly IResourceManager ResourceManager;
+    public readonly SceneLoader SceneLoader;
+    public readonly SceneManager SceneManager;
+
+    protected GameObject? SelectedGameObject { get; set; }
+    protected readonly IGraphicsBackend _backend;
+
     private readonly IGameWindow _gameWindow;
+    private readonly IRenderer _renderer;
     private readonly GameLoop _gameLoop;
+    
     private float _lastDeltaTime;
     private float _snapshotTimer;
     private const float SnapshotInterval = 1.0f;
     private bool _snapshotsEnabled;
 
-    // Engine Systems
-    protected readonly IGraphicsBackend _backend;
-    public readonly IResourceManager ResourceManager;
-    public readonly SceneLoader SceneLoader;
-    public readonly SceneManager SceneManager;
-    private readonly IRenderer _renderer;
+    public Ray CreateRayFromMouse()
+    {
+        Camera camera = SceneManager.MainCamera;
 
-    public Action<float>? OnDrawUI;
-    protected GameObject? SelectedGameObject { get; set; } // Accessible for editor subclasses
+        if (camera is null)
+        {
+            return new();
+        }
 
-    public float Exposure { get; set; } = 1.0f;
+        float x = (2.0f * Input.MousePosition.X) / _gameWindow.Width - 1.0f;
+        float y = 1.0f - (2.0f * Input.MousePosition.Y) / _gameWindow.Height;
+        Vector4 ndc = new(x, y, 1.0f, 1.0f);
+
+        Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
+
+        Vector4 viewRay = Vector4.Transform(ndc, invProjection);
+        viewRay.Z = -1.0f;
+        viewRay.W = 0.0f;
+
+        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        Vector4 worldRay = Vector4.Transform(viewRay, invView);
+
+        Vector3 rayDir = Vector3.Normalize(new(worldRay.X, worldRay.Y, worldRay.Z));
+        Vector3 rayOrigin = camera.GameObject.Transform.Position;
+
+        return new(rayOrigin, rayDir);
+    }
 
     protected Engine(string windowTitle, bool startWithMouseLocked, GraphicsAPI api)
     {
@@ -48,38 +76,78 @@ public abstract class Engine
         RegisterEngineComponents();
     }
 
-    private IGraphicsBackend CreateBackend(GraphicsAPI api)
+    protected virtual void Update(float deltaTime)
     {
-        switch (api)
+        _lastDeltaTime = deltaTime;
+
+        _backend.UIController?.Update(deltaTime);
+        OnDrawUI?.Invoke(deltaTime);
+
+        if (!Input.WasKeyPressed(Key.F12))
         {
-            case GraphicsAPI.Veldrid:
-                return new VeldridBackend();
-            case GraphicsAPI.OpenTK:
-                return new OpenTKBackend();
-            default:
-                throw new ArgumentOutOfRangeException(nameof(api), api, null);
+            return;
         }
+
+        _snapshotsEnabled = !_snapshotsEnabled;
+
+        Console.WriteLine(
+            $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
+            $"Press F12 to toggle.");
+    }
+
+    protected virtual void OnStart() { }
+
+    protected abstract void LoadContent();
+
+    private static IGraphicsBackend CreateBackend(GraphicsAPI api)
+    {
+        return api switch
+        {
+            GraphicsAPI.Veldrid => new VeldridBackend(),
+            GraphicsAPI.OpenTK => new OpenTKBackend(),
+            _ => throw new ArgumentOutOfRangeException(nameof(api), api, null),
+        };
     }
 
     private void RegisterEngineComponents()
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            if (properties is not Dictionary<object, object> propsDict) 
+            {
+                return null;
+            }
 
-            Mesh mesh = null;
+            Mesh? mesh = null;
+           
             if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string meshName)
+            {
                 mesh = ResourceManager.GetMesh(meshName);
-            if (mesh is null) return null;
+            }
+
+            if (mesh is null) 
+            {
+                return null;
+            }
 
             ITexture texture;
+           
             if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string textureName)
+            {
                 texture = ResourceManager.GetTexture(textureName);
+            }
             else
+            {
                 texture = ResourceManager.GetTexture("White");
-            if (texture is null) return null;
+            }
+
+            if (texture is null) 
+            {
+                return null;
+            }
 
             Vector2 textureTiling = Vector2.One;
+
             if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
@@ -95,11 +163,12 @@ public abstract class Engine
             }
 
             Vector3 emissiveColor = Vector3.Zero;
+            
             if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
             {
                 try
                 {
-                    emissiveColor = new Vector3(
+                    emissiveColor = new(
                         Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
                         Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
                         Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
@@ -109,15 +178,27 @@ public abstract class Engine
                     Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
                 }
             }
+
             return new MeshRenderer(mesh, texture, textureTiling, emissiveColor);
         });
 
-        SceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
+        SceneLoader.RegisterComponentFactory("Camera", (properties) =>
+        {
+            return new Camera();
+        });
+
         SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return null;
+            }
+
             if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
+            {
                 return ResourceManager.GetSkybox(cubemapName);
+            }
+
             return null;
         });
     }
@@ -136,58 +217,21 @@ public abstract class Engine
         SceneManager.Start();
     }
 
-    protected virtual void OnStart() { }
-
-    protected abstract void LoadContent();
-
-    protected virtual void Update(float deltaTime)
-    {
-        _lastDeltaTime = deltaTime;
-
-        _backend.UIController?.Update(deltaTime);
-        OnDrawUI?.Invoke(deltaTime);
-
-        if (Input.WasKeyPressed(Key.F12))
-        {
-            _snapshotsEnabled = !_snapshotsEnabled;
-            Console.WriteLine($"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. Press F12 to toggle.");
-        }
-    }
-
-    public Ray CreateRayFromMouse()
-    {
-        Camera camera = SceneManager.MainCamera;
-        if (camera is null) return new Ray();
-
-        float x = (2.0f * Input.MousePosition.X) / _gameWindow.Width - 1.0f;
-        float y = 1.0f - (2.0f * Input.MousePosition.Y) / _gameWindow.Height;
-        var ndc = new Vector4(x, y, 1.0f, 1.0f);
-
-        Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
-        var viewRay = Vector4.Transform(ndc, invProjection);
-        viewRay.Z = -1.0f;
-        viewRay.W = 0.0f;
-
-        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
-        var worldRay = Vector4.Transform(viewRay, invView);
-
-        var rayDir = Vector3.Normalize(new Vector3(worldRay.X, worldRay.Y, worldRay.Z));
-        var rayOrigin = camera.GameObject.Transform.Position;
-        return new Ray(rayOrigin, rayDir);
-    }
-
     private void Draw()
     {
         if (_snapshotsEnabled)
         {
             _snapshotTimer += _lastDeltaTime;
+            
             if (_snapshotTimer >= SnapshotInterval)
             {
                 _snapshotTimer -= SnapshotInterval;
                 string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
+                
                 _renderer.RequestSnapshot(path);
             }
         }
+
         _renderer.RenderFrame(
             SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
             SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);

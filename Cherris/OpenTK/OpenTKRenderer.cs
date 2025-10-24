@@ -49,7 +49,7 @@ namespace Cherris
                 mainCamera.NearClipPlane,
                 mainCamera.FarClipPlane);
 
-            if (skybox?.CubeMapTexture != null)
+            if (skybox?.CubeMapTexture is not null)
             {
                 _skyboxRenderer.Render(skybox, view, projection);
             }

@@ -37,7 +37,7 @@ public class GameObject
     public void RemoveComponent<T>() where T : Component
     {
         var componentToRemove = GetComponent<T>();
-        if (componentToRemove != null)
+        if (componentToRemove is not null)
         {
             _components.Remove(componentToRemove);
         }
