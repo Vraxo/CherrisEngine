@@ -228,7 +228,7 @@ void main()
             }
         }
 
-        private void RenderImDrawData(ImDrawDataPtr draw_data)
+        private unsafe void RenderImDrawData(ImDrawDataPtr draw_data)
         {
             if (draw_data.CmdListsCount == 0) return;
 
@@ -261,7 +261,7 @@ void main()
 
             for (int i = 0; i < draw_data.CmdListsCount; i++)
             {
-                ImDrawListPtr cmd_list = draw_data.CmdLists[i];
+                ImDrawListPtr cmd_list = ((ImDrawListPtr*)draw_data.CmdLists)[i];
 
                 GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
                 GL.BufferData(BufferTarget.ArrayBuffer, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data, BufferUsageHint.StreamDraw);

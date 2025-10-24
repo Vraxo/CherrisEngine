@@ -124,8 +124,9 @@ public class EditorAppLogic : IDisposable
 
     private void DrawToolbar()
     {
+        // Use a child window to create a distinct bar area.
         float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
-        ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
         var style = ImGui.GetStyle();
         float size = ImGui.GetContentRegionAvail().Y;
