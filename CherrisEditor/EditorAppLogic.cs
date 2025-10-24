@@ -1,6 +1,8 @@
 ﻿using Cherris;
 using ImGuiNET;
 using System.Numerics;
+using System.IO; // Required for file system operations
+using System; // Required for Path
 
 namespace CherrisEditor;
 
@@ -9,24 +11,32 @@ public class EditorAppLogic
     private readonly Editor _editor;
     private readonly InspectorPanel _inspectorPanel;
 
+    // --- State for the Content Browser ---
+    private readonly string _assetRootPath;
+    private string _currentAssetPath;
+    // ------------------------------------
+
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
         _inspectorPanel = new(_editor);
         EditorTheme.ApplyUnrealEngineStyle();
+
+        // --- Initialize Content Browser Path ---
+        _assetRootPath = Path.GetFullPath("Assets");
+        _currentAssetPath = _assetRootPath;
+        // ---------------------------------------
     }
 
     public Action<float> DrawUI()
     {
         return (deltaTime) =>
         {
-            // The main dockspace is now set up to allow manual docking.
-            // The layout will be saved to imgui.ini automatically.
             SetupDockspace();
 
-            // Draw all the editor panels. You can drag and drop these to create the desired layout.
             DrawOutlinerPanel();
-            DrawConsoleAndContentBrowser();
+            DrawConsolePanel();
+            DrawContentBrowserPanel(); // <-- This is now the new, functional browser
             _inspectorPanel.DrawInspectorPanel();
         };
     }
@@ -38,13 +48,9 @@ public class EditorAppLogic
         ImGui.SetNextWindowSize(viewport.Size);
         ImGui.SetNextWindowViewport(viewport.ID);
 
-        // --- Start of Fix ---
-        // We push style variables to remove padding and borders for the main dockspace window.
-        // This makes the dockable area fill the entire application window, removing gaps.
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        // --- End of Fix ---
 
         ImGuiWindowFlags windowFlags =
               ImGuiWindowFlags.NoTitleBar
@@ -57,21 +63,11 @@ public class EditorAppLogic
             | ImGuiWindowFlags.NoBackground;
 
         ImGui.Begin("MainDockspace", windowFlags);
-
-        // --- Start of Fix ---
-        // We must pop the style variables back to their original values before we end the window.
-        // We pop 3 because we pushed 3 (Rounding, BorderSize, Padding).
         ImGui.PopStyleVar(3);
-        // --- End of Fix ---
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
-
-        // This enables the central node where you can dock windows.
-        // The programmatic layout building has been removed for compatibility.
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.PassthruCentralNode);
-
         DrawMainMenuBar();
-
         ImGui.End();
     }
 
@@ -89,19 +85,6 @@ public class EditorAppLogic
             ImGui.Separator();
             if (ImGui.MenuItem("Exit")) { Console.WriteLine("Exit clicked!"); }
             ImGui.EndMenu();
-        }
-
-        if (ImGui.BeginMenu("Edit"))
-        {
-            if (ImGui.MenuItem("Undo")) { }
-            if (ImGui.MenuItem("Redo")) { }
-            ImGui.EndMenu();
-        }
-
-        if (ImGui.BeginMenu("Window"))
-        {
-            // You can add logic here to show/hide panels
-            if (ImGui.MenuItem("Toggle Theme")) { }
         }
 
         ImGui.EndMenuBar();
@@ -124,15 +107,69 @@ public class EditorAppLogic
         ImGui.End();
     }
 
-    private static void DrawConsoleAndContentBrowser()
+    private static void DrawConsolePanel()
     {
         ImGui.Begin("Console");
         ImGui.Text("Log messages will appear here...");
         ImGui.End();
+    }
 
+    /// <summary>
+    /// Draws a navigable file browser for the Assets directory.
+    /// </summary>
+    private void DrawContentBrowserPanel()
+    {
         ImGui.Begin("Content Browser");
-        ImGui.Text("Asset management will happen here...");
+
+        // Back button and current path display
+        if (_currentAssetPath != _assetRootPath)
+        {
+            if (ImGui.Button("<- Back"))
+            {
+                // Navigate to the parent directory
+                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
+            }
+            ImGui.SameLine();
+        }
+        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
+        ImGui.Separator();
+
+        // Display subdirectories
+        foreach (var directory in Directory.GetDirectories(_currentAssetPath))
+        {
+            // Use Selectable for folder navigation
+            if (ImGui.Selectable($"[F] {Path.GetFileName(directory)}", false, ImGuiSelectableFlags.AllowDoubleClick))
+            {
+                if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                {
+                    _currentAssetPath = directory;
+                }
+            }
+        }
+
+        // Display files
+        foreach (var file in Directory.GetFiles(_currentAssetPath))
+        {
+            string icon = GetIconForFile(file);
+            // Future: Implement drag-and-drop from here
+            ImGui.Selectable($"{icon} {Path.GetFileName(file)}");
+        }
+
         ImGui.End();
+    }
+
+    /// <summary>
+    /// Helper to return a simple text "icon" based on file extension.
+    /// </summary>
+    private string GetIconForFile(string filePath)
+    {
+        return Path.GetExtension(filePath).ToLowerInvariant() switch
+        {
+            ".png" or ".jpg" or ".jpeg" or ".tga" => "[T]", // Texture
+            ".yaml" or ".scene" => "[S]", // Scene
+            ".cs" => "[C#]", // Script
+            _ => "[?]" // Unknown
+        };
     }
 
     public void UpdateEditorLogic(float deltaTime)
