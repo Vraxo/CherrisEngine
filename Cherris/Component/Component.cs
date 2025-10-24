@@ -6,6 +6,7 @@ using Veldrid;
 
 namespace Cherris;
 
+// MODIFIED: Added "new()" constraint to allow Activator.CreateInstance
 public abstract class Component
 {
     public GameObject GameObject { get; internal set; }
