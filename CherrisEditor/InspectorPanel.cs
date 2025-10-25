@@ -19,6 +19,7 @@ internal class InspectorPanel
     private readonly DefaultInspector _defaultInspector;
     private readonly TransformInspector _transformInspector;
     private string _newScriptName = "";
+    private string _componentSearchText = "";
 
     public InspectorPanel(Editor editor, EditorTextureManager textureManager)
     {
@@ -135,18 +136,37 @@ internal class InspectorPanel
 
         if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
         {
+            _componentSearchText = ""; // Reset search when opening the popup
             ImGui.OpenPopup("AddComponentPopup");
         }
 
         if (ImGui.BeginPopup("AddComponentPopup"))
         {
-            if (go.GetComponent<Camera>() == null && ImGui.MenuItem("Camera"))
-            {
-                go.AddComponent(new Camera());
-                ImGui.CloseCurrentPopup();
-            }
+            ImGui.PushItemWidth(-1);
+            ImGui.InputTextWithHint("##ComponentSearch", "Search...", ref _componentSearchText, 100);
+            ImGui.PopItemWidth();
             ImGui.Separator();
-            foreach (var scriptType in _editor.AvailableScriptTypes)
+
+            bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
+
+            // Built-in components
+            if (go.GetComponent<Camera>() == null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Camera"))
+                {
+                    go.AddComponent(new Camera());
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+
+            ImGui.Separator();
+
+            // Scripts
+            var filteredTypes = searchIsActive
+                ? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
+                : _editor.AvailableScriptTypes;
+
+            foreach (var scriptType in filteredTypes)
             {
                 if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
                 {
@@ -172,7 +192,6 @@ internal class InspectorPanel
                     string scriptName = _newScriptName;
                     _editor.CreateAndCompileScript(scriptName);
 
-                    // After compiling, find the new type and add it to the GameObject
                     Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
                     if (newScriptType != null)
                     {
