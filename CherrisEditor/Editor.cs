@@ -1,7 +1,6 @@
 ﻿using Cherris;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -19,62 +18,92 @@ public class Editor : Engine
         Exposure = 0.5f;
     }
 
-    public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
+    public void EnterPlayMode()
     {
-        Camera camera = SceneManager.MainCamera;
-        if (camera is null) return new Ray();
+        if (State == EditorState.Playing) return;
 
-        Vector2 relativeMouse = mousePos - viewportPos;
-
-        // Check if mouse is inside viewport. If not, return an invalid ray.
-        if (relativeMouse.X < 0 || relativeMouse.Y < 0 || relativeMouse.X > viewportSize.X || relativeMouse.Y > viewportSize.Y)
+        if (State == EditorState.Editing)
         {
-            return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
+            // TODO: Snapshot scene state for restoration on Stop.
+            SceneManager.Start();
         }
 
-        // Normalize mouse coordinates to NDC [-1, 1] for X and [1, -1] for Y
-        float x = (2.0f * relativeMouse.X) / viewportSize.X - 1.0f;
-        float y = 1.0f - (2.0f * relativeMouse.Y) / viewportSize.Y;
-        Vector4 ndc = new(x, y, 1.0f, 1.0f);
-
-        // We need the correct projection matrix for the viewport's aspect ratio
-        Matrix4x4.Invert(camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y), out var invProjection);
-
-        Vector4 viewRay = Vector4.Transform(ndc, invProjection);
-        viewRay.Z = -1.0f;
-        viewRay.W = 0.0f;
-
-        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
-        Vector4 worldRay = Vector4.Transform(viewRay, invView);
-
-        Vector3 rayDir = Vector3.Normalize(new(worldRay.X, worldRay.Y, worldRay.Z));
-        Vector3 rayOrigin = camera.GameObject.Transform.Position;
-
-        return new Ray(rayOrigin, rayDir);
+        State = EditorState.Playing;
+        SetSelectedGameObject(null);
+        SetScriptsEnabledForPlayMode();
     }
 
-    public void SetSelectedGameObject(GameObject? go)
+    public void EnterPauseMode()
     {
-        SelectedGameObject = go;
+        if (State != EditorState.Playing) return;
+
+        State = EditorState.Paused;
+        SetScriptsEnabledForPauseMode();
     }
 
-    public GameObject? GetSelectedGameObject()
+    public void EnterEditMode()
     {
-        return SelectedGameObject;
+        State = EditorState.Editing;
+        ReloadSceneForEditing();
+    }
+
+    public void RestartPlayMode()
+    {
+        if (State == EditorState.Editing) return;
+
+        EnterEditMode();
+        EnterPlayMode();
     }
 
     protected override void LoadContent()
     {
         ResourceManager.LoadInitialAssets();
-        LoadGameComponents();
-        LoadScene();
+        CompileAndRegisterGameScripts();
+        LoadSceneFromFile("Assets/Scene.yaml");
     }
 
-    private void LoadGameComponents()
+    protected override void OnStart()
     {
-        // Instead of loading a pre-compiled DLL, we now compile .cs files at runtime.
-        var gameAssembly = ScriptCompiler.Compile("Assets");
+        _editorAppLogic = new(this);
+        OnDrawUI = _editorAppLogic.DrawUI();
+        InitializeEditingState();
+    }
+
+    protected override void Update(float deltaTime)
+    {
+        base.Update(deltaTime);
+        _editorAppLogic?.UpdateEditorLogic(deltaTime);
+        SceneManager.Update(deltaTime);
+    }
+
+    private void InitializeEditingState()
+    {
+        SetAllScriptsEnabled(false);
+        GameObject? cameraGo = SceneManager.MainCamera?.GameObject;
+        if (cameraGo != null)
+        {
+            EnsureEditorControllerEnabled(cameraGo);
+        }
+    }
+
+    private void ReloadSceneForEditing()
+    {
+        LoadSceneFromFile(CurrentScenePath);
+        SceneManager.Start();
+        InitializeEditingState();
+    }
+
+    private void LoadSceneFromFile(string scenePath)
+    {
+        CurrentScenePath = scenePath;
+        List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
+        SceneManager.SetScene(loadedObjects);
+    }
+
+    private void CompileAndRegisterGameScripts()
+    {
         AvailableScriptTypes.Clear();
+        Assembly? gameAssembly = ScriptCompiler.Compile("Assets");
 
         if (gameAssembly is null)
         {
@@ -84,20 +113,14 @@ public class Editor : Engine
 
         try
         {
-            var scriptTypes = gameAssembly.GetTypes()
+            IEnumerable<Type> scriptTypes = gameAssembly.GetTypes()
                 .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
 
-            int count = 0;
-            foreach (var type in scriptTypes)
+            foreach (Type type in scriptTypes)
             {
-                AvailableScriptTypes.Add(type);
-                // The factory function creates a new instance of the script type.
-                Func<object, Component> factory = _ => (Component)Activator.CreateInstance(type);
-                SceneLoader.RegisterComponentFactory(type.Name, factory);
-                Console.WriteLine($"[Editor] Registered custom component: {type.Name}");
-                count++;
+                RegisterScriptComponent(type);
             }
-            Console.WriteLine($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
+            Console.WriteLine($"[Editor] Loaded {AvailableScriptTypes.Count} custom components from runtime-compiled assembly.");
         }
         catch (Exception ex)
         {
@@ -105,101 +128,74 @@ public class Editor : Engine
         }
     }
 
-    public void LoadScene()
+    private void RegisterScriptComponent(Type scriptType)
     {
-        string scenePath = "Assets/Scene.yaml";
-        List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
-        SceneManager.SetScene(loadedObjects);
-        CurrentScenePath = scenePath;
+        AvailableScriptTypes.Add(scriptType);
+        Component Factory(object _) => (Component)Activator.CreateInstance(scriptType)!;
+        SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
+        Console.WriteLine($"[Editor] Registered custom component: {scriptType.Name}");
     }
 
-    protected override void OnStart()
+    private void SetAllScriptsEnabled(bool isEnabled)
     {
-        _editorAppLogic = new(this);
-        OnDrawUI = _editorAppLogic.DrawUI();
-
-        // Set initial state to Editing, which disables all game scripts
-        // and sets up the editor camera correctly.
-        SetEditingState();
-    }
-
-    public void Play()
-    {
-        if (State == EditorState.Playing) return;
-
-        // If starting from scratch, call Start() on scripts.
-        if (State == EditorState.Editing)
+        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            // TODO: Snapshot scene state for restoration on Stop.
-            SceneManager.Start();
+            script.Enabled = isEnabled;
         }
+    }
 
-        State = EditorState.Playing;
-        SelectedGameObject = null; // Deselect object when entering play mode.
-
-        // Enable game scripts, disable editor script
+    private void SetScriptsEnabledForPlayMode()
+    {
         foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
             script.Enabled = script is not EditorController;
         }
     }
 
-    public void Pause()
+    private void SetScriptsEnabledForPauseMode()
     {
-        if (State != EditorState.Playing) return;
-        State = EditorState.Paused;
-
-        // Disable game scripts, enable editor script for camera movement
         foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
             script.Enabled = script is EditorController;
         }
     }
 
-    public void Stop()
+    private static void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
-        State = EditorState.Editing;
-        // Reload the scene to revert any changes made during play mode
-        LoadScene();
-        SceneManager.Start(); // This is for components that need Start(), not scripts
-        SetEditingState();
+        EditorController? editorController = cameraGo.GetComponent<EditorController>();
+        editorController ??= cameraGo.AddComponent(new EditorController());
+        editorController.Enabled = true;
     }
 
-    public void Restart()
+    public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
-        if (State == EditorState.Editing) return;
-        Stop();
-        Play();
-    }
+        Camera? camera = SceneManager.MainCamera;
+        if (camera is null) return new Ray();
 
-    private void SetEditingState()
-    {
-        // Disable all game scripts
-        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        Vector2 relativeMouse = mousePos - viewportPos;
+        if (relativeMouse.X < 0 || relativeMouse.Y < 0 || relativeMouse.X > viewportSize.X || relativeMouse.Y > viewportSize.Y)
         {
-            script.Enabled = false;
+            return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
         }
 
-        // Find the camera and enable its EditorController
-        var cameraGo = SceneManager.MainCamera?.GameObject;
-        if (cameraGo != null)
-        {
-            var editorController = cameraGo.GetComponent<EditorController>();
-            if (editorController == null)
-            {
-                editorController = cameraGo.AddComponent(new EditorController());
-            }
-            editorController.Enabled = true;
-        }
+        float x = (2.0f * relativeMouse.X) / viewportSize.X - 1.0f;
+        float y = 1.0f - (2.0f * relativeMouse.Y) / viewportSize.Y;
+        Vector4 ndc = new(x, y, 1.0f, 1.0f);
+
+        Matrix4x4.Invert(camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y), out var invProjection);
+        Vector4 viewRay = Vector4.Transform(ndc, invProjection);
+        viewRay.Z = -1.0f;
+        viewRay.W = 0.0f;
+
+        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        Vector4 worldRay = Vector4.Transform(viewRay, invView);
+
+        Vector3 rayDir = Vector3.Normalize(new Vector3(worldRay.X, worldRay.Y, worldRay.Z));
+        Vector3 rayOrigin = camera.GameObject.Transform.Position;
+
+        return new Ray(rayOrigin, rayDir);
     }
 
-    protected override void Update(float deltaTime)
-    {
-        // Call base first to update ImGui inputs and draw the UI shell.
-        base.Update(deltaTime);
-
-        // Now update editor/game logic which might depend on ImGui state from this frame.
-        _editorAppLogic?.UpdateEditorLogic(deltaTime);
-        SceneManager.Update(deltaTime);
-    }
+    public void SetSelectedGameObject(GameObject? go) => SelectedGameObject = go;
+    public GameObject? GetSelectedGameObject() => SelectedGameObject;
 }

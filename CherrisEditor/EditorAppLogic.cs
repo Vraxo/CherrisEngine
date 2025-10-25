@@ -5,6 +5,8 @@ using System;
 using ImGuizmoNET;
 using System.Runtime.CompilerServices;
 using Cherris.OpenTK;
+using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace CherrisEditor;
 
@@ -27,13 +29,11 @@ public class EditorAppLogic : IDisposable
         _sceneSerializer = new SceneSerializer();
         EditorTheme.ApplyUnrealEngineStyle();
 
-        // Load the new icons needed for the toolbar
         _editorTextureManager.LoadTexture("Play", "Assets/Icons/play.png");
         _editorTextureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
         _editorTextureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
         _editorTextureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
 
-        // Initialize ImGuizmo
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
     }
 
@@ -42,11 +42,8 @@ public class EditorAppLogic : IDisposable
         return (deltaTime) =>
         {
             SetupDockspace();
-
-            // Set up ImGuizmo for the new frame
             ImGuizmo.BeginFrame();
 
-            // Draw all editor panels
             DrawViewportAndGizmo();
             DrawOutlinerPanel();
             DrawConsolePanel();
@@ -66,15 +63,7 @@ public class EditorAppLogic : IDisposable
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
 
-        ImGuiWindowFlags windowFlags =
-              ImGuiWindowFlags.NoTitleBar
-            | ImGuiWindowFlags.NoCollapse
-            | ImGuiWindowFlags.NoResize
-            | ImGuiWindowFlags.NoMove
-            | ImGuiWindowFlags.NoBringToFrontOnFocus
-            | ImGuiWindowFlags.NoNavFocus
-            | ImGuiWindowFlags.MenuBar
-            | ImGuiWindowFlags.NoBackground;
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus | ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoBackground;
 
         ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);
@@ -97,9 +86,6 @@ public class EditorAppLogic : IDisposable
 
         if (ImGui.BeginMenu("File"))
         {
-            if (ImGui.MenuItem("New Scene")) { }
-            if (ImGui.MenuItem("Open Scene")) { }
-            ImGui.Separator();
             if (ImGui.MenuItem("Save"))
             {
                 if (!string.IsNullOrEmpty(_editor.CurrentScenePath))
@@ -107,17 +93,9 @@ public class EditorAppLogic : IDisposable
                     _sceneSerializer.SaveScene(_editor.SceneManager.GameObjects, _editor.CurrentScenePath);
                     Console.WriteLine($"[Editor] Scene saved to '{_editor.CurrentScenePath}'");
                 }
-                else
-                {
-                    Console.WriteLine("[Editor] No scene path set. Use 'Save As...' first.");
-                }
-            }
-            if (ImGui.MenuItem("Save As..."))
-            {
-                Console.WriteLine("[Editor] 'Save As...' is not implemented yet.");
             }
             ImGui.Separator();
-            if (ImGui.MenuItem("Exit")) { Console.WriteLine("Exit clicked!"); }
+            if (ImGui.MenuItem("Exit")) { Environment.Exit(0); }
             ImGui.EndMenu();
         }
 
@@ -126,13 +104,11 @@ public class EditorAppLogic : IDisposable
 
     private void DrawToolbar()
     {
-        // Use a child window to create a distinct bar area.
         float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
         ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
         var style = ImGui.GetStyle();
         float size = ImGui.GetContentRegionAvail().Y;
-
         float totalWidth = (size * 3) + (style.ItemSpacing.X * 2);
         ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (totalWidth * 0.5f));
 
@@ -142,55 +118,19 @@ public class EditorAppLogic : IDisposable
         IntPtr playPauseIcon = isPlaying ? _editorTextureManager.GetTexture("Pause") : _editorTextureManager.GetTexture("Play");
         if (ImGui.ImageButton("PlayPause", playPauseIcon, new Vector2(size, size)))
         {
-            if (isPlaying)
-            {
-                _editor.Pause();
-            }
-            else
-            {
-                _editor.Play();
-            }
+            if (isPlaying) _editor.EnterPauseMode();
+            else _editor.EnterPlayMode();
         }
 
         ImGui.SameLine();
-
-        if (isEditing)
-        {
-            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
-            ImGui.BeginDisabled();
-        }
-
-        IntPtr stopIcon = _editorTextureManager.GetTexture("Stop");
-        if (ImGui.ImageButton("Stop", stopIcon, new Vector2(size, size)))
-        {
-            _editor.Stop();
-        }
-
-        if (isEditing)
-        {
-            ImGui.EndDisabled();
-            ImGui.PopStyleVar();
-        }
+        if (isEditing) { ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f); ImGui.BeginDisabled(); }
+        if (ImGui.ImageButton("Stop", _editorTextureManager.GetTexture("Stop"), new Vector2(size, size))) _editor.EnterEditMode();
+        if (isEditing) { ImGui.EndDisabled(); ImGui.PopStyleVar(); }
 
         ImGui.SameLine();
-
-        if (isEditing)
-        {
-            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
-            ImGui.BeginDisabled();
-        }
-
-        IntPtr restartIcon = _editorTextureManager.GetTexture("Restart");
-        if (ImGui.ImageButton("Restart", restartIcon, new Vector2(size, size)))
-        {
-            _editor.Restart();
-        }
-
-        if (isEditing)
-        {
-            ImGui.EndDisabled();
-            ImGui.PopStyleVar();
-        }
+        if (isEditing) { ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f); ImGui.BeginDisabled(); }
+        if (ImGui.ImageButton("Restart", _editorTextureManager.GetTexture("Restart"), new Vector2(size, size))) _editor.RestartPlayMode();
+        if (isEditing) { ImGui.EndDisabled(); ImGui.PopStyleVar(); }
 
         ImGui.EndChild();
     }
@@ -201,37 +141,46 @@ public class EditorAppLogic : IDisposable
         ImGui.Begin("Viewport");
 
         bool isViewportHovered = ImGui.IsWindowHovered();
-
         var currentSize = ImGui.GetContentRegionAvail();
-        if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
-        {
-            _viewportSize = currentSize;
-            if (_editor.Renderer is OpenTKRenderer _otkRenderer)
-            {
-                _otkRenderer.SetViewportSize(_viewportSize);
-            }
-        }
 
-        IntPtr textureHandle = IntPtr.Zero;
         if (_editor.Renderer is OpenTKRenderer otkRenderer)
         {
-            textureHandle = otkRenderer.GetSceneTextureHandle();
-        }
+            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+            {
+                _viewportSize = currentSize;
+                otkRenderer.SetViewportSize(_viewportSize);
+            }
 
-        if (textureHandle != IntPtr.Zero)
+            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
+            if (textureHandle != IntPtr.Zero)
+            {
+                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+            }
+        }
+        else
         {
-            ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+            if (currentSize.X > 0 && currentSize.Y > 0)
+            {
+                _viewportSize = currentSize;
+            }
         }
 
         var viewportPos = ImGui.GetItemRectMin();
         var viewportSize = ImGui.GetItemRectSize();
 
-        // Handle object selection directly within the UI context
         if (isViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
         {
             HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
         }
 
+        DrawGizmo(viewportPos, viewportSize);
+
+        ImGui.End();
+        ImGui.PopStyleVar();
+    }
+
+    private void DrawGizmo(Vector2 viewportPos, Vector2 viewportSize)
+    {
         ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
         ImGuizmo.SetDrawlist();
 
@@ -244,12 +193,7 @@ public class EditorAppLogic : IDisposable
             var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
             var objectMatrix = selectedObject.Transform.GetModelMatrix();
 
-            if (ImGuizmo.Manipulate(
-                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
-                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
-                _currentOperation,
-                MODE.LOCAL,
-                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+            if (ImGuizmo.Manipulate(ref Unsafe.As<Matrix4x4, float>(ref cameraView), ref Unsafe.As<Matrix4x4, float>(ref cameraProjection), _currentOperation, MODE.LOCAL, ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
             {
                 Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
                 selectedObject.Transform.Position = position;
@@ -257,26 +201,87 @@ public class EditorAppLogic : IDisposable
                 selectedObject.Transform.Scale = scale;
             }
         }
-
-        ImGui.End();
-        ImGui.PopStyleVar();
     }
 
-    private void DrawOutlinerPanel()
+    private unsafe void DrawOutlinerPanel()
     {
         ImGui.Begin("Outliner");
+        DrawOutlinerContextMenu();
 
-        foreach (GameObject go in _editor.SceneManager.GameObjects)
+        foreach (var go in _editor.SceneManager.GameObjects.Where(g => g.Transform.Parent == null).ToList())
         {
-            bool isSelected = _editor.GetSelectedGameObject() == go;
-
-            if (ImGui.Selectable(go.Name, isSelected))
-            {
-                _editor.SetSelectedGameObject(go);
-            }
+            DrawGameObjectNode(go);
         }
 
         ImGui.End();
+    }
+
+    private unsafe void DrawGameObjectNode(GameObject go)
+    {
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.SpanAvailWidth;
+        if (_editor.GetSelectedGameObject() == go) flags |= ImGuiTreeNodeFlags.Selected;
+        if (go.Transform.Children.Count == 0) flags |= ImGuiTreeNodeFlags.Leaf;
+
+        bool nodeOpen = ImGui.TreeNodeEx(go.Id.ToString(), flags, go.Name);
+
+        if (ImGui.IsItemClicked()) _editor.SetSelectedGameObject(go);
+
+        if (ImGui.BeginDragDropSource())
+        {
+            byte[] guidBytes = go.Id.ToByteArray();
+            fixed (byte* ptr = guidBytes)
+            {
+                ImGui.SetDragDropPayload("GAMEOBJECT_ID", (IntPtr)ptr, (uint)guidBytes.Length);
+            }
+            ImGui.Text(go.Name);
+            ImGui.EndDragDropSource();
+        }
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+            if (payload.NativePtr != null)
+            {
+                byte[] data = new byte[payload.DataSize];
+                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                var draggedId = new Guid(data);
+                GameObject draggedObject = _editor.SceneManager.GameObjects.First(g => g.Id == draggedId);
+                draggedObject.Transform.Parent = go.Transform;
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        if (nodeOpen)
+        {
+            foreach (var child in go.Transform.Children.ToList())
+            {
+                DrawGameObjectNode(child.GameObject);
+            }
+            ImGui.TreePop();
+        }
+    }
+
+    private void DrawOutlinerContextMenu()
+    {
+        if (ImGui.BeginPopupContextWindow("OutlinerContextMenu"))
+        {
+            if (ImGui.MenuItem("Create Empty GameObject"))
+            {
+                var newGo = new GameObject("New GameObject");
+                _editor.SceneManager.AddGameObject(newGo);
+                _editor.SetSelectedGameObject(newGo);
+            }
+
+            if (_editor.GetSelectedGameObject() != null)
+            {
+                if (ImGui.MenuItem("Delete", "Del"))
+                {
+                    _editor.SceneManager.RemoveGameObject(_editor.GetSelectedGameObject());
+                    _editor.SetSelectedGameObject(null);
+                }
+            }
+            ImGui.EndPopup();
+        }
     }
 
     private static void DrawConsolePanel()
@@ -307,27 +312,15 @@ public class EditorAppLogic : IDisposable
 
         foreach (GameObject gameObject in _editor.SceneManager.GameObjects)
         {
-            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null)
-            {
-                continue;
-            }
+            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null) continue;
 
             BoundingBox aabb = gameObject.GetWorldSpaceAABB();
-
-            if (!ray.Intersects(aabb, out float distance))
-            {
-                continue;
-            }
-
-            if (distance >= closestDistance)
-            {
-                continue;
-            }
+            if (!ray.Intersects(aabb, out float distance)) continue;
+            if (distance >= closestDistance) continue;
 
             closestDistance = distance;
             closestObject = gameObject;
         }
-
         _editor.SetSelectedGameObject(closestObject);
     }
 

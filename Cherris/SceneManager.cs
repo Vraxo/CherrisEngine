@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using Veldrid.StartupUtilities;
 using Veldrid;
@@ -15,6 +16,29 @@ public class SceneManager
     public Camera MainCamera { get; private set; }
     public Skybox Skybox { get; private set; }
     public IEnumerable<GameObject> GameObjects => _gameObjects;
+
+    public void AddGameObject(GameObject go)
+    {
+        _gameObjects.Add(go);
+    }
+
+    public void RemoveGameObject(GameObject go)
+    {
+        // Recursively remove children first to avoid modifying collection during iteration
+        foreach (var childTransform in go.Transform.Children.ToList())
+        {
+            RemoveGameObject(childTransform.GameObject);
+        }
+
+        // Remove the object from its parent's list
+        go.Transform.Parent = null;
+
+        // Remove from the root scene list
+        _gameObjects.Remove(go);
+
+        // Dispose its managed resources
+        go.GetComponent<MeshRenderer>()?.Dispose();
+    }
 
     public void SetScene(List<GameObject> gameObjects)
     {

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using Cherris.Rendering;
 using Veldrid;
@@ -36,15 +37,18 @@ public class SceneLoader
 
     public List<GameObject> LoadScene(string filePath)
     {
-        var sceneObjects = new List<GameObject>();
         var input = new StringReader(File.ReadAllText(filePath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return sceneObjects;
+            return new List<GameObject>();
         }
 
+        var createdGameObjects = new Dictionary<Guid, GameObject>();
+        var parentMap = new Dictionary<Guid, Guid>();
+
+        // Pass 1: Create all GameObjects and components, storing parent relationships
         foreach (var goData in gameObjectDatas)
         {
             string name = "GameObject";
@@ -52,29 +56,46 @@ public class SceneLoader
             {
                 name = goName;
             }
-            var go = new GameObject(name);
 
-            if (!goData.TryGetValue("Components", out var componentsObj) || componentsObj is not Dictionary<object, object> componentsDict)
+            Guid id = Guid.NewGuid();
+            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
             {
-                sceneObjects.Add(go);
-                continue;
+                id = parsedId;
             }
 
-            if (componentsDict.TryGetValue("Transform", out var transformProperties))
+            var go = new GameObject(name, id);
+            createdGameObjects[id] = go;
+
+            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
             {
-                ApplyTransformProperties(go.Transform, transformProperties);
+                parentMap[id] = parentId;
             }
 
-            foreach (var componentKvp in componentsDict)
+            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
             {
-                if (componentKvp.Key as string == "Transform") continue;
-                AddComponent(go, componentKvp.Key as string, componentKvp.Value);
-            }
+                if (componentsDict.TryGetValue("Transform", out var transformProperties))
+                {
+                    ApplyTransformProperties(go.Transform, transformProperties);
+                }
 
-            sceneObjects.Add(go);
+                foreach (var componentKvp in componentsDict)
+                {
+                    if (componentKvp.Key as string == "Transform") continue;
+                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
+                }
+            }
         }
 
-        return sceneObjects;
+        // Pass 2: Hook up parent-child relationships
+        foreach (var (childId, parentId) in parentMap)
+        {
+            if (createdGameObjects.TryGetValue(childId, out var child) && createdGameObjects.TryGetValue(parentId, out var parent))
+            {
+                child.Transform.Parent = parent.Transform;
+            }
+        }
+
+        return createdGameObjects.Values.ToList();
     }
 
     private void ApplyTransformProperties(Transform transform, object properties)

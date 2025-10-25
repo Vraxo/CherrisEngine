@@ -29,7 +29,6 @@ internal class InspectorPanel
 
     private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager)
     {
-        // Find all types in the editor assembly that have the CustomInspector attribute
         var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
             .Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
 
@@ -38,7 +37,6 @@ internal class InspectorPanel
             var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
             try
             {
-                // Create an instance of the inspector, passing constructor arguments if needed
                 object[] constructorArgs = { editor, textureManager };
                 var constructor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
 
@@ -79,7 +77,11 @@ internal class InspectorPanel
 
     private void DrawGameObjectProperties(GameObject go)
     {
-        ImGui.Text($"Selected: {go.Name}");
+        string name = go.Name;
+        if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
+        {
+            go.Name = name;
+        }
         ImGui.Separator();
 
         if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
@@ -98,7 +100,6 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Remove Component"))
                 {
                     go.RemoveComponent(component);
-                    // Important: return here because the component list is now modified.
                     ImGui.EndPopup();
                     return;
                 }
@@ -107,14 +108,12 @@ internal class InspectorPanel
 
             if (headerOpen)
             {
-                // Find the appropriate inspector
                 if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
                 {
                     customInspector.Draw(component);
                 }
                 else
                 {
-                    // Fallback to the default reflection-based inspector
                     _defaultInspector.Draw(component);
                 }
             }
@@ -153,7 +152,6 @@ internal class InspectorPanel
                     var newComponent = (Script)Activator.CreateInstance(scriptType);
                     go.AddComponent(newComponent);
 
-                    // If we're not playing, the script shouldn't start running automatically.
                     if (_editor.State != EditorState.Playing)
                     {
                         newComponent.Enabled = false;

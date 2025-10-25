@@ -27,27 +27,31 @@ public class SceneSerializer
 
         foreach (var go in gameObjects)
         {
-            // Don't save the editor-only camera controller if it exists
             if (go.Components.Any(c => c.GetType().Name == "EditorController")) continue;
 
-            var goData = new Dictionary<string, object> { ["Name"] = go.Name };
+            var goData = new Dictionary<string, object>
+            {
+                ["Id"] = go.Id.ToString(),
+                ["Name"] = go.Name
+            };
+
+            if (go.Transform.Parent != null)
+            {
+                goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
+            }
 
             var componentsData = new Dictionary<string, object>();
 
-            // --- Transform ---
             var transformData = new Dictionary<string, object>
             {
                 ["Position"] = go.Transform.Position
             };
 
             var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
-            // Loader expects Pitch(X), Yaw(Y), Roll(Z). Our math gives Roll(X), Pitch(Y), Yaw(Z).
-            // So we create a new Vector3 with components in the correct order for the loader.
             transformData["Rotation"] = new Vector3(eulerDegrees.Y, eulerDegrees.Z, eulerDegrees.X);
             transformData["Scale"] = go.Transform.Scale;
             componentsData["Transform"] = transformData;
 
-            // --- Other Components ---
             foreach (var component in go.Components)
             {
                 switch (component)
@@ -66,7 +70,7 @@ public class SceneSerializer
                         break;
 
                     case Camera:
-                        componentsData["Camera"] = new Dictionary<string, object>(); // No properties yet
+                        componentsData["Camera"] = new Dictionary<string, object>();
                         break;
 
                     case Skybox skybox:
@@ -75,7 +79,6 @@ public class SceneSerializer
                         break;
 
                     case Script script:
-                        // Properties of scripts are not yet serialized, just their presence on the GameObject.
                         componentsData[script.GetType().Name] = new Dictionary<string, object>();
                         break;
                 }

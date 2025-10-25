@@ -7,17 +7,18 @@ namespace Cherris;
 
 public class GameObject
 {
-    public string Name { get; }
+    public string Name { get; set; }
+    public Guid Id { get; }
     public Transform Transform { get; }
     private readonly List<Component> _components = new List<Component>();
 
-    // ADDED: Public accessor for the component list
     public IEnumerable<Component> Components => _components;
 
-    public GameObject(string name = "GameObject")
+    public GameObject(string name = "GameObject", Guid? id = null)
     {
         Name = name;
-        Transform = new Transform();
+        Id = id ?? Guid.NewGuid();
+        Transform = new Transform(this);
     }
 
     public T AddComponent<T>(T component) where T : Component
