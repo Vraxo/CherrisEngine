@@ -724,31 +724,37 @@ namespace Cherris;
 
 public static class EngineMath
 {
-    // Helper to convert Quaternion to Euler angles (in radians) for display
+    /// <summary>
+    /// Helper to convert a Quaternion to Euler angles (in radians).
+    /// The returned Vector3 contains (Pitch, Yaw, Roll).
+    /// Pitch is rotation around the X-axis.
+    /// Yaw is rotation around the Y-axis.
+    /// Roll is rotation around the Z-axis.
+    /// </summary>
     public static Vector3 ToEulerAngles(Quaternion q)
     {
         Vector3 angles = new();
 
-        // Roll (x-axis rotation)
-        float sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
-        float cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
-        angles.X = float.Atan2(sinr_cosp, cosr_cosp);
+        // Pitch (x-axis rotation)
+        float sinp_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        float cosp_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        angles.X = float.Atan2(sinp_cosp, cosp_cosp);
 
-        // Pitch (y-axis rotation)
-        float sinp = 2 * (q.W * q.Y - q.Z * q.X);
-        if (float.Abs(sinp) >= 1)
+        // Yaw (y-axis rotation)
+        float siny = 2 * (q.W * q.Y - q.Z * q.X);
+        if (float.Abs(siny) >= 1)
         {
-            angles.Y = float.CopySign(MathF.PI / 2, sinp); // use 90 degrees if out of range
+            angles.Y = float.CopySign(MathF.PI / 2, siny); // use 90 degrees if out of range
         }
         else
         {
-            angles.Y = float.Asin(sinp);
+            angles.Y = float.Asin(siny);
         }
 
-        // Yaw (z-axis rotation)
-        float siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
-        float cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
-        angles.Z = float.Atan2(siny_cosp, cosy_cosp);
+        // Roll (z-axis rotation)
+        float sinr_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        float cosr_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        angles.Z = float.Atan2(sinr_cosp, cosr_cosp);
 
         return angles;
     }
@@ -2771,8 +2777,11 @@ public class SceneSerializer
                 ["Position"] = go.Transform.Position
             };
 
+            // ToEulerAngles returns (Pitch, Yaw, Roll).
+            // The loader expects this order to create the quaternion.
+            // We save it directly in this logical order.
             var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
-            transformData["Rotation"] = new Vector3(eulerDegrees.Y, eulerDegrees.Z, eulerDegrees.X);
+            transformData["Rotation"] = eulerDegrees;
             transformData["Scale"] = go.Transform.Scale;
             componentsData["Transform"] = transformData;
 
@@ -5186,6 +5195,8 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.R => Key.R,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
+            OpenTKKey.LeftControl => Key.ControlLeft,
+            OpenTKKey.RightControl => Key.ControlRight,
             OpenTKKey.Escape => Key.Escape,
             OpenTKKey.F12 => Key.F12,
             OpenTKKey.Up => Key.Up,
@@ -6162,6 +6173,18 @@ public class EditorAppLogic : IDisposable
     public void UpdateEditorLogic(float deltaTime)
     {
         _viewportPanel.Update();
+
+        // Use the engine's input system for global shortcuts
+        if ((Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight)) && Input.WasKeyPressed(Key.S))
+        {
+            var activeScene = _editor.SceneManager.ActiveScene;
+            if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
+            {
+                _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
+                activeScene.IsDirty = false;
+                Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
+            }
+        }
     }
 
     private void SetupDockspace()
@@ -6223,13 +6246,18 @@ public class EditorController : Script
         _editor = editor;
     }
 
-    public override void Start()
+    private void SyncYawPitchFromTransform()
     {
-        Quaternion initialRotation = GameObject.Transform.Rotation;
-        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
+        Quaternion currentRotation = GameObject.Transform.Rotation;
+        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, currentRotation);
 
         _yaw = MathF.Atan2(direction.X, -direction.Z);
         _pitch = MathF.Asin(direction.Y);
+    }
+
+    public override void Start()
+    {
+        SyncYawPitchFromTransform();
     }
 
     public override void Update(float deltaTime)
@@ -6318,6 +6346,12 @@ public class EditorController : Script
         if (!Input.IsMouseButtonDown(MouseButton.Right))
         {
             return;
+        }
+
+        // On first press, sync _yaw and _pitch with current transform to prevent snapping.
+        if (Input.WasMouseButtonPressed(MouseButton.Right))
+        {
+            SyncYawPitchFromTransform();
         }
 
         Vector2 mouseDelta = Input.MouseDelta;
@@ -7603,7 +7637,7 @@ public class MenuBar
 
         if (ImGui.BeginMenu("File"))
         {
-            if (ImGui.MenuItem("Save"))
+            if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
                 var activeScene = _editor.SceneManager.ActiveScene;
                 if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))

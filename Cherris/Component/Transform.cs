@@ -26,6 +26,8 @@ public class Transform
 
     public readonly List<Transform> Children = new();
 
+    public Vector3 Forward => Vector3.Transform(-Vector3.UnitZ, Rotation);
+
     public Transform(GameObject gameObject)
     {
         GameObject = gameObject;

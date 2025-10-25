@@ -14,7 +14,6 @@ public class OpenTKGameWindow : IGameWindow
 {
     internal readonly OTKGameWindow _window;
     private Vector2 _lastMousePos;
-    private bool _firstMove = true;
     private ImGuiController _imGuiController;
 
     public bool Exists => _window.Exists && !_window.IsExiting;
@@ -67,11 +66,6 @@ public class OpenTKGameWindow : IGameWindow
         _window.CursorState = locked
             ? CursorState.Grabbed
             : CursorState.Normal;
-
-        if (locked)
-        {
-            _firstMove = true; // Reset on re-lock to avoid large delta jumps
-        }
     }
 
     public void SetImGuiController(ImGuiController controller)
@@ -108,29 +102,25 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseMove(MouseMoveEventArgs e)
     {
-        _imGuiController?.MouseMove(new Vector2(e.X, e.Y));
+        var currentPos = new Vector2(e.X, e.Y);
+        _imGuiController?.MouseMove(currentPos);
+        Input.SetMousePosition(new System.Numerics.Vector2(currentPos.X, currentPos.Y));
 
-        // If ImGui wants the mouse, but we're holding RMB for camera control, let it pass through.
         if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
-            Input.SetMouseDelta(System.Numerics.Vector2.Zero);
-            _lastMousePos = new Vector2(e.X, e.Y);
-            _firstMove = true;
             return;
         }
 
-        if (_firstMove)
+        if (Input.IsMouseButtonDown(MouseButton.Right))
         {
-            _lastMousePos = new Vector2(e.X, e.Y);
-            _firstMove = false;
+            var deltaX = currentPos.X - _lastMousePos.X;
+            var deltaY = currentPos.Y - _lastMousePos.Y;
+            var delta = new System.Numerics.Vector2(deltaX, deltaY);
+            Input.SetMouseDelta(delta);
         }
 
-        var deltaX = e.X - _lastMousePos.X;
-        var deltaY = e.Y - _lastMousePos.Y;
-        _lastMousePos = new Vector2(e.X, e.Y);
-
-        Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
-        Input.SetMousePosition(new System.Numerics.Vector2(e.X, e.Y));
+        // Always update the last mouse position. This is simpler and more robust.
+        _lastMousePos = currentPos;
     }
 
     private void OnMouseDown(MouseButtonEventArgs e)
@@ -138,11 +128,16 @@ public class OpenTKGameWindow : IGameWindow
         bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, true);
 
-        // For editor controls, we only want to prevent left-clicks from passing through to the game world.
-        // Right-clicks and other buttons should always be processed for viewport navigation.
         if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
         {
             return;
+        }
+
+        // When a pan begins, we MUST reset the "last position" to the current mouse position.
+        // This establishes a correct baseline for the first delta calculation in OnMouseMove.
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right)
+        {
+            _lastMousePos = new Vector2(_window.MouseState.X, _window.MouseState.Y);
         }
 
         Input.SetMouseButtonState(MapButton(e.Button), true);
