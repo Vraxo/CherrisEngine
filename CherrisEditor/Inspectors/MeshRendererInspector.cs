@@ -89,48 +89,78 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Texture Tiling");
         ImGui.TableSetColumnIndex(1);
-        var tiling = mr.TextureTiling;
-        if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling)) { mr.TextureTiling = tiling; dirty = true; }
-        HandleUndo(mr, nameof(mr.TextureTiling), mr.TextureTiling);
+        ImGui.PushItemWidth(-1);
+        var tilingBeforeEdit = mr.TextureTiling;
+        var tiling = tilingBeforeEdit;
+        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
+        {
+            mr.TextureTiling = tiling; dirty = true;
+        }
+        HandleUndo(mr, nameof(MeshRenderer.TextureTiling), tilingBeforeEdit);
+        ImGui.PopItemWidth();
+
 
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize))) { mr.TextureTiling = Vector2.One; dirty = true; }
-        HandleUndo(mr, nameof(mr.TextureTiling), mr.TextureTiling, true);
+        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            var valueBeforeReset = mr.TextureTiling;
+            if (valueBeforeReset != Vector2.One)
+            {
+                mr.TextureTiling = Vector2.One;
+                _history.Execute(new ChangePropertyCommand(mr, typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.TextureTiling)), valueBeforeReset, Vector2.One));
+                dirty = true;
+            }
+        }
 
 
         // Emissive Color
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Emissive Color");
         ImGui.TableSetColumnIndex(1);
-        var emissive = mr.EmissiveColor;
-        if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive)) { mr.EmissiveColor = emissive; dirty = true; }
-        HandleUndo(mr, nameof(mr.EmissiveColor), mr.EmissiveColor);
+        ImGui.PushItemWidth(-1);
+        var emissiveBeforeEdit = mr.EmissiveColor;
+        var emissive = emissiveBeforeEdit;
+        if (ImGui.ColorEdit3("##Emissive", ref emissive))
+        {
+            mr.EmissiveColor = emissive; dirty = true;
+        }
+        HandleUndo(mr, nameof(MeshRenderer.EmissiveColor), emissiveBeforeEdit);
+        ImGui.PopItemWidth();
+
 
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize))) { mr.EmissiveColor = Vector3.Zero; dirty = true; }
-        HandleUndo(mr, nameof(mr.EmissiveColor), mr.EmissiveColor, true);
+        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            var valueBeforeReset = mr.EmissiveColor;
+            if (valueBeforeReset != Vector3.Zero)
+            {
+                mr.EmissiveColor = Vector3.Zero;
+                _history.Execute(new ChangePropertyCommand(mr, typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.EmissiveColor)), valueBeforeReset, Vector3.Zero));
+                dirty = true;
+            }
+        }
 
         ImGui.EndTable();
         return dirty;
     }
 
-    private void HandleUndo(object target, string propertyName, object oldValue, bool force = false)
+    private void HandleUndo(object target, string propertyName, object valueBeforeEdit)
     {
         var property = target.GetType().GetProperty(propertyName);
         if (property == null) return;
 
-        if (ImGui.IsItemActivated() || force)
+        if (ImGui.IsItemActivated())
         {
-            _undoInitialValue = oldValue;
+            _undoInitialValue = valueBeforeEdit;
         }
 
-        if (ImGui.IsItemDeactivatedAfterEdit() || force)
+        if (ImGui.IsItemDeactivatedAfterEdit())
         {
-            object newValue = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(newValue))
+            object valueAfterEdit = property.GetValue(target);
+            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
             {
                 property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, newValue));
+                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
             }
             _undoInitialValue = null;
         }

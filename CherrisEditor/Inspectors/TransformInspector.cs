@@ -12,9 +12,7 @@ public class TransformInspector
 {
     private readonly EditorTextureManager _textureManager;
     private readonly HistoryManager _history;
-
-    private Vector3? _undoInitialVec3;
-    private string _activeUndoId = "";
+    private object _undoInitialValue;
 
     public TransformInspector(EditorTextureManager textureManager, HistoryManager history)
     {
@@ -27,8 +25,8 @@ public class TransformInspector
         bool dirty = false;
         if (!ImGui.BeginTable("TransformTable", 3)) return false;
 
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.25f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.70f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
         IntPtr resetIcon = _textureManager.GetTexture("Reset");
@@ -38,124 +36,109 @@ public class TransformInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Position");
         ImGui.TableSetColumnIndex(1);
-        Vector3 position = transform.Position;
-        if (DrawVector3Control("Position", ref position))
+        ImGui.PushItemWidth(-1);
+        var posBeforeEdit = transform.Position;
+        var position = posBeforeEdit;
+        if (ImGui.DragFloat3("##Position", ref position, 0.1f))
         {
             transform.Position = position;
             dirty = true;
         }
-        HandleVectorUndo("Position", transform.Position, transform);
+        HandleUndo(transform, nameof(Transform.Position), posBeforeEdit);
+        ImGui.PopItemWidth();
+
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            transform.Position = Vector3.Zero;
-            dirty = true;
+            var valueBeforeReset = transform.Position;
+            if (valueBeforeReset != Vector3.Zero)
+            {
+                transform.Position = Vector3.Zero;
+                _history.Execute(new ChangePropertyCommand(transform, typeof(Transform).GetProperty(nameof(Transform.Position)), valueBeforeReset, Vector3.Zero));
+                dirty = true;
+            }
         }
-        HandleVectorUndo("Position", transform.Position, transform, true);
 
         // Rotation
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Rotation");
         ImGui.TableSetColumnIndex(1);
-        Vector3 eulerDegrees = EngineMath.ToEulerAngles(transform.Rotation) * (180.0f / System.MathF.PI);
-        if (DrawVector3Control("Rotation", ref eulerDegrees))
+        ImGui.PushItemWidth(-1);
+        var rotBeforeEdit = transform.Rotation;
+        Vector3 eulerDegrees = EngineMath.ToEulerAngles(rotBeforeEdit) * (180.0f / System.MathF.PI);
+        if (ImGui.DragFloat3("##Rotation", ref eulerDegrees))
         {
             Vector3 eulerRadians = eulerDegrees * (System.MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
             dirty = true;
         }
-        HandleVectorUndo("Rotation", eulerDegrees, transform);
+        HandleUndo(transform, nameof(Transform.Rotation), rotBeforeEdit);
+        ImGui.PopItemWidth();
+
+
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            transform.Rotation = Quaternion.Identity;
-            dirty = true;
+            var valueBeforeReset = transform.Rotation;
+            if (valueBeforeReset != Quaternion.Identity)
+            {
+                transform.Rotation = Quaternion.Identity;
+                _history.Execute(new ChangePropertyCommand(transform, typeof(Transform).GetProperty(nameof(Transform.Rotation)), valueBeforeReset, Quaternion.Identity));
+                dirty = true;
+            }
         }
-        HandleVectorUndo("Rotation", eulerDegrees, transform, true);
 
         // Scale
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Scale");
         ImGui.TableSetColumnIndex(1);
-        Vector3 scale = transform.Scale;
-        if (DrawVector3Control("Scale", ref scale))
+        ImGui.PushItemWidth(-1);
+        var scaleBeforeEdit = transform.Scale;
+        var scale = scaleBeforeEdit;
+        if (ImGui.DragFloat3("##Scale", ref scale, 0.1f))
         {
             transform.Scale = scale;
             dirty = true;
         }
-        HandleVectorUndo("Scale", transform.Scale, transform);
+        HandleUndo(transform, nameof(Transform.Scale), scaleBeforeEdit);
+        ImGui.PopItemWidth();
+
+
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            transform.Scale = Vector3.One;
-            dirty = true;
+            var valueBeforeReset = transform.Scale;
+            if (valueBeforeReset != Vector3.One)
+            {
+                transform.Scale = Vector3.One;
+                _history.Execute(new ChangePropertyCommand(transform, typeof(Transform).GetProperty(nameof(Transform.Scale)), valueBeforeReset, Vector3.One));
+                dirty = true;
+            }
         }
-        HandleVectorUndo("Scale", transform.Scale, transform, true);
 
         ImGui.EndTable();
         return dirty;
     }
 
-    private void HandleVectorUndo(string id, Vector3 currentValue, Transform transform, bool force = false)
+    private void HandleUndo(object target, string propertyName, object valueBeforeEdit)
     {
-        if ((ImGui.IsItemActivated() || force) && _activeUndoId == "")
+        var property = target.GetType().GetProperty(propertyName);
+        if (property == null) return;
+
+        if (ImGui.IsItemActivated())
         {
-            _activeUndoId = id;
-            _undoInitialVec3 = currentValue;
+            _undoInitialValue = valueBeforeEdit;
         }
 
-        if ((ImGui.IsItemDeactivatedAfterEdit() || force) && _activeUndoId == id)
+        if (ImGui.IsItemDeactivatedAfterEdit())
         {
-            if (_undoInitialVec3.HasValue && _undoInitialVec3.Value != currentValue)
+            object valueAfterEdit = property.GetValue(target);
+            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
             {
-                var oldValue = _undoInitialVec3.Value;
-                PropertyInfo propInfo = typeof(Transform).GetProperty(id);
-
-                ICommand command = null;
-                if (id == "Rotation")
-                {
-                    var oldQuat = Quaternion.CreateFromYawPitchRoll(oldValue.Y * (MathF.PI / 180.0f), oldValue.X * (MathF.PI / 180.0f), oldValue.Z * (MathF.PI / 180.0f));
-                    var newQuat = Quaternion.CreateFromYawPitchRoll(currentValue.Y * (MathF.PI / 180.0f), currentValue.X * (MathF.PI / 180.0f), currentValue.Z * (MathF.PI / 180.0f));
-                    transform.Rotation = oldQuat; // Revert
-                    command = new ChangePropertyCommand(transform, propInfo, oldQuat, newQuat);
-                }
-                else if (propInfo != null)
-                {
-                    propInfo.SetValue(transform, oldValue); // Revert
-                    command = new ChangePropertyCommand(transform, propInfo, oldValue, currentValue);
-                }
-
-                if (command != null)
-                {
-                    _history.Execute(command);
-                }
+                property.SetValue(target, _undoInitialValue);
+                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
             }
-
-            _activeUndoId = "";
-            _undoInitialVec3 = null;
+            _undoInitialValue = null;
         }
-    }
-
-    private static bool DrawVector3Control(string label, ref Vector3 values)
-    {
-        bool valueChanged = false;
-        ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - ImGui.CalcTextSize("X").X * 3) / 3.0f;
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("Z"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true; ImGui.PopItemWidth();
-        ImGui.PopID();
-
-        return valueChanged;
     }
 }
