@@ -486,7 +486,6 @@ public abstract class Engine
     public readonly SceneLoader SceneLoader;
     public readonly SceneManager SceneManager;
     public IRenderer Renderer { get; }
-    public string CurrentScenePath { get; protected set; }
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly RenderingInterface _backend;
@@ -916,6 +915,7 @@ public class GameWindow : IGameWindow
     public float Width => SdlWindow.Width;
     public float Height => SdlWindow.Height;
     public event Action Resized;
+    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 
     public bool IsMouseLocked
     {
@@ -2078,6 +2078,123 @@ public class ResourceManager : IResourceManager
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Scene.cs">
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+
+namespace Cherris
+{
+    public class Scene : IDisposable
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string Name { get; set; }
+        public string FilePath { get; set; }
+        public List<GameObject> GameObjects { get; } = new List<GameObject>();
+        public Camera MainCamera { get; private set; }
+        public Skybox Skybox { get; private set; }
+        public bool IsDirty { get; set; }
+
+        public Scene(string filePath, List<GameObject> gameObjects)
+        {
+            FilePath = filePath;
+            Name = string.IsNullOrEmpty(filePath) ? "Untitled Scene" : Path.GetFileName(filePath);
+            GameObjects.AddRange(gameObjects);
+            FindMainComponents();
+        }
+
+        public void AddGameObject(GameObject go)
+        {
+            GameObjects.Add(go);
+            IsDirty = true;
+        }
+
+        public void RemoveGameObject(GameObject go)
+        {
+            // Recursively remove children first to avoid modifying collection during iteration
+            foreach (var childTransform in go.Transform.Children.ToList())
+            {
+                RemoveGameObject(childTransform.GameObject);
+            }
+
+            // Remove the object from its parent's list
+            go.Transform.Parent = null;
+
+            // Remove from the root scene list
+            GameObjects.Remove(go);
+
+            // Dispose its managed resources
+            go.GetComponent<MeshRenderer>()?.Dispose();
+            IsDirty = true;
+        }
+
+        public void Start()
+        {
+            FindMainComponents();
+
+            // Initialize scripts
+            foreach (var gameObject in GameObjects)
+            {
+                foreach (var script in gameObject.GetComponents<Script>())
+                {
+                    script.Start();
+                }
+            }
+
+            // Handle case where no camera was found in the scene
+            if (MainCamera is null)
+            {
+                CreateDefaultCamera();
+            }
+        }
+
+        public void Update(float deltaTime)
+        {
+            foreach (var gameObject in GameObjects)
+            {
+                foreach (var script in gameObject.GetComponents<Script>())
+                {
+                    if (script.Enabled)
+                    {
+                        script.Update(deltaTime);
+                    }
+                }
+            }
+        }
+
+        public void FindMainComponents()
+        {
+            MainCamera = null;
+            Skybox = null;
+            foreach (var gameObject in GameObjects)
+            {
+                if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
+                if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
+            }
+        }
+
+        private void CreateDefaultCamera()
+        {
+            Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
+            var go = new GameObject("Default Camera");
+            go.Transform.Position = new Vector3(0, 1, 3);
+            MainCamera = go.AddComponent(new Camera());
+            GameObjects.Add(go);
+        }
+
+        public void Dispose()
+        {
+            foreach (var gameObject in GameObjects)
+            {
+                gameObject.GetComponent<MeshRenderer>()?.Dispose();
+            }
+        }
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneLoader.cs">
 using System;
 using System.Collections.Generic;
@@ -2245,108 +2362,99 @@ public class SceneLoader
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\SceneManager.cs">
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
-using System.Numerics;
-using Veldrid.StartupUtilities;
-using Veldrid;
 
 namespace Cherris;
 
 public class SceneManager
 {
-    private readonly List<GameObject> _gameObjects = new();
+    private readonly List<Scene> _openScenes = new();
+    private Scene _activeScene;
+    public event Action<Scene> OnActiveSceneChanged;
 
-    public Camera MainCamera { get; private set; }
-    public Skybox Skybox { get; private set; }
-    public IEnumerable<GameObject> GameObjects => _gameObjects;
+
+    public Scene ActiveScene => _activeScene;
+    public IReadOnlyList<Scene> OpenScenes => _openScenes;
+
+    public Camera MainCamera => _activeScene?.MainCamera;
+    public Skybox Skybox => _activeScene?.Skybox;
+    public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
 
     public void AddGameObject(GameObject go)
     {
-        _gameObjects.Add(go);
+        _activeScene?.AddGameObject(go);
     }
 
     public void RemoveGameObject(GameObject go)
     {
-        // Recursively remove children first to avoid modifying collection during iteration
-        foreach (var childTransform in go.Transform.Children.ToList())
-        {
-            RemoveGameObject(childTransform.GameObject);
-        }
-
-        // Remove the object from its parent's list
-        go.Transform.Parent = null;
-
-        // Remove from the root scene list
-        _gameObjects.Remove(go);
-
-        // Dispose its managed resources
-        go.GetComponent<MeshRenderer>()?.Dispose();
+        _activeScene?.RemoveGameObject(go);
     }
 
-    public void SetScene(List<GameObject> gameObjects)
+    public void OpenScene(Scene scene)
     {
-        _gameObjects.Clear();
-        _gameObjects.AddRange(gameObjects);
-        MainCamera = null;
-        Skybox = null;
+        if (_openScenes.All(s => s.Id != scene.Id))
+        {
+            _openScenes.Add(scene);
+        }
+        _activeScene = scene;
+        OnActiveSceneChanged?.Invoke(_activeScene);
+    }
+
+    public void CloseScene(Scene scene)
+    {
+        if (scene == null) return;
+
+        int sceneIndex = _openScenes.IndexOf(scene);
+        if (sceneIndex == -1) return;
+
+        scene.Dispose();
+        _openScenes.RemoveAt(sceneIndex);
+
+        if (_activeScene == scene)
+        {
+            if (_openScenes.Count > 0)
+            {
+                // Set the active scene to the one before the closed one, or the first one
+                _activeScene = _openScenes[Math.Max(0, sceneIndex - 1)];
+            }
+            else
+            {
+                _activeScene = null;
+            }
+            OnActiveSceneChanged?.Invoke(_activeScene);
+        }
+    }
+
+    public void SetActiveScene(Scene scene)
+    {
+        if (scene != null && _openScenes.Contains(scene) && _activeScene != scene)
+        {
+            _activeScene = scene;
+            OnActiveSceneChanged?.Invoke(_activeScene);
+        }
     }
 
     public void Start()
     {
-        // First pass: find essential components
-        foreach (var gameObject in _gameObjects)
-        {
-            if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
-            if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
-        }
-
-        // Second pass: initialize scripts
-        foreach (var gameObject in _gameObjects)
-        {
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                script.Start();
-            }
-        }
-
-        // Handle case where no camera was found in the scene
-        if (MainCamera is null)
-        {
-            CreateDefaultCamera();
-        }
-    }
-
-    private void CreateDefaultCamera()
-    {
-        Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
-        var go = new GameObject("Default Camera");
-        go.Transform.Position = new Vector3(0, 1, 3);
-        MainCamera = go.AddComponent(new Camera());
-        _gameObjects.Add(go);
+        // Start only the active scene when entering play mode.
+        _activeScene?.Start();
     }
 
     public void Update(float deltaTime)
     {
-        foreach (var gameObject in _gameObjects)
-        {
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                if (script.Enabled)
-                {
-                    script.Update(deltaTime);
-                }
-            }
-        }
+        // Only update the active scene.
+        _activeScene?.Update(deltaTime);
     }
+
+
 
     public void Dispose()
     {
-        foreach (var gameObject in _gameObjects)
+        foreach (var scene in _openScenes)
         {
-            gameObject.GetComponent<MeshRenderer>()?.Dispose();
+            scene.Dispose();
         }
+        _openScenes.Clear();
     }
 }
 </file>
@@ -4857,6 +4965,7 @@ using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 using ImGuiNET;
+using System;
 
 namespace Cherris.OpenTK;
 
@@ -4873,6 +4982,7 @@ public class OpenTKGameWindow : IGameWindow
     public event Action Resized;
 
     public unsafe IntPtr Handle => (IntPtr)_window.WindowPtr;
+    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 
     public bool IsMouseLocked
     {
@@ -4959,30 +5069,26 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseMove(new Vector2(e.X, e.Y));
 
-        if (ImGui.GetIO().WantCaptureMouse)
+        // If ImGui wants the mouse, but we're holding RMB for camera control, let it pass through.
+        if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
             Input.SetMouseDelta(System.Numerics.Vector2.Zero);
+            _lastMousePos = new Vector2(e.X, e.Y);
+            _firstMove = true;
             return;
         }
 
-        if (IsMouseLocked)
+        if (_firstMove)
         {
-            if (_firstMove)
-            {
-                _lastMousePos = new Vector2(e.X, e.Y);
-                _firstMove = false;
-            }
-
-            var deltaX = e.X - _lastMousePos.X;
-            var deltaY = e.Y - _lastMousePos.Y;
             _lastMousePos = new Vector2(e.X, e.Y);
+            _firstMove = false;
+        }
 
-            Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
-        }
-        else
-        {
-            Input.SetMouseDelta(System.Numerics.Vector2.Zero);
-        }
+        var deltaX = e.X - _lastMousePos.X;
+        var deltaY = e.Y - _lastMousePos.Y;
+        _lastMousePos = new Vector2(e.X, e.Y);
+
+        Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
         Input.SetMousePosition(new System.Numerics.Vector2(e.X, e.Y));
     }
 
@@ -5036,7 +5142,13 @@ public class OpenTKGameWindow : IGameWindow
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
-        if (ImGui.GetIO().WantCaptureMouse) return;
+
+        bool ignoreImGui = ShouldIgnoreImGuiCapture?.Invoke() ?? false;
+
+        if (ImGui.GetIO().WantCaptureMouse && !ignoreImGui)
+        {
+            return;
+        }
 
         Input.SetMouseWheelDelta(new System.Numerics.Vector2(e.OffsetX, e.OffsetY));
     }
@@ -5469,6 +5581,7 @@ public interface IGameWindow : IDisposable
     void ProcessEvents();
     void SwapBuffers();
     event Action Resized;
+    Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 }
 </file>
 
@@ -5542,13 +5655,15 @@ namespace CherrisEditor;
 
 public class ContentBrowserPanel : IDisposable
 {
+    private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
     private readonly string _assetRootPath;
     private string _currentAssetPath;
     private static IntPtr _payloadPtr = IntPtr.Zero;
 
-    public ContentBrowserPanel(EditorTextureManager textureManager)
+    public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
+        _editor = editor;
         _textureManager = textureManager;
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
@@ -5645,9 +5760,16 @@ public class ContentBrowserPanel : IDisposable
             }
         }
 
-        if (Directory.Exists(path) && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
-            _currentAssetPath = path;
+            if (Directory.Exists(path))
+            {
+                _currentAssetPath = path;
+            }
+            else if (Path.GetExtension(path).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
+            {
+                _editor.LoadSceneFromFile(path);
+            }
         }
 
         CenterAlignText(itemName);
@@ -5686,6 +5808,7 @@ public class ContentBrowserPanel : IDisposable
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Editor.cs">
 using Cherris;
+using Cherris.OpenTK;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -5702,6 +5825,7 @@ public class Editor : Engine
     private EditorAppLogic? _editorAppLogic;
     public List<Type> AvailableScriptTypes { get; } = new();
     public EditorState State { get; private set; } = EditorState.Editing;
+    public bool IsViewportHovered { get; set; }
 
     private AssemblyLoadContext _gameAssemblyContext;
 
@@ -5794,7 +5918,13 @@ public class Editor : Engine
     {
         _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
+        SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
         InitializeEditingState();
+
+        if (_backend.GameWindow is OpenTKGameWindow otkWindow)
+        {
+            otkWindow.ShouldIgnoreImGuiCapture = () => this.IsViewportHovered;
+        }
     }
 
     protected override void Update(float deltaTime)
@@ -5806,26 +5936,56 @@ public class Editor : Engine
 
     private void InitializeEditingState()
     {
-        SetAllScriptsEnabled(false);
-        GameObject? cameraGo = SceneManager.MainCamera?.GameObject;
+        SetupSceneForEditing(SceneManager.ActiveScene);
+    }
+
+    private void ReloadSceneForEditing()
+    {
+        var activeScene = SceneManager.ActiveScene;
+        if (activeScene is null) return;
+
+        string path = activeScene.FilePath;
+        SceneManager.CloseScene(activeScene);
+        LoadSceneFromFile(path);
+
+        // The OnActiveSceneChanged event will handle calling SetupSceneForEditing automatically.
+    }
+
+    private void SetupSceneForEditing(Scene scene)
+    {
+        if (scene is null) return;
+
+        foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        {
+            script.Enabled = false;
+        }
+
+        GameObject? cameraGo = scene.MainCamera?.GameObject;
         if (cameraGo is not null)
         {
             EnsureEditorControllerEnabled(cameraGo);
         }
     }
 
-    private void ReloadSceneForEditing()
-    {
-        LoadSceneFromFile(CurrentScenePath);
-        SceneManager.Start();
-        InitializeEditingState();
-    }
 
-    private void LoadSceneFromFile(string scenePath)
+    public void LoadSceneFromFile(string scenePath)
     {
-        CurrentScenePath = scenePath;
+        var existingScene = SceneManager.OpenScenes.FirstOrDefault(s => s.FilePath == scenePath);
+        if (existingScene != null)
+        {
+            SceneManager.SetActiveScene(existingScene);
+            return;
+        }
+
+        if (!File.Exists(scenePath))
+        {
+            Console.WriteLine($"[Editor] Scene file not found: {scenePath}");
+            return;
+        }
+
         List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
-        SceneManager.SetScene(loadedObjects);
+        var newScene = new Scene(scenePath, loadedObjects);
+        SceneManager.OpenScene(newScene);
     }
 
     private void CompileAndRegisterGameScripts()
@@ -5872,14 +6032,6 @@ public class Editor : Engine
         Console.WriteLine($"[Editor] Registered custom component: {scriptType.Name}");
     }
 
-    private void SetAllScriptsEnabled(bool isEnabled)
-    {
-        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
-        {
-            script.Enabled = isEnabled;
-        }
-    }
-
     private void SetScriptsEnabledForPlayMode()
     {
         foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
@@ -5896,10 +6048,10 @@ public class Editor : Engine
         }
     }
 
-    private static void EnsureEditorControllerEnabled(GameObject cameraGo)
+    private void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
         EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        editorController ??= cameraGo.AddComponent(new EditorController());
+        editorController ??= cameraGo.AddComponent(new EditorController(this));
         editorController.Enabled = true;
     }
 
@@ -5943,12 +6095,14 @@ using CherrisEditor.UI;
 using ImGuiNET;
 using ImGuizmoNET;
 using System;
+using System.Linq;
 using System.Numerics;
 
 namespace CherrisEditor;
 
 public class EditorAppLogic : IDisposable
 {
+    private readonly Editor _editor;
     private readonly SceneSerializer _sceneSerializer;
 
     private readonly MenuBar _menuBar;
@@ -5961,6 +6115,7 @@ public class EditorAppLogic : IDisposable
 
     public EditorAppLogic(Editor editor)
     {
+        _editor = editor;
         _textureManager = new EditorTextureManager();
         _sceneSerializer = new SceneSerializer();
 
@@ -5969,7 +6124,7 @@ public class EditorAppLogic : IDisposable
         _viewportPanel = new ViewportPanel(editor);
         _outlinerPanel = new OutlinerPanel(editor);
         _inspectorPanel = new InspectorPanel(editor, _textureManager);
-        _contentBrowserPanel = new ContentBrowserPanel(_textureManager);
+        _contentBrowserPanel = new ContentBrowserPanel(editor, _textureManager);
 
         EditorTheme.ApplyUnrealEngineStyle();
 
@@ -6047,8 +6202,8 @@ public class EditorAppLogic : IDisposable
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorController.cs">
 using Cherris;
-using ImGuiNET;
 using ImGuizmoNET;
+using System;
 using System.Numerics;
 
 namespace CherrisEditor;
@@ -6061,23 +6216,25 @@ public class EditorController : Script
 
     private float _yaw;
     private float _pitch;
+    private readonly Editor _editor;
+
+    public EditorController(Editor editor)
+    {
+        _editor = editor;
+    }
 
     public override void Start()
     {
         Quaternion initialRotation = GameObject.Transform.Rotation;
         Vector3 direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
-        
-        _yaw = float.Atan2(direction.X, -direction.Z);
-        _pitch = float.Asin(direction.Y);
+
+        _yaw = MathF.Atan2(direction.X, -direction.Z);
+        _pitch = MathF.Asin(direction.Y);
     }
 
     public override void Update(float deltaTime)
     {
-        ImGui.Begin("Viewport");
-        bool isViewportHovered = ImGui.IsWindowHovered();
-        ImGui.End();
-
-        if (!isViewportHovered || ImGuizmo.IsUsing())
+        if (!_editor.IsViewportHovered || ImGuizmo.IsUsing())
         {
             return;
         }
@@ -6087,61 +6244,56 @@ public class EditorController : Script
 
     private void HandleInput(float deltaTime)
     {
-        ImGuiIOPtr io = ImGui.GetIO();
-
-        HandleMouseZoom(ref io);
-        HandleKeyboardMovement(deltaTime, Speed, io);
-        HandleMouseLook(io);
+        HandleMouseZoom();
+        HandleKeyboardMovement(deltaTime);
+        HandleMouseLook();
     }
 
-    private void HandleMouseZoom(ref ImGuiIOPtr io)
+    private void HandleMouseZoom()
     {
-        if (io.MouseWheel == 0)
+        float mouseWheelDelta = Input.MouseWheelDelta.Y;
+        if (mouseWheelDelta == 0)
         {
             return;
         }
 
         Vector3 forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
-        GameObject.Transform.Position += forward * io.MouseWheel * ZoomSensitivity;
+        GameObject.Transform.Position += forward * mouseWheelDelta * ZoomSensitivity;
     }
 
-    private void HandleKeyboardMovement(float deltaTime, float currentSpeed, ImGuiIOPtr io)
+    private void HandleKeyboardMovement(float deltaTime)
     {
-        if (io.KeyShift)
+        float currentSpeed = Speed;
+        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
         {
             currentSpeed *= 3.0f; // Speed boost
         }
 
-        Vector3 localMove = Vector3.Zero;
+        var localMove = Vector3.Zero;
 
-        if (ImGui.IsKeyDown(ImGuiKey.W))
+        if (Input.IsKeyDown(Key.W))
         {
             localMove.Z -= 1;
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.S))
+        if (Input.IsKeyDown(Key.S))
         {
             localMove.Z += 1;
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.A))
+        if (Input.IsKeyDown(Key.A))
         {
             localMove.X -= 1;
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.D))
+        if (Input.IsKeyDown(Key.D))
         {
             localMove.X += 1;
         }
 
         float worldVerticalMove = 0f;
-
-        if (ImGui.IsKeyDown(ImGuiKey.E))
+        if (Input.IsKeyDown(Key.E))
         {
             worldVerticalMove += 1; // Up
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.Q))
+        if (Input.IsKeyDown(Key.Q))
         {
             worldVerticalMove -= 1; // Down
         }
@@ -6153,7 +6305,7 @@ public class EditorController : Script
 
         Quaternion yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
         Vector3 worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-        Vector3 finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+        var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
 
         if (finalMove.LengthSquared() > 0)
         {
@@ -6161,17 +6313,17 @@ public class EditorController : Script
         }
     }
 
-    private void HandleMouseLook(ImGuiIOPtr io)
+    private void HandleMouseLook()
     {
-        if (!ImGui.IsMouseDown(ImGuiMouseButton.Right))
+        if (!Input.IsMouseButtonDown(MouseButton.Right))
         {
             return;
         }
 
-        Vector2 mouseDelta = io.MouseDelta;
+        Vector2 mouseDelta = Input.MouseDelta;
         _yaw -= mouseDelta.X * MouseSensitivity;
         _pitch -= mouseDelta.Y * MouseSensitivity;
-        _pitch = float.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
 
         GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
                                         Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
@@ -7389,10 +7541,12 @@ public class MenuBar
         {
             if (ImGui.MenuItem("Save"))
             {
-                if (!string.IsNullOrEmpty(_editor.CurrentScenePath))
+                var activeScene = _editor.SceneManager.ActiveScene;
+                if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
                 {
-                    _sceneSerializer.SaveScene(_editor.SceneManager.GameObjects, _editor.CurrentScenePath);
-                    Console.WriteLine($"[Editor] Scene saved to '{_editor.CurrentScenePath}'");
+                    _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
+                    activeScene.IsDirty = false;
+                    Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
                 }
             }
             ImGui.Separator();
@@ -7565,6 +7719,7 @@ using Cherris.OpenTK;
 using ImGuiNET;
 using ImGuizmoNET;
 using System;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -7597,42 +7752,92 @@ public class ViewportPanel
     public void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        ImGui.Begin("Viewport");
+        ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-        bool isViewportHovered = ImGui.IsWindowHovered();
-        var currentSize = ImGui.GetContentRegionAvail();
+        var openScenes = _editor.SceneManager.OpenScenes.ToList();
+        var activeScene = _editor.SceneManager.ActiveScene;
 
-        if (_editor.Renderer is OpenTKRenderer otkRenderer)
+        // Default the viewport to not hovered. It will be set to true only if the image within the active tab is hovered.
+        _editor.IsViewportHovered = false;
+
+        if (ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
         {
-            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+            if (openScenes.Count == 0)
             {
-                _viewportSize = currentSize;
-                otkRenderer.SetViewportSize(_viewportSize);
+                if (ImGui.BeginTabItem("No Scene"))
+                {
+                    ImGui.Text("No scene loaded. Open a scene from the Content Browser.");
+                    ImGui.EndTabItem();
+                }
             }
 
-            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
-            if (textureHandle != IntPtr.Zero)
+            foreach (var scene in openScenes)
             {
-                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+                bool isOpen = true;
+                ImGuiTabItemFlags flags = scene.IsDirty ? ImGuiTabItemFlags.UnsavedDocument : ImGuiTabItemFlags.None;
+                if (scene == activeScene)
+                {
+                    flags |= ImGuiTabItemFlags.SetSelected;
+                }
+
+                if (ImGui.BeginTabItem(scene.Name, ref isOpen, flags))
+                {
+                    if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
+                    {
+                        _editor.SceneManager.SetActiveScene(scene);
+                    }
+
+                    // Only render the viewport content for the currently active scene
+                    if (scene == activeScene)
+                    {
+                        var currentSize = ImGui.GetContentRegionAvail();
+
+                        if (_editor.Renderer is OpenTKRenderer otkRenderer)
+                        {
+                            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+                            {
+                                _viewportSize = currentSize;
+                                otkRenderer.SetViewportSize(_viewportSize);
+                            }
+
+                            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
+                            if (textureHandle != IntPtr.Zero)
+                            {
+                                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+                            }
+                        }
+                        else
+                        {
+                            if (currentSize.X > 0 && currentSize.Y > 0)
+                            {
+                                _viewportSize = currentSize;
+                            }
+                        }
+
+                        _editor.IsViewportHovered = ImGui.IsItemHovered();
+
+                        var viewportPos = ImGui.GetItemRectMin();
+                        var viewportSize = ImGui.GetItemRectSize();
+
+                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
+                        {
+                            HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
+                        }
+
+                        DrawGizmo(viewportPos, viewportSize);
+                    }
+
+                    ImGui.EndTabItem();
+                }
+
+                if (!isOpen)
+                {
+                    // TODO: Prompt to save if dirty
+                    _editor.SceneManager.CloseScene(scene);
+                }
             }
+            ImGui.EndTabBar();
         }
-        else
-        {
-            if (currentSize.X > 0 && currentSize.Y > 0)
-            {
-                _viewportSize = currentSize;
-            }
-        }
-
-        var viewportPos = ImGui.GetItemRectMin();
-        var viewportSize = ImGui.GetItemRectSize();
-
-        if (isViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
-        {
-            HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
-        }
-
-        DrawGizmo(viewportPos, viewportSize);
 
         ImGui.End();
         ImGui.PopStyleVar();
@@ -7652,7 +7857,12 @@ public class ViewportPanel
             var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
             var objectMatrix = selectedObject.Transform.GetModelMatrix();
 
-            if (ImGuizmo.Manipulate(ref Unsafe.As<Matrix4x4, float>(ref cameraView), ref Unsafe.As<Matrix4x4, float>(ref cameraProjection), _currentOperation, MODE.LOCAL, ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+            if (ImGuizmo.Manipulate(
+                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
+                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
+                _currentOperation,
+                MODE.LOCAL,
+                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
             {
                 Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
                 selectedObject.Transform.Position = position;

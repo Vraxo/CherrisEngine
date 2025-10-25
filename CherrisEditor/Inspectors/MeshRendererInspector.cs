@@ -20,11 +20,12 @@ public class MeshRendererInspector : IComponentInspector
         _textureManager = textureManager;
     }
 
-    public unsafe void Draw(Component component)
+    public unsafe bool Draw(Component component)
     {
         var mr = (MeshRenderer)component;
+        bool dirty = false;
 
-        if (!ImGui.BeginTable("MRTable", 3)) return;
+        if (!ImGui.BeginTable("MRTable", 3)) return false;
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
@@ -62,6 +63,7 @@ public class MeshRendererInspector : IComponentInspector
                     var newTexture = _editor.ResourceManager.GetTexture(textureName);
                     mr.TextureName = textureName;
                     mr.Texture = newTexture;
+                    dirty = true;
                 }
             }
             ImGui.EndDragDropTarget();
@@ -75,6 +77,7 @@ public class MeshRendererInspector : IComponentInspector
         {
             mr.TextureName = "White";
             mr.Texture = _editor.ResourceManager.GetTexture("White");
+            dirty = true;
         }
 
         // Tiling
@@ -86,9 +89,14 @@ public class MeshRendererInspector : IComponentInspector
         if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling))
         {
             mr.TextureTiling = tiling;
+            dirty = true;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize))) mr.TextureTiling = Vector2.One;
+        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            mr.TextureTiling = Vector2.One;
+            dirty = true;
+        }
 
         // Emissive Color
         ImGui.TableNextRow();
@@ -99,13 +107,16 @@ public class MeshRendererInspector : IComponentInspector
         if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive))
         {
             mr.EmissiveColor = emissive;
+            dirty = true;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize))) mr.EmissiveColor = Vector3.Zero;
+        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            mr.EmissiveColor = Vector3.Zero;
+            dirty = true;
+        }
 
         ImGui.EndTable();
+        return dirty;
     }
-
-    // This method is required by the interface but isn't used for custom inspectors.
-    void IComponentInspector.Draw(Component component) => Draw(component);
 }

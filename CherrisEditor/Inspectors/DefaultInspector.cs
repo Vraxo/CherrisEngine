@@ -18,10 +18,11 @@ public class DefaultInspector : IComponentInspector
         _textureManager = textureManager;
     }
 
-    public void Draw(Component component)
+    public bool Draw(Component component)
     {
+        bool dirty = false;
         Type componentType = component.GetType();
-        if (!ImGui.BeginTable(componentType.Name + "Table", 3)) return;
+        if (!ImGui.BeginTable(componentType.Name + "Table", 3)) return false;
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
@@ -42,7 +43,10 @@ public class DefaultInspector : IComponentInspector
 
             ImGui.TableSetColumnIndex(1);
             ImGui.PushItemWidth(-1.0f);
-            DrawPropertyControl(component, prop);
+            if (DrawPropertyControl(component, prop))
+            {
+                dirty = true;
+            }
             ImGui.PopItemWidth();
 
             ImGui.TableSetColumnIndex(2);
@@ -52,16 +56,19 @@ public class DefaultInspector : IComponentInspector
                 if (defaultValue != null)
                 {
                     prop.SetValue(component, defaultValue);
+                    dirty = true;
                 }
             }
         }
 
         ImGui.EndTable();
+        return dirty;
     }
 
-    private void DrawPropertyControl(object instance, PropertyInfo prop)
+    private bool DrawPropertyControl(object instance, PropertyInfo prop)
     {
         object currentValue = prop.GetValue(instance);
+        bool valueChanged = false;
 
         if (prop.PropertyType == typeof(float))
         {
@@ -69,6 +76,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(int))
@@ -77,6 +85,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.DragInt($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(bool))
@@ -85,6 +94,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.Checkbox($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(string))
@@ -93,6 +103,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.InputText($"##{prop.Name}", ref val, 256))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(Vector2))
@@ -102,6 +113,7 @@ public class DefaultInspector : IComponentInspector
             if (DrawVector2Control($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
             ImGui.PushItemWidth(-1.0f); // Push it back
         }
@@ -114,12 +126,14 @@ public class DefaultInspector : IComponentInspector
                 if (DrawColor3Control($"##{prop.Name}", ref val))
                 {
                     prop.SetValue(instance, val);
+                    valueChanged = true;
                 }
                 ImGui.PushItemWidth(-1.0f); // Push it back for subsequent controls
             }
             else if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(Vector4))
@@ -131,18 +145,21 @@ public class DefaultInspector : IComponentInspector
                 if (DrawColor4Control($"##{prop.Name}", ref val))
                 {
                     prop.SetValue(instance, val);
+                    valueChanged = true;
                 }
                 ImGui.PushItemWidth(-1.0f);
             }
             else if (ImGui.DragFloat4($"##{prop.Name}", ref val, 0.1f))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else
         {
             ImGui.Text(currentValue?.ToString() ?? "null");
         }
+        return valueChanged;
     }
 
     public static bool DrawVector2Control(string label, ref Vector2 values)

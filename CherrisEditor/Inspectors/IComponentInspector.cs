@@ -4,5 +4,5 @@ namespace CherrisEditor.Inspectors;
 
 public interface IComponentInspector
 {
-    void Draw(Component component);
+    bool Draw(Component component);
 }

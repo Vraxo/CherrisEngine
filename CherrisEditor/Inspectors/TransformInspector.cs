@@ -14,9 +14,10 @@ public class TransformInspector
         _textureManager = textureManager;
     }
 
-    public void Draw(Transform transform)
+    public bool Draw(Transform transform)
     {
-        if (!ImGui.BeginTable("TransformTable", 3)) return;
+        bool dirty = false;
+        if (!ImGui.BeginTable("TransformTable", 3)) return false;
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
@@ -31,9 +32,17 @@ public class TransformInspector
         ImGui.Text("Position");
         ImGui.TableSetColumnIndex(1);
         Vector3 position = transform.Position;
-        if (DrawVector3Control("Position", ref position)) transform.Position = position;
+        if (DrawVector3Control("Position", ref position))
+        {
+            transform.Position = position;
+            dirty = true;
+        }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Position = Vector3.Zero;
+        if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            transform.Position = Vector3.Zero;
+            dirty = true;
+        }
 
         // Rotation
         ImGui.TableNextRow();
@@ -45,9 +54,14 @@ public class TransformInspector
         {
             Vector3 eulerRadians = eulerDegrees * (System.MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+            dirty = true;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Rotation = Quaternion.Identity;
+        if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            transform.Rotation = Quaternion.Identity;
+            dirty = true;
+        }
 
         // Scale
         ImGui.TableNextRow();
@@ -55,11 +69,20 @@ public class TransformInspector
         ImGui.Text("Scale");
         ImGui.TableSetColumnIndex(1);
         Vector3 scale = transform.Scale;
-        if (DrawVector3Control("Scale", ref scale)) transform.Scale = scale;
+        if (DrawVector3Control("Scale", ref scale))
+        {
+            transform.Scale = scale;
+            dirty = true;
+        }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Scale = Vector3.One;
+        if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            transform.Scale = Vector3.One;
+            dirty = true;
+        }
 
         ImGui.EndTable();
+        return dirty;
     }
 
     private static bool DrawVector3Control(string label, ref Vector3 values)

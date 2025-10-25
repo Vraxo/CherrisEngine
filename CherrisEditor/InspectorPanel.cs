@@ -85,6 +85,7 @@ internal class InspectorPanel
         if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
         {
             go.Name = name;
+            _editor.SceneManager.ActiveScene.IsDirty = true;
         }
         ImGui.Separator();
 
@@ -92,7 +93,10 @@ internal class InspectorPanel
         DrawComponentHeader("Transform", typeof(Transform));
         if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            _transformInspector.Draw(go.Transform);
+            if (_transformInspector.Draw(go.Transform))
+            {
+                _editor.SceneManager.ActiveScene.IsDirty = true;
+            }
         }
         ImGui.PopID();
 
@@ -111,6 +115,7 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Remove Component"))
                 {
                     go.RemoveComponent(component);
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
                     ImGui.EndPopup();
                     ImGui.PopID();
                     return;
@@ -120,13 +125,18 @@ internal class InspectorPanel
 
             if (headerOpen)
             {
+                bool componentChanged = false;
                 if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
                 {
-                    customInspector.Draw(component);
+                    if (customInspector.Draw(component)) componentChanged = true;
                 }
                 else
                 {
-                    _defaultInspector.Draw(component);
+                    if (_defaultInspector.Draw(component)) componentChanged = true;
+                }
+                if (componentChanged)
+                {
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
                 }
             }
             ImGui.PopID();
@@ -191,6 +201,7 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Camera"))
                 {
                     go.AddComponent(new Camera());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
                     ImGui.CloseCurrentPopup();
                 }
             }
@@ -208,6 +219,7 @@ internal class InspectorPanel
                 {
                     var newComponent = (Script)Activator.CreateInstance(scriptType);
                     go.AddComponent(newComponent);
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
 
                     if (_editor.State != EditorState.Playing)
                     {
@@ -233,6 +245,7 @@ internal class InspectorPanel
                     {
                         var newComponent = (Script)Activator.CreateInstance(newScriptType);
                         go.AddComponent(newComponent);
+                        _editor.SceneManager.ActiveScene.IsDirty = true;
                         if (_editor.State != EditorState.Playing)
                         {
                             newComponent.Enabled = false;
