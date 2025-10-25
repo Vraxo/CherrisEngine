@@ -121,7 +121,7 @@ public class Editor : Engine
     {
         SetAllScriptsEnabled(false);
         GameObject? cameraGo = SceneManager.MainCamera?.GameObject;
-        if (cameraGo != null)
+        if (cameraGo is not null)
         {
             EnsureEditorControllerEnabled(cameraGo);
         }

@@ -40,7 +40,7 @@ public class Transform
                                 Matrix4x4.CreateFromQuaternion(Rotation) *
                                 Matrix4x4.CreateTranslation(Position);
 
-        if (Parent != null)
+        if (Parent is not null)
         {
             return localMatrix * Parent.GetModelMatrix();
         }

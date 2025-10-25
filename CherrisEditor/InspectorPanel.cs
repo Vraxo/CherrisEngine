@@ -45,7 +45,7 @@ internal class InspectorPanel
                 var constructor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
 
                 IComponentInspector instance;
-                if (constructor != null)
+                if (constructor is not null)
                 {
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, constructorArgs);
                 }
@@ -68,7 +68,7 @@ internal class InspectorPanel
     {
         ImGui.Begin("Details");
         GameObject? selectedObject = _editor.GetSelectedGameObject();
-        if (selectedObject != null)
+        if (selectedObject is not null)
         {
             DrawGameObjectProperties(selectedObject);
         }
@@ -229,7 +229,7 @@ internal class InspectorPanel
                     _editor.CreateAndCompileScript(scriptName);
 
                     Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
-                    if (newScriptType != null)
+                    if (newScriptType is not null)
                     {
                         var newComponent = (Script)Activator.CreateInstance(newScriptType);
                         go.AddComponent(newComponent);

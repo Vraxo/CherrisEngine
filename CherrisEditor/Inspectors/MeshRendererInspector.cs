@@ -79,13 +79,11 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableSetColumnIndex(0);
         ImGui.Text("Texture Tiling");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
         var tiling = mr.TextureTiling;
-        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
+        if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling))
         {
             mr.TextureTiling = tiling;
         }
-        ImGui.PopItemWidth();
         ImGui.TableSetColumnIndex(2);
         if (ImGui.Button("R##Tiling")) mr.TextureTiling = Vector2.One;
 
@@ -94,13 +92,11 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableSetColumnIndex(0);
         ImGui.Text("Emissive Color");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
         var emissive = mr.EmissiveColor;
-        if (ImGui.ColorEdit3("##Emissive", ref emissive))
+        if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive))
         {
             mr.EmissiveColor = emissive;
         }
-        ImGui.PopItemWidth();
         ImGui.TableSetColumnIndex(2);
         if (ImGui.Button("R##Emissive")) mr.EmissiveColor = Vector3.Zero;
 

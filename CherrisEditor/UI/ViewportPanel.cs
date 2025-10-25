@@ -84,7 +84,7 @@ public class ViewportPanel
         GameObject? selectedObject = _editor.GetSelectedGameObject();
         Camera? camera = _editor.SceneManager.MainCamera;
 
-        if (selectedObject != null && camera != null && viewportSize.X > 0 && viewportSize.Y > 0)
+        if (selectedObject is not null && camera is not null && viewportSize.X > 0 && viewportSize.Y > 0)
         {
             var cameraView = camera.GetViewMatrix();
             var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);

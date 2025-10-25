@@ -90,15 +90,43 @@ public class DefaultInspector : IComponentInspector
         else if (prop.PropertyType == typeof(Vector2))
         {
             var val = (Vector2)currentValue;
-            if (ImGui.DragFloat2($"##{prop.Name}", ref val, 0.1f))
+            ImGui.PopItemWidth(); // Pop the -1 width since the control manages its own
+            if (DrawVector2Control($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
             }
+            ImGui.PushItemWidth(-1.0f); // Push it back
         }
         else if (prop.PropertyType == typeof(Vector3))
         {
             var val = (Vector3)currentValue;
-            if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
+            if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
+            {
+                ImGui.PopItemWidth(); // Pop the -1 width since the control manages its own
+                if (DrawColor3Control($"##{prop.Name}", ref val))
+                {
+                    prop.SetValue(instance, val);
+                }
+                ImGui.PushItemWidth(-1.0f); // Push it back for subsequent controls
+            }
+            else if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
+            {
+                prop.SetValue(instance, val);
+            }
+        }
+        else if (prop.PropertyType == typeof(Vector4))
+        {
+            var val = (Vector4)currentValue;
+            if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
+            {
+                ImGui.PopItemWidth();
+                if (DrawColor4Control($"##{prop.Name}", ref val))
+                {
+                    prop.SetValue(instance, val);
+                }
+                ImGui.PushItemWidth(-1.0f);
+            }
+            else if (ImGui.DragFloat4($"##{prop.Name}", ref val, 0.1f))
             {
                 prop.SetValue(instance, val);
             }
@@ -107,6 +135,87 @@ public class DefaultInspector : IComponentInspector
         {
             ImGui.Text(currentValue?.ToString() ?? "null");
         }
+    }
+
+    public static bool DrawVector2Control(string label, ref Vector2 values)
+    {
+        bool valueChanged = false;
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - (ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X)) / 2.0f;
+
+        // X
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // Y
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true; ImGui.PopItemWidth();
+
+        ImGui.PopID();
+
+        return valueChanged;
+    }
+
+    public static bool DrawColor3Control(string label, ref Vector3 color)
+    {
+        bool valueChanged = false;
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X)) / 3.0f;
+
+        // R
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}R", ref color.X, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // G
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // B
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.1f)) valueChanged = true; ImGui.PopItemWidth();
+
+        ImGui.PopID();
+
+        return valueChanged;
+    }
+
+    public static bool DrawColor4Control(string label, ref Vector4 color)
+    {
+        bool valueChanged = false;
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 7) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X + ImGui.CalcTextSize("A").X)) / 4.0f;
+
+        // R
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}R", ref color.X, 0.01f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // G
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.01f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // B
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.01f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // A
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.8f, 0.8f, 1.0f)); ImGui.Text("A"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}A", ref color.W, 0.01f)) valueChanged = true; ImGui.PopItemWidth();
+
+        ImGui.PopID();
+
+        return valueChanged;
     }
 
     private object GetDefaultValue(Type componentType, string propertyName)

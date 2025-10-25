@@ -34,7 +34,7 @@ public class SceneSerializer
                 ["Name"] = go.Name
             };
 
-            if (go.Transform.Parent != null)
+            if (go.Transform.Parent is not null)
             {
                 goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
             }

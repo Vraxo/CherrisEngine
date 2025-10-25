@@ -52,7 +52,7 @@ public class OutlinerPanel
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (payload.NativePtr != null)
+            if (payload.NativePtr is not null)
             {
                 byte[] data = new byte[payload.DataSize];
                 Marshal.Copy(payload.Data, data, 0, payload.DataSize);
@@ -75,24 +75,24 @@ public class OutlinerPanel
 
     private void DrawOutlinerContextMenu()
     {
-        if (ImGui.BeginPopupContextWindow("OutlinerContextMenu"))
+        if (!ImGui.BeginPopupContextWindow("OutlinerContextMenu"))
         {
-            if (ImGui.MenuItem("Create Empty GameObject"))
-            {
-                var newGo = new GameObject("New GameObject");
-                _editor.SceneManager.AddGameObject(newGo);
-                _editor.SetSelectedGameObject(newGo);
-            }
-
-            if (_editor.GetSelectedGameObject() != null)
-            {
-                if (ImGui.MenuItem("Delete", "Del"))
-                {
-                    _editor.SceneManager.RemoveGameObject(_editor.GetSelectedGameObject());
-                    _editor.SetSelectedGameObject(null);
-                }
-            }
-            ImGui.EndPopup();
+            return;
         }
+
+        if (ImGui.MenuItem("Create Empty GameObject"))
+        {
+            GameObject newGo = new("New GameObject");
+            _editor.SceneManager.AddGameObject(newGo);
+            _editor.SetSelectedGameObject(newGo);
+        }
+
+        if (ImGui.MenuItem("Delete", "Del") && _editor.GetSelectedGameObject() is not null)
+        {
+            _editor.SceneManager.RemoveGameObject(_editor.GetSelectedGameObject());
+            _editor.SetSelectedGameObject(null);
+        }
+
+        ImGui.EndPopup();
     }
 }

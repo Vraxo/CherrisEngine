@@ -58,10 +58,15 @@ public class TransformInspector
         var style = ImGui.GetStyle();
         float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - ImGui.CalcTextSize("X").X * 3) / 3.0f;
 
+        ImGui.AlignTextToFramePadding();
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
         ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        ImGui.AlignTextToFramePadding();
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
         ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true; ImGui.PopItemWidth(); ImGui.SameLine();
+
+        ImGui.AlignTextToFramePadding();
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("Z"); ImGui.PopStyleColor(); ImGui.SameLine();
         ImGui.PushItemWidth(itemWidth); if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true; ImGui.PopItemWidth();
         ImGui.PopID();
