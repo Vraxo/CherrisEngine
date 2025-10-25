@@ -3,12 +3,14 @@ using CherrisEditor.UI;
 using ImGuiNET;
 using ImGuizmoNET;
 using System;
+using System.Linq;
 using System.Numerics;
 
 namespace CherrisEditor;
 
 public class EditorAppLogic : IDisposable
 {
+    private readonly Editor _editor;
     private readonly SceneSerializer _sceneSerializer;
 
     private readonly MenuBar _menuBar;
@@ -21,6 +23,7 @@ public class EditorAppLogic : IDisposable
 
     public EditorAppLogic(Editor editor)
     {
+        _editor = editor;
         _textureManager = new EditorTextureManager();
         _sceneSerializer = new SceneSerializer();
 
@@ -29,7 +32,7 @@ public class EditorAppLogic : IDisposable
         _viewportPanel = new ViewportPanel(editor);
         _outlinerPanel = new OutlinerPanel(editor);
         _inspectorPanel = new InspectorPanel(editor, _textureManager);
-        _contentBrowserPanel = new ContentBrowserPanel(_textureManager);
+        _contentBrowserPanel = new ContentBrowserPanel(editor, _textureManager);
 
         EditorTheme.ApplyUnrealEngineStyle();
 

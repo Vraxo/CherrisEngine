@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using Cherris.OpenTK;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -15,6 +16,7 @@ public class Editor : Engine
     private EditorAppLogic? _editorAppLogic;
     public List<Type> AvailableScriptTypes { get; } = new();
     public EditorState State { get; private set; } = EditorState.Editing;
+    public bool IsViewportHovered { get; set; }
 
     private AssemblyLoadContext _gameAssemblyContext;
 
@@ -107,7 +109,13 @@ public class Editor : Engine
     {
         _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
+        SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
         InitializeEditingState();
+
+        if (_backend.GameWindow is OpenTKGameWindow otkWindow)
+        {
+            otkWindow.ShouldIgnoreImGuiCapture = () => this.IsViewportHovered;
+        }
     }
 
     protected override void Update(float deltaTime)
@@ -119,26 +127,56 @@ public class Editor : Engine
 
     private void InitializeEditingState()
     {
-        SetAllScriptsEnabled(false);
-        GameObject? cameraGo = SceneManager.MainCamera?.GameObject;
+        SetupSceneForEditing(SceneManager.ActiveScene);
+    }
+
+    private void ReloadSceneForEditing()
+    {
+        var activeScene = SceneManager.ActiveScene;
+        if (activeScene is null) return;
+
+        string path = activeScene.FilePath;
+        SceneManager.CloseScene(activeScene);
+        LoadSceneFromFile(path);
+
+        // The OnActiveSceneChanged event will handle calling SetupSceneForEditing automatically.
+    }
+
+    private void SetupSceneForEditing(Scene scene)
+    {
+        if (scene is null) return;
+
+        foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        {
+            script.Enabled = false;
+        }
+
+        GameObject? cameraGo = scene.MainCamera?.GameObject;
         if (cameraGo is not null)
         {
             EnsureEditorControllerEnabled(cameraGo);
         }
     }
 
-    private void ReloadSceneForEditing()
-    {
-        LoadSceneFromFile(CurrentScenePath);
-        SceneManager.Start();
-        InitializeEditingState();
-    }
 
-    private void LoadSceneFromFile(string scenePath)
+    public void LoadSceneFromFile(string scenePath)
     {
-        CurrentScenePath = scenePath;
+        var existingScene = SceneManager.OpenScenes.FirstOrDefault(s => s.FilePath == scenePath);
+        if (existingScene != null)
+        {
+            SceneManager.SetActiveScene(existingScene);
+            return;
+        }
+
+        if (!File.Exists(scenePath))
+        {
+            Console.WriteLine($"[Editor] Scene file not found: {scenePath}");
+            return;
+        }
+
         List<GameObject> loadedObjects = SceneLoader.LoadScene(scenePath);
-        SceneManager.SetScene(loadedObjects);
+        var newScene = new Scene(scenePath, loadedObjects);
+        SceneManager.OpenScene(newScene);
     }
 
     private void CompileAndRegisterGameScripts()
@@ -185,14 +223,6 @@ public class Editor : Engine
         Console.WriteLine($"[Editor] Registered custom component: {scriptType.Name}");
     }
 
-    private void SetAllScriptsEnabled(bool isEnabled)
-    {
-        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
-        {
-            script.Enabled = isEnabled;
-        }
-    }
-
     private void SetScriptsEnabledForPlayMode()
     {
         foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
@@ -209,10 +239,10 @@ public class Editor : Engine
         }
     }
 
-    private static void EnsureEditorControllerEnabled(GameObject cameraGo)
+    private void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
         EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        editorController ??= cameraGo.AddComponent(new EditorController());
+        editorController ??= cameraGo.AddComponent(new EditorController(this));
         editorController.Enabled = true;
     }
 

@@ -6,6 +6,7 @@ using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 using ImGuiNET;
+using System;
 
 namespace Cherris.OpenTK;
 
@@ -22,6 +23,7 @@ public class OpenTKGameWindow : IGameWindow
     public event Action Resized;
 
     public unsafe IntPtr Handle => (IntPtr)_window.WindowPtr;
+    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 
     public bool IsMouseLocked
     {
@@ -108,30 +110,26 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseMove(new Vector2(e.X, e.Y));
 
-        if (ImGui.GetIO().WantCaptureMouse)
+        // If ImGui wants the mouse, but we're holding RMB for camera control, let it pass through.
+        if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
             Input.SetMouseDelta(System.Numerics.Vector2.Zero);
+            _lastMousePos = new Vector2(e.X, e.Y);
+            _firstMove = true;
             return;
         }
 
-        if (IsMouseLocked)
+        if (_firstMove)
         {
-            if (_firstMove)
-            {
-                _lastMousePos = new Vector2(e.X, e.Y);
-                _firstMove = false;
-            }
-
-            var deltaX = e.X - _lastMousePos.X;
-            var deltaY = e.Y - _lastMousePos.Y;
             _lastMousePos = new Vector2(e.X, e.Y);
+            _firstMove = false;
+        }
 
-            Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
-        }
-        else
-        {
-            Input.SetMouseDelta(System.Numerics.Vector2.Zero);
-        }
+        var deltaX = e.X - _lastMousePos.X;
+        var deltaY = e.Y - _lastMousePos.Y;
+        _lastMousePos = new Vector2(e.X, e.Y);
+
+        Input.SetMouseDelta(new System.Numerics.Vector2(deltaX, deltaY));
         Input.SetMousePosition(new System.Numerics.Vector2(e.X, e.Y));
     }
 
@@ -185,7 +183,13 @@ public class OpenTKGameWindow : IGameWindow
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
-        if (ImGui.GetIO().WantCaptureMouse) return;
+
+        bool ignoreImGui = ShouldIgnoreImGuiCapture?.Invoke() ?? false;
+
+        if (ImGui.GetIO().WantCaptureMouse && !ignoreImGui)
+        {
+            return;
+        }
 
         Input.SetMouseWheelDelta(new System.Numerics.Vector2(e.OffsetX, e.OffsetY));
     }

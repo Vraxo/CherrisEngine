@@ -1,106 +1,97 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
-using System.Numerics;
-using Veldrid.StartupUtilities;
-using Veldrid;
 
 namespace Cherris;
 
 public class SceneManager
 {
-    private readonly List<GameObject> _gameObjects = new();
+    private readonly List<Scene> _openScenes = new();
+    private Scene _activeScene;
+    public event Action<Scene> OnActiveSceneChanged;
 
-    public Camera MainCamera { get; private set; }
-    public Skybox Skybox { get; private set; }
-    public IEnumerable<GameObject> GameObjects => _gameObjects;
+
+    public Scene ActiveScene => _activeScene;
+    public IReadOnlyList<Scene> OpenScenes => _openScenes;
+
+    public Camera MainCamera => _activeScene?.MainCamera;
+    public Skybox Skybox => _activeScene?.Skybox;
+    public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
 
     public void AddGameObject(GameObject go)
     {
-        _gameObjects.Add(go);
+        _activeScene?.AddGameObject(go);
     }
 
     public void RemoveGameObject(GameObject go)
     {
-        // Recursively remove children first to avoid modifying collection during iteration
-        foreach (var childTransform in go.Transform.Children.ToList())
-        {
-            RemoveGameObject(childTransform.GameObject);
-        }
-
-        // Remove the object from its parent's list
-        go.Transform.Parent = null;
-
-        // Remove from the root scene list
-        _gameObjects.Remove(go);
-
-        // Dispose its managed resources
-        go.GetComponent<MeshRenderer>()?.Dispose();
+        _activeScene?.RemoveGameObject(go);
     }
 
-    public void SetScene(List<GameObject> gameObjects)
+    public void OpenScene(Scene scene)
     {
-        _gameObjects.Clear();
-        _gameObjects.AddRange(gameObjects);
-        MainCamera = null;
-        Skybox = null;
+        if (_openScenes.All(s => s.Id != scene.Id))
+        {
+            _openScenes.Add(scene);
+        }
+        _activeScene = scene;
+        OnActiveSceneChanged?.Invoke(_activeScene);
+    }
+
+    public void CloseScene(Scene scene)
+    {
+        if (scene == null) return;
+
+        int sceneIndex = _openScenes.IndexOf(scene);
+        if (sceneIndex == -1) return;
+
+        scene.Dispose();
+        _openScenes.RemoveAt(sceneIndex);
+
+        if (_activeScene == scene)
+        {
+            if (_openScenes.Count > 0)
+            {
+                // Set the active scene to the one before the closed one, or the first one
+                _activeScene = _openScenes[Math.Max(0, sceneIndex - 1)];
+            }
+            else
+            {
+                _activeScene = null;
+            }
+            OnActiveSceneChanged?.Invoke(_activeScene);
+        }
+    }
+
+    public void SetActiveScene(Scene scene)
+    {
+        if (scene != null && _openScenes.Contains(scene) && _activeScene != scene)
+        {
+            _activeScene = scene;
+            OnActiveSceneChanged?.Invoke(_activeScene);
+        }
     }
 
     public void Start()
     {
-        // First pass: find essential components
-        foreach (var gameObject in _gameObjects)
-        {
-            if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
-            if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
-        }
-
-        // Second pass: initialize scripts
-        foreach (var gameObject in _gameObjects)
-        {
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                script.Start();
-            }
-        }
-
-        // Handle case where no camera was found in the scene
-        if (MainCamera is null)
-        {
-            CreateDefaultCamera();
-        }
-    }
-
-    private void CreateDefaultCamera()
-    {
-        Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
-        var go = new GameObject("Default Camera");
-        go.Transform.Position = new Vector3(0, 1, 3);
-        MainCamera = go.AddComponent(new Camera());
-        _gameObjects.Add(go);
+        // Start only the active scene when entering play mode.
+        _activeScene?.Start();
     }
 
     public void Update(float deltaTime)
     {
-        foreach (var gameObject in _gameObjects)
-        {
-            foreach (var script in gameObject.GetComponents<Script>())
-            {
-                if (script.Enabled)
-                {
-                    script.Update(deltaTime);
-                }
-            }
-        }
+        // Only update the active scene.
+        _activeScene?.Update(deltaTime);
     }
+
+
 
     public void Dispose()
     {
-        foreach (var gameObject in _gameObjects)
+        foreach (var scene in _openScenes)
         {
-            gameObject.GetComponent<MeshRenderer>()?.Dispose();
+            scene.Dispose();
         }
+        _openScenes.Clear();
     }
 }

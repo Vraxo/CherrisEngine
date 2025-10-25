@@ -1,6 +1,6 @@
 ﻿using Cherris;
-using ImGuiNET;
 using ImGuizmoNET;
+using System;
 using System.Numerics;
 
 namespace CherrisEditor;
@@ -13,23 +13,25 @@ public class EditorController : Script
 
     private float _yaw;
     private float _pitch;
+    private readonly Editor _editor;
+
+    public EditorController(Editor editor)
+    {
+        _editor = editor;
+    }
 
     public override void Start()
     {
         Quaternion initialRotation = GameObject.Transform.Rotation;
         Vector3 direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
-        
-        _yaw = float.Atan2(direction.X, -direction.Z);
-        _pitch = float.Asin(direction.Y);
+
+        _yaw = MathF.Atan2(direction.X, -direction.Z);
+        _pitch = MathF.Asin(direction.Y);
     }
 
     public override void Update(float deltaTime)
     {
-        ImGui.Begin("Viewport");
-        bool isViewportHovered = ImGui.IsWindowHovered();
-        ImGui.End();
-
-        if (!isViewportHovered || ImGuizmo.IsUsing())
+        if (!_editor.IsViewportHovered || ImGuizmo.IsUsing())
         {
             return;
         }
@@ -39,61 +41,56 @@ public class EditorController : Script
 
     private void HandleInput(float deltaTime)
     {
-        ImGuiIOPtr io = ImGui.GetIO();
-
-        HandleMouseZoom(ref io);
-        HandleKeyboardMovement(deltaTime, Speed, io);
-        HandleMouseLook(io);
+        HandleMouseZoom();
+        HandleKeyboardMovement(deltaTime);
+        HandleMouseLook();
     }
 
-    private void HandleMouseZoom(ref ImGuiIOPtr io)
+    private void HandleMouseZoom()
     {
-        if (io.MouseWheel == 0)
+        float mouseWheelDelta = Input.MouseWheelDelta.Y;
+        if (mouseWheelDelta == 0)
         {
             return;
         }
 
         Vector3 forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
-        GameObject.Transform.Position += forward * io.MouseWheel * ZoomSensitivity;
+        GameObject.Transform.Position += forward * mouseWheelDelta * ZoomSensitivity;
     }
 
-    private void HandleKeyboardMovement(float deltaTime, float currentSpeed, ImGuiIOPtr io)
+    private void HandleKeyboardMovement(float deltaTime)
     {
-        if (io.KeyShift)
+        float currentSpeed = Speed;
+        if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
         {
             currentSpeed *= 3.0f; // Speed boost
         }
 
-        Vector3 localMove = Vector3.Zero;
+        var localMove = Vector3.Zero;
 
-        if (ImGui.IsKeyDown(ImGuiKey.W))
+        if (Input.IsKeyDown(Key.W))
         {
             localMove.Z -= 1;
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.S))
+        if (Input.IsKeyDown(Key.S))
         {
             localMove.Z += 1;
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.A))
+        if (Input.IsKeyDown(Key.A))
         {
             localMove.X -= 1;
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.D))
+        if (Input.IsKeyDown(Key.D))
         {
             localMove.X += 1;
         }
 
         float worldVerticalMove = 0f;
-
-        if (ImGui.IsKeyDown(ImGuiKey.E))
+        if (Input.IsKeyDown(Key.E))
         {
             worldVerticalMove += 1; // Up
         }
-
-        if (ImGui.IsKeyDown(ImGuiKey.Q))
+        if (Input.IsKeyDown(Key.Q))
         {
             worldVerticalMove -= 1; // Down
         }
@@ -105,7 +102,7 @@ public class EditorController : Script
 
         Quaternion yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
         Vector3 worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-        Vector3 finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+        var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
 
         if (finalMove.LengthSquared() > 0)
         {
@@ -113,17 +110,17 @@ public class EditorController : Script
         }
     }
 
-    private void HandleMouseLook(ImGuiIOPtr io)
+    private void HandleMouseLook()
     {
-        if (!ImGui.IsMouseDown(ImGuiMouseButton.Right))
+        if (!Input.IsMouseButtonDown(MouseButton.Right))
         {
             return;
         }
 
-        Vector2 mouseDelta = io.MouseDelta;
+        Vector2 mouseDelta = Input.MouseDelta;
         _yaw -= mouseDelta.X * MouseSensitivity;
         _pitch -= mouseDelta.Y * MouseSensitivity;
-        _pitch = float.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
 
         GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
                                         Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);

@@ -10,13 +10,15 @@ namespace CherrisEditor;
 
 public class ContentBrowserPanel : IDisposable
 {
+    private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
     private readonly string _assetRootPath;
     private string _currentAssetPath;
     private static IntPtr _payloadPtr = IntPtr.Zero;
 
-    public ContentBrowserPanel(EditorTextureManager textureManager)
+    public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
+        _editor = editor;
         _textureManager = textureManager;
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
@@ -113,9 +115,16 @@ public class ContentBrowserPanel : IDisposable
             }
         }
 
-        if (Directory.Exists(path) && ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
-            _currentAssetPath = path;
+            if (Directory.Exists(path))
+            {
+                _currentAssetPath = path;
+            }
+            else if (Path.GetExtension(path).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
+            {
+                _editor.LoadSceneFromFile(path);
+            }
         }
 
         CenterAlignText(itemName);

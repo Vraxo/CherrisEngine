@@ -9,4 +9,5 @@ public interface IGameWindow : IDisposable
     void ProcessEvents();
     void SwapBuffers();
     event Action Resized;
+    Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 }

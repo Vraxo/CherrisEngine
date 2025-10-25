@@ -23,10 +23,12 @@ public class MenuBar
         {
             if (ImGui.MenuItem("Save"))
             {
-                if (!string.IsNullOrEmpty(_editor.CurrentScenePath))
+                var activeScene = _editor.SceneManager.ActiveScene;
+                if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
                 {
-                    _sceneSerializer.SaveScene(_editor.SceneManager.GameObjects, _editor.CurrentScenePath);
-                    Console.WriteLine($"[Editor] Scene saved to '{_editor.CurrentScenePath}'");
+                    _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
+                    activeScene.IsDirty = false;
+                    Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
                 }
             }
             ImGui.Separator();

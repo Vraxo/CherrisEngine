@@ -17,6 +17,7 @@ public class GameWindow : IGameWindow
     public float Width => SdlWindow.Width;
     public float Height => SdlWindow.Height;
     public event Action Resized;
+    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 
     public bool IsMouseLocked
     {

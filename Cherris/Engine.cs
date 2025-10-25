@@ -14,7 +14,6 @@ public abstract class Engine
     public readonly SceneLoader SceneLoader;
     public readonly SceneManager SceneManager;
     public IRenderer Renderer { get; }
-    public string CurrentScenePath { get; protected set; }
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly RenderingInterface _backend;

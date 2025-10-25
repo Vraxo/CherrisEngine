@@ -3,6 +3,7 @@ using Cherris.OpenTK;
 using ImGuiNET;
 using ImGuizmoNET;
 using System;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -35,42 +36,92 @@ public class ViewportPanel
     public void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        ImGui.Begin("Viewport");
+        ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-        bool isViewportHovered = ImGui.IsWindowHovered();
-        var currentSize = ImGui.GetContentRegionAvail();
+        var openScenes = _editor.SceneManager.OpenScenes.ToList();
+        var activeScene = _editor.SceneManager.ActiveScene;
 
-        if (_editor.Renderer is OpenTKRenderer otkRenderer)
+        // Default the viewport to not hovered. It will be set to true only if the image within the active tab is hovered.
+        _editor.IsViewportHovered = false;
+
+        if (ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
         {
-            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+            if (openScenes.Count == 0)
             {
-                _viewportSize = currentSize;
-                otkRenderer.SetViewportSize(_viewportSize);
+                if (ImGui.BeginTabItem("No Scene"))
+                {
+                    ImGui.Text("No scene loaded. Open a scene from the Content Browser.");
+                    ImGui.EndTabItem();
+                }
             }
 
-            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
-            if (textureHandle != IntPtr.Zero)
+            foreach (var scene in openScenes)
             {
-                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+                bool isOpen = true;
+                ImGuiTabItemFlags flags = scene.IsDirty ? ImGuiTabItemFlags.UnsavedDocument : ImGuiTabItemFlags.None;
+                if (scene == activeScene)
+                {
+                    flags |= ImGuiTabItemFlags.SetSelected;
+                }
+
+                if (ImGui.BeginTabItem(scene.Name, ref isOpen, flags))
+                {
+                    if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
+                    {
+                        _editor.SceneManager.SetActiveScene(scene);
+                    }
+
+                    // Only render the viewport content for the currently active scene
+                    if (scene == activeScene)
+                    {
+                        var currentSize = ImGui.GetContentRegionAvail();
+
+                        if (_editor.Renderer is OpenTKRenderer otkRenderer)
+                        {
+                            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
+                            {
+                                _viewportSize = currentSize;
+                                otkRenderer.SetViewportSize(_viewportSize);
+                            }
+
+                            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
+                            if (textureHandle != IntPtr.Zero)
+                            {
+                                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
+                            }
+                        }
+                        else
+                        {
+                            if (currentSize.X > 0 && currentSize.Y > 0)
+                            {
+                                _viewportSize = currentSize;
+                            }
+                        }
+
+                        _editor.IsViewportHovered = ImGui.IsItemHovered();
+
+                        var viewportPos = ImGui.GetItemRectMin();
+                        var viewportSize = ImGui.GetItemRectSize();
+
+                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
+                        {
+                            HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
+                        }
+
+                        DrawGizmo(viewportPos, viewportSize);
+                    }
+
+                    ImGui.EndTabItem();
+                }
+
+                if (!isOpen)
+                {
+                    // TODO: Prompt to save if dirty
+                    _editor.SceneManager.CloseScene(scene);
+                }
             }
+            ImGui.EndTabBar();
         }
-        else
-        {
-            if (currentSize.X > 0 && currentSize.Y > 0)
-            {
-                _viewportSize = currentSize;
-            }
-        }
-
-        var viewportPos = ImGui.GetItemRectMin();
-        var viewportSize = ImGui.GetItemRectSize();
-
-        if (isViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
-        {
-            HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
-        }
-
-        DrawGizmo(viewportPos, viewportSize);
 
         ImGui.End();
         ImGui.PopStyleVar();
@@ -90,7 +141,12 @@ public class ViewportPanel
             var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
             var objectMatrix = selectedObject.Transform.GetModelMatrix();
 
-            if (ImGuizmo.Manipulate(ref Unsafe.As<Matrix4x4, float>(ref cameraView), ref Unsafe.As<Matrix4x4, float>(ref cameraProjection), _currentOperation, MODE.LOCAL, ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+            if (ImGuizmo.Manipulate(
+                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
+                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
+                _currentOperation,
+                MODE.LOCAL,
+                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
             {
                 Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
                 selectedObject.Transform.Position = position;
