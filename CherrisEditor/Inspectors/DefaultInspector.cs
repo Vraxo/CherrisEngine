@@ -50,11 +50,22 @@ public class DefaultInspector : IComponentInspector
             ImGui.PushItemWidth(-1.0f);
 
             object valueBeforeEdit = prop.GetValue(component);
-            if (DrawPropertyControl(component, prop))
+            if (DrawPropertyControl(component, prop, out bool activated, out bool deactivated))
             {
                 dirty = true;
             }
-            HandleUndo(component, prop, valueBeforeEdit);
+
+            if (activated) _undoInitialValue = valueBeforeEdit;
+            if (deactivated)
+            {
+                object valueAfterEdit = prop.GetValue(component);
+                if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+                {
+                    prop.SetValue(component, _undoInitialValue);
+                    _history.Execute(new ChangePropertyCommand(component, prop, _undoInitialValue, valueAfterEdit));
+                }
+                _undoInitialValue = null;
+            }
 
             ImGui.PopItemWidth();
 
@@ -74,10 +85,12 @@ public class DefaultInspector : IComponentInspector
         return dirty;
     }
 
-    private bool DrawPropertyControl(object instance, PropertyInfo prop)
+    private bool DrawPropertyControl(object instance, PropertyInfo prop, out bool activated, out bool deactivated)
     {
         object currentValue = prop.GetValue(instance);
         bool valueChanged = false;
+        activated = false;
+        deactivated = false;
 
         ImGui.PushID(prop.Name);
 
@@ -120,35 +133,40 @@ public class DefaultInspector : IComponentInspector
         else if (prop.PropertyType == typeof(Vector2))
         {
             var val = (Vector2)currentValue;
-            if (ImGui.DragFloat2($"##{prop.Name}", ref val, 0.1f))
+            ImGui.PopItemWidth();
+            if (DrawVector2Control($"##{prop.Name}", ref val, out activated, out deactivated))
             {
                 prop.SetValue(instance, val);
                 valueChanged = true;
             }
+            ImGui.PushItemWidth(-1.0f);
         }
         else if (prop.PropertyType == typeof(Vector3))
         {
             var val = (Vector3)currentValue;
+            ImGui.PopItemWidth();
             if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
             {
-                if (ImGui.ColorEdit3($"##{prop.Name}", ref val))
+                if (DrawColor3Control($"##{prop.Name}", ref val, out activated, out deactivated))
                 {
                     prop.SetValue(instance, val);
                     valueChanged = true;
                 }
             }
-            else if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
+            else if (DrawVector3Control($"##{prop.Name}", ref val, out activated, out deactivated))
             {
                 prop.SetValue(instance, val);
                 valueChanged = true;
             }
+            ImGui.PushItemWidth(-1.0f);
         }
         else if (prop.PropertyType == typeof(Vector4))
         {
             var val = (Vector4)currentValue;
+            ImGui.PopItemWidth();
             if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
             {
-                if (ImGui.ColorEdit4($"##{prop.Name}", ref val))
+                if (DrawColor4Control($"##{prop.Name}", ref val, out activated, out deactivated))
                 {
                     prop.SetValue(instance, val);
                     valueChanged = true;
@@ -159,34 +177,183 @@ public class DefaultInspector : IComponentInspector
                 prop.SetValue(instance, val);
                 valueChanged = true;
             }
+            ImGui.PushItemWidth(-1.0f);
         }
         else
         {
             ImGui.Text(currentValue?.ToString() ?? "null");
         }
 
+        if (!activated) activated = ImGui.IsItemActivated();
+        if (!deactivated) deactivated = ImGui.IsItemDeactivatedAfterEdit();
+
         ImGui.PopID();
 
         return valueChanged;
     }
 
-    private void HandleUndo(object target, PropertyInfo property, object valueBeforeEdit)
+    public static bool DrawVector2Control(string label, ref Vector2 values, out bool activated, out bool deactivated)
     {
-        if (ImGui.IsItemActivated())
-        {
-            _undoInitialValue = valueBeforeEdit;
-        }
+        bool valueChanged = false;
+        activated = false;
+        deactivated = false;
 
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
-            {
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
-            }
-            _undoInitialValue = null;
-        }
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - (ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X)) / 2.0f;
+
+        // X
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // Y
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth();
+
+        ImGui.PopID();
+
+        return valueChanged;
+    }
+
+    public static bool DrawVector3Control(string label, ref Vector3 values, out bool activated, out bool deactivated)
+    {
+        bool valueChanged = false;
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - ImGui.CalcTextSize("X").X * 3) / 3.0f;
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("Z"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth();
+        ImGui.PopID();
+
+        return valueChanged;
+    }
+
+    public static bool DrawColor3Control(string label, ref Vector3 color, out bool activated, out bool deactivated)
+    {
+        bool valueChanged = false;
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X)) / 3.0f;
+
+        // R
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}R", ref color.X, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // G
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // B
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.1f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth();
+
+        ImGui.PopID();
+
+        return valueChanged;
+    }
+
+    public static bool DrawColor4Control(string label, ref Vector4 color, out bool activated, out bool deactivated)
+    {
+        bool valueChanged = false;
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(label);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 7) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X + ImGui.CalcTextSize("A").X)) / 4.0f;
+
+        // R
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}R", ref color.X, 0.01f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // G
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.01f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // B
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.01f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth(); ImGui.SameLine();
+
+        // A
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.8f, 0.8f, 1.0f)); ImGui.Text("A"); ImGui.PopStyleColor(); ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+        if (ImGui.DragFloat($"##{label}A", ref color.W, 0.01f)) valueChanged = true;
+        if (ImGui.IsItemActivated()) activated = true;
+        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
+        ImGui.PopItemWidth();
+
+        ImGui.PopID();
+
+        return valueChanged;
     }
 
     private object GetDefaultValue(Type componentType, string propertyName)

@@ -36,16 +36,14 @@ public class TransformInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Position");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
         var posBeforeEdit = transform.Position;
         var position = posBeforeEdit;
-        if (ImGui.DragFloat3("##Position", ref position, 0.1f))
+        if (DefaultInspector.DrawVector3Control("Position", ref position, out bool posActivated, out bool posDeactivated))
         {
             transform.Position = position;
             dirty = true;
         }
-        HandleUndo(transform, nameof(Transform.Position), posBeforeEdit);
-        ImGui.PopItemWidth();
+        HandleUndo(transform, nameof(Transform.Position), posBeforeEdit, posActivated, posDeactivated);
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize)))
@@ -63,17 +61,15 @@ public class TransformInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Rotation");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
         var rotBeforeEdit = transform.Rotation;
         Vector3 eulerDegrees = EngineMath.ToEulerAngles(rotBeforeEdit) * (180.0f / System.MathF.PI);
-        if (ImGui.DragFloat3("##Rotation", ref eulerDegrees))
+        if (DefaultInspector.DrawVector3Control("Rotation", ref eulerDegrees, out bool rotActivated, out bool rotDeactivated))
         {
             Vector3 eulerRadians = eulerDegrees * (System.MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
             dirty = true;
         }
-        HandleUndo(transform, nameof(Transform.Rotation), rotBeforeEdit);
-        ImGui.PopItemWidth();
+        HandleUndo(transform, nameof(Transform.Rotation), rotBeforeEdit, rotActivated, rotDeactivated);
 
 
         ImGui.TableSetColumnIndex(2);
@@ -92,16 +88,14 @@ public class TransformInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Scale");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
         var scaleBeforeEdit = transform.Scale;
         var scale = scaleBeforeEdit;
-        if (ImGui.DragFloat3("##Scale", ref scale, 0.1f))
+        if (DefaultInspector.DrawVector3Control("Scale", ref scale, out bool scaleActivated, out bool scaleDeactivated))
         {
             transform.Scale = scale;
             dirty = true;
         }
-        HandleUndo(transform, nameof(Transform.Scale), scaleBeforeEdit);
-        ImGui.PopItemWidth();
+        HandleUndo(transform, nameof(Transform.Scale), scaleBeforeEdit, scaleActivated, scaleDeactivated);
 
 
         ImGui.TableSetColumnIndex(2);
@@ -120,17 +114,17 @@ public class TransformInspector
         return dirty;
     }
 
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit)
+    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
         if (property == null) return;
 
-        if (ImGui.IsItemActivated())
+        if (activated)
         {
             _undoInitialValue = valueBeforeEdit;
         }
 
-        if (ImGui.IsItemDeactivatedAfterEdit())
+        if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
             if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))

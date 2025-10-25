@@ -89,15 +89,13 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Texture Tiling");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
         var tilingBeforeEdit = mr.TextureTiling;
         var tiling = tilingBeforeEdit;
-        if (ImGui.DragFloat2("##Tiling", ref tiling, 0.1f))
+        if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling, out bool activated, out bool deactivated))
         {
             mr.TextureTiling = tiling; dirty = true;
         }
-        HandleUndo(mr, nameof(MeshRenderer.TextureTiling), tilingBeforeEdit);
-        ImGui.PopItemWidth();
+        HandleUndo(mr, nameof(MeshRenderer.TextureTiling), tilingBeforeEdit, activated, deactivated);
 
 
         ImGui.TableSetColumnIndex(2);
@@ -117,16 +115,13 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Emissive Color");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
         var emissiveBeforeEdit = mr.EmissiveColor;
         var emissive = emissiveBeforeEdit;
-        if (ImGui.ColorEdit3("##Emissive", ref emissive))
+        if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive, out bool emissiveActivated, out bool emissiveDeactivated))
         {
             mr.EmissiveColor = emissive; dirty = true;
         }
-        HandleUndo(mr, nameof(MeshRenderer.EmissiveColor), emissiveBeforeEdit);
-        ImGui.PopItemWidth();
-
+        HandleUndo(mr, nameof(MeshRenderer.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
@@ -144,17 +139,17 @@ public class MeshRendererInspector : IComponentInspector
         return dirty;
     }
 
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit)
+    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
         if (property == null) return;
 
-        if (ImGui.IsItemActivated())
+        if (activated)
         {
             _undoInitialValue = valueBeforeEdit;
         }
 
-        if (ImGui.IsItemDeactivatedAfterEdit())
+        if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
             if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
