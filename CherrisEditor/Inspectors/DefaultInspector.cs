@@ -11,17 +11,25 @@ namespace CherrisEditor.Inspectors;
 public class DefaultInspector : IComponentInspector
 {
     private static readonly Dictionary<Type, object> _defaultComponentCache = new();
+    private readonly EditorTextureManager _textureManager;
+
+    public DefaultInspector(EditorTextureManager textureManager)
+    {
+        _textureManager = textureManager;
+    }
 
     public void Draw(Component component)
     {
         Type componentType = component.GetType();
-        if (!ImGui.BeginTable(componentType.Name + "Table", 3, ImGuiTableFlags.Resizable)) return;
+        if (!ImGui.BeginTable(componentType.Name + "Table", 3)) return;
 
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
         var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        IntPtr resetIcon = _textureManager.GetTexture("Reset");
+        float buttonSize = ImGui.GetFrameHeight() - 4; // A bit of padding
 
         foreach (var prop in properties)
         {
@@ -38,7 +46,7 @@ public class DefaultInspector : IComponentInspector
             ImGui.PopItemWidth();
 
             ImGui.TableSetColumnIndex(2);
-            if (ImGui.Button($"R##{prop.Name}"))
+            if (ImGui.ImageButton($"Reset##{prop.Name}", resetIcon, new Vector2(buttonSize, buttonSize)))
             {
                 object defaultValue = GetDefaultValue(componentType, prop.Name);
                 if (defaultValue != null)

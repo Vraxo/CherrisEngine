@@ -26,8 +26,8 @@ internal class InspectorPanel
     {
         _editor = editor;
         _textureManager = textureManager;
-        _defaultInspector = new DefaultInspector();
-        _transformInspector = new TransformInspector();
+        _defaultInspector = new DefaultInspector(_textureManager);
+        _transformInspector = new TransformInspector(_textureManager);
         RegisterCustomInspectors(editor, textureManager);
     }
 

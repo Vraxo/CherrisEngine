@@ -24,10 +24,13 @@ public class MeshRendererInspector : IComponentInspector
     {
         var mr = (MeshRenderer)component;
 
-        if (!ImGui.BeginTable("MRTable", 3, ImGuiTableFlags.Resizable)) return;
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 120.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+        if (!ImGui.BeginTable("MRTable", 3)) return;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
+
+        IntPtr resetIcon = _textureManager.GetTexture("Reset");
+        float buttonSize = ImGui.GetFrameHeight() - 4; // A bit of padding
 
         // Texture
         ImGui.TableNextRow();
@@ -68,7 +71,7 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.Text(mr.TextureName);
 
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Texture"))
+        if (ImGui.ImageButton("ResetTexture", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
             mr.TextureName = "White";
             mr.Texture = _editor.ResourceManager.GetTexture("White");
@@ -85,7 +88,7 @@ public class MeshRendererInspector : IComponentInspector
             mr.TextureTiling = tiling;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Tiling")) mr.TextureTiling = Vector2.One;
+        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize))) mr.TextureTiling = Vector2.One;
 
         // Emissive Color
         ImGui.TableNextRow();
@@ -98,7 +101,7 @@ public class MeshRendererInspector : IComponentInspector
             mr.EmissiveColor = emissive;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Emissive")) mr.EmissiveColor = Vector3.Zero;
+        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize))) mr.EmissiveColor = Vector3.Zero;
 
         ImGui.EndTable();
     }

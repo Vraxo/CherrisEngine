@@ -17,7 +17,7 @@ public abstract class Engine
     public string CurrentScenePath { get; protected set; }
 
     protected GameObject? SelectedGameObject { get; set; }
-    protected readonly IGraphicsBackend _backend;
+    protected readonly RenderingInterface _backend;
 
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
@@ -98,7 +98,7 @@ public abstract class Engine
 
     protected abstract void LoadContent();
 
-    private static IGraphicsBackend CreateBackend(GraphicsAPI api)
+    private static RenderingInterface CreateBackend(GraphicsAPI api)
     {
         return api switch
         {

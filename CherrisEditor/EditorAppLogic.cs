@@ -37,6 +37,7 @@ public class EditorAppLogic : IDisposable
         _textureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
         _textureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
         _textureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
+        _textureManager.LoadTexture("Reset", "Assets/Icons/reset.png");
 
         // Load component icons
         _textureManager.LoadTexture("Component_Transform", "Assets/Icons/Components/transform.png");

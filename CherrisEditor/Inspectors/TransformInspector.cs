@@ -1,18 +1,29 @@
 ﻿using Cherris;
 using ImGuiNET;
+using System;
 using System.Numerics;
 
 namespace CherrisEditor.Inspectors;
 
 public class TransformInspector
 {
+    private readonly EditorTextureManager _textureManager;
+
+    public TransformInspector(EditorTextureManager textureManager)
+    {
+        _textureManager = textureManager;
+    }
+
     public void Draw(Transform transform)
     {
-        if (!ImGui.BeginTable("TransformTable", 3, ImGuiTableFlags.Resizable)) return;
+        if (!ImGui.BeginTable("TransformTable", 3)) return;
 
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthFixed, 80.0f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthFixed, 25.0f);
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
+        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
+
+        IntPtr resetIcon = _textureManager.GetTexture("Reset");
+        float buttonSize = ImGui.GetFrameHeight() - 4; // A bit of padding
 
         // Position
         ImGui.TableNextRow();
@@ -22,7 +33,7 @@ public class TransformInspector
         Vector3 position = transform.Position;
         if (DrawVector3Control("Position", ref position)) transform.Position = position;
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Pos")) transform.Position = Vector3.Zero;
+        if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Position = Vector3.Zero;
 
         // Rotation
         ImGui.TableNextRow();
@@ -36,7 +47,7 @@ public class TransformInspector
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Rot")) transform.Rotation = Quaternion.Identity;
+        if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Rotation = Quaternion.Identity;
 
         // Scale
         ImGui.TableNextRow();
@@ -46,7 +57,7 @@ public class TransformInspector
         Vector3 scale = transform.Scale;
         if (DrawVector3Control("Scale", ref scale)) transform.Scale = scale;
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.Button("R##Sca")) transform.Scale = Vector3.One;
+        if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Scale = Vector3.One;
 
         ImGui.EndTable();
     }

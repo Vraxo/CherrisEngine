@@ -2,7 +2,7 @@
 
 namespace Cherris.OpenTK
 {
-    public class OpenTKBackend : IGraphicsBackend
+    public class OpenTKBackend : RenderingInterface
     {
         public IGameWindow GameWindow { get; private set; }
         public IRenderer Renderer { get; private set; }
