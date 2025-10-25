@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using CherrisEditor.Inspectors;
+using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
@@ -16,22 +17,24 @@ internal class InspectorPanel
 {
     private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
+    private readonly HistoryManager _history;
     private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
     private readonly DefaultInspector _defaultInspector;
     private readonly TransformInspector _transformInspector;
     private string _newScriptName = "";
     private string _componentSearchText = "";
 
-    public InspectorPanel(Editor editor, EditorTextureManager textureManager)
+    public InspectorPanel(Editor editor, EditorTextureManager textureManager, HistoryManager history)
     {
         _editor = editor;
         _textureManager = textureManager;
-        _defaultInspector = new DefaultInspector(_textureManager);
-        _transformInspector = new TransformInspector(_textureManager);
-        RegisterCustomInspectors(editor, textureManager);
+        _history = history;
+        _defaultInspector = new DefaultInspector(textureManager, history);
+        _transformInspector = new TransformInspector(textureManager, history);
+        RegisterCustomInspectors(editor, textureManager, history);
     }
 
-    private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager)
+    private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager, HistoryManager history)
     {
         var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
             .Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
@@ -41,21 +44,34 @@ internal class InspectorPanel
             var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
             try
             {
-                object[] constructorArgs = { editor, textureManager };
-                var constructor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
+                IComponentInspector instance = null;
 
-                IComponentInspector instance;
-                if (constructor is not null)
+                var ctorWithAll = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager), typeof(HistoryManager) });
+                var ctorWithEditor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
+                var ctorWithHistory = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager), typeof(HistoryManager) });
+                var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
+                var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
+
+                if (ctorWithAll != null)
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
+                else if (ctorWithEditor != null)
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
+                else if (ctorWithHistory != null)
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
+                else if (ctorSimple != null)
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
+                else if (ctorParameterless != null)
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
+
+                if (instance != null)
                 {
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, constructorArgs);
+                    _customInspectors[attribute.InspectedType] = instance;
+                    Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
                 }
                 else
                 {
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
+                    Console.WriteLine($"[Inspector] Could not find a suitable constructor for '{inspectorType.Name}'.");
                 }
-
-                _customInspectors[attribute.InspectedType] = instance;
-                Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
             }
             catch (Exception ex)
             {
@@ -93,10 +109,7 @@ internal class InspectorPanel
         DrawComponentHeader("Transform", typeof(Transform));
         if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            if (_transformInspector.Draw(go.Transform))
-            {
-                _editor.SceneManager.ActiveScene.IsDirty = true;
-            }
+            _transformInspector.Draw(go.Transform);
         }
         ImGui.PopID();
 

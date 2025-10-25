@@ -1,61 +1,59 @@
 ﻿using Cherris;
-using System;
 using System.Numerics;
 
-namespace Apexverse
+namespace Apexverse;
+
+public class PlayerController : Script
 {
-    public class PlayerController : Script
+    public float Speed { get; set; } = 3.0f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Update(float deltaTime)
     {
-        public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.0015f;
+        // --- Mouse Look ---
+        Vector2 mouseDelta = Input.MouseDelta;
+        _yaw -= mouseDelta.X * MouseSensitivity;
+        _pitch -= mouseDelta.Y * MouseSensitivity;
 
-        private float _yaw;
-        private float _pitch;
+        // Clamp the pitch to prevent the camera from flipping upside down
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
 
-        public override void Update(float deltaTime)
+        // Update rotation from yaw and pitch using the standard engine function
+        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
+
+        // --- Keyboard Movement ---
+        var moveDirection = Vector3.Zero;
+
+        if (Input.IsKeyDown(Key.W))
         {
-            // --- Mouse Look ---
-            Vector2 mouseDelta = Input.MouseDelta;
-            _yaw -= mouseDelta.X * MouseSensitivity;
-            _pitch -= mouseDelta.Y * MouseSensitivity;
+            moveDirection -= Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.S))
+        {
+            moveDirection += Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.A))
+        {
+            moveDirection -= Vector3.UnitX;
+        }
+        if (Input.IsKeyDown(Key.D))
+        {
+            moveDirection += Vector3.UnitX;
+        }
 
-            // Clamp the pitch to prevent the camera from flipping upside down
-            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+        if (moveDirection != Vector3.Zero)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
 
-            // Update rotation from yaw and pitch using the standard engine function
-            GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
 
-            // --- Keyboard Movement ---
-            var moveDirection = Vector3.Zero;
-
-            if (Input.IsKeyDown(Key.W))
-            {
-                moveDirection -= Vector3.UnitZ;
-            }
-            if (Input.IsKeyDown(Key.S))
-            {
-                moveDirection += Vector3.UnitZ;
-            }
-            if (Input.IsKeyDown(Key.A))
-            {
-                moveDirection -= Vector3.UnitX;
-            }
-            if (Input.IsKeyDown(Key.D))
-            {
-                moveDirection += Vector3.UnitX;
-            }
-
-            if (moveDirection != Vector3.Zero)
-            {
-                moveDirection = Vector3.Normalize(moveDirection);
-
-                // Create a rotation that only includes the horizontal (yaw) component.
-                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-                // Transform the local direction vector by the horizontal-only rotation.
-                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
-                GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-            }
+            // Transform the local direction vector by the horizontal-only rotation.
+            var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
         }
     }
 }

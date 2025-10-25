@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using CherrisEditor.Undo;
 using ImGuiNET;
 using System;
 
@@ -8,11 +9,13 @@ public class MenuBar
 {
     private readonly SceneSerializer _sceneSerializer;
     private readonly Editor _editor;
+    private readonly HistoryManager _history;
 
-    public MenuBar(Editor editor, SceneSerializer sceneSerializer)
+    public MenuBar(Editor editor, SceneSerializer sceneSerializer, HistoryManager history)
     {
         _editor = editor;
         _sceneSerializer = sceneSerializer;
+        _history = history;
     }
 
     public void Draw()
@@ -33,6 +36,19 @@ public class MenuBar
             }
             ImGui.Separator();
             if (ImGui.MenuItem("Exit")) { Environment.Exit(0); }
+            ImGui.EndMenu();
+        }
+
+        if (ImGui.BeginMenu("Edit"))
+        {
+            if (ImGui.MenuItem("Undo", "Ctrl+Z", false, _history.CanUndo))
+            {
+                _history.Undo();
+            }
+            if (ImGui.MenuItem("Redo", "Ctrl+Y", false, _history.CanRedo))
+            {
+                _history.Redo();
+            }
             ImGui.EndMenu();
         }
 

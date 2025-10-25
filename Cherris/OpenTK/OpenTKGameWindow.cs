@@ -221,6 +221,8 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.Q => Key.Q,
             OpenTKKey.E => Key.E,
             OpenTKKey.R => Key.R,
+            OpenTKKey.Y => Key.Y,
+            OpenTKKey.Z => Key.Z,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
             OpenTKKey.LeftControl => Key.ControlLeft,

@@ -8,6 +8,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
+using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
@@ -17,6 +18,7 @@ public class Editor : Engine
     public List<Type> AvailableScriptTypes { get; } = new();
     public EditorState State { get; private set; } = EditorState.Editing;
     public bool IsViewportHovered { get; set; }
+    public readonly HistoryManager History = new();
 
     private AssemblyLoadContext _gameAssemblyContext;
 
@@ -103,6 +105,14 @@ public class Editor : Engine
         ResourceManager.LoadInitialAssets();
         CompileAndRegisterGameScripts();
         LoadSceneFromFile("Assets/Scene.yaml");
+
+        History.OnHistoryChanged += () =>
+        {
+            if (SceneManager.ActiveScene != null)
+            {
+                SceneManager.ActiveScene.IsDirty = true;
+            }
+        };
     }
 
     protected override void OnStart()
@@ -145,6 +155,8 @@ public class Editor : Engine
     private void SetupSceneForEditing(Scene scene)
     {
         if (scene is null) return;
+
+        History.Clear();
 
         foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {

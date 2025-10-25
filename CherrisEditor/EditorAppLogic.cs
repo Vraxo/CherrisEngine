@@ -5,6 +5,7 @@ using ImGuizmoNET;
 using System;
 using System.Linq;
 using System.Numerics;
+using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
@@ -12,6 +13,7 @@ public class EditorAppLogic : IDisposable
 {
     private readonly Editor _editor;
     private readonly SceneSerializer _sceneSerializer;
+    private readonly HistoryManager _history;
 
     private readonly MenuBar _menuBar;
     private readonly Toolbar _toolbar;
@@ -24,14 +26,15 @@ public class EditorAppLogic : IDisposable
     public EditorAppLogic(Editor editor)
     {
         _editor = editor;
+        _history = editor.History;
         _textureManager = new EditorTextureManager();
         _sceneSerializer = new SceneSerializer();
 
-        _menuBar = new MenuBar(editor, _sceneSerializer);
+        _menuBar = new MenuBar(editor, _sceneSerializer, _history);
         _toolbar = new Toolbar(editor, _textureManager);
-        _viewportPanel = new ViewportPanel(editor);
+        _viewportPanel = new ViewportPanel(editor, _history);
         _outlinerPanel = new OutlinerPanel(editor);
-        _inspectorPanel = new InspectorPanel(editor, _textureManager);
+        _inspectorPanel = new InspectorPanel(editor, _textureManager, _history);
         _contentBrowserPanel = new ContentBrowserPanel(editor, _textureManager);
 
         EditorTheme.ApplyUnrealEngineStyle();
@@ -71,8 +74,10 @@ public class EditorAppLogic : IDisposable
     {
         _viewportPanel.Update();
 
-        // Use the engine's input system for global shortcuts
-        if ((Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight)) && Input.WasKeyPressed(Key.S))
+        bool ctrl = Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight);
+
+        // Save
+        if (ctrl && Input.WasKeyPressed(Key.S))
         {
             var activeScene = _editor.SceneManager.ActiveScene;
             if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
@@ -81,6 +86,17 @@ public class EditorAppLogic : IDisposable
                 activeScene.IsDirty = false;
                 Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
             }
+        }
+
+        // Undo/Redo
+        if (ctrl && Input.WasKeyPressed(Key.Z))
+        {
+            _history.Undo();
+        }
+
+        if (ctrl && (Input.WasKeyPressed(Key.Y)))
+        {
+            _history.Redo();
         }
     }
 

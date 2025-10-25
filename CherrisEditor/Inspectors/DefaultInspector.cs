@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
 
 namespace CherrisEditor.Inspectors;
 
@@ -12,10 +14,13 @@ public class DefaultInspector : IComponentInspector
 {
     private static readonly Dictionary<Type, object> _defaultComponentCache = new();
     private readonly EditorTextureManager _textureManager;
+    private readonly HistoryManager _history;
+    private object _undoInitialValue;
 
-    public DefaultInspector(EditorTextureManager textureManager)
+    public DefaultInspector(EditorTextureManager textureManager, HistoryManager history)
     {
         _textureManager = textureManager;
+        _history = history;
     }
 
     public bool Draw(Component component)
@@ -70,6 +75,8 @@ public class DefaultInspector : IComponentInspector
         object currentValue = prop.GetValue(instance);
         bool valueChanged = false;
 
+        ImGui.PushID(prop.Name);
+
         if (prop.PropertyType == typeof(float))
         {
             float val = (float)currentValue;
@@ -122,13 +129,13 @@ public class DefaultInspector : IComponentInspector
             var val = (Vector3)currentValue;
             if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
             {
-                ImGui.PopItemWidth(); // Pop the -1 width since the control manages its own
+                ImGui.PopItemWidth();
                 if (DrawColor3Control($"##{prop.Name}", ref val))
                 {
                     prop.SetValue(instance, val);
                     valueChanged = true;
                 }
-                ImGui.PushItemWidth(-1.0f); // Push it back for subsequent controls
+                ImGui.PushItemWidth(-1.0f);
             }
             else if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
             {
@@ -159,7 +166,31 @@ public class DefaultInspector : IComponentInspector
         {
             ImGui.Text(currentValue?.ToString() ?? "null");
         }
+
+        HandleUndo(instance, prop, currentValue);
+
+        ImGui.PopID();
+
         return valueChanged;
+    }
+
+    private void HandleUndo(object target, PropertyInfo property, object oldValue)
+    {
+        if (ImGui.IsItemActivated())
+        {
+            _undoInitialValue = oldValue;
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            object newValue = property.GetValue(target);
+            if (_undoInitialValue != null && !_undoInitialValue.Equals(newValue))
+            {
+                property.SetValue(target, _undoInitialValue);
+                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, newValue));
+            }
+            _undoInitialValue = null;
+        }
     }
 
     public static bool DrawVector2Control(string label, ref Vector2 values)

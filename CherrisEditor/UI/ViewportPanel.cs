@@ -6,18 +6,28 @@ using System;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
 
 namespace CherrisEditor.UI;
 
 public class ViewportPanel
 {
     private readonly Editor _editor;
+    private readonly HistoryManager _history;
     private OPERATION _currentOperation = OPERATION.TRANSLATE;
     private Vector2 _viewportSize = Vector2.Zero;
 
-    public ViewportPanel(Editor editor)
+    // For gizmo undo
+    private bool _isManipulatingGizmo;
+    private Vector3 _initialPosition;
+    private Quaternion _initialRotation;
+    private Vector3 _initialScale;
+
+    public ViewportPanel(Editor editor, HistoryManager history)
     {
         _editor = editor;
+        _history = history;
     }
 
     public void Update()
@@ -141,6 +151,15 @@ public class ViewportPanel
             var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
             var objectMatrix = selectedObject.Transform.GetModelMatrix();
 
+            // Capture initial state when manipulation starts
+            if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
+            {
+                _isManipulatingGizmo = true;
+                _initialPosition = selectedObject.Transform.Position;
+                _initialRotation = selectedObject.Transform.Rotation;
+                _initialScale = selectedObject.Transform.Scale;
+            }
+
             if (ImGuizmo.Manipulate(
                 ref Unsafe.As<Matrix4x4, float>(ref cameraView),
                 ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
@@ -152,6 +171,31 @@ public class ViewportPanel
                 selectedObject.Transform.Position = position;
                 selectedObject.Transform.Rotation = rotation;
                 selectedObject.Transform.Scale = scale;
+            }
+
+            // Create command when manipulation ends
+            if (!ImGuizmo.IsUsing() && _isManipulatingGizmo)
+            {
+                _isManipulatingGizmo = false;
+                var newPosition = selectedObject.Transform.Position;
+                var newRotation = selectedObject.Transform.Rotation;
+                var newScale = selectedObject.Transform.Scale;
+
+                // Only create command if something actually changed
+                if (newPosition != _initialPosition || newRotation != _initialRotation || newScale != _initialScale)
+                {
+                    // Revert the change so the command can apply it
+                    selectedObject.Transform.Position = _initialPosition;
+                    selectedObject.Transform.Rotation = _initialRotation;
+                    selectedObject.Transform.Scale = _initialScale;
+
+                    var command = new ChangeTransformCommand(
+                        selectedObject.Transform,
+                        _initialPosition, _initialRotation, _initialScale,
+                        newPosition, newRotation, newScale
+                    );
+                    _history.Execute(command);
+                }
             }
         }
     }
