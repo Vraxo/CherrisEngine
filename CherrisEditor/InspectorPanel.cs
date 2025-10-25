@@ -169,7 +169,21 @@ internal class InspectorPanel
             {
                 if (!string.IsNullOrWhiteSpace(_newScriptName))
                 {
-                    _editor.CreateAndCompileScript(_newScriptName);
+                    string scriptName = _newScriptName;
+                    _editor.CreateAndCompileScript(scriptName);
+
+                    // After compiling, find the new type and add it to the GameObject
+                    Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
+                    if (newScriptType != null)
+                    {
+                        var newComponent = (Script)Activator.CreateInstance(newScriptType);
+                        go.AddComponent(newComponent);
+                        if (_editor.State != EditorState.Playing)
+                        {
+                            newComponent.Enabled = false;
+                        }
+                    }
+
                     _newScriptName = "";
                     ImGui.CloseCurrentPopup();
                 }
