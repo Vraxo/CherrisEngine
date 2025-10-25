@@ -105,23 +105,80 @@ internal class InspectorPanel
         }
         ImGui.Separator();
 
+        // --- Transform Component Header ---
         ImGui.PushID("TransformComponent");
-        DrawComponentHeader("Transform", typeof(Transform));
-        if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
+        bool transformHeaderOpen;
+        IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
+        var style = ImGui.GetStyle();
+
+        // Use a group to handle the custom layout
+        ImGui.BeginGroup();
+        // Calculate vertical padding to center the icon
+        float iconSize = 20.0f;
+        float frameHeight = ImGui.GetFrameHeight();
+        float yPadding = (frameHeight - iconSize) * 0.5f;
+
+        // Save original cursor pos
+        var startPos = ImGui.GetCursorPos();
+
+        // Draw icon at padded Y position
+        ImGui.SetCursorPos(new Vector2(startPos.X, startPos.Y + yPadding));
+        if (transformIcon != IntPtr.Zero)
+        {
+            ImGui.Image(transformIcon, new Vector2(iconSize, iconSize));
+        }
+        else
+        {
+            ImGui.Dummy(new Vector2(iconSize, iconSize)); // Placeholder
+        }
+
+        // Draw header at original Y position but offset X
+        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
+        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+        transformHeaderOpen = ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen);
+        ImGui.EndGroup();
+
+        if (transformHeaderOpen)
         {
             _transformInspector.Draw(go.Transform);
         }
         ImGui.PopID();
 
 
+        // --- Other Components ---
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
             string componentName = SplitPascalCase(component.GetType().Name);
 
             ImGui.PushID(component.GetHashCode());
-            DrawComponentHeader(componentName, component.GetType());
-            bool headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
+
+            bool headerOpen;
+            string textureKey = $"Component_{component.GetType().Name}";
+            IntPtr icon = _textureManager.GetTexture(textureKey);
+            if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
+            {
+                icon = _textureManager.GetTexture("Component_Script");
+            }
+
+            ImGui.BeginGroup();
+            startPos = ImGui.GetCursorPos();
+            ImGui.SetCursorPos(new Vector2(startPos.X, startPos.Y + yPadding));
+            if (icon != IntPtr.Zero)
+            {
+                ImGui.Image(icon, new Vector2(iconSize, iconSize));
+            }
+            else
+            {
+                ImGui.Dummy(new Vector2(iconSize, iconSize)); // Placeholder
+            }
+            headerX = startPos.X + iconSize + style.ItemSpacing.X;
+            ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+            headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
+            ImGui.EndGroup();
+
 
             if (ImGui.BeginPopupContextItem())
             {
@@ -156,31 +213,6 @@ internal class InspectorPanel
         }
 
         DrawAddComponentButton(go);
-    }
-
-    private void DrawComponentHeader(string headerName, Type componentType)
-    {
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(4, 2));
-
-        string textureKey = $"Component_{componentType.Name}";
-        IntPtr icon = _textureManager.GetTexture(textureKey);
-
-        // Fallback for scripts
-        if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(componentType))
-        {
-            icon = _textureManager.GetTexture("Component_Script");
-        }
-
-        if (icon != IntPtr.Zero)
-        {
-            ImGui.Image(icon, new Vector2(20, 20));
-            ImGui.SameLine();
-        }
-
-        // The header text is now part of the CollapsingHeader, not drawn here.
-
-        ImGui.PopStyleVar(2);
     }
 
     private void DrawAddComponentButton(GameObject go)
