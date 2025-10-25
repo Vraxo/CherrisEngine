@@ -15,6 +15,7 @@ namespace CherrisEditor;
 internal class InspectorPanel
 {
     private readonly Editor _editor;
+    private readonly EditorTextureManager _textureManager;
     private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
     private readonly DefaultInspector _defaultInspector;
     private readonly TransformInspector _transformInspector;
@@ -24,6 +25,7 @@ internal class InspectorPanel
     public InspectorPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
+        _textureManager = textureManager;
         _defaultInspector = new DefaultInspector();
         _transformInspector = new TransformInspector();
         RegisterCustomInspectors(editor, textureManager);
@@ -86,15 +88,22 @@ internal class InspectorPanel
         }
         ImGui.Separator();
 
+        ImGui.PushID("TransformComponent");
+        DrawComponentHeader("Transform", typeof(Transform));
         if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
             _transformInspector.Draw(go.Transform);
         }
+        ImGui.PopID();
+
 
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
             string componentName = SplitPascalCase(component.GetType().Name);
+
+            ImGui.PushID(component.GetHashCode());
+            DrawComponentHeader(componentName, component.GetType());
             bool headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
 
             if (ImGui.BeginPopupContextItem())
@@ -103,6 +112,7 @@ internal class InspectorPanel
                 {
                     go.RemoveComponent(component);
                     ImGui.EndPopup();
+                    ImGui.PopID();
                     return;
                 }
                 ImGui.EndPopup();
@@ -119,9 +129,35 @@ internal class InspectorPanel
                     _defaultInspector.Draw(component);
                 }
             }
+            ImGui.PopID();
         }
 
         DrawAddComponentButton(go);
+    }
+
+    private void DrawComponentHeader(string headerName, Type componentType)
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(4, 2));
+
+        string textureKey = $"Component_{componentType.Name}";
+        IntPtr icon = _textureManager.GetTexture(textureKey);
+
+        // Fallback for scripts
+        if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(componentType))
+        {
+            icon = _textureManager.GetTexture("Component_Script");
+        }
+
+        if (icon != IntPtr.Zero)
+        {
+            ImGui.Image(icon, new Vector2(20, 20));
+            ImGui.SameLine();
+        }
+
+        // The header text is now part of the CollapsingHeader, not drawn here.
+
+        ImGui.PopStyleVar(2);
     }
 
     private void DrawAddComponentButton(GameObject go)

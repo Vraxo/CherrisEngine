@@ -17,25 +17,33 @@ public class EditorAppLogic : IDisposable
     private readonly OutlinerPanel _outlinerPanel;
     private readonly InspectorPanel _inspectorPanel;
     private readonly ContentBrowserPanel _contentBrowserPanel;
+    private readonly EditorTextureManager _textureManager;
 
     public EditorAppLogic(Editor editor)
     {
-        var textureManager = new EditorTextureManager();
+        _textureManager = new EditorTextureManager();
         _sceneSerializer = new SceneSerializer();
 
         _menuBar = new MenuBar(editor, _sceneSerializer);
-        _toolbar = new Toolbar(editor, textureManager);
+        _toolbar = new Toolbar(editor, _textureManager);
         _viewportPanel = new ViewportPanel(editor);
         _outlinerPanel = new OutlinerPanel(editor);
-        _inspectorPanel = new InspectorPanel(editor, textureManager);
-        _contentBrowserPanel = new ContentBrowserPanel(textureManager);
+        _inspectorPanel = new InspectorPanel(editor, _textureManager);
+        _contentBrowserPanel = new ContentBrowserPanel(_textureManager);
 
         EditorTheme.ApplyUnrealEngineStyle();
 
-        textureManager.LoadTexture("Play", "Assets/Icons/play.png");
-        textureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
-        textureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
-        textureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
+        _textureManager.LoadTexture("Play", "Assets/Icons/play.png");
+        _textureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
+        _textureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
+        _textureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
+
+        // Load component icons
+        _textureManager.LoadTexture("Component_Transform", "Assets/Icons/Components/transform.png");
+        _textureManager.LoadTexture("Component_Camera", "Assets/Icons/Components/camera.png");
+        _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
+        _textureManager.LoadTexture("Component_Script", "Assets/Icons/Components/script.png");
+
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
     }
@@ -91,5 +99,6 @@ public class EditorAppLogic : IDisposable
     public void Dispose()
     {
         _contentBrowserPanel.Dispose();
+        _textureManager.Dispose();
     }
 }
