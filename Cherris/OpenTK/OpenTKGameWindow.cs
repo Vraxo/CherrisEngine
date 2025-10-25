@@ -227,6 +227,8 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.R => Key.R,
             OpenTKKey.LeftShift => Key.ShiftLeft,
             OpenTKKey.RightShift => Key.ShiftRight,
+            OpenTKKey.LeftControl => Key.ControlLeft,
+            OpenTKKey.RightControl => Key.ControlRight,
             OpenTKKey.Escape => Key.Escape,
             OpenTKKey.F12 => Key.F12,
             OpenTKKey.Up => Key.Up,

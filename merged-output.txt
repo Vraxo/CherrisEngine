@@ -6661,6 +6661,7 @@ internal class InspectorPanel
         if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
         {
             go.Name = name;
+            _editor.SceneManager.ActiveScene.IsDirty = true;
         }
         ImGui.Separator();
 
@@ -6668,7 +6669,10 @@ internal class InspectorPanel
         DrawComponentHeader("Transform", typeof(Transform));
         if (ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            _transformInspector.Draw(go.Transform);
+            if (_transformInspector.Draw(go.Transform))
+            {
+                _editor.SceneManager.ActiveScene.IsDirty = true;
+            }
         }
         ImGui.PopID();
 
@@ -6687,6 +6691,7 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Remove Component"))
                 {
                     go.RemoveComponent(component);
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
                     ImGui.EndPopup();
                     ImGui.PopID();
                     return;
@@ -6696,13 +6701,18 @@ internal class InspectorPanel
 
             if (headerOpen)
             {
+                bool componentChanged = false;
                 if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
                 {
-                    customInspector.Draw(component);
+                    if (customInspector.Draw(component)) componentChanged = true;
                 }
                 else
                 {
-                    _defaultInspector.Draw(component);
+                    if (_defaultInspector.Draw(component)) componentChanged = true;
+                }
+                if (componentChanged)
+                {
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
                 }
             }
             ImGui.PopID();
@@ -6767,6 +6777,7 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Camera"))
                 {
                     go.AddComponent(new Camera());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
                     ImGui.CloseCurrentPopup();
                 }
             }
@@ -6784,6 +6795,7 @@ internal class InspectorPanel
                 {
                     var newComponent = (Script)Activator.CreateInstance(scriptType);
                     go.AddComponent(newComponent);
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
 
                     if (_editor.State != EditorState.Playing)
                     {
@@ -6809,6 +6821,7 @@ internal class InspectorPanel
                     {
                         var newComponent = (Script)Activator.CreateInstance(newScriptType);
                         go.AddComponent(newComponent);
+                        _editor.SceneManager.ActiveScene.IsDirty = true;
                         if (_editor.State != EditorState.Playing)
                         {
                             newComponent.Enabled = false;
@@ -7055,10 +7068,11 @@ public class DefaultInspector : IComponentInspector
         _textureManager = textureManager;
     }
 
-    public void Draw(Component component)
+    public bool Draw(Component component)
     {
+        bool dirty = false;
         Type componentType = component.GetType();
-        if (!ImGui.BeginTable(componentType.Name + "Table", 3)) return;
+        if (!ImGui.BeginTable(componentType.Name + "Table", 3)) return false;
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
@@ -7079,7 +7093,10 @@ public class DefaultInspector : IComponentInspector
 
             ImGui.TableSetColumnIndex(1);
             ImGui.PushItemWidth(-1.0f);
-            DrawPropertyControl(component, prop);
+            if (DrawPropertyControl(component, prop))
+            {
+                dirty = true;
+            }
             ImGui.PopItemWidth();
 
             ImGui.TableSetColumnIndex(2);
@@ -7089,16 +7106,19 @@ public class DefaultInspector : IComponentInspector
                 if (defaultValue != null)
                 {
                     prop.SetValue(component, defaultValue);
+                    dirty = true;
                 }
             }
         }
 
         ImGui.EndTable();
+        return dirty;
     }
 
-    private void DrawPropertyControl(object instance, PropertyInfo prop)
+    private bool DrawPropertyControl(object instance, PropertyInfo prop)
     {
         object currentValue = prop.GetValue(instance);
+        bool valueChanged = false;
 
         if (prop.PropertyType == typeof(float))
         {
@@ -7106,6 +7126,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(int))
@@ -7114,6 +7135,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.DragInt($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(bool))
@@ -7122,6 +7144,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.Checkbox($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(string))
@@ -7130,6 +7153,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.InputText($"##{prop.Name}", ref val, 256))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(Vector2))
@@ -7139,6 +7163,7 @@ public class DefaultInspector : IComponentInspector
             if (DrawVector2Control($"##{prop.Name}", ref val))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
             ImGui.PushItemWidth(-1.0f); // Push it back
         }
@@ -7151,12 +7176,14 @@ public class DefaultInspector : IComponentInspector
                 if (DrawColor3Control($"##{prop.Name}", ref val))
                 {
                     prop.SetValue(instance, val);
+                    valueChanged = true;
                 }
                 ImGui.PushItemWidth(-1.0f); // Push it back for subsequent controls
             }
             else if (ImGui.DragFloat3($"##{prop.Name}", ref val, 0.1f))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else if (prop.PropertyType == typeof(Vector4))
@@ -7168,18 +7195,21 @@ public class DefaultInspector : IComponentInspector
                 if (DrawColor4Control($"##{prop.Name}", ref val))
                 {
                     prop.SetValue(instance, val);
+                    valueChanged = true;
                 }
                 ImGui.PushItemWidth(-1.0f);
             }
             else if (ImGui.DragFloat4($"##{prop.Name}", ref val, 0.1f))
             {
                 prop.SetValue(instance, val);
+                valueChanged = true;
             }
         }
         else
         {
             ImGui.Text(currentValue?.ToString() ?? "null");
         }
+        return valueChanged;
     }
 
     public static bool DrawVector2Control(string label, ref Vector2 values)
@@ -7291,7 +7321,7 @@ namespace CherrisEditor.Inspectors;
 
 public interface IComponentInspector
 {
-    void Draw(Component component);
+    bool Draw(Component component);
 }
 </file>
 
@@ -7318,11 +7348,12 @@ public class MeshRendererInspector : IComponentInspector
         _textureManager = textureManager;
     }
 
-    public unsafe void Draw(Component component)
+    public unsafe bool Draw(Component component)
     {
         var mr = (MeshRenderer)component;
+        bool dirty = false;
 
-        if (!ImGui.BeginTable("MRTable", 3)) return;
+        if (!ImGui.BeginTable("MRTable", 3)) return false;
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
@@ -7360,6 +7391,7 @@ public class MeshRendererInspector : IComponentInspector
                     var newTexture = _editor.ResourceManager.GetTexture(textureName);
                     mr.TextureName = textureName;
                     mr.Texture = newTexture;
+                    dirty = true;
                 }
             }
             ImGui.EndDragDropTarget();
@@ -7373,6 +7405,7 @@ public class MeshRendererInspector : IComponentInspector
         {
             mr.TextureName = "White";
             mr.Texture = _editor.ResourceManager.GetTexture("White");
+            dirty = true;
         }
 
         // Tiling
@@ -7384,9 +7417,14 @@ public class MeshRendererInspector : IComponentInspector
         if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling))
         {
             mr.TextureTiling = tiling;
+            dirty = true;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize))) mr.TextureTiling = Vector2.One;
+        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            mr.TextureTiling = Vector2.One;
+            dirty = true;
+        }
 
         // Emissive Color
         ImGui.TableNextRow();
@@ -7397,15 +7435,18 @@ public class MeshRendererInspector : IComponentInspector
         if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive))
         {
             mr.EmissiveColor = emissive;
+            dirty = true;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize))) mr.EmissiveColor = Vector3.Zero;
+        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            mr.EmissiveColor = Vector3.Zero;
+            dirty = true;
+        }
 
         ImGui.EndTable();
+        return dirty;
     }
-
-    // This method is required by the interface but isn't used for custom inspectors.
-    void IComponentInspector.Draw(Component component) => Draw(component);
 }
 </file>
 
@@ -7426,9 +7467,10 @@ public class TransformInspector
         _textureManager = textureManager;
     }
 
-    public void Draw(Transform transform)
+    public bool Draw(Transform transform)
     {
-        if (!ImGui.BeginTable("TransformTable", 3)) return;
+        bool dirty = false;
+        if (!ImGui.BeginTable("TransformTable", 3)) return false;
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
@@ -7443,9 +7485,17 @@ public class TransformInspector
         ImGui.Text("Position");
         ImGui.TableSetColumnIndex(1);
         Vector3 position = transform.Position;
-        if (DrawVector3Control("Position", ref position)) transform.Position = position;
+        if (DrawVector3Control("Position", ref position))
+        {
+            transform.Position = position;
+            dirty = true;
+        }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Position = Vector3.Zero;
+        if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            transform.Position = Vector3.Zero;
+            dirty = true;
+        }
 
         // Rotation
         ImGui.TableNextRow();
@@ -7457,9 +7507,14 @@ public class TransformInspector
         {
             Vector3 eulerRadians = eulerDegrees * (System.MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+            dirty = true;
         }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Rotation = Quaternion.Identity;
+        if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            transform.Rotation = Quaternion.Identity;
+            dirty = true;
+        }
 
         // Scale
         ImGui.TableNextRow();
@@ -7467,11 +7522,20 @@ public class TransformInspector
         ImGui.Text("Scale");
         ImGui.TableSetColumnIndex(1);
         Vector3 scale = transform.Scale;
-        if (DrawVector3Control("Scale", ref scale)) transform.Scale = scale;
+        if (DrawVector3Control("Scale", ref scale))
+        {
+            transform.Scale = scale;
+            dirty = true;
+        }
         ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize))) transform.Scale = Vector3.One;
+        if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            transform.Scale = Vector3.One;
+            dirty = true;
+        }
 
         ImGui.EndTable();
+        return dirty;
     }
 
     private static bool DrawVector3Control(string label, ref Vector3 values)

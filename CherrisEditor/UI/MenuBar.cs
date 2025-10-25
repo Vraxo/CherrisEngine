@@ -21,7 +21,7 @@ public class MenuBar
 
         if (ImGui.BeginMenu("File"))
         {
-            if (ImGui.MenuItem("Save"))
+            if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
                 var activeScene = _editor.SceneManager.ActiveScene;
                 if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))

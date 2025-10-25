@@ -70,6 +70,18 @@ public class EditorAppLogic : IDisposable
     public void UpdateEditorLogic(float deltaTime)
     {
         _viewportPanel.Update();
+
+        // Use the engine's input system for global shortcuts
+        if ((Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight)) && Input.WasKeyPressed(Key.S))
+        {
+            var activeScene = _editor.SceneManager.ActiveScene;
+            if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
+            {
+                _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
+                activeScene.IsDirty = false;
+                Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
+            }
+        }
     }
 
     private void SetupDockspace()
