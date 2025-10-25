@@ -5,31 +5,37 @@ namespace Cherris;
 
 public static class EngineMath
 {
-    // Helper to convert Quaternion to Euler angles (in radians) for display
+    /// <summary>
+    /// Helper to convert a Quaternion to Euler angles (in radians).
+    /// The returned Vector3 contains (Pitch, Yaw, Roll).
+    /// Pitch is rotation around the X-axis.
+    /// Yaw is rotation around the Y-axis.
+    /// Roll is rotation around the Z-axis.
+    /// </summary>
     public static Vector3 ToEulerAngles(Quaternion q)
     {
         Vector3 angles = new();
 
-        // Roll (x-axis rotation)
-        float sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
-        float cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
-        angles.X = float.Atan2(sinr_cosp, cosr_cosp);
+        // Pitch (x-axis rotation)
+        float sinp_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        float cosp_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        angles.X = float.Atan2(sinp_cosp, cosp_cosp);
 
-        // Pitch (y-axis rotation)
-        float sinp = 2 * (q.W * q.Y - q.Z * q.X);
-        if (float.Abs(sinp) >= 1)
+        // Yaw (y-axis rotation)
+        float siny = 2 * (q.W * q.Y - q.Z * q.X);
+        if (float.Abs(siny) >= 1)
         {
-            angles.Y = float.CopySign(MathF.PI / 2, sinp); // use 90 degrees if out of range
+            angles.Y = float.CopySign(MathF.PI / 2, siny); // use 90 degrees if out of range
         }
         else
         {
-            angles.Y = float.Asin(sinp);
+            angles.Y = float.Asin(siny);
         }
 
-        // Yaw (z-axis rotation)
-        float siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
-        float cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
-        angles.Z = float.Atan2(siny_cosp, cosy_cosp);
+        // Roll (z-axis rotation)
+        float sinr_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        float cosr_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        angles.Z = float.Atan2(sinr_cosp, cosr_cosp);
 
         return angles;
     }

@@ -46,8 +46,11 @@ public class SceneSerializer
                 ["Position"] = go.Transform.Position
             };
 
+            // ToEulerAngles returns (Pitch, Yaw, Roll).
+            // The loader expects this order to create the quaternion.
+            // We save it directly in this logical order.
             var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
-            transformData["Rotation"] = new Vector3(eulerDegrees.Y, eulerDegrees.Z, eulerDegrees.X);
+            transformData["Rotation"] = eulerDegrees;
             transformData["Scale"] = go.Transform.Scale;
             componentsData["Transform"] = transformData;
 

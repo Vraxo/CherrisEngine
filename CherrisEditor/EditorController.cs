@@ -20,13 +20,18 @@ public class EditorController : Script
         _editor = editor;
     }
 
-    public override void Start()
+    private void SyncYawPitchFromTransform()
     {
-        Quaternion initialRotation = GameObject.Transform.Rotation;
-        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, initialRotation);
+        Quaternion currentRotation = GameObject.Transform.Rotation;
+        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, currentRotation);
 
         _yaw = MathF.Atan2(direction.X, -direction.Z);
         _pitch = MathF.Asin(direction.Y);
+    }
+
+    public override void Start()
+    {
+        SyncYawPitchFromTransform();
     }
 
     public override void Update(float deltaTime)
@@ -115,6 +120,12 @@ public class EditorController : Script
         if (!Input.IsMouseButtonDown(MouseButton.Right))
         {
             return;
+        }
+
+        // On first press, sync _yaw and _pitch with current transform to prevent snapping.
+        if (Input.WasMouseButtonPressed(MouseButton.Right))
+        {
+            SyncYawPitchFromTransform();
         }
 
         Vector2 mouseDelta = Input.MouseDelta;
