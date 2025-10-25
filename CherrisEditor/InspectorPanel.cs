@@ -18,6 +18,7 @@ internal class InspectorPanel
     private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
     private readonly DefaultInspector _defaultInspector;
     private readonly TransformInspector _transformInspector;
+    private string _newScriptName = "";
 
     public InspectorPanel(Editor editor, EditorTextureManager textureManager)
     {
@@ -160,6 +161,21 @@ internal class InspectorPanel
                     ImGui.CloseCurrentPopup();
                 }
             }
+
+            ImGui.Separator();
+            ImGui.Text("New Script");
+            ImGui.PushItemWidth(-1.0f);
+            if (ImGui.InputText("##NewScriptName", ref _newScriptName, 100, ImGuiInputTextFlags.EnterReturnsTrue))
+            {
+                if (!string.IsNullOrWhiteSpace(_newScriptName))
+                {
+                    _editor.CreateAndCompileScript(_newScriptName);
+                    _newScriptName = "";
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+            ImGui.PopItemWidth();
+
             ImGui.EndPopup();
         }
     }

@@ -1,9 +1,12 @@
 ﻿using Cherris;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.Loader;
+using System.Text.RegularExpressions;
 
 namespace CherrisEditor;
 
@@ -13,9 +16,12 @@ public class Editor : Engine
     public List<Type> AvailableScriptTypes { get; } = new();
     public EditorState State { get; private set; } = EditorState.Editing;
 
+    private AssemblyLoadContext _gameAssemblyContext;
+
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
         Exposure = 0.5f;
+        _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
     }
 
     public void EnterPlayMode()
@@ -53,6 +59,41 @@ public class Editor : Engine
 
         EnterEditMode();
         EnterPlayMode();
+    }
+
+    public void CreateAndCompileScript(string scriptName)
+    {
+        if (!IsValidCSharpIdentifier(scriptName))
+        {
+            Console.WriteLine($"[Editor] Error: '{scriptName}' is not a valid C# class name.");
+            return;
+        }
+
+        string scriptsPath = Path.Combine("Assets", "Scripts");
+        Directory.CreateDirectory(scriptsPath);
+        string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
+
+        if (File.Exists(filePath))
+        {
+            Console.WriteLine($"[Editor] Error: A script named '{scriptName}.cs' already exists.");
+            return;
+        }
+
+        string content = ScriptTemplate.GetContent(scriptName);
+        File.WriteAllText(filePath, content);
+        Console.WriteLine($"[Editor] Created new script at '{filePath}'");
+
+        CompileAndRegisterGameScripts();
+    }
+
+    private static bool IsValidCSharpIdentifier(string identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier) || !Regex.IsMatch(identifier, @"^[_a-zA-Z][_a-zA-Z0-9]*$"))
+        {
+            return false;
+        }
+        // A more robust check would involve comparing against all C# keywords.
+        return true;
     }
 
     protected override void LoadContent()
@@ -102,8 +143,16 @@ public class Editor : Engine
 
     private void CompileAndRegisterGameScripts()
     {
+        // Unload the previous context if it exists
+        if (_gameAssemblyContext.Assemblies.Any())
+        {
+            _gameAssemblyContext.Unload();
+            Console.WriteLine("[Editor] Unloaded old game assembly.");
+        }
+        _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
+
         AvailableScriptTypes.Clear();
-        Assembly? gameAssembly = ScriptCompiler.Compile("Assets");
+        Assembly? gameAssembly = ScriptCompiler.Compile("Assets", _gameAssemblyContext);
 
         if (gameAssembly is null)
         {

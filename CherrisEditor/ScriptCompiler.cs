@@ -15,7 +15,7 @@ namespace CherrisEditor;
 /// </summary>
 public static class ScriptCompiler
 {
-    public static Assembly? Compile(string rootAssetPath)
+    public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
     {
         string scriptsPath = Path.Combine(rootAssetPath, "Scripts");
         if (!Directory.Exists(scriptsPath))
@@ -33,40 +33,30 @@ public static class ScriptCompiler
 
         Console.WriteLine($"[ScriptCompiler] Found {scriptFiles.Length} script(s). Starting compilation...");
 
-        // 1. Parse all script files into Roslyn syntax trees
         var syntaxTrees = scriptFiles
             .Select(file => CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file))
             .ToList();
 
-        // 2. Define the references our scripts will need to compile
-        // This is the crucial part: scripts need to know about the .NET runtime and our engine.
         var assemblyPaths = new HashSet<string>
         {
-            // Add core .NET assemblies
             typeof(object).Assembly.Location,
             Assembly.Load("System.Runtime").Location,
-            // Add engine assembly
             typeof(Cherris.Engine).Assembly.Location,
-            // Add Numerics for Vector3, etc.
             typeof(System.Numerics.Vector3).Assembly.Location,
-            // Explicitly add the assembly mentioned in the error log to ensure it's included
             Assembly.Load("System.Numerics.Vectors").Location
         };
 
         var references = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
 
-        // 3. Set up the compilation
         var compilation = CSharpCompilation.Create(
-            "GameScriptsAssembly", // The name of our dynamic DLL
+            "GameScriptsAssembly",
             syntaxTrees,
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        // 4. Compile into a memory stream
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
 
-        // 5. Check for compilation errors
         if (!result.Success)
         {
             Console.WriteLine("[ScriptCompiler] Compilation failed!");
@@ -82,8 +72,7 @@ public static class ScriptCompiler
 
         Console.WriteLine("[ScriptCompiler] Compilation successful.");
 
-        // 6. Load the compiled assembly from the memory stream
         ms.Seek(0, SeekOrigin.Begin);
-        return AssemblyLoadContext.Default.LoadFromStream(ms);
+        return context.LoadFromStream(ms);
     }
 }
