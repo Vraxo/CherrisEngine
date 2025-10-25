@@ -50,32 +50,36 @@ public class SceneManager
 
     public void Start()
     {
+        // First pass: find essential components
         foreach (var gameObject in _gameObjects)
         {
-            if (MainCamera is null)
-            {
-                MainCamera = gameObject.GetComponent<Camera>();
-            }
+            if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
+            if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
+        }
 
-            if (Skybox is null)
-            {
-                Skybox = gameObject.GetComponent<Skybox>();
-            }
-
+        // Second pass: initialize scripts
+        foreach (var gameObject in _gameObjects)
+        {
             foreach (var script in gameObject.GetComponents<Script>())
             {
                 script.Start();
             }
         }
 
+        // Handle case where no camera was found in the scene
         if (MainCamera is null)
         {
-            Console.WriteLine("Warning: No camera found in scene. Creating a default one.");
-            var go = new GameObject("Default Camera");
-            go.Transform.Position = new Vector3(0, 1, 3);
-            MainCamera = go.AddComponent(new Camera());
-            _gameObjects.Add(go);
+            CreateDefaultCamera();
         }
+    }
+
+    private void CreateDefaultCamera()
+    {
+        Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
+        var go = new GameObject("Default Camera");
+        go.Transform.Position = new Vector3(0, 1, 3);
+        MainCamera = go.AddComponent(new Camera());
+        _gameObjects.Add(go);
     }
 
     public void Update(float deltaTime)

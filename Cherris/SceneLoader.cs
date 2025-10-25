@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using Cherris.Rendering;
 using Veldrid;
 using YamlDotNet.Serialization;
@@ -116,17 +118,44 @@ public class SceneLoader
     {
         if (string.IsNullOrEmpty(componentType)) return;
 
-        if (_componentFactories.TryGetValue(componentType, out var factory))
-        {
-            var component = factory(properties);
-            if (component is not null)
-            {
-                go.AddComponent(component);
-            }
-        }
-        else
+        if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
             Console.WriteLine($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
+            return;
+        }
+
+        var component = factory(properties);
+        if (component is null) return;
+
+        go.AddComponent(component);
+
+        if (component is Script script && properties is Dictionary<object, object> propsDict)
+        {
+            ApplyScriptProperties(script, propsDict);
+        }
+    }
+
+    private static void ApplyScriptProperties(Script script, Dictionary<object, object> propsDict)
+    {
+        var scriptType = script.GetType();
+        foreach (var propKvp in propsDict)
+        {
+            if (propKvp.Key is not string propName) continue;
+
+            PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+            if (propertyInfo == null || !propertyInfo.CanWrite) continue;
+
+            try
+            {
+                // YamlDotNet may deserialize numbers as different types (e.g., double, long).
+                // We must convert the value to the actual type of the property.
+                var convertedValue = Convert.ChangeType(propKvp.Value, propertyInfo.PropertyType, CultureInfo.InvariantCulture);
+                propertyInfo.SetValue(script, convertedValue);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -27,8 +28,6 @@ public class SceneSerializer
 
         foreach (var go in gameObjects)
         {
-            if (go.Components.Any(c => c.GetType().Name == "EditorController")) continue;
-
             var goData = new Dictionary<string, object>
             {
                 ["Id"] = go.Id.ToString(),
@@ -54,6 +53,10 @@ public class SceneSerializer
 
             foreach (var component in go.Components)
             {
+                // This is the critical fix: skip serializing the EditorController component,
+                // but not the entire GameObject it's attached to.
+                if (component.GetType().Name == "EditorController") continue;
+
                 switch (component)
                 {
                     case MeshRenderer mr:
@@ -79,7 +82,7 @@ public class SceneSerializer
                         break;
 
                     case Script script:
-                        componentsData[script.GetType().Name] = new Dictionary<string, object>();
+                        componentsData[script.GetType().Name] = SerializeScriptProperties(script);
                         break;
                 }
             }
@@ -94,5 +97,19 @@ public class SceneSerializer
 
         var yaml = _serializer.Serialize(root);
         File.WriteAllText(filePath, yaml);
+    }
+
+    private static Dictionary<string, object> SerializeScriptProperties(Script script)
+    {
+        var propertiesData = new Dictionary<string, object>();
+        var properties = script.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.CanWrite && p.GetCustomAttribute<HideInInspectorAttribute>() == null);
+
+        foreach (var prop in properties)
+        {
+            propertiesData[prop.Name] = prop.GetValue(script);
+        }
+
+        return propertiesData;
     }
 }
