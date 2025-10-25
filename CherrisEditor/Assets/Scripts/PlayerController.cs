@@ -22,13 +22,12 @@ namespace Apexverse
             // Clamp the pitch to prevent the camera from flipping upside down
             _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
 
-            // Update rotation from yaw and pitch
-            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
+            // Update rotation from yaw and pitch using the standard engine function
+            GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
 
             // --- Keyboard Movement ---
             var moveDirection = Vector3.Zero;
-            
+
             if (Input.IsKeyDown(Key.W))
             {
                 moveDirection -= Vector3.UnitZ;

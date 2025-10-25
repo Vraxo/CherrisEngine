@@ -108,6 +108,7 @@ public class OpenTKGameWindow : IGameWindow
 
         if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
+            _lastMousePos = currentPos; // Still update last pos to prevent jump if they click right after
             return;
         }
 
@@ -119,7 +120,7 @@ public class OpenTKGameWindow : IGameWindow
             Input.SetMouseDelta(delta);
         }
 
-        // Always update the last mouse position. This is simpler and more robust.
+        // Always update the last mouse position for the next frame's calculation.
         _lastMousePos = currentPos;
     }
 

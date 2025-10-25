@@ -242,7 +242,13 @@ public class Editor : Engine
     private void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
         EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        editorController ??= cameraGo.AddComponent(new EditorController(this));
+        if (editorController == null)
+        {
+            editorController = cameraGo.AddComponent(new EditorController(this));
+            // The crucial fix: Call Start() to initialize the controller's state
+            // from the transform that was just loaded from the scene file.
+            editorController.Start();
+        }
         editorController.Enabled = true;
     }
 

@@ -22,21 +22,16 @@ public class EditorController : Script
 
     /// <summary>
     /// Initializes the internal yaw and pitch from the GameObject's current rotation.
-    /// This should only be called once at the start, or after an external rotation (e.g., from a gizmo).
-    /// Calling this frequently can lead to instabilities due to Euler angle ambiguities.
+    /// This uses the engine's standard Euler angle conversion to ensure symmetry with the creation method.
     /// </summary>
-    public void SyncYawPitchFromTransform()
+    private void SyncYawPitchFromTransform()
     {
-        Quaternion q = GameObject.Transform.Rotation;
-        Vector3 forward = GameObject.Transform.Forward;
+        var eulerAngles = EngineMath.ToEulerAngles(GameObject.Transform.Rotation);
+        _pitch = eulerAngles.X; // Pitch is rotation around X-axis
+        _yaw = eulerAngles.Y;   // Yaw is rotation around Y-axis
+                                // We ignore roll (Z-axis) for the camera controller.
 
-        // Pitch is the angle of the forward vector with the horizontal XZ plane.
-        _pitch = MathF.Asin(-forward.Y);
-
-        // Yaw is the angle of the forward vector's projection onto the XZ plane.
-        _yaw = MathF.Atan2(forward.X, -forward.Z);
-
-        Console.WriteLine($"[Controller] Syncing orientation. New Yaw/Pitch: <{_yaw}, {_pitch}>. From Rotation: {q}");
+        Console.WriteLine($"[Controller] Initializing camera orientation. Yaw: {_yaw}, Pitch: {_pitch}. From Transform Rotation: {GameObject.Transform.Rotation}");
     }
 
     public override void Start()
@@ -69,7 +64,8 @@ public class EditorController : Script
             return;
         }
 
-        GameObject.Transform.Position += GameObject.Transform.Forward * mouseWheelDelta * ZoomSensitivity;
+        Vector3 forward = Vector3.Transform(-Vector3.UnitZ, GameObject.Transform.Rotation);
+        GameObject.Transform.Position += forward * mouseWheelDelta * ZoomSensitivity;
     }
 
     private void HandleKeyboardMovement(float deltaTime)
@@ -131,21 +127,20 @@ public class EditorController : Script
             return;
         }
 
-        // We no longer sync on click. We just apply the delta to the existing yaw/pitch.
-        // This prevents the jump caused by mathematical ambiguity in Euler angle conversion.
+        // On the first frame the button is pressed, sync to handle external changes (e.g., from the gizmo).
+        if (Input.WasMouseButtonPressed(MouseButton.Right))
+        {
+            SyncYawPitchFromTransform();
+        }
+
         Vector2 mouseDelta = Input.MouseDelta;
         if (mouseDelta == Vector2.Zero) return;
-
-        Console.WriteLine($"[Controller] HandleMouseLook: Panning with delta <{mouseDelta.X}, {mouseDelta.Y}>");
 
         _yaw -= mouseDelta.X * MouseSensitivity;
         _pitch -= mouseDelta.Y * MouseSensitivity;
         _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
 
-        var newRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                          Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-
-        Console.WriteLine($"[Controller] Old Rotation: {GameObject.Transform.Rotation}, New Rotation: {newRotation}");
-        GameObject.Transform.Rotation = newRotation;
+        // Create the new rotation using the standard engine function, which matches the deconstruction method.
+        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
     }
 }
