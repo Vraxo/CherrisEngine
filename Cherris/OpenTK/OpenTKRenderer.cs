@@ -46,6 +46,8 @@ namespace Cherris
             // 1. Render scene to texture if the viewport is visible
             if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
             {
+                GL.Enable(EnableCap.FramebufferSrgb);
+
                 _postProcessor.BeginFrame();
                 GL.Enable(EnableCap.DepthTest);
                 GL.Enable(EnableCap.CullFace);
@@ -69,6 +71,8 @@ namespace Cherris
                 _postProcessor.ResolveMsaa();
                 _postProcessor.RenderBloom();
                 _postProcessor.Composite(exposure);
+
+                GL.Disable(EnableCap.FramebufferSrgb);
             }
 
             // 2. Clear main window and render UI

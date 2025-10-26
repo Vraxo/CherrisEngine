@@ -642,7 +642,19 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
+            var mr = new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
+
+            if (propsDict.TryGetValue("SpecularIntensity", out var specIntObj))
+            {
+                mr.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
+            }
+
+            if (propsDict.TryGetValue("Shininess", out var shininessObj))
+            {
+                mr.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
+            }
+
+            return mr;
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>
@@ -663,6 +675,42 @@ public abstract class Engine
             }
 
             return null;
+        });
+
+        SceneLoader.RegisterComponentFactory("Light", (properties) =>
+        {
+            var light = new Light();
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return light;
+            }
+
+            if (propsDict.TryGetValue("Type", out var typeObj) && Enum.TryParse<LightType>(typeObj as string, out var type))
+            {
+                light.Type = type;
+            }
+
+            if (propsDict.TryGetValue("Color", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
+            {
+                try
+                {
+                    light.Color = new Vector3(
+                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Engine] Warning: Could not parse Light Color values. Using default. Error: {e.Message}");
+                }
+            }
+
+            if (propsDict.TryGetValue("Intensity", out var intensityObj))
+            {
+                light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
+            }
+
+            return light;
         });
 
         SceneLoader.RegisterComponentFactory("RigidBody", (properties) =>
@@ -900,6 +948,15 @@ public class GameObject
         var meshRenderer = GetComponent<MeshRenderer>();
         if (meshRenderer?.Mesh is null)
         {
+            // If there's no mesh, check for other components that should be selectable
+            if (GetComponent<Light>() is not null)
+            {
+                const float selectionVolumeSize = 0.5f;
+                var halfSize = new Vector3(selectionVolumeSize / 2);
+                return new BoundingBox(Transform.Position - halfSize, Transform.Position + halfSize);
+            }
+
+            // Default fallback for objects with no visible/selectable component
             return new BoundingBox(Transform.Position, Transform.Position);
         }
 
@@ -1469,10 +1526,14 @@ public class PhysicsSystem
     public Jitter.World World { get; }
     private readonly Dictionary<Jitter.Dynamics.RigidBody, RigidBody> _bodyMap = new();
 
+    private float _accumulator = 0.0f;
+    private const float FixedTimeStep = 1.0f / 60.0f;
+    private const float MaxDeltaTime = 0.25f; // Prevents "spiral of death" from very large delta times
+
     public PhysicsSystem()
     {
         CollisionSystemSAP collisionSystem = new();
-        
+
         World = new Jitter.World(collisionSystem)
         {
             Gravity = new Vector3(0, -9.81f, 0).ToJitter()
@@ -1498,8 +1559,16 @@ public class PhysicsSystem
 
     public void Update(float deltaTime)
     {
-        // The Jitter 1 Step method takes a timestep and a boolean for multithreading.
-        World.Step(deltaTime, true);
+        // Clamp the delta time to prevent huge simulation steps after a freeze
+        float effectiveDeltaTime = Math.Min(deltaTime, MaxDeltaTime);
+        _accumulator += effectiveDeltaTime;
+
+        // Step the simulation in fixed increments to maintain stability
+        while (_accumulator >= FixedTimeStep)
+        {
+            World.Step(FixedTimeStep, true);
+            _accumulator -= FixedTimeStep;
+        }
 
         // Sync transforms from physics back to game objects for non-static bodies
         foreach ((Jitter.Dynamics.RigidBody jitterBody, RigidBody bodyComponent) in _bodyMap)
@@ -2595,10 +2664,13 @@ public class SceneManager
         _activeScene?.Start(PhysicsSystem);
     }
 
-    public void Update(float deltaTime)
+    public void Update(float deltaTime, bool stepPhysics = true)
     {
         // Update physics first
-        PhysicsSystem.Update(deltaTime);
+        if (stepPhysics)
+        {
+            PhysicsSystem.Update(deltaTime);
+        }
 
         // Then update game logic
         _activeScene?.Update(deltaTime);
@@ -2955,6 +3027,10 @@ public class SceneSerializer
                             mrData["TextureTiling"] = mr.TextureTiling;
                         if (mr.EmissiveColor != Vector3.Zero)
                             mrData["EmissiveColor"] = mr.EmissiveColor;
+                        if (Math.Abs(mr.SpecularIntensity - 0.5f) > 0.001f)
+                            mrData["SpecularIntensity"] = mr.SpecularIntensity;
+                        if (Math.Abs(mr.Shininess - 32.0f) > 0.001f)
+                            mrData["Shininess"] = mr.Shininess;
                         componentsData["MeshRenderer"] = mrData;
                         break;
 
@@ -2965,6 +3041,16 @@ public class SceneSerializer
                     case Skybox skybox:
                         var skyboxData = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
                         componentsData["Skybox"] = skyboxData;
+                        break;
+
+                    case Light light:
+                        var lightData = new Dictionary<string, object>
+                        {
+                            ["Type"] = light.Type.ToString(),
+                            ["Color"] = light.Color,
+                            ["Intensity"] = light.Intensity
+                        };
+                        componentsData["Light"] = lightData;
                         break;
 
                     case RigidBody rb:
@@ -3696,14 +3782,16 @@ namespace Cherris;
 public struct Vertex
 {
     public Vector3 Position;
+    public Vector3 Normal;
     public RgbaFloat Color;
     public Vector2 TexCoord;
 
-    public const uint SizeInBytes = 12 + 16 + 8; // 36
+    public const uint SizeInBytes = 12 + 12 + 16 + 8; // 48
 
-    public Vertex(Vector3 position, RgbaFloat color, Vector2 texCoord)
+    public Vertex(Vector3 position, Vector3 normal, RgbaFloat color, Vector2 texCoord)
     {
         Position = position;
+        Normal = normal;
         Color = color;
         TexCoord = texCoord;
     }
@@ -3781,6 +3869,24 @@ public abstract class Script : Component
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Light.cs">
+using System.Numerics;
+
+namespace Cherris;
+
+public enum LightType
+{
+    Directional
+}
+
+public class Light : Component
+{
+    public LightType Type { get; set; } = LightType.Directional;
+    public Vector3 Color { get; set; } = Vector3.One;
+    public float Intensity { get; set; } = 1.0f;
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Mesh.cs">
 using System.Numerics;
 using Veldrid;
@@ -3835,36 +3941,36 @@ public class Mesh
     {
         Vertex[] vertices =
         {
-            // Top
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Bottom
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-            // Left
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-            // Right
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Front
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Back
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+            // Top (+Y)
+            new(new(-0.5f, +0.5f, -0.5f), new(0, 1, 0), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), new(0, 1, 0), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), new(0, 1, 0), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, +0.5f, +0.5f), new(0, 1, 0), RgbaFloat.White, new(0, 1)),
+            // Bottom (-Y)
+            new(new(-0.5f, -0.5f, +0.5f), new(0, -1, 0), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), new(0, -1, 0), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), new(0, -1, 0), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), new(0, -1, 0), RgbaFloat.White, new(0, 1)),
+            // Left (-X)
+            new(new(-0.5f, +0.5f, -0.5f), new(-1, 0, 0), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, +0.5f), new(-1, 0, 0), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, +0.5f), new(-1, 0, 0), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), new(-1, 0, 0), RgbaFloat.White, new(0, 1)),
+            // Right (+X)
+            new(new(+0.5f, +0.5f, +0.5f), new(1, 0, 0), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), new(1, 0, 0), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), new(1, 0, 0), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, +0.5f), new(1, 0, 0), RgbaFloat.White, new(0, 1)),
+            // Front (+Z)
+            new(new(-0.5f, +0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(0, 1)),
+            // Back (-Z)
+            new(new(+0.5f, +0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(0, 1)),
         };
 
         ushort[] indices =
@@ -3883,12 +3989,13 @@ public class Mesh
     public static Mesh CreatePlane(float size)
     {
         float halfSize = size * 0.5f;
+        var normal = new Vector3(0, 1, 0);
         Vertex[] vertices =
         {
-            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
+            new(new(-halfSize, 0, +halfSize), normal, RgbaFloat.White, new(0, 0)), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), normal, RgbaFloat.White, new(1, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), normal, RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), normal, RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
         };
 
         // Reversed winding order to be visible with existing pipeline state.
@@ -3904,9 +4011,11 @@ public class Mesh
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
-using System;
-using System.Numerics;
+using Cherris.OpenTK;
 using Cherris.Rendering;
+using System;
+using System.Globalization;
+using System.Numerics;
 
 namespace Cherris;
 
@@ -3933,6 +4042,8 @@ public class MeshRenderer : Component, IDisposable
     // MODIFIED: Added setters to allow editing from the inspector
     public Vector2 TextureTiling { get; set; }
     public Vector3 EmissiveColor { get; set; }
+    public float SpecularIntensity { get; set; } = 0.5f;
+    public float Shininess { get; set; } = 32.0f;
 
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }
@@ -4515,15 +4626,24 @@ internal class OpenGLMeshRendererData : IDisposable
         GL.BufferData(BufferTarget.ElementArrayBuffer, (IntPtr)(sizeof(ushort) * mesh.Indices.Length), mesh.Indices, BufferUsageHint.StaticDraw);
 
         const int posBytes = 3 * 4;
+        const int normalBytes = 3 * 4;
         const int colorBytes = 4 * 4;
+
+        // Position (location = 0)
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, 0);
 
+        // Normal (location = 1)
         GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes);
 
+        // Color (location = 2)
         GL.EnableVertexAttribArray(2);
-        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + colorBytes);
+        GL.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + normalBytes);
+
+        // TexCoord (location = 3)
+        GL.EnableVertexAttribArray(3);
+        GL.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + normalBytes + colorBytes);
 
         GL.BindVertexArray(0);
     }
@@ -4866,34 +4986,47 @@ using OpenTK.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Numerics;
 
 namespace Cherris;
 
 internal class OpenGLSceneRenderer : IDisposable
 {
     private readonly ShaderProgram _shaderProgram;
-    private readonly int _mvpLocation;
-    private readonly int _textureLocation;
-    private readonly int _tilingLocation;
-    private readonly int _emissiveLocation;
+    private readonly int _modelLocation, _viewLocation, _projectionLocation;
+    private readonly int _textureLocation, _tilingLocation, _emissiveLocation;
+    private readonly int _viewPosLocation;
+    private readonly int _hasLightLocation;
+    private readonly int _lightDirLocation, _lightColorLocation, _lightIntensityLocation;
+    private readonly int _specularIntensityLocation, _shininessLocation;
+
 
     public OpenGLSceneRenderer()
     {
         const string vertSource = @"
 #version 330 core
 layout (location = 0) in vec3 aPosition;
-layout (location = 1) in vec4 aColor;
-layout (location = 2) in vec2 aTexCoord;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec4 aColor;
+layout (location = 3) in vec2 aTexCoord;
 
-uniform mat4 mvp;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
 uniform vec2 uTiling;
 
+out vec3 FragPos;
+out vec3 Normal;
 out vec4 fsin_Color;
 out vec2 fsin_TexCoord;
 
 void main()
 {
-    gl_Position = mvp * vec4(aPosition, 1.0);
+    FragPos = vec3(model * vec4(aPosition, 1.0));
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+    
+    gl_Position = projection * view * vec4(FragPos, 1.0);
     fsin_Color = aColor;
     fsin_TexCoord = aTexCoord * uTiling;
 }";
@@ -4902,40 +5035,119 @@ void main()
 #version 330 core
 in vec4 fsin_Color;
 in vec2 fsin_TexCoord;
+in vec3 FragPos;
+in vec3 Normal;
 
 uniform sampler2D uTexture;
 uniform vec3 uEmissive;
+uniform vec3 uViewPos;
+
+// Material
+uniform float uSpecularIntensity;
+uniform float uShininess;
+
+// Light
+uniform bool uHasLight;
+uniform vec3 uLightDir;
+uniform vec3 uLightColor;
+uniform float uLightIntensity;
+
 
 out vec4 FragColor;
 
 void main()
 {
-    vec4 texColor = texture(uTexture, fsin_TexCoord);
-    vec3 finalColor = (texColor.rgb * fsin_Color.rgb) + uEmissive;
-    FragColor = vec4(finalColor, texColor.a * fsin_Color.a);
+    vec3 albedo = texture(uTexture, fsin_TexCoord).rgb * fsin_Color.rgb;
+    vec3 norm = normalize(Normal);
+    vec3 finalColor;
+
+    if(uHasLight) {
+        // Ambient
+        float ambientStrength = 0.1;
+        vec3 ambient = ambientStrength * uLightColor * uLightIntensity;
+
+        // Diffuse
+        vec3 lightDir = normalize(uLightDir);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * uLightColor * uLightIntensity;
+
+        // Specular (Blinn-Phong)
+        vec3 viewDir = normalize(uViewPos - FragPos);
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        float spec = pow(max(dot(norm, halfwayDir), 0.0), uShininess);
+        vec3 specular = uSpecularIntensity * spec * uLightColor * uLightIntensity;
+
+        finalColor = (ambient + diffuse) * albedo + specular;
+    } else {
+        // No light in scene, just use albedo
+        finalColor = albedo;
+    }
+    
+    finalColor += uEmissive;
+
+    FragColor = vec4(finalColor, texture(uTexture, fsin_TexCoord).a * fsin_Color.a);
 }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
-        _mvpLocation = _shaderProgram.GetUniformLocation("mvp");
+        _modelLocation = _shaderProgram.GetUniformLocation("model");
+        _viewLocation = _shaderProgram.GetUniformLocation("view");
+        _projectionLocation = _shaderProgram.GetUniformLocation("projection");
+
         _textureLocation = _shaderProgram.GetUniformLocation("uTexture");
         _tilingLocation = _shaderProgram.GetUniformLocation("uTiling");
         _emissiveLocation = _shaderProgram.GetUniformLocation("uEmissive");
+
+        _viewPosLocation = _shaderProgram.GetUniformLocation("uViewPos");
+
+        _hasLightLocation = _shaderProgram.GetUniformLocation("uHasLight");
+        _lightDirLocation = _shaderProgram.GetUniformLocation("uLightDir");
+        _lightColorLocation = _shaderProgram.GetUniformLocation("uLightColor");
+        _lightIntensityLocation = _shaderProgram.GetUniformLocation("uLightIntensity");
+
+        _specularIntensityLocation = _shaderProgram.GetUniformLocation("uSpecularIntensity");
+        _shininessLocation = _shaderProgram.GetUniformLocation("uShininess");
     }
 
     public void Render(IEnumerable<GameObject> gameObjects, Matrix4 view, Matrix4 projection)
     {
         _shaderProgram.Use();
+
+        // Set uniforms that are constant for the frame
         GL.Uniform1(_textureLocation, 0);
+        GL.UniformMatrix4(_viewLocation, false, ref view);
+        GL.UniformMatrix4(_projectionLocation, false, ref projection);
+        var viewPos = view.Inverted().Row3.Xyz;
+        GL.Uniform3(_viewPosLocation, viewPos.X, viewPos.Y, viewPos.Z);
+
+        // Find and set light uniforms
+        var directionalLight = gameObjects
+            .Select(g => g.GetComponent<Light>())
+            .FirstOrDefault(l => l is not null && l.Type == LightType.Directional);
+
+        if (directionalLight != null)
+        {
+            GL.Uniform1(_hasLightLocation, 1);
+            var lightDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
+            GL.Uniform3(_lightDirLocation, lightDirection.X, lightDirection.Y, lightDirection.Z);
+            GL.Uniform3(_lightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
+            GL.Uniform1(_lightIntensityLocation, directionalLight.Intensity);
+        }
+        else
+        {
+            GL.Uniform1(_hasLightLocation, 0);
+        }
+
+        // Render each object
         foreach (var go in gameObjects)
         {
             var mr = go.GetComponent<MeshRenderer>();
             if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null) continue;
             var data = GetOrCreateBackendData(mr);
-            DrawObject(go, mr, data, view, projection);
+            DrawObject(go, mr, data);
         }
     }
 
-    private void DrawObject(GameObject go, MeshRenderer meshRenderer, OpenGLMeshRendererData data, Matrix4 view, Matrix4 projection)
+    private void DrawObject(GameObject go, MeshRenderer meshRenderer, OpenGLMeshRendererData data)
     {
         if (meshRenderer.Texture is OpenTKTexture glTexture)
         {
@@ -4947,11 +5159,12 @@ void main()
         }
 
         var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
-        var mvp = model * view * projection;
 
-        GL.UniformMatrix4(_mvpLocation, false, ref mvp);
+        GL.UniformMatrix4(_modelLocation, false, ref model);
         GL.Uniform2(_tilingLocation, meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
         GL.Uniform3(_emissiveLocation, meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);
+        GL.Uniform1(_specularIntensityLocation, meshRenderer.SpecularIntensity);
+        GL.Uniform1(_shininessLocation, meshRenderer.Shininess);
 
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
@@ -6205,7 +6418,7 @@ public class Editor : Engine
     {
         base.Update(deltaTime);
         _editorAppLogic?.UpdateEditorLogic(deltaTime);
-        SceneManager.Update(deltaTime);
+        SceneManager.Update(deltaTime, State == EditorState.Playing);
     }
 
     private void InitializeEditingState()
@@ -6438,6 +6651,7 @@ public class EditorAppLogic : IDisposable
         _textureManager.LoadTexture("Component_Camera", "Assets/Icons/Components/camera.png");
         _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
         _textureManager.LoadTexture("Component_Script", "Assets/Icons/Components/script.png");
+        _textureManager.LoadTexture("Component_Light", "Assets/Icons/Components/light.png");
 
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
@@ -7068,7 +7282,13 @@ internal class InspectorPanel
             ImGui.PushID(component.GetHashCode());
 
             bool headerOpen;
+
             string textureKey = $"Component_{component.GetType().Name}";
+            if (component is Light)
+            {
+                textureKey = "Component_Light";
+            }
+
             IntPtr icon = _textureManager.GetTexture(textureKey);
             if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
             {
@@ -7159,6 +7379,16 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Camera"))
                 {
                     go.AddComponent(new Camera());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+
+            if (go.GetComponent<Light>() == null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Light"))
+                {
+                    go.AddComponent(new Light());
                     _editor.SceneManager.ActiveScene.IsDirty = true;
                     ImGui.CloseCurrentPopup();
                 }
@@ -7502,6 +7732,17 @@ public class DefaultInspector : IComponentInspector
                 valueChanged = true;
             }
         }
+        else if (prop.PropertyType.IsEnum)
+        {
+            var enumValues = Enum.GetNames(prop.PropertyType);
+            string currentEnumValue = currentValue.ToString();
+            int currentIndex = Array.IndexOf(enumValues, currentEnumValue);
+            if (ImGui.Combo($"##{prop.Name}", ref currentIndex, enumValues, enumValues.Length))
+            {
+                prop.SetValue(instance, Enum.Parse(prop.PropertyType, enumValues[currentIndex]));
+                valueChanged = true;
+            }
+        }
         else if (prop.PropertyType == typeof(Vector2))
         {
             var val = (Vector2)currentValue;
@@ -7642,35 +7883,14 @@ public class DefaultInspector : IComponentInspector
         deactivated = false;
 
         ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X)) / 3.0f;
 
-        // R
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}R", ref color.X, 0.1f)) valueChanged = true;
+        if (ImGui.ColorEdit3(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        {
+            valueChanged = true;
+        }
+
         if (ImGui.IsItemActivated()) activated = true;
         if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // G
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // B
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth();
 
         ImGui.PopID();
 
@@ -7684,44 +7904,14 @@ public class DefaultInspector : IComponentInspector
         deactivated = false;
 
         ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 7) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X + ImGui.CalcTextSize("A").X)) / 4.0f;
 
-        // R
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}R", ref color.X, 0.01f)) valueChanged = true;
+        if (ImGui.ColorEdit4(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        {
+            valueChanged = true;
+        }
+
         if (ImGui.IsItemActivated()) activated = true;
         if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // G
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.01f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // B
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.01f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // A
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.8f, 0.8f, 1.0f)); ImGui.Text("A"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}A", ref color.W, 0.01f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth();
 
         ImGui.PopID();
 
@@ -7734,12 +7924,20 @@ public class DefaultInspector : IComponentInspector
         {
             try
             {
-                defaultInstance = Activator.CreateInstance(componentType);
-                _defaultComponentCache[componentType] = defaultInstance;
+                if (componentType.GetConstructor(Type.EmptyTypes) != null)
+                {
+                    defaultInstance = Activator.CreateInstance(componentType);
+                    _defaultComponentCache[componentType] = defaultInstance;
+                }
             }
             catch { return null; }
         }
-        return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
+
+        if (defaultInstance != null)
+        {
+            return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
+        }
+        return null;
     }
 
     private static string SplitPascalCase(string input)
@@ -8446,7 +8644,7 @@ public class ViewportPanel
                         var viewportPos = ImGui.GetItemRectMin();
                         var viewportSize = ImGui.GetItemRectSize();
 
-                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
+                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing() && !ImGuizmo.IsOver())
                         {
                             HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
                         }
@@ -8782,7 +8980,7 @@ public interface ICommand
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scene.yaml">
 GameObjects:
-- Id: 1e8a75a7-935a-4e2e-9a1b-9a4f9b8c6d4e
+- Id: ccb01030-3225-48a9-9551-643e8ee2907f
   Name: SkyboxContainer
   Components:
     Transform:
@@ -8791,54 +8989,68 @@ GameObjects:
       Scale: [1, 1, 1]
     Skybox:
       CubeMap: sky/day
-- Id: f3b4c5d6-e7f8-4a1b-9c8d-6e5f4a3b2c1d
+- Id: 175a83f7-5417-46c9-bbea-9aaa4f6641a4
   Name: Player
   Components:
     Transform:
-      Position: [0, 5, 10]
-      Rotation: [-20, 0, 0]
+      Position: [5.861215, 1, 3.552466]
+      Rotation: [-11.946166, 20.79838, 0]
       Scale: [1, 1, 1]
+    PlayerController:
+      Speed: 3
+      MouseSensitivity: 0.0015
+      Enabled: false
     Camera: {}
-    PlayerController: {}
-- Id: a0b1c2d3-e4f5-4a6b-8c7d-5e4f3a2b1c0d
-  Name: FallingCube
+- Id: 8103ca18-dedc-49b6-8870-6982cafa7587
+  Name: DirectionalLight
   Components:
     Transform:
-      Position: [-1, 7, 0]
-      Rotation: [30, 0, 30]
+      Position: [0, 0, 0]
+      Rotation: [45, -45, 0]
+      Scale: [1, 1, 1]
+    Light:
+      Type: Directional
+      Color: [1, 1, 0.95]
+      Intensity: 1.2
+- Id: e036456a-17e9-4b36-aa03-c86985afe187
+  Name: SpinningCube
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Cube
-      Texture: crate
-      EmissiveColor: [0.8, 2, 2]
-    RigidBody:
-      Mass: 5
-      Bounciness: 0.7
-      Friction: 0.3
-- Id: b1c2d3e4-f5a6-4b7c-8d9e-6f5a4b3c2d1e
+      Texture: White
+      EmissiveColor: [2, 0.2, 0.2]
+      SpecularIntensity: 0.8
+      Shininess: 128
+    Spinner:
+      Enabled: false
+- Id: 46f63d25-5bcb-4aa4-9e7c-20ec47bc3087
   Name: StaticCube
   Components:
     Transform:
-      Position: [2.5, 0.5, 0]
+      Position: [2.5, 0, 0]
       Rotation: [0, 45, 0]
       Scale: [0.75, 0.75, 0.75]
     MeshRenderer:
       Mesh: Cube
-      Texture: crate
-    RigidBody:
-      IsStatic: true
-- Id: c2d3e4f5-a6b7-4c8d-9e0f-7a6b5c4d3e2f
+      Texture: White
+      SpecularIntensity: 0.3
+      Shininess: 16
+- Id: fa6c7e61-829e-4f4e-8ad6-e370835d1b46
   Name: GroundPlane
   Components:
     Transform:
-      Position: [0, -0.75, 0]
+      Position: [0, -0.8, 0]
       Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Plane
-      Texture: Asphalt
-    RigidBody:
-      IsStatic: true
+      Texture: White
+      SpecularIntensity: 0.1
+      Shininess: 8
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs">
