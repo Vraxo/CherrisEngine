@@ -144,8 +144,11 @@ void main()
         if (directionalLight != null)
         {
             GL.Uniform1(_hasLightLocation, 1);
-            var lightDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
-            GL.Uniform3(_lightDirLocation, lightDirection.X, lightDirection.Y, lightDirection.Z);
+            // The light's forward vector is the direction it's traveling.
+            // For lighting calculations, we need the vector FROM the surface TO the light, which is the inverse.
+            var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
+            var directionToLight = -lightTravelDirection;
+            GL.Uniform3(_lightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
             GL.Uniform3(_lightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
             GL.Uniform1(_lightIntensityLocation, directionalLight.Intensity);
         }
