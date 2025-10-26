@@ -49,7 +49,7 @@ namespace Cherris
             IsDirty = true;
         }
 
-        public void Start()
+        public void Start(PhysicsSystem physicsSystem)
         {
             FindMainComponents();
 
@@ -58,6 +58,10 @@ namespace Cherris
             {
                 foreach (var script in gameObject.GetComponents<Script>())
                 {
+                    if (script is RigidBody rb)
+                    {
+                        rb.Initialize(physicsSystem);
+                    }
                     script.Start();
                 }
             }

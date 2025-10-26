@@ -69,9 +69,6 @@
     <None Update="Assets\Icons\script.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="Assets\Scene.yaml">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </None>
     <None Update="Assets\sky\day_back.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

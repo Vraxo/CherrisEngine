@@ -13,10 +13,16 @@ public class SceneManager
 
     public Scene ActiveScene => _activeScene;
     public IReadOnlyList<Scene> OpenScenes => _openScenes;
+    public PhysicsSystem PhysicsSystem { get; }
 
     public Camera MainCamera => _activeScene?.MainCamera;
     public Skybox Skybox => _activeScene?.Skybox;
     public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
+
+    public SceneManager()
+    {
+        PhysicsSystem = new PhysicsSystem();
+    }
 
     public void AddGameObject(GameObject go)
     {
@@ -25,7 +31,15 @@ public class SceneManager
 
     public void RemoveGameObject(GameObject go)
     {
-        _activeScene?.RemoveGameObject(go);
+        if (_activeScene is null) return;
+
+        var rb = go.GetComponent<RigidBody>();
+        if (rb?.JitterBody != null)
+        {
+            PhysicsSystem.RemoveBody(rb.JitterBody);
+        }
+
+        _activeScene.RemoveGameObject(go);
     }
 
     public void OpenScene(Scene scene)
@@ -72,15 +86,20 @@ public class SceneManager
         }
     }
 
+
+
     public void Start()
     {
         // Start only the active scene when entering play mode.
-        _activeScene?.Start();
+        _activeScene?.Start(PhysicsSystem);
     }
 
     public void Update(float deltaTime)
     {
-        // Only update the active scene.
+        // Update physics first
+        PhysicsSystem.Update(deltaTime);
+
+        // Then update game logic
         _activeScene?.Update(deltaTime);
     }
 

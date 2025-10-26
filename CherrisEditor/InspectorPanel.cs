@@ -1,15 +1,10 @@
 ﻿using Cherris;
+using CherrisEditor.Inspectors;
+using CherrisEditor.Undo;
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
-using System.Collections.Generic;
-using System;
-using System.Runtime.InteropServices;
-using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
-using CherrisEditor.Inspectors;
-using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 

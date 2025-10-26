@@ -84,6 +84,26 @@ public class SceneSerializer
                         componentsData["Skybox"] = skyboxData;
                         break;
 
+                    case RigidBody rb:
+                        var rbData = new Dictionary<string, object>
+                        {
+                            ["IsStatic"] = rb.IsStatic
+                        };
+                        if (!rb.IsStatic)
+                        {
+                            rbData["Mass"] = rb.Mass;
+                        }
+                        if (rb.Friction != 0.5f)
+                        {
+                            rbData["Friction"] = rb.Friction;
+                        }
+                        if (rb.Bounciness != 0.5f)
+                        {
+                            rbData["Bounciness"] = rb.Bounciness;
+                        }
+                        componentsData["RigidBody"] = rbData;
+                        break;
+
                     case Script script:
                         componentsData[script.GetType().Name] = SerializeScriptProperties(script);
                         break;
