@@ -2222,7 +2222,7 @@ namespace Cherris
         public string Name { get; set; }
         public string FilePath { get; set; }
         public List<GameObject> GameObjects { get; } = new List<GameObject>();
-        public Camera MainCamera { get; private set; }
+        public Camera MainCamera { get; set; }
         public Skybox Skybox { get; private set; }
         public bool IsDirty { get; set; }
 
@@ -2581,7 +2581,13 @@ public class SceneManager
         }
     }
 
-
+    public void SetMainCamera(Camera camera)
+    {
+        if (_activeScene != null)
+        {
+            _activeScene.MainCamera = camera;
+        }
+    }
 
     public void Start()
     {
@@ -6072,6 +6078,7 @@ public class Editor : Engine
     public bool IsViewportHovered { get; set; }
     public readonly HistoryManager History = new();
 
+    private Camera? _editorCamera;
     private AssemblyLoadContext _gameAssemblyContext;
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
@@ -6086,6 +6093,20 @@ public class Editor : Engine
 
         if (State == EditorState.Editing)
         {
+            // Find any camera in the scene that is NOT the editor's camera.
+            var gameCamera = SceneManager.GameObjects
+                .Select(g => g.GetComponent<Camera>())
+                .FirstOrDefault(c => c != null && c != _editorCamera);
+
+            if (gameCamera != null)
+            {
+                SceneManager.SetMainCamera(gameCamera);
+            }
+            else
+            {
+                Console.WriteLine("[Editor] Warning: No game camera found to switch to for play mode. Using the editor camera.");
+            }
+
             // TODO: Snapshot scene state for restoration on Stop.
             SceneManager.Start();
         }
@@ -6216,9 +6237,23 @@ public class Editor : Engine
         }
 
         GameObject? cameraGo = scene.MainCamera?.GameObject;
+
+        // Fallback if the main camera was deleted or doesn't exist.
+        if (cameraGo is null)
+        {
+            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c != null)?.GameObject;
+        }
+
         if (cameraGo is not null)
         {
             EnsureEditorControllerEnabled(cameraGo);
+            _editorCamera = cameraGo.GetComponent<Camera>();
+            SceneManager.SetMainCamera(_editorCamera);
+        }
+        else
+        {
+            _editorCamera = null;
+            Console.WriteLine("[Editor] FATAL: No camera found in scene to attach editor controls to.");
         }
     }
 
@@ -8575,6 +8610,7 @@ public class HistoryManager
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scripts\PlayerController.cs">
 using Cherris;
+using System;
 using System.Numerics;
 
 namespace Apexverse;
@@ -8741,6 +8777,149 @@ public interface ICommand
 {
     void Execute();
     void Undo();
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scene.yaml">
+GameObjects:
+- Id: 1e8a75a7-935a-4e2e-9a1b-9a4f9b8c6d4e
+  Name: SkyboxContainer
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    Skybox:
+      CubeMap: sky/day
+- Id: f3b4c5d6-e7f8-4a1b-9c8d-6e5f4a3b2c1d
+  Name: Player
+  Components:
+    Transform:
+      Position: [0, 5, 10]
+      Rotation: [-20, 0, 0]
+      Scale: [1, 1, 1]
+    Camera: {}
+    PlayerController: {}
+- Id: a0b1c2d3-e4f5-4a6b-8c7d-5e4f3a2b1c0d
+  Name: FallingCube
+  Components:
+    Transform:
+      Position: [-1, 7, 0]
+      Rotation: [30, 0, 30]
+      Scale: [1, 1, 1]
+    MeshRenderer:
+      Mesh: Cube
+      Texture: crate
+      EmissiveColor: [0.8, 2, 2]
+    RigidBody:
+      Mass: 5
+      Bounciness: 0.7
+      Friction: 0.3
+- Id: b1c2d3e4-f5a6-4b7c-8d9e-6f5a4b3c2d1e
+  Name: StaticCube
+  Components:
+    Transform:
+      Position: [2.5, 0.5, 0]
+      Rotation: [0, 45, 0]
+      Scale: [0.75, 0.75, 0.75]
+    MeshRenderer:
+      Mesh: Cube
+      Texture: crate
+    RigidBody:
+      IsStatic: true
+- Id: c2d3e4f5-a6b7-4c8d-9e0f-7a6b5c4d3e2f
+  Name: GroundPlane
+  Components:
+    Transform:
+      Position: [0, -0.75, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    MeshRenderer:
+      Mesh: Plane
+      Texture: Asphalt
+    RigidBody:
+      IsStatic: true
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs">
+using Cherris;
+using System;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class PlayerController : Script
+{
+    public float Speed { get; set; } = 3.0f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Update(float deltaTime)
+    {
+        // --- Mouse Look ---
+        Vector2 mouseDelta = Input.MouseDelta;
+        _yaw -= mouseDelta.X * MouseSensitivity;
+        _pitch -= mouseDelta.Y * MouseSensitivity;
+
+        // Clamp the pitch to prevent the camera from flipping upside down
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+        // Update rotation from yaw and pitch using the standard engine function
+        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
+
+        // --- Keyboard Movement ---
+        var moveDirection = Vector3.Zero;
+
+        if (Input.IsKeyDown(Key.W))
+        {
+            moveDirection -= Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.S))
+        {
+            moveDirection += Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.A))
+        {
+            moveDirection -= Vector3.UnitX;
+        }
+        if (Input.IsKeyDown(Key.D))
+        {
+            moveDirection += Vector3.UnitX;
+        }
+
+        if (moveDirection != Vector3.Zero)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
+
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+            // Transform the local direction vector by the horizontal-only rotation.
+            var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+        }
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\Spinner.cs">
+using System.Numerics;
+using Cherris;
+
+namespace Apexverse;
+
+public class Spinner : Script
+{
+    private float _totalTime;
+
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
+    }
 }
 </file>
 

@@ -100,10 +100,13 @@ public class SceneManager
         _activeScene?.Start(PhysicsSystem);
     }
 
-    public void Update(float deltaTime)
+    public void Update(float deltaTime, bool stepPhysics = true)
     {
         // Update physics first
-        PhysicsSystem.Update(deltaTime);
+        if (stepPhysics)
+        {
+            PhysicsSystem.Update(deltaTime);
+        }
 
         // Then update game logic
         _activeScene?.Update(deltaTime);

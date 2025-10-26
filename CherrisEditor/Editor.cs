@@ -147,7 +147,7 @@ public class Editor : Engine
     {
         base.Update(deltaTime);
         _editorAppLogic?.UpdateEditorLogic(deltaTime);
-        SceneManager.Update(deltaTime);
+        SceneManager.Update(deltaTime, State == EditorState.Playing);
     }
 
     private void InitializeEditingState()
