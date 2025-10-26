@@ -20,6 +20,7 @@ public class Editor : Engine
     public bool IsViewportHovered { get; set; }
     public readonly HistoryManager History = new();
 
+    private Camera? _editorCamera;
     private AssemblyLoadContext _gameAssemblyContext;
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
@@ -34,6 +35,20 @@ public class Editor : Engine
 
         if (State == EditorState.Editing)
         {
+            // Find any camera in the scene that is NOT the editor's camera.
+            var gameCamera = SceneManager.GameObjects
+                .Select(g => g.GetComponent<Camera>())
+                .FirstOrDefault(c => c != null && c != _editorCamera);
+
+            if (gameCamera != null)
+            {
+                SceneManager.SetMainCamera(gameCamera);
+            }
+            else
+            {
+                Console.WriteLine("[Editor] Warning: No game camera found to switch to for play mode. Using the editor camera.");
+            }
+
             // TODO: Snapshot scene state for restoration on Stop.
             SceneManager.Start();
         }
@@ -164,9 +179,23 @@ public class Editor : Engine
         }
 
         GameObject? cameraGo = scene.MainCamera?.GameObject;
+
+        // Fallback if the main camera was deleted or doesn't exist.
+        if (cameraGo is null)
+        {
+            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c != null)?.GameObject;
+        }
+
         if (cameraGo is not null)
         {
             EnsureEditorControllerEnabled(cameraGo);
+            _editorCamera = cameraGo.GetComponent<Camera>();
+            SceneManager.SetMainCamera(_editorCamera);
+        }
+        else
+        {
+            _editorCamera = null;
+            Console.WriteLine("[Editor] FATAL: No camera found in scene to attach editor controls to.");
         }
     }
 

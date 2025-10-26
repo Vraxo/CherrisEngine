@@ -86,7 +86,13 @@ public class SceneManager
         }
     }
 
-
+    public void SetMainCamera(Camera camera)
+    {
+        if (_activeScene != null)
+        {
+            _activeScene.MainCamera = camera;
+        }
+    }
 
     public void Start()
     {

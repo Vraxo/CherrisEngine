@@ -12,7 +12,7 @@ namespace Cherris
         public string Name { get; set; }
         public string FilePath { get; set; }
         public List<GameObject> GameObjects { get; } = new List<GameObject>();
-        public Camera MainCamera { get; private set; }
+        public Camera MainCamera { get; set; }
         public Skybox Skybox { get; private set; }
         public bool IsDirty { get; set; }
 

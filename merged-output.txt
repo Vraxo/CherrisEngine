@@ -664,6 +664,37 @@ public abstract class Engine
 
             return null;
         });
+
+        SceneLoader.RegisterComponentFactory("RigidBody", (properties) =>
+        {
+            var rb = new RigidBody();
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return rb;
+            }
+
+            if (propsDict.TryGetValue("IsStatic", out var isStaticObj))
+            {
+                rb.IsStatic = Convert.ToBoolean(isStaticObj);
+            }
+
+            if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic)
+            {
+                rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
+            }
+
+            if (propsDict.TryGetValue("Friction", out var frictionObj))
+            {
+                rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);
+            }
+
+            if (propsDict.TryGetValue("Bounciness", out var bouncinessObj))
+            {
+                rb.Bounciness = Convert.ToSingle(bouncinessObj, CultureInfo.InvariantCulture);
+            }
+
+            return rb;
+        });
     }
 
     public void Run()
@@ -1390,6 +1421,98 @@ public enum MouseButton
     Button8,
     Button9,
     LastButton
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\JitterConvert.cs">
+using System.Numerics;
+using Jitter.LinearMath;
+
+namespace Cherris;
+
+public static class JitterConvert
+{
+    public static JVector ToJitter(this Vector3 v)
+    {
+        return new(v.X, v.Y, v.Z);
+    }
+
+    public static Vector3 ToNumerics(this JVector v)
+    {
+        return new(v.X, v.Y, v.Z);
+    }
+
+    public static JMatrix ToJitter(this Quaternion q)
+    {
+        JQuaternion jq = new(q.X, q.Y, q.Z, q.W);
+        JMatrix.CreateFromQuaternion(ref jq, out var matrix);
+        return matrix;
+    }
+
+    public static Quaternion ToNumerics(this JMatrix m)
+    {
+        JQuaternion.CreateFromMatrix(ref m, out var jq);
+        return new(jq.X, jq.Y, jq.Z, jq.W);
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\PhysicsSystem.cs">
+namespace Cherris;
+
+using Jitter.Collision;
+using System.Collections.Generic;
+using System.Numerics;
+
+public class PhysicsSystem
+{
+    public Jitter.World World { get; }
+    private readonly Dictionary<Jitter.Dynamics.RigidBody, RigidBody> _bodyMap = new();
+
+    public PhysicsSystem()
+    {
+        CollisionSystemSAP collisionSystem = new();
+        
+        World = new Jitter.World(collisionSystem)
+        {
+            Gravity = new Vector3(0, -9.81f, 0).ToJitter()
+        };
+    }
+
+    public void AddBody(RigidBody bodyComponent, Jitter.Dynamics.RigidBody jitterBody)
+    {
+        _bodyMap.Add(jitterBody, bodyComponent);
+        World.AddBody(jitterBody);
+    }
+
+    public void RemoveBody(Jitter.Dynamics.RigidBody jitterBody)
+    {
+        if (jitterBody == null || !_bodyMap.ContainsKey(jitterBody))
+        {
+            return;
+        }
+
+        _bodyMap.Remove(jitterBody);
+        World.RemoveBody(jitterBody);
+    }
+
+    public void Update(float deltaTime)
+    {
+        // The Jitter 1 Step method takes a timestep and a boolean for multithreading.
+        World.Step(deltaTime, true);
+
+        // Sync transforms from physics back to game objects for non-static bodies
+        foreach ((Jitter.Dynamics.RigidBody jitterBody, RigidBody bodyComponent) in _bodyMap)
+        {
+            if (jitterBody.IsStatic)
+            {
+                continue;
+            }
+
+            bodyComponent.GameObject.Transform.Position = jitterBody.Position.ToNumerics();
+            bodyComponent.GameObject.Transform.Rotation = jitterBody.Orientation.ToNumerics();
+        }
+    }
 }
 </file>
 
@@ -2136,7 +2259,7 @@ namespace Cherris
             IsDirty = true;
         }
 
-        public void Start()
+        public void Start(PhysicsSystem physicsSystem)
         {
             FindMainComponents();
 
@@ -2145,6 +2268,10 @@ namespace Cherris
             {
                 foreach (var script in gameObject.GetComponents<Script>())
                 {
+                    if (script is RigidBody rb)
+                    {
+                        rb.Initialize(physicsSystem);
+                    }
                     script.Start();
                 }
             }
@@ -2381,10 +2508,16 @@ public class SceneManager
 
     public Scene ActiveScene => _activeScene;
     public IReadOnlyList<Scene> OpenScenes => _openScenes;
+    public PhysicsSystem PhysicsSystem { get; }
 
     public Camera MainCamera => _activeScene?.MainCamera;
     public Skybox Skybox => _activeScene?.Skybox;
     public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
+
+    public SceneManager()
+    {
+        PhysicsSystem = new PhysicsSystem();
+    }
 
     public void AddGameObject(GameObject go)
     {
@@ -2393,7 +2526,15 @@ public class SceneManager
 
     public void RemoveGameObject(GameObject go)
     {
-        _activeScene?.RemoveGameObject(go);
+        if (_activeScene is null) return;
+
+        var rb = go.GetComponent<RigidBody>();
+        if (rb?.JitterBody != null)
+        {
+            PhysicsSystem.RemoveBody(rb.JitterBody);
+        }
+
+        _activeScene.RemoveGameObject(go);
     }
 
     public void OpenScene(Scene scene)
@@ -2440,15 +2581,20 @@ public class SceneManager
         }
     }
 
+
+
     public void Start()
     {
         // Start only the active scene when entering play mode.
-        _activeScene?.Start();
+        _activeScene?.Start(PhysicsSystem);
     }
 
     public void Update(float deltaTime)
     {
-        // Only update the active scene.
+        // Update physics first
+        PhysicsSystem.Update(deltaTime);
+
+        // Then update game logic
         _activeScene?.Update(deltaTime);
     }
 
@@ -2813,6 +2959,26 @@ public class SceneSerializer
                     case Skybox skybox:
                         var skyboxData = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
                         componentsData["Skybox"] = skyboxData;
+                        break;
+
+                    case RigidBody rb:
+                        var rbData = new Dictionary<string, object>
+                        {
+                            ["IsStatic"] = rb.IsStatic
+                        };
+                        if (!rb.IsStatic)
+                        {
+                            rbData["Mass"] = rb.Mass;
+                        }
+                        if (rb.Friction != 0.5f)
+                        {
+                            rbData["Friction"] = rb.Friction;
+                        }
+                        if (rb.Bounciness != 0.5f)
+                        {
+                            rbData["Bounciness"] = rb.Bounciness;
+                        }
+                        componentsData["RigidBody"] = rbData;
                         break;
 
                     case Script script:
@@ -3784,6 +3950,72 @@ public class MeshRenderer : Component, IDisposable
     public void Dispose()
     {
         InvalidateBackendData();
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\RigidBody.cs">
+using System.Numerics;
+
+namespace Cherris;
+
+public class RigidBody : Script
+{
+    public float Mass { get; set; } = 1.0f;
+    public bool IsStatic { get; set; } = false;
+    public float Friction { get; set; } = 0.5f;
+    public float Bounciness { get; set; } = 0.5f;
+
+    [HideInInspector]
+    public Jitter.Dynamics.RigidBody JitterBody { get; private set; }
+
+    private PhysicsSystem _physicsSystem;
+
+    // Called by the Scene to provide the PhysicsSystem instance.
+    internal void Initialize(PhysicsSystem physicsSystem)
+    {
+        _physicsSystem = physicsSystem;
+    }
+
+    public override void Start()
+    {
+        if (_physicsSystem is null)
+        {
+            return;
+        }
+
+        var meshRenderer = GameObject.GetComponent<MeshRenderer>();
+        
+        if (meshRenderer == null)
+        {
+            Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
+            return;
+        }
+
+        BoundingBox aabb = meshRenderer.Mesh.AABB;
+        Vector3 size = (aabb.Max - aabb.Min) * GameObject.Transform.Scale;
+        Jitter.Collision.Shapes.BoxShape shape = new(size.ToJitter());
+
+        JitterBody = new(shape)
+        {
+            Position = GameObject.Transform.Position.ToJitter(),
+            Orientation = GameObject.Transform.Rotation.ToJitter()
+        };
+
+        if (IsStatic)
+        {
+            JitterBody.IsStatic = true;
+        }
+        else
+        {
+            JitterBody.Mass = Mass;
+        }
+
+        JitterBody.Material.StaticFriction = Friction;
+        JitterBody.Material.KineticFriction = Friction;
+        JitterBody.Material.Restitution = Bounciness;
+
+        _physicsSystem.AddBody(this, JitterBody);
     }
 }
 </file>
@@ -6650,17 +6882,12 @@ public static class EditorTheme
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\InspectorPanel.cs">
 using Cherris;
+using CherrisEditor.Inspectors;
+using CherrisEditor.Undo;
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
-using System.Collections.Generic;
-using System;
-using System.Runtime.InteropServices;
-using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
-using CherrisEditor.Inspectors;
-using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
@@ -7084,66 +7311,6 @@ public class {scriptName} : Script
 ";
     }
 }
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scene.yaml">
-GameObjects:
-  - Name: SkyboxContainer
-    Components:
-      Skybox:
-        # NOTE: This requires 6 images in your Assets folder, named like:
-        # Assets/sky/day_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
-        CubeMap: sky/day
-
-#  - Name: DebugCamera
-#    Components:
-#      Transform:
-#        Position: [0, 1, 5] # Positioned to clearly see the static cube
-#        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-#        Scale: [1, 1, 1]
-#      Camera:
-
-  - Name: Player
-    Components:
-      Transform:
-        Position: [0, 1, 3] # Start at a good vantage point
-        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-        Scale: [1, 1, 1]
-      PlayerController:
-      Camera:
-
-  - Name: SpinningCube
-    Components:
-      Transform:
-        Position: [0, 0, 0]
-        Rotation: [0, 0, 0]
-        Scale: [1, 1, 1]
-      MeshRenderer:
-        Mesh: Cube
-        Texture: crate
-        EmissiveColor: [20, 2, 2] # Intense Red
-      Spinner:
-
-  - Name: StaticCube
-    Components:
-      Transform:
-        Position: [2.5, 0, 0]
-        Rotation: [0, 45, 0]
-        Scale: [0.75, 0.75, 0.75]
-      MeshRenderer:
-        Mesh: Cube
-        Texture: crate
-        
-  - Name: GroundPlane
-    Components:
-      Transform:
-        Position: [0, -0.75, 0]
-        Rotation: [0, 0, 0]
-        Scale: [1, 1, 1]
-      MeshRenderer:
-        Mesh: Plane
-        Texture: Asphalt
-        TextureTiling: [1, 1]
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Attributes\CustomInspectorAttribute.cs">
