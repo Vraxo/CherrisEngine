@@ -150,7 +150,13 @@ internal class InspectorPanel
             ImGui.PushID(component.GetHashCode());
 
             bool headerOpen;
+
             string textureKey = $"Component_{component.GetType().Name}";
+            if (component is Light)
+            {
+                textureKey = "Component_Light";
+            }
+
             IntPtr icon = _textureManager.GetTexture(textureKey);
             if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
             {
@@ -241,6 +247,16 @@ internal class InspectorPanel
                 if (ImGui.MenuItem("Camera"))
                 {
                     go.AddComponent(new Camera());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+
+            if (go.GetComponent<Light>() == null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Light"))
+                {
+                    go.AddComponent(new Light());
                     _editor.SceneManager.ActiveScene.IsDirty = true;
                     ImGui.CloseCurrentPopup();
                 }

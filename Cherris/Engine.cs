@@ -170,7 +170,19 @@ public abstract class Engine
                 }
             }
 
-            return new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
+            var mr = new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
+
+            if (propsDict.TryGetValue("SpecularIntensity", out var specIntObj))
+            {
+                mr.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
+            }
+
+            if (propsDict.TryGetValue("Shininess", out var shininessObj))
+            {
+                mr.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
+            }
+
+            return mr;
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>
@@ -191,6 +203,42 @@ public abstract class Engine
             }
 
             return null;
+        });
+
+        SceneLoader.RegisterComponentFactory("Light", (properties) =>
+        {
+            var light = new Light();
+            if (properties is not Dictionary<object, object> propsDict)
+            {
+                return light;
+            }
+
+            if (propsDict.TryGetValue("Type", out var typeObj) && Enum.TryParse<LightType>(typeObj as string, out var type))
+            {
+                light.Type = type;
+            }
+
+            if (propsDict.TryGetValue("Color", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
+            {
+                try
+                {
+                    light.Color = new Vector3(
+                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Engine] Warning: Could not parse Light Color values. Using default. Error: {e.Message}");
+                }
+            }
+
+            if (propsDict.TryGetValue("Intensity", out var intensityObj))
+            {
+                light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
+            }
+
+            return light;
         });
 
         SceneLoader.RegisterComponentFactory("RigidBody", (properties) =>

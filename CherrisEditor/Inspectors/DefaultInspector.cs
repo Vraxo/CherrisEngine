@@ -130,6 +130,17 @@ public class DefaultInspector : IComponentInspector
                 valueChanged = true;
             }
         }
+        else if (prop.PropertyType.IsEnum)
+        {
+            var enumValues = Enum.GetNames(prop.PropertyType);
+            string currentEnumValue = currentValue.ToString();
+            int currentIndex = Array.IndexOf(enumValues, currentEnumValue);
+            if (ImGui.Combo($"##{prop.Name}", ref currentIndex, enumValues, enumValues.Length))
+            {
+                prop.SetValue(instance, Enum.Parse(prop.PropertyType, enumValues[currentIndex]));
+                valueChanged = true;
+            }
+        }
         else if (prop.PropertyType == typeof(Vector2))
         {
             var val = (Vector2)currentValue;
@@ -270,35 +281,14 @@ public class DefaultInspector : IComponentInspector
         deactivated = false;
 
         ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X)) / 3.0f;
 
-        // R
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}R", ref color.X, 0.1f)) valueChanged = true;
+        if (ImGui.ColorEdit3(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        {
+            valueChanged = true;
+        }
+
         if (ImGui.IsItemActivated()) activated = true;
         if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // G
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // B
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth();
 
         ImGui.PopID();
 
@@ -312,44 +302,14 @@ public class DefaultInspector : IComponentInspector
         deactivated = false;
 
         ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 7) - (ImGui.CalcTextSize("R").X + ImGui.CalcTextSize("G").X + ImGui.CalcTextSize("B").X + ImGui.CalcTextSize("A").X)) / 4.0f;
 
-        // R
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("R"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}R", ref color.X, 0.01f)) valueChanged = true;
+        if (ImGui.ColorEdit4(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        {
+            valueChanged = true;
+        }
+
         if (ImGui.IsItemActivated()) activated = true;
         if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // G
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("G"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}G", ref color.Y, 0.01f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // B
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("B"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}B", ref color.Z, 0.01f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // A
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.8f, 0.8f, 1.0f)); ImGui.Text("A"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}A", ref color.W, 0.01f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth();
 
         ImGui.PopID();
 
@@ -362,12 +322,20 @@ public class DefaultInspector : IComponentInspector
         {
             try
             {
-                defaultInstance = Activator.CreateInstance(componentType);
-                _defaultComponentCache[componentType] = defaultInstance;
+                if (componentType.GetConstructor(Type.EmptyTypes) != null)
+                {
+                    defaultInstance = Activator.CreateInstance(componentType);
+                    _defaultComponentCache[componentType] = defaultInstance;
+                }
             }
             catch { return null; }
         }
-        return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
+
+        if (defaultInstance != null)
+        {
+            return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
+        }
+        return null;
     }
 
     private static string SplitPascalCase(string input)

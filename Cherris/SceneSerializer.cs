@@ -72,6 +72,10 @@ public class SceneSerializer
                             mrData["TextureTiling"] = mr.TextureTiling;
                         if (mr.EmissiveColor != Vector3.Zero)
                             mrData["EmissiveColor"] = mr.EmissiveColor;
+                        if (Math.Abs(mr.SpecularIntensity - 0.5f) > 0.001f)
+                            mrData["SpecularIntensity"] = mr.SpecularIntensity;
+                        if (Math.Abs(mr.Shininess - 32.0f) > 0.001f)
+                            mrData["Shininess"] = mr.Shininess;
                         componentsData["MeshRenderer"] = mrData;
                         break;
 
@@ -82,6 +86,16 @@ public class SceneSerializer
                     case Skybox skybox:
                         var skyboxData = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
                         componentsData["Skybox"] = skyboxData;
+                        break;
+
+                    case Light light:
+                        var lightData = new Dictionary<string, object>
+                        {
+                            ["Type"] = light.Type.ToString(),
+                            ["Color"] = light.Color,
+                            ["Intensity"] = light.Intensity
+                        };
+                        componentsData["Light"] = lightData;
                         break;
 
                     case RigidBody rb:

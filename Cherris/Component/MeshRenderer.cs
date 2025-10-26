@@ -1,6 +1,8 @@
-﻿using System;
-using System.Numerics;
+﻿using Cherris.OpenTK;
 using Cherris.Rendering;
+using System;
+using System.Globalization;
+using System.Numerics;
 
 namespace Cherris;
 
@@ -27,6 +29,8 @@ public class MeshRenderer : Component, IDisposable
     // MODIFIED: Added setters to allow editing from the inspector
     public Vector2 TextureTiling { get; set; }
     public Vector3 EmissiveColor { get; set; }
+    public float SpecularIntensity { get; set; } = 0.5f;
+    public float Shininess { get; set; } = 32.0f;
 
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }

@@ -51,36 +51,36 @@ public class Mesh
     {
         Vertex[] vertices =
         {
-            // Top
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Bottom
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-            // Left
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
-            // Right
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Front
-            new(new(-0.5f, +0.5f, +0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(+0.5f, +0.5f, +0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(+0.5f, -0.5f, +0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(-0.5f, -0.5f, +0.5f), RgbaFloat.White, new(0, 1)),
-            // Back
-            new(new(+0.5f, +0.5f, -0.5f), RgbaFloat.White, new(0, 0)),
-            new(new(-0.5f, +0.5f, -0.5f), RgbaFloat.White, new(1, 0)),
-            new(new(-0.5f, -0.5f, -0.5f), RgbaFloat.White, new(1, 1)),
-            new(new(+0.5f, -0.5f, -0.5f), RgbaFloat.White, new(0, 1)),
+            // Top (+Y)
+            new(new(-0.5f, +0.5f, -0.5f), new(0, 1, 0), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), new(0, 1, 0), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), new(0, 1, 0), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, +0.5f, +0.5f), new(0, 1, 0), RgbaFloat.White, new(0, 1)),
+            // Bottom (-Y)
+            new(new(-0.5f, -0.5f, +0.5f), new(0, -1, 0), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), new(0, -1, 0), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), new(0, -1, 0), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), new(0, -1, 0), RgbaFloat.White, new(0, 1)),
+            // Left (-X)
+            new(new(-0.5f, +0.5f, -0.5f), new(-1, 0, 0), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, +0.5f), new(-1, 0, 0), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, +0.5f), new(-1, 0, 0), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, -0.5f), new(-1, 0, 0), RgbaFloat.White, new(0, 1)),
+            // Right (+X)
+            new(new(+0.5f, +0.5f, +0.5f), new(1, 0, 0), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, -0.5f), new(1, 0, 0), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, -0.5f), new(1, 0, 0), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, +0.5f), new(1, 0, 0), RgbaFloat.White, new(0, 1)),
+            // Front (+Z)
+            new(new(-0.5f, +0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(0, 0)),
+            new(new(+0.5f, +0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(1, 0)),
+            new(new(+0.5f, -0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(1, 1)),
+            new(new(-0.5f, -0.5f, +0.5f), new(0, 0, 1), RgbaFloat.White, new(0, 1)),
+            // Back (-Z)
+            new(new(+0.5f, +0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(0, 0)),
+            new(new(-0.5f, +0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(1, 0)),
+            new(new(-0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(1, 1)),
+            new(new(+0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(0, 1)),
         };
 
         ushort[] indices =
@@ -99,12 +99,13 @@ public class Mesh
     public static Mesh CreatePlane(float size)
     {
         float halfSize = size * 0.5f;
+        var normal = new Vector3(0, 1, 0);
         Vertex[] vertices =
         {
-            new(new(-halfSize, 0, +halfSize), RgbaFloat.White, new(0, 0)), // 0 (top-left)
-            new(new(+halfSize, 0, +halfSize), RgbaFloat.White, new(1, 0)), // 1 (top-right)
-            new(new(+halfSize, 0, -halfSize), RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
-            new(new(-halfSize, 0, -halfSize), RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
+            new(new(-halfSize, 0, +halfSize), normal, RgbaFloat.White, new(0, 0)), // 0 (top-left)
+            new(new(+halfSize, 0, +halfSize), normal, RgbaFloat.White, new(1, 0)), // 1 (top-right)
+            new(new(+halfSize, 0, -halfSize), normal, RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
+            new(new(-halfSize, 0, -halfSize), normal, RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
         };
 
         // Reversed winding order to be visible with existing pipeline state.

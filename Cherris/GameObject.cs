@@ -60,6 +60,15 @@ public class GameObject
         var meshRenderer = GetComponent<MeshRenderer>();
         if (meshRenderer?.Mesh is null)
         {
+            // If there's no mesh, check for other components that should be selectable
+            if (GetComponent<Light>() is not null)
+            {
+                const float selectionVolumeSize = 0.5f;
+                var halfSize = new Vector3(selectionVolumeSize / 2);
+                return new BoundingBox(Transform.Position - halfSize, Transform.Position + halfSize);
+            }
+
+            // Default fallback for objects with no visible/selectable component
             return new BoundingBox(Transform.Position, Transform.Position);
         }
 

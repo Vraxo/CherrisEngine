@@ -26,15 +26,24 @@ internal class OpenGLMeshRendererData : IDisposable
         GL.BufferData(BufferTarget.ElementArrayBuffer, (IntPtr)(sizeof(ushort) * mesh.Indices.Length), mesh.Indices, BufferUsageHint.StaticDraw);
 
         const int posBytes = 3 * 4;
+        const int normalBytes = 3 * 4;
         const int colorBytes = 4 * 4;
+
+        // Position (location = 0)
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, 0);
 
+        // Normal (location = 1)
         GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes);
 
+        // Color (location = 2)
         GL.EnableVertexAttribArray(2);
-        GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + colorBytes);
+        GL.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + normalBytes);
+
+        // TexCoord (location = 3)
+        GL.EnableVertexAttribArray(3);
+        GL.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + normalBytes + colorBytes);
 
         GL.BindVertexArray(0);
     }

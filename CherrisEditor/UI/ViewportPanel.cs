@@ -113,7 +113,7 @@ public class ViewportPanel
                         var viewportPos = ImGui.GetItemRectMin();
                         var viewportSize = ImGui.GetItemRectSize();
 
-                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing())
+                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing() && !ImGuizmo.IsOver())
                         {
                             HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
                         }
