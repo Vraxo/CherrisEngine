@@ -13,6 +13,7 @@ namespace Cherris
         private readonly OpenGLSkyboxRenderer _skyboxRenderer;
         private readonly OpenGLPostProcessor _postProcessor;
         private readonly ImGuiController _imGuiController;
+        private readonly OpenGLDebugRenderer _debugRenderer;
 
         private Vector2i _viewportSize = new(1, 1);
         private Vector2i _windowSize;
@@ -23,6 +24,7 @@ namespace Cherris
             _skyboxRenderer = new OpenGLSkyboxRenderer();
             _postProcessor = new OpenGLPostProcessor();
             _imGuiController = imGuiController;
+            _debugRenderer = new OpenGLDebugRenderer();
 
             GL.FrontFace(FrontFaceDirection.Cw);
         }
@@ -61,12 +63,19 @@ namespace Cherris
                     mainCamera.NearClipPlane,
                     mainCamera.FarClipPlane);
 
+                _debugRenderer.Clear();
+                if (selectedObject is not null && selectedObject.GetComponent<Light>() is { Type: LightType.Directional } light)
+                {
+                    DrawDirectionalLightGizmo(light);
+                }
+
                 if (skybox?.CubeMapTexture is not null)
                 {
                     _skyboxRenderer.Render(skybox, view, projection);
                 }
 
                 _sceneRenderer.Render(gameObjects, view, projection);
+                _debugRenderer.Render(view, projection);
 
                 _postProcessor.ResolveMsaa();
                 _postProcessor.RenderBloom();
@@ -84,6 +93,41 @@ namespace Cherris
             _imGuiController.Render();
         }
 
+        private void DrawDirectionalLightGizmo(Light light)
+        {
+            var transform = light.GameObject.Transform;
+            var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
+            float gizmoSize = 2.0f;
+            float arrowHeadSize = 0.25f;
+            float arrowLength = 1.0f * gizmoSize;
+
+            var direction = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, transform.Rotation);
+            var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
+            var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
+
+            var start = transform.Position;
+            var end = start + direction * arrowLength;
+            _debugRenderer.AddLine(start, end, color);
+
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize + right * arrowHeadSize, color);
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize - right * arrowHeadSize, color);
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize + up * arrowHeadSize, color);
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize - up * arrowHeadSize, color);
+
+            const int circleSegments = 16;
+            float circleRadius = 0.5f * gizmoSize;
+            for (int i = 0; i < circleSegments; i++)
+            {
+                float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
+                float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
+
+                var p1 = transform.Position + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * circleRadius;
+                var p2 = transform.Position + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * circleRadius;
+                _debugRenderer.AddLine(p1, p2, color);
+            }
+        }
+
+
         public void OnWindowResized() { }
 
         public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
@@ -94,6 +138,7 @@ namespace Cherris
             _sceneRenderer?.Dispose();
             _skyboxRenderer?.Dispose();
             _postProcessor?.Dispose();
+            _debugRenderer?.Dispose();
         }
 
         private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
