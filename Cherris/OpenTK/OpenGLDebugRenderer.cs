@@ -89,11 +89,11 @@ void main()
         GL.BufferData(BufferTarget.ArrayBuffer, _vertices.Count * DebugVertex.Size, _vertices.ToArray(), BufferUsageHint.DynamicDraw);
 
         GL.Disable(EnableCap.DepthTest);
-        GL.LineWidth(2.0f);
         GL.DrawArrays(PrimitiveType.Lines, 0, _vertices.Count);
         GL.Enable(EnableCap.DepthTest);
 
         GL.BindVertexArray(0);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
     }
 
     private static Vector3 ToOpenTKVector(System.Numerics.Vector3 v)
