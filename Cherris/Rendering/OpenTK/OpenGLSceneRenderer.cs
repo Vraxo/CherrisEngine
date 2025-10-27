@@ -10,13 +10,27 @@ namespace Cherris;
 
 internal class OpenGLSceneRenderer : IDisposable
 {
+    private const int MAX_POINT_LIGHTS = 4;
+
     private readonly ShaderProgram _shaderProgram;
     private readonly int _modelLocation, _viewLocation, _projectionLocation;
-    private readonly int _textureLocation, _tilingLocation, _emissiveLocation;
-    private readonly int _viewPosLocation;
-    private readonly int _hasLightLocation;
-    private readonly int _lightDirLocation, _lightColorLocation, _lightIntensityLocation, _lightAmbientStrengthLocation;
-    private readonly int _specularIntensityLocation, _shininessLocation;
+    private readonly int _tilingLocation, _emissiveLocation, _viewPosLocation;
+
+    // Material Uniform Locations
+    private readonly int _materialTextureLocation, _materialShininessLocation, _materialSpecularIntensityLocation;
+
+    // Directional Light Uniform Locations
+    private readonly int _dirLightDirLocation, _dirLightColorLocation, _dirLightIntensityLocation, _dirLightAmbientStrengthLocation;
+    private readonly int _hasDirLightLocation;
+
+    // Point Light Uniform Locations
+    private readonly int _numPointLightsLocation;
+    private readonly int[] _pointLightPosLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightColorLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightIntensityLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightConstantLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightLinearLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightQuadraticLocations = new int[MAX_POINT_LIGHTS];
 
 
     public OpenGLSceneRenderer()
@@ -50,80 +64,152 @@ void main()
 
         const string fragSource = @"
 #version 330 core
+#define MAX_POINT_LIGHTS 4
+
 in vec4 fsin_Color;
 in vec2 fsin_TexCoord;
 in vec3 FragPos;
 in vec3 Normal;
 
-uniform sampler2D uTexture;
-uniform vec3 uEmissive;
-uniform vec3 uViewPos;
+struct Material {
+    sampler2D texture_diffuse;
+    float shininess;
+    float specularIntensity;
+};
 
-// Material
-uniform float uSpecularIntensity;
-uniform float uShininess;
+struct DirLight {
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float ambientStrength;
+};
 
-// Light
-uniform bool uHasLight;
-uniform vec3 uLightDir;
-uniform vec3 uLightColor;
-uniform float uLightIntensity;
-uniform float uLightAmbientStrength;
-
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float intensity;
+    float constant;
+    float linear;
+    float quadratic;
+};
 
 out vec4 FragColor;
 
+// --- Uniforms ---
+uniform vec3 uViewPos;
+uniform vec3 uEmissive;
+
+uniform Material uMaterial;
+uniform DirLight uDirLight;
+uniform bool uHasDirLight;
+
+uniform PointLight uPointLights[MAX_POINT_LIGHTS];
+uniform int uNumPointLights;
+
+
+// --- Function Declarations ---
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo);
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+
 void main()
 {
-    vec3 albedo = texture(uTexture, fsin_TexCoord).rgb * fsin_Color.rgb;
+    vec3 albedo = texture(uMaterial.texture_diffuse, fsin_TexCoord).rgb * fsin_Color.rgb;
     vec3 norm = normalize(Normal);
-    vec3 finalColor;
+    vec3 viewDir = normalize(uViewPos - FragPos);
 
-    if(uHasLight) {
-        // Ambient
-        vec3 ambient = uLightAmbientStrength * uLightColor * uLightIntensity;
+    vec3 finalColor = vec3(0.0);
 
-        // Diffuse
-        vec3 lightDir = normalize(uLightDir);
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 diffuse = diff * uLightColor * uLightIntensity;
+    if(uHasDirLight) {
+        finalColor += CalcDirLight(uDirLight, norm, viewDir, albedo);
+    }
 
-        // Specular (Blinn-Phong)
-        vec3 viewDir = normalize(uViewPos - FragPos);
-        vec3 halfwayDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(norm, halfwayDir), 0.0), uShininess);
-        vec3 specular = uSpecularIntensity * spec * uLightColor * uLightIntensity;
+    for(int i = 0; i < uNumPointLights; i++) {
+        finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
+    }
 
-        finalColor = (ambient + diffuse) * albedo + specular;
-    } else {
-        // No light in scene, just use albedo
+    // If no lights, the color would be black. Add albedo so unlit scenes are visible.
+    if (!uHasDirLight && uNumPointLights == 0) {
         finalColor = albedo;
     }
-    
+
     finalColor += uEmissive;
 
-    FragColor = vec4(finalColor, texture(uTexture, fsin_TexCoord).a * fsin_Color.a);
+    FragColor = vec4(finalColor, texture(uMaterial.texture_diffuse, fsin_TexCoord).a * fsin_Color.a);
+}
+
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.direction);
+    
+    // Ambient
+    vec3 ambient = light.ambientStrength * light.color * light.intensity;
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color * light.intensity;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
+
+    return (ambient + diffuse) * albedo + specular;
+}
+
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color * light.intensity;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
+
+    // Attenuation
+    float distance = length(light.position - fragPos);
+    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+    
+    diffuse *= attenuation;
+    specular *= attenuation;
+
+    return diffuse * albedo + specular;
 }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
+
+        // Standard uniforms
         _modelLocation = _shaderProgram.GetUniformLocation("model");
         _viewLocation = _shaderProgram.GetUniformLocation("view");
         _projectionLocation = _shaderProgram.GetUniformLocation("projection");
-
-        _textureLocation = _shaderProgram.GetUniformLocation("uTexture");
         _tilingLocation = _shaderProgram.GetUniformLocation("uTiling");
         _emissiveLocation = _shaderProgram.GetUniformLocation("uEmissive");
-
         _viewPosLocation = _shaderProgram.GetUniformLocation("uViewPos");
 
-        _hasLightLocation = _shaderProgram.GetUniformLocation("uHasLight");
-        _lightDirLocation = _shaderProgram.GetUniformLocation("uLightDir");
-        _lightColorLocation = _shaderProgram.GetUniformLocation("uLightColor");
-        _lightIntensityLocation = _shaderProgram.GetUniformLocation("uLightIntensity");
-        _lightAmbientStrengthLocation = _shaderProgram.GetUniformLocation("uLightAmbientStrength");
+        // Material uniforms
+        _materialTextureLocation = _shaderProgram.GetUniformLocation("uMaterial.texture_diffuse");
+        _materialShininessLocation = _shaderProgram.GetUniformLocation("uMaterial.shininess");
+        _materialSpecularIntensityLocation = _shaderProgram.GetUniformLocation("uMaterial.specularIntensity");
 
-        _specularIntensityLocation = _shaderProgram.GetUniformLocation("uSpecularIntensity");
-        _shininessLocation = _shaderProgram.GetUniformLocation("uShininess");
+        // Directional light uniforms
+        _hasDirLightLocation = _shaderProgram.GetUniformLocation("uHasDirLight");
+        _dirLightDirLocation = _shaderProgram.GetUniformLocation("uDirLight.direction");
+        _dirLightColorLocation = _shaderProgram.GetUniformLocation("uDirLight.color");
+        _dirLightIntensityLocation = _shaderProgram.GetUniformLocation("uDirLight.intensity");
+        _dirLightAmbientStrengthLocation = _shaderProgram.GetUniformLocation("uDirLight.ambientStrength");
+
+        // Point light uniforms
+        _numPointLightsLocation = _shaderProgram.GetUniformLocation("uNumPointLights");
+        for (int i = 0; i < MAX_POINT_LIGHTS; i++)
+        {
+            _pointLightPosLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].position");
+            _pointLightColorLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].color");
+            _pointLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].intensity");
+            _pointLightConstantLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].constant");
+            _pointLightLinearLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].linear");
+            _pointLightQuadraticLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].quadratic");
+        }
     }
 
     public void Render(IEnumerable<GameObject> gameObjects, Matrix4 view, Matrix4 projection)
@@ -131,32 +217,46 @@ void main()
         _shaderProgram.Use();
 
         // Set uniforms that are constant for the frame
-        GL.Uniform1(_textureLocation, 0);
+        GL.Uniform1(_materialTextureLocation, 0);
         GL.UniformMatrix4(_viewLocation, false, ref view);
         GL.UniformMatrix4(_projectionLocation, false, ref projection);
         var viewPos = view.Inverted().Row3.Xyz;
         GL.Uniform3(_viewPosLocation, viewPos.X, viewPos.Y, viewPos.Z);
 
         // Find and set light uniforms
-        var directionalLight = gameObjects
-            .Select(g => g.GetComponent<Light>())
-            .FirstOrDefault(l => l is not null && l.Type == LightType.Directional);
+        var allLights = gameObjects.Select(g => g.GetComponent<Light>()).Where(l => l is not null).ToList();
+        var directionalLight = allLights.FirstOrDefault(l => l.Type == LightType.Directional);
+        var pointLights = allLights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
 
         if (directionalLight != null)
         {
-            GL.Uniform1(_hasLightLocation, 1);
-            // The light's forward vector is the direction it's traveling.
-            // For lighting calculations, we need the vector FROM the surface TO the light, which is the inverse.
+            GL.Uniform1(_hasDirLightLocation, 1);
             var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
             var directionToLight = -lightTravelDirection;
-            GL.Uniform3(_lightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
-            GL.Uniform3(_lightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
-            GL.Uniform1(_lightIntensityLocation, directionalLight.Intensity);
-            GL.Uniform1(_lightAmbientStrengthLocation, directionalLight.AmbientStrength);
+            GL.Uniform3(_dirLightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
+            GL.Uniform3(_dirLightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
+            GL.Uniform1(_dirLightIntensityLocation, directionalLight.Intensity);
+            GL.Uniform1(_dirLightAmbientStrengthLocation, directionalLight.AmbientStrength);
         }
         else
         {
-            GL.Uniform1(_hasLightLocation, 0);
+            GL.Uniform1(_hasDirLightLocation, 0);
+        }
+
+        GL.Uniform1(_numPointLightsLocation, pointLights.Count);
+        for (int i = 0; i < pointLights.Count; i++)
+        {
+            var light = pointLights[i];
+            float range = Math.Max(0.1f, light.Range); // Prevent division by zero
+            float linear = 4.5f / range;
+            float quadratic = 75.0f / (range * range);
+
+            GL.Uniform3(_pointLightPosLocations[i], light.GameObject.Transform.Position.X, light.GameObject.Transform.Position.Y, light.GameObject.Transform.Position.Z);
+            GL.Uniform3(_pointLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
+            GL.Uniform1(_pointLightIntensityLocations[i], light.Intensity);
+            GL.Uniform1(_pointLightConstantLocations[i], 1.0f);
+            GL.Uniform1(_pointLightLinearLocations[i], linear);
+            GL.Uniform1(_pointLightQuadraticLocations[i], quadratic);
         }
 
         // Render each object
@@ -186,8 +286,8 @@ void main()
         GL.UniformMatrix4(_modelLocation, false, ref model);
         GL.Uniform2(_tilingLocation, material.TextureTiling.X, material.TextureTiling.Y);
         GL.Uniform3(_emissiveLocation, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
-        GL.Uniform1(_specularIntensityLocation, material.SpecularIntensity);
-        GL.Uniform1(_shininessLocation, material.Shininess);
+        GL.Uniform1(_materialSpecularIntensityLocation, material.SpecularIntensity);
+        GL.Uniform1(_materialShininessLocation, material.Shininess);
 
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);

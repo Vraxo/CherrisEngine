@@ -1,6 +1,5 @@
 outputFilePath: merged-output.txt
 sourceDirectoryPaths:
-  - Apexverse
   - Cherris
   - CherrisEditor
   - CherrisEditor\bin\Debug\net9.0\Assets

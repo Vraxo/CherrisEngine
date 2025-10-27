@@ -121,9 +121,10 @@ public abstract class Engine
             // Get Material properties from a nested dictionary
             if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
             {
-                Console.WriteLine($"[Engine] Warning: MeshRenderer on '{meshName}' is missing a 'Material' section. Skipping.");
-                return null;
+                // For backward compatibility, check for top-level properties.
+                matProps = propsDict;
             }
+
 
             // Inside Material dictionary
             string textureName = "White"; // Default value
@@ -232,6 +233,14 @@ public abstract class Engine
             if (propsDict.TryGetValue("AmbientStrength", out var ambientObj))
             {
                 light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
+            }
+
+            if (light.Type == LightType.Point)
+            {
+                if (propsDict.TryGetValue("Range", out var rangeObj))
+                {
+                    light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
+                }
             }
 
             return light;
