@@ -15,7 +15,7 @@ public class Light : Component
     public float Intensity { get; set; } = 1.0f;
 
     // Used by DirectionalLight for global ambient term
-    public float AmbientStrength { get; set; } = 2.5f;
+    public float AmbientStrength { get; set; } = 0.3f;
 
     // Point Light range
     public float Range { get; set; } = 50.0f;

@@ -28,9 +28,7 @@ internal class OpenGLSceneRenderer : IDisposable
     private readonly int[] _pointLightPosLocations = new int[MAX_POINT_LIGHTS];
     private readonly int[] _pointLightColorLocations = new int[MAX_POINT_LIGHTS];
     private readonly int[] _pointLightIntensityLocations = new int[MAX_POINT_LIGHTS];
-    private readonly int[] _pointLightConstantLocations = new int[MAX_POINT_LIGHTS];
-    private readonly int[] _pointLightLinearLocations = new int[MAX_POINT_LIGHTS];
-    private readonly int[] _pointLightQuadraticLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightRangeLocations = new int[MAX_POINT_LIGHTS];
 
 
     public OpenGLSceneRenderer()
@@ -88,9 +86,7 @@ struct PointLight {
     vec3 position;
     vec3 color;
     float intensity;
-    float constant;
-    float linear;
-    float quadratic;
+    float range;
 };
 
 out vec4 FragColor;
@@ -117,8 +113,13 @@ void main()
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(uViewPos - FragPos);
 
+    // Start with the ambient term, which acts as a base light level.
     vec3 finalColor = vec3(0.0);
+    if(uHasDirLight) {
+        finalColor = uDirLight.ambientStrength * uDirLight.color * uDirLight.intensity * albedo;
+    }
 
+    // Additively blend the diffuse and specular contributions of each light.
     if(uHasDirLight) {
         finalColor += CalcDirLight(uDirLight, norm, viewDir, albedo);
     }
@@ -127,22 +128,21 @@ void main()
         finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
     }
 
-    // If no lights, the color would be black. Add albedo so unlit scenes are visible.
+    // If there are no lights at all, render with the base texture color.
     if (!uHasDirLight && uNumPointLights == 0) {
         finalColor = albedo;
     }
 
+    // Finally, add any emissive color.
     finalColor += uEmissive;
 
     FragColor = vec4(finalColor, texture(uMaterial.texture_diffuse, fsin_TexCoord).a * fsin_Color.a);
 }
 
+// Calculates only the diffuse and specular parts of a directional light.
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
     vec3 lightDir = normalize(light.direction);
     
-    // Ambient
-    vec3 ambient = light.ambientStrength * light.color * light.intensity;
-
     // Diffuse
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 diffuse = diff * light.color * light.intensity;
@@ -152,29 +152,30 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
     float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
     vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
 
-    return (ambient + diffuse) * albedo + specular;
+    return (diffuse * albedo) + specular;
 }
 
+// Calculates the diffuse and specular parts of a point light, including attenuation.
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
     vec3 lightDir = normalize(light.position - fragPos);
 
     // Diffuse
     float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * light.color * light.intensity;
+    vec3 diffuse = diff * light.color;
 
     // Specular
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
-    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
 
-    // Attenuation
+    // Attenuation based on range
     float distance = length(light.position - fragPos);
-    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+    // Use a squared falloff for a more natural look (bright center, fades quickly at the edge)
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
     
-    diffuse *= attenuation;
-    specular *= attenuation;
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff;
 
-    return diffuse * albedo + specular;
+    return lightContribution;
 }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
@@ -206,9 +207,7 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
             _pointLightPosLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].position");
             _pointLightColorLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].color");
             _pointLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].intensity");
-            _pointLightConstantLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].constant");
-            _pointLightLinearLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].linear");
-            _pointLightQuadraticLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].quadratic");
+            _pointLightRangeLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].range");
         }
     }
 
@@ -247,16 +246,10 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
         for (int i = 0; i < pointLights.Count; i++)
         {
             var light = pointLights[i];
-            float range = Math.Max(0.1f, light.Range); // Prevent division by zero
-            float linear = 4.5f / range;
-            float quadratic = 75.0f / (range * range);
-
             GL.Uniform3(_pointLightPosLocations[i], light.GameObject.Transform.Position.X, light.GameObject.Transform.Position.Y, light.GameObject.Transform.Position.Z);
             GL.Uniform3(_pointLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
             GL.Uniform1(_pointLightIntensityLocations[i], light.Intensity);
-            GL.Uniform1(_pointLightConstantLocations[i], 1.0f);
-            GL.Uniform1(_pointLightLinearLocations[i], linear);
-            GL.Uniform1(_pointLightQuadraticLocations[i], quadratic);
+            GL.Uniform1(_pointLightRangeLocations[i], light.Range);
         }
 
         // Render each object

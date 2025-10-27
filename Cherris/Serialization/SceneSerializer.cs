@@ -99,7 +99,7 @@ public class SceneSerializer
                             ["Color"] = light.Color,
                             ["Intensity"] = light.Intensity
                         };
-                        if (Math.Abs(light.AmbientStrength - 2.5f) > 0.001f)
+                        if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f)
                         {
                             lightData["AmbientStrength"] = light.AmbientStrength;
                         }
