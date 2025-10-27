@@ -122,7 +122,7 @@ public class SceneRenderer : IDisposable
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer is null) continue;
+            if (meshRenderer?.Mesh is null) continue; // Added null check for Mesh
 
             var backendData = backendDataProvider(meshRenderer) as dynamic;
             if (backendData is null) continue;
