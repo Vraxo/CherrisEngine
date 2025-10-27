@@ -28,7 +28,7 @@ public class RigidBody : Script
         }
 
         var meshRenderer = GameObject.GetComponent<MeshRenderer>();
-        
+
         if (meshRenderer == null)
         {
             Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");

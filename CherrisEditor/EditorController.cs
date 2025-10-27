@@ -1,6 +1,5 @@
 ﻿using Cherris;
 using ImGuizmoNET;
-using System;
 using System.Numerics;
 
 namespace CherrisEditor;

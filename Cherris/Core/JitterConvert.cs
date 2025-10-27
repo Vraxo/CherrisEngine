@@ -1,5 +1,5 @@
-﻿using System.Numerics;
-using Jitter.LinearMath;
+﻿using Jitter.LinearMath;
+using System.Numerics;
 
 namespace Cherris;
 

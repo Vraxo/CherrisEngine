@@ -1,7 +1,5 @@
 ﻿using Cherris;
 using ImGuiNET;
-using System;
-using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace CherrisEditor.UI;

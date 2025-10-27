@@ -4,10 +4,6 @@
 // dotnet add package SharpGLTF.Core
 
 using SharpGLTF.Schema2;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using Veldrid;
 

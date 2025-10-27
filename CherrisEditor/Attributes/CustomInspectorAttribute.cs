@@ -1,7 +1,4 @@
-﻿using System;
-using Cherris;
-
-namespace CherrisEditor;
+﻿namespace CherrisEditor;
 
 /// <summary>
 /// Marks a class as a custom inspector for a specific component type.

@@ -1,5 +1,4 @@
 ﻿using ImGuiNET;
-using System;
 using System.Numerics;
 
 namespace CherrisEditor.UI;

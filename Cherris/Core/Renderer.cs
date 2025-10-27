@@ -1,7 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Cherris.Rendering;
 using System.Numerics;
-using Cherris.Rendering;
 using Veldrid;
 using Veldrid.SPIRV;
 

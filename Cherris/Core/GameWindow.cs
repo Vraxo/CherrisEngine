@@ -1,6 +1,5 @@
-﻿using System;
+﻿using Cherris.Rendering;
 using System.Numerics;
-using Cherris.Rendering;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;

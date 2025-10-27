@@ -1,7 +1,6 @@
 ﻿using Cherris;
 using CherrisEditor.Undo;
 using ImGuiNET;
-using System;
 
 namespace CherrisEditor.UI;
 

@@ -1,11 +1,9 @@
 ﻿using Cherris;
 using CherrisEditor.UI;
+using CherrisEditor.Undo;
 using ImGuiNET;
 using ImGuizmoNET;
-using System;
-using System.Linq;
 using System.Numerics;
-using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 

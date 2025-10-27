@@ -1,6 +1,5 @@
-﻿using System;
+﻿using Cherris.Rendering;
 using System.Diagnostics;
-using Cherris.Rendering;
 
 namespace Cherris;
 

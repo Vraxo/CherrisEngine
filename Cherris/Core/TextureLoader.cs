@@ -1,6 +1,4 @@
 ﻿using StbImageSharp;
-using System;
-using System.IO;
 using Veldrid;
 
 namespace Cherris;

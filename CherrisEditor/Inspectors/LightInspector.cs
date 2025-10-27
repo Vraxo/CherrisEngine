@@ -2,7 +2,6 @@
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
-using System;
 using System.Numerics;
 
 namespace CherrisEditor.Inspectors;

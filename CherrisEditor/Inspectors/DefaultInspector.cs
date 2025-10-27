@@ -1,12 +1,10 @@
 ﻿using Cherris;
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
 using ImGuiNET;
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
 
 namespace CherrisEditor.Inspectors;
 

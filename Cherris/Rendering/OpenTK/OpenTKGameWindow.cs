@@ -1,12 +1,11 @@
 ﻿using Cherris.Rendering;
+using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
-using ImGuiNET;
-using System;
 
 namespace Cherris.OpenTK;
 

@@ -3,7 +3,6 @@ using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
 using OpenTK.Graphics.OpenGL4;
 using SkiaSharp;
-using System;
 using System.Numerics;
 
 namespace Cherris;

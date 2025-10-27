@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace CherrisEditor.Undo;
+﻿namespace CherrisEditor.Undo;
 
 public class HistoryManager
 {

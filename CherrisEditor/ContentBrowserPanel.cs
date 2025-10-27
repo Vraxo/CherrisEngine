@@ -1,8 +1,4 @@
-﻿using Cherris;
-using ImGuiNET;
-using System;
-using System.IO;
-using System.Linq;
+﻿using ImGuiNET;
 using System.Numerics;
 using System.Runtime.InteropServices;
 

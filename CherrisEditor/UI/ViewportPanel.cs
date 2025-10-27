@@ -1,13 +1,10 @@
 ﻿using Cherris;
-using Cherris.OpenTK;
-using ImGuiNET;
-using ImGuizmoNET;
-using System;
-using System.Linq;
-using System.Numerics;
-using System.Runtime.CompilerServices;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
+using ImGuiNET;
+using ImGuizmoNET;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace CherrisEditor.UI;
 

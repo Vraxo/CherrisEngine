@@ -1,14 +1,10 @@
 ﻿using Cherris;
 using Cherris.OpenTK;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using CherrisEditor.Undo;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
-using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
