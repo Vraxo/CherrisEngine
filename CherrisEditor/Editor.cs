@@ -18,11 +18,42 @@ public class Editor : Engine
 
     private Camera? _editorCamera;
     private AssemblyLoadContext _gameAssemblyContext;
+    private readonly SceneSerializer _sceneSerializer;
+
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
         Exposure = 0.5f;
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
+        _sceneSerializer = new SceneSerializer();
+    }
+
+    public void CreatePrefabFromGameObject(GameObject go, string path)
+    {
+        if (go == null || string.IsNullOrEmpty(path)) return;
+        Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
+        _sceneSerializer.SavePrefab(go, path);
+    }
+
+    public void InstantiatePrefab(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"[Editor] Prefab file not found: {path}");
+            return;
+        }
+
+        var rootObjects = SceneLoader.LoadPrefab(path);
+        foreach (var root in rootObjects)
+        {
+            SceneManager.AddGameObject(root);
+        }
+
+        if (rootObjects.Any())
+        {
+            SetSelectedGameObject(rootObjects.First());
+        }
+        SceneManager.ActiveScene.IsDirty = true;
     }
 
     public void EnterPlayMode()
@@ -128,7 +159,7 @@ public class Editor : Engine
 
     protected override void OnStart()
     {
-        _editorAppLogic = new(this);
+        _editorAppLogic = new(this, _sceneSerializer);
         OnDrawUI = _editorAppLogic.DrawUI();
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
         InitializeEditingState();

@@ -1,7 +1,5 @@
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Camera.cs">
-using System;
 using System.Numerics;
-using Veldrid;
 
 namespace Cherris;
 
@@ -202,9 +200,6 @@ public class Mesh
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
-using Cherris.Rendering;
-using System;
-
 namespace Cherris;
 
 public class MeshRenderer : Component, IDisposable
@@ -280,7 +275,7 @@ public class RigidBody : Script
         }
 
         var meshRenderer = GameObject.GetComponent<MeshRenderer>();
-        
+
         if (meshRenderer == null)
         {
             Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
@@ -339,7 +334,6 @@ public class Skybox : Component
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Transform.cs">
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace Cherris;
@@ -394,7 +388,6 @@ public class Transform
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\BloomRenderer.cs">
-using System;
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -949,9 +942,8 @@ public abstract class Engine
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GameLoop.cs">
-using System;
-using System.Diagnostics;
 using Cherris.Rendering;
+using System.Diagnostics;
 
 namespace Cherris;
 
@@ -994,9 +986,6 @@ public class GameLoop
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GameObject.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 
 namespace Cherris;
@@ -1098,9 +1087,8 @@ public class GameObject
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GameWindow.cs">
-using System;
-using System.Numerics;
 using Cherris.Rendering;
+using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
@@ -1277,8 +1265,6 @@ public enum GraphicsAPI
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Input.cs">
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace Cherris;
@@ -1442,8 +1428,8 @@ public enum MouseButton
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\JitterConvert.cs">
-using System.Numerics;
 using Jitter.LinearMath;
+using System.Numerics;
 
 namespace Cherris;
 
@@ -1493,6 +1479,104 @@ public class Material
     {
         Texture = texture;
         TextureName = textureName;
+    }
+}
+</file>
+
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\ModelLoader.cs">
+// --- REQUIRED NUGET PACKAGE ---
+// This file requires the 'SharpGLTF.Core' package.
+// Add it to your project:
+// dotnet add package SharpGLTF.Core
+
+using SharpGLTF.Schema2;
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public static class ModelLoader
+{
+    public static Dictionary<string, Mesh> LoadMeshesFromFile(string path)
+    {
+        var loadedMeshes = new Dictionary<string, Mesh>();
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"[ModelLoader] File not found: {path}");
+            return loadedMeshes;
+        }
+
+        try
+        {
+            var model = ModelRoot.Load(path);
+            Console.WriteLine($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
+
+            for (int i = 0; i < model.LogicalMeshes.Count; i++)
+            {
+                var gltfMesh = model.LogicalMeshes[i];
+
+                var allVertices = new List<Vertex>();
+                var allIndices = new List<ushort>();
+
+                foreach (var primitive in gltfMesh.Primitives)
+                {
+                    var positionsAccessor = primitive.GetVertexAccessor("POSITION");
+                    if (positionsAccessor == null) continue;
+                    var positions = positionsAccessor.AsVector3Array();
+                    if (positions.Count == 0) continue;
+
+                    var normalsAccessor = primitive.GetVertexAccessor("NORMAL");
+                    var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
+                    var indicesAccessor = primitive.IndexAccessor;
+
+                    if (indicesAccessor == null) continue;
+                    var indices = indicesAccessor.AsIndicesArray();
+
+                    IList<Vector3> normals = normalsAccessor?.AsVector3Array();
+                    IList<Vector2> texCoords = texCoordsAccessor?.AsVector2Array();
+
+                    ushort baseVertex = (ushort)allVertices.Count;
+
+                    for (int v = 0; v < positions.Count; v++)
+                    {
+                        allVertices.Add(new Vertex(
+                            positions[v],
+                            normals != null ? normals[v] : Vector3.UnitY,
+                            RgbaFloat.White,
+                            texCoords != null ? texCoords[v] : Vector2.Zero
+                        ));
+                    }
+
+                    // *** THE FIX IS HERE ***
+                    // glTF uses Counter-Clockwise winding, but our renderer expects Clockwise.
+                    // We must reverse the winding order of each triangle.
+                    for (int tri = 0; tri < indices.Count; tri += 3)
+                    {
+                        uint i0 = indices[tri];
+                        uint i1 = indices[tri + 1];
+                        uint i2 = indices[tri + 2];
+
+                        allIndices.Add((ushort)(baseVertex + i0));
+                        allIndices.Add((ushort)(baseVertex + i2)); // Swapped i1 and i2
+                        allIndices.Add((ushort)(baseVertex + i1));
+                    }
+                }
+
+                if (allVertices.Any())
+                {
+                    string meshName = string.IsNullOrWhiteSpace(gltfMesh.Name) ? $"mesh_{i}" : gltfMesh.Name;
+                    var newMesh = new Mesh(allVertices.ToArray(), allIndices.ToArray());
+                    loadedMeshes[meshName] = newMesh;
+                    Console.WriteLine($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ModelLoader] Failed to load model from '{path}': {e.Message}");
+        }
+
+        return loadedMeshes;
     }
 }
 </file>
@@ -1644,10 +1728,8 @@ public struct Ray
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Renderer.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
 using Cherris.Rendering;
+using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -2153,8 +2235,6 @@ void main()
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\ResourceManager.cs">
-using System;
-using System.Collections.Generic;
 using Cherris.Rendering;
 using Veldrid;
 
@@ -2188,8 +2268,69 @@ public class ResourceManager : IResourceManager
 
     public Mesh GetMesh(string name)
     {
-        return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
+        // Case 1: Mesh is already cached (primitive or from a previously loaded model).
+        if (_meshes.TryGetValue(name, out var mesh))
+        {
+            return mesh;
+        }
+
+        // Case 2: Mesh name looks like a model file that needs to be loaded.
+        string[] parts = name.Split('#');
+        string filePathPart = parts[0];
+
+        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
+            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            // Check if we've already processed this file by looking for any of its meshes in the cache.
+            // If we find one, it means all meshes from that file are already cached, but the specific
+            // one requested (`name`) was not found. So we can return null early.
+            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
+            {
+                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
+                return null;
+            }
+
+            // It's a new model file, let's load it.
+            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            if (fullPath is null)
+            {
+                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
+                return null;
+            }
+
+            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
+            if (!loadedMeshes.Any())
+            {
+                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
+                return null;
+            }
+
+            // Cache all meshes from the file.
+            foreach (var (meshName, loadedMesh) in loadedMeshes)
+            {
+                string cacheKey = $"{filePathPart}#{meshName}";
+                _meshes[cacheKey] = loadedMesh;
+            }
+            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
+
+
+            // Now that the file is loaded and meshes are cached, try to retrieve the requested mesh again.
+            if (_meshes.TryGetValue(name, out var finalMesh))
+            {
+                return finalMesh;
+            }
+
+            // If the user didn't specify a mesh name (e.g., "model.gltf"), return the first one.
+            if (parts.Length == 1)
+            {
+                return loadedMeshes.Values.First();
+            }
+        }
+
+        // If it's not cached and not a model file path, it doesn't exist.
+        return null;
     }
+
 
     public ITexture GetTexture(string name)
     {
@@ -2261,10 +2402,6 @@ public class ResourceManager : IResourceManager
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Scene.cs">
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 
 namespace Cherris
@@ -2382,10 +2519,6 @@ namespace Cherris
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SceneManager.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace Cherris;
 
 public class SceneManager
@@ -2510,8 +2643,6 @@ public class SceneManager
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SceneRenderer.cs">
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -2634,7 +2765,7 @@ public class SceneRenderer : IDisposable
         foreach (var gameObject in scene)
         {
             var meshRenderer = gameObject.GetComponent<MeshRenderer>();
-            if (meshRenderer is null) continue;
+            if (meshRenderer?.Mesh is null) continue; // Added null check for Mesh
 
             var backendData = backendDataProvider(meshRenderer) as dynamic;
             if (backendData is null) continue;
@@ -2912,10 +3043,8 @@ public static class SkyboxLoader
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SkyboxRenderer.cs">
-using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
-using Cherris.Rendering;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -3085,8 +3214,6 @@ public class SkyboxRenderer
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Snapshotter.cs">
-using System;
-using System.IO;
 using System.Runtime.InteropServices;
 using Veldrid;
 
@@ -3211,7 +3338,6 @@ public class Snapshotter : IDisposable
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Texture.cs">
-using System;
 using Cherris.Rendering;
 using Veldrid;
 
@@ -3240,8 +3366,6 @@ public class Texture : ITexture
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\TextureLoader.cs">
 using StbImageSharp;
-using System;
-using System.IO;
 using Veldrid;
 
 namespace Cherris;
@@ -3476,15 +3600,10 @@ public interface RenderingInterface : IDisposable
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\SceneLoader.cs">
-using System;
-using System.Collections.Generic;
+using Cherris.Rendering;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using Cherris.Rendering;
-using Veldrid;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -3640,10 +3759,6 @@ public class SceneLoader
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\SceneSerializer.cs">
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using YamlDotNet.Serialization;
@@ -3815,7 +3930,6 @@ public class SceneSerializer
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\Vector2YamlTypeConverter.cs">
-using System;
 using System.Globalization;
 using System.Numerics;
 using YamlDotNet.Core;
@@ -3852,7 +3966,6 @@ public class Vector2YamlTypeConverter : IYamlTypeConverter
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\Vector3YamlTypeConverter.cs">
-using System;
 using System.Globalization;
 using System.Numerics;
 using YamlDotNet.Core;
@@ -3902,52 +4015,66 @@ namespace Cherris;
 public static class AssetFinder
 {
     private const string AssetRootPath = "Assets";
-    private static readonly string[] SupportedExtensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga"];
 
     public static string? FindAssetPath(string assetName)
     {
-        if (!Directory.Exists(AssetRootPath))
+        if (string.IsNullOrWhiteSpace(assetName) || !Directory.Exists(AssetRootPath))
         {
             return null;
         }
 
+        // Sanitize path to use correct OS separators
+        string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+        string fullPath = Path.Combine(AssetRootPath, sanitizedName);
+
+        // Case 1: The provided name is an exact relative path (with extension).
+        if (File.Exists(fullPath))
+        {
+            return fullPath;
+        }
+
+        // Case 2: The provided name is a relative path but is missing an extension.
+        if (!Path.HasExtension(fullPath))
+        {
+            string? directory = Path.GetDirectoryName(fullPath);
+            string fileName = Path.GetFileName(fullPath);
+            if (directory is not null && Directory.Exists(directory))
+            {
+                // Find first file that matches the name, regardless of extension.
+                var files = Directory.GetFiles(directory, $"{fileName}.*");
+                if (files.Any())
+                {
+                    return files[0];
+                }
+            }
+        }
+
+        // Case 3: The provided name is just a filename, search for it everywhere.
+        // This is the fallback, which can be slow, but useful.
         try
         {
-            string[] matchingFiles = GetMatchingFiles(assetName);
+            string fileNameOnly = Path.GetFileName(sanitizedName);
+            var files = Directory.GetFiles(AssetRootPath, fileNameOnly, SearchOption.AllDirectories);
+            if (files.Any()) return files[0];
 
-            if (matchingFiles.Length > 1)
+            // If still not found, try searching with wildcard extension.
+            if (!Path.HasExtension(fileNameOnly))
             {
-                Console.WriteLine(
-                    $"[AssetFinder] Warning: Found multiple files for asset '{assetName}'." +
-                    $"Using '{matchingFiles[0]}'.");
+                var filesWithWildcard = Directory.GetFiles(AssetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
+                if (filesWithWildcard.Any()) return filesWithWildcard[0];
             }
-
-            return matchingFiles.FirstOrDefault();
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[AssetFinder] Error while searching for assets: {e.Message}");
-            return null;
+            Console.WriteLine($"[AssetFinder] Error while searching for asset '{assetName}': {e.Message}");
         }
-    }
 
-    private static string[] GetMatchingFiles(string assetName)
-    {
-        return [.. GetPotentialFilePaths(assetName).SelectMany(name =>
-        {
-            return Directory.GetFiles(AssetRootPath, name, SearchOption.AllDirectories);
-        })];
-    }
-
-    private static IEnumerable<string> GetPotentialFilePaths(string assetName)
-    {
-        return SupportedExtensions.Select(ext => assetName + ext);
+        return null; // Not found
     }
 }
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Utils\EngineMath.cs">
-using System;
 using System.Numerics;
 
 namespace Cherris;
@@ -4005,15 +4132,12 @@ public class HideInInspectorAttribute : Attribute
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\ImGuiController.cs">
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Runtime.CompilerServices;
 using Cherris.Rendering;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using System.Runtime.CompilerServices;
 
 namespace Cherris.OpenTK
 {
@@ -4389,8 +4513,6 @@ void main()
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLDebugRenderer.cs">
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
-using System;
-using System.Collections.Generic;
 
 namespace Cherris.OpenTK;
 
@@ -4502,7 +4624,6 @@ void main()
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLMeshRendererData.cs">
 using Cherris;
 using OpenTK.Graphics.OpenGL;
-using System;
 
 internal class OpenGLMeshRendererData : IDisposable
 {
@@ -4565,7 +4686,6 @@ internal class OpenGLMeshRendererData : IDisposable
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLPostProcessor.cs">
 using OpenTK.Graphics.OpenGL4;
-using System;
 
 namespace Cherris;
 
@@ -4885,11 +5005,7 @@ void main()
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLSceneRenderer.cs">
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Numerics;
 
 namespace Cherris;
 
@@ -5305,7 +5421,6 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLSkyboxRenderer.cs">
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
-using System;
 
 namespace Cherris;
 
@@ -5395,7 +5510,6 @@ using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
 using OpenTK.Graphics.OpenGL4;
 using SkiaSharp;
-using System;
 using System.Numerics;
 
 namespace Cherris;
@@ -5513,14 +5627,13 @@ namespace Cherris.OpenTK
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKGameWindow.cs">
 using Cherris.Rendering;
+using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
-using ImGuiNET;
-using System;
 
 namespace Cherris.OpenTK;
 
@@ -5757,8 +5870,6 @@ public class OpenTKGameWindow : IGameWindow
 using Cherris.OpenTK;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace Cherris
@@ -5964,40 +6075,11 @@ namespace Cherris
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKResourceManager.cs">
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
 
 namespace Cherris;
-
-public class OpenTKTexture : ITexture
-{
-    public int Handle { get; }
-    private readonly TextureTarget _target;
-
-    public OpenTKTexture(int handle, TextureTarget target = TextureTarget.Texture2D)
-    {
-        Handle = handle;
-        _target = target;
-    }
-
-    public void Bind(TextureUnit unit = TextureUnit.Texture0)
-    {
-        GL.ActiveTexture(unit);
-        GL.BindTexture(_target, Handle);
-    }
-
-    public object GetBackendHandle() => Handle;
-
-    public void Dispose()
-    {
-        GL.DeleteTexture(Handle);
-    }
-}
 
 public class OpenTKResourceManager : IResourceManager
 {
@@ -6031,8 +6113,58 @@ public class OpenTKResourceManager : IResourceManager
 
     public Mesh GetMesh(string name)
     {
-        return _meshes.TryGetValue(name, out var mesh) ? mesh : null;
+        if (_meshes.TryGetValue(name, out var mesh))
+        {
+            return mesh;
+        }
+
+        string[] parts = name.Split('#');
+        string filePathPart = parts[0];
+
+        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
+            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
+            {
+                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
+                return null;
+            }
+
+            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            if (fullPath is null)
+            {
+                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
+                return null;
+            }
+
+            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
+            if (!loadedMeshes.Any())
+            {
+                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
+                return null;
+            }
+
+            foreach (var (meshName, loadedMesh) in loadedMeshes)
+            {
+                string cacheKey = $"{filePathPart}#{meshName}";
+                _meshes[cacheKey] = loadedMesh;
+            }
+            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
+
+            if (_meshes.TryGetValue(name, out var finalMesh))
+            {
+                return finalMesh;
+            }
+
+            if (parts.Length == 1)
+            {
+                return loadedMeshes.Values.First();
+            }
+        }
+
+        return null;
     }
+
 
     public ITexture GetTexture(string name)
     {
@@ -6155,6 +6287,38 @@ public class OpenTKResourceManager : IResourceManager
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKTexture.cs">
+using Cherris.Rendering;
+using OpenTK.Graphics.OpenGL4;
+
+namespace Cherris;
+
+public class OpenTKTexture : ITexture
+{
+    public int Handle { get; }
+    private readonly TextureTarget _target;
+
+    public OpenTKTexture(int handle, TextureTarget target = TextureTarget.Texture2D)
+    {
+        Handle = handle;
+        _target = target;
+    }
+
+    public void Bind(TextureUnit unit = TextureUnit.Texture0)
+    {
+        GL.ActiveTexture(unit);
+        GL.BindTexture(_target, Handle);
+    }
+
+    public object GetBackendHandle() => Handle;
+
+    public void Dispose()
+    {
+        GL.DeleteTexture(Handle);
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\ShaderProgram.cs">
 using OpenTK.Graphics.OpenGL;
 
@@ -6216,7 +6380,6 @@ public class ShaderProgram : IDisposable
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\Veldrid\VeldridGraphicsManager.cs">
-using System;
 using Veldrid;
 using Veldrid.Sdl2;
 
@@ -6351,11 +6514,7 @@ public class VeldridGraphicsManager : IDisposable
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\ContentBrowserPanel.cs">
-using Cherris;
 using ImGuiNET;
-using System;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -6517,15 +6676,11 @@ public class ContentBrowserPanel : IDisposable
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Editor.cs">
 using Cherris;
 using Cherris.OpenTK;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using CherrisEditor.Undo;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
-using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
@@ -6847,12 +7002,10 @@ public class Editor : Engine
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorAppLogic.cs">
 using Cherris;
 using CherrisEditor.UI;
+using CherrisEditor.Undo;
 using ImGuiNET;
 using ImGuizmoNET;
-using System;
-using System.Linq;
 using System.Numerics;
-using CherrisEditor.Undo;
 
 namespace CherrisEditor;
 
@@ -6987,7 +7140,6 @@ public class EditorAppLogic : IDisposable
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorController.cs">
 using Cherris;
 using ImGuizmoNET;
-using System;
 using System.Numerics;
 
 namespace CherrisEditor;
@@ -7147,10 +7299,6 @@ public enum EditorState
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorTextureManager.cs">
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 
 namespace CherrisEditor;
 
@@ -7717,10 +7865,6 @@ class Program
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\ScriptCompiler.cs">
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 
@@ -7825,9 +7969,6 @@ public class {scriptName} : Script
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Attributes\CustomInspectorAttribute.cs">
-using System;
-using Cherris;
-
 namespace CherrisEditor;
 
 /// <summary>
@@ -7847,14 +7988,12 @@ public class CustomInspectorAttribute : Attribute
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\DefaultInspector.cs">
 using Cherris;
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
 using ImGuiNET;
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
 
 namespace CherrisEditor.Inspectors;
 
@@ -8209,7 +8348,6 @@ using Cherris;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
-using System;
 using System.Numerics;
 
 namespace CherrisEditor.Inspectors;
@@ -8476,14 +8614,11 @@ public class LightInspector : IComponentInspector
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\MeshRendererInspector.cs">
 using Cherris;
-using ImGuiNET;
-using System;
-using System.IO;
-using System.Numerics;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
+using ImGuiNET;
+using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace CherrisEditor.Inspectors;
 
@@ -8680,12 +8815,10 @@ public class MeshRendererInspector : IComponentInspector
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\TransformInspector.cs">
 using Cherris;
-using ImGuiNET;
-using System;
-using System.Numerics;
-using System.Reflection;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
+using ImGuiNET;
+using System.Numerics;
 
 namespace CherrisEditor.Inspectors;
 
@@ -8839,7 +8972,6 @@ public static class ConsolePanel
 using Cherris;
 using CherrisEditor.Undo;
 using ImGuiNET;
-using System;
 
 namespace CherrisEditor.UI;
 
@@ -8898,8 +9030,6 @@ public class MenuBar
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\OutlinerPanel.cs">
 using Cherris;
 using ImGuiNET;
-using System;
-using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace CherrisEditor.UI;
@@ -8998,7 +9128,6 @@ public class OutlinerPanel
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\ToolBar.cs">
 using ImGuiNET;
-using System;
 using System.Numerics;
 
 namespace CherrisEditor.UI;
@@ -9051,15 +9180,12 @@ public class Toolbar
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\ViewportPanel.cs">
 using Cherris;
-using Cherris.OpenTK;
-using ImGuiNET;
-using ImGuizmoNET;
-using System;
-using System.Linq;
-using System.Numerics;
-using System.Runtime.CompilerServices;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
+using ImGuiNET;
+using ImGuizmoNET;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace CherrisEditor.UI;
 
@@ -9275,9 +9401,6 @@ public class ViewportPanel
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\HistoryManager.cs">
-using System;
-using System.Collections.Generic;
-
 namespace CherrisEditor.Undo;
 
 public class HistoryManager
@@ -9329,7 +9452,6 @@ public class HistoryManager
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scripts\PlayerController.cs">
 using Cherris;
-using System;
 using System.Numerics;
 
 namespace Apexverse;
@@ -9391,8 +9513,8 @@ public class PlayerController : Script
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scripts\Spinner.cs">
-using System.Numerics;
 using Cherris;
+using System.Numerics;
 
 namespace Apexverse;
 
@@ -9410,9 +9532,7 @@ public class Spinner : Script
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\Commands\ChangePropertyCommand.cs">
-using CherrisEditor.Undo;
 using System.Reflection;
-using System.Windows.Input;
 
 namespace CherrisEditor.Undo.Commands;
 
@@ -9445,7 +9565,6 @@ public class ChangePropertyCommand : ICommand
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\Commands\ChangeTransformCommand.cs">
 using Cherris;
-using CherrisEditor.Undo;
 using System.Numerics;
 
 namespace CherrisEditor.Undo.Commands;
@@ -9535,16 +9654,16 @@ GameObjects:
       Intensity: 1
       AmbientStrength: 0.3
 - Id: e036456a-17e9-4b36-aa03-c86985afe187
-  Name: SpinningCube
+  Name: SpinningHelmet
   Components:
     Transform:
-      Position: [0, 0, 0]
+      Position: [0, 0.5, 0]
       Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     MeshRenderer:
-      Mesh: Cube
+      Mesh: Models/DamagedHelmet.gltf
       Material:
-        Texture: crate
+        Texture: Models/Default_albedo
         SpecularIntensity: 0.8
         Shininess: 128
     Spinner:

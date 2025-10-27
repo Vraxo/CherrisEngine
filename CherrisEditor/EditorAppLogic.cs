@@ -21,12 +21,12 @@ public class EditorAppLogic : IDisposable
     private readonly ContentBrowserPanel _contentBrowserPanel;
     private readonly EditorTextureManager _textureManager;
 
-    public EditorAppLogic(Editor editor)
+    public EditorAppLogic(Editor editor, SceneSerializer sceneSerializer)
     {
         _editor = editor;
         _history = editor.History;
         _textureManager = new EditorTextureManager();
-        _sceneSerializer = new SceneSerializer();
+        _sceneSerializer = sceneSerializer;
 
         _menuBar = new MenuBar(editor, _sceneSerializer, _history);
         _toolbar = new Toolbar(editor, _textureManager);
@@ -130,6 +130,7 @@ public class EditorAppLogic : IDisposable
     public void Dispose()
     {
         _contentBrowserPanel.Dispose();
+        _outlinerPanel.Dispose();
         _textureManager.Dispose();
     }
 }

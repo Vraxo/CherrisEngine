@@ -11,6 +11,8 @@ public class EditorTextureManager : IDisposable
     private readonly Dictionary<string, int> _textures = new();
     public static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
     private static readonly string[] ScriptExtensions = { ".cs" };
+    public static readonly string[] PrefabExtensions = { ".prefab" };
+
 
     /// <summary>
     /// Loads an image from a file into an OpenGL texture and caches it.
@@ -60,6 +62,11 @@ public class EditorTextureManager : IDisposable
         if (ScriptExtensions.Contains(extension))
         {
             return GetTexture("Script");
+        }
+
+        if (PrefabExtensions.Contains(extension))
+        {
+            return GetTexture("Prefab");
         }
 
         if (ImageExtensions.Contains(extension))

@@ -18,6 +18,41 @@ public class SceneSerializer
             .Build();
     }
 
+    public void SavePrefab(GameObject rootGo, string filePath)
+    {
+        var hierarchy = new List<GameObject>();
+        GetHierarchy(rootGo, hierarchy);
+
+        var gameObjectsData = new List<Dictionary<string, object>>();
+
+        foreach (var go in hierarchy)
+        {
+            var goData = new Dictionary<string, object>
+            {
+                ["Id"] = go.Id.ToString(),
+                ["Name"] = go.Name
+            };
+
+            // Only save parent if it's part of the prefab hierarchy
+            if (go.Transform.Parent != null && hierarchy.Contains(go.Transform.Parent.GameObject))
+            {
+                goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
+            }
+
+            var componentsData = SerializeGameObjectComponents(go);
+            goData["Components"] = componentsData;
+            gameObjectsData.Add(goData);
+        }
+
+        var root = new Dictionary<string, object>
+        {
+            { "GameObjects", gameObjectsData }
+        };
+
+        var yaml = _serializer.Serialize(root);
+        File.WriteAllText(filePath, yaml);
+    }
+
     public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
     {
         var gameObjectsData = new List<Dictionary<string, object>>();
@@ -35,110 +70,7 @@ public class SceneSerializer
                 goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
             }
 
-            var componentsData = new Dictionary<string, object>();
-
-            var transformData = new Dictionary<string, object>
-            {
-                ["Position"] = go.Transform.Position
-            };
-
-            // ToEulerAngles returns (Pitch, Yaw, Roll).
-            // The loader expects this order to create the quaternion.
-            // We save it directly in this logical order.
-            var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
-            transformData["Rotation"] = eulerDegrees;
-            transformData["Scale"] = go.Transform.Scale;
-            componentsData["Transform"] = transformData;
-
-            foreach (var component in go.Components)
-            {
-                // This is the critical fix: skip serializing the EditorController component,
-                // but not the entire GameObject it's attached to.
-                if (component.GetType().Name == "EditorController") continue;
-
-                switch (component)
-                {
-                    case MeshRenderer mr:
-                        var mrData = new Dictionary<string, object>
-                        {
-                            ["Mesh"] = mr.MeshName
-                        };
-                        var materialData = new Dictionary<string, object>
-                        {
-                            ["Texture"] = mr.Material.TextureName
-                        };
-                        if (mr.Material.TextureTiling != Vector2.One)
-                            materialData["TextureTiling"] = mr.Material.TextureTiling;
-                        if (mr.Material.EmissiveColor != Vector3.Zero)
-                            materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                        if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
-                            materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                        if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
-                            materialData["Shininess"] = mr.Material.Shininess;
-                        mrData["Material"] = materialData;
-                        componentsData["MeshRenderer"] = mrData;
-                        break;
-
-                    case Camera:
-                        componentsData["Camera"] = new Dictionary<string, object>();
-                        break;
-
-                    case Skybox skybox:
-                        var skyboxData = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
-                        componentsData["Skybox"] = skyboxData;
-                        break;
-
-                    case Light light:
-                        var lightData = new Dictionary<string, object>
-                        {
-                            ["Type"] = light.Type.ToString(),
-                            ["Color"] = light.Color,
-                            ["Intensity"] = light.Intensity
-                        };
-                        if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f)
-                        {
-                            lightData["AmbientStrength"] = light.AmbientStrength;
-                        }
-                        if (light.Type == LightType.Point || light.Type == LightType.Spot)
-                        {
-                            if (Math.Abs(light.Range - 50.0f) > 0.001f)
-                                lightData["Range"] = light.Range;
-                        }
-                        if (light.Type == LightType.Spot)
-                        {
-                            if (Math.Abs(light.InnerConeAngle - 12.5f) > 0.001f)
-                                lightData["InnerConeAngle"] = light.InnerConeAngle;
-                            if (Math.Abs(light.OuterConeAngle - 17.5f) > 0.001f)
-                                lightData["OuterConeAngle"] = light.OuterConeAngle;
-                        }
-                        componentsData["Light"] = lightData;
-                        break;
-
-                    case RigidBody rb:
-                        var rbData = new Dictionary<string, object>
-                        {
-                            ["IsStatic"] = rb.IsStatic
-                        };
-                        if (!rb.IsStatic)
-                        {
-                            rbData["Mass"] = rb.Mass;
-                        }
-                        if (rb.Friction != 0.5f)
-                        {
-                            rbData["Friction"] = rb.Friction;
-                        }
-                        if (rb.Bounciness != 0.5f)
-                        {
-                            rbData["Bounciness"] = rb.Bounciness;
-                        }
-                        componentsData["RigidBody"] = rbData;
-                        break;
-
-                    case Script script:
-                        componentsData[script.GetType().Name] = SerializeScriptProperties(script);
-                        break;
-                }
-            }
+            var componentsData = SerializeGameObjectComponents(go);
             goData["Components"] = componentsData;
             gameObjectsData.Add(goData);
         }
@@ -150,6 +82,90 @@ public class SceneSerializer
 
         var yaml = _serializer.Serialize(root);
         File.WriteAllText(filePath, yaml);
+    }
+
+    private Dictionary<string, object> SerializeGameObjectComponents(GameObject go)
+    {
+        var componentsData = new Dictionary<string, object>();
+
+        var transformData = new Dictionary<string, object>
+        {
+            ["Position"] = go.Transform.Position
+        };
+
+        var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
+        transformData["Rotation"] = eulerDegrees;
+        transformData["Scale"] = go.Transform.Scale;
+        componentsData["Transform"] = transformData;
+
+        foreach (var component in go.Components)
+        {
+            if (component.GetType().Name == "EditorController") continue;
+
+            switch (component)
+            {
+                case MeshRenderer mr:
+                    var mrData = new Dictionary<string, object> { ["Mesh"] = mr.MeshName };
+                    var materialData = new Dictionary<string, object> { ["Texture"] = mr.Material.TextureName };
+                    if (mr.Material.TextureTiling != Vector2.One) materialData["TextureTiling"] = mr.Material.TextureTiling;
+                    if (mr.Material.EmissiveColor != Vector3.Zero) materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                    if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f) materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                    if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f) materialData["Shininess"] = mr.Material.Shininess;
+                    mrData["Material"] = materialData;
+                    componentsData["MeshRenderer"] = mrData;
+                    break;
+
+                case Camera:
+                    componentsData["Camera"] = new Dictionary<string, object>();
+                    break;
+
+                case Skybox skybox:
+                    componentsData["Skybox"] = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
+                    break;
+
+                case Light light:
+                    var lightData = new Dictionary<string, object>
+                    {
+                        ["Type"] = light.Type.ToString(),
+                        ["Color"] = light.Color,
+                        ["Intensity"] = light.Intensity
+                    };
+                    if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f) lightData["AmbientStrength"] = light.AmbientStrength;
+                    if (light.Type is LightType.Point or LightType.Spot)
+                    {
+                        if (Math.Abs(light.Range - 50.0f) > 0.001f) lightData["Range"] = light.Range;
+                    }
+                    if (light.Type == LightType.Spot)
+                    {
+                        if (Math.Abs(light.InnerConeAngle - 12.5f) > 0.001f) lightData["InnerConeAngle"] = light.InnerConeAngle;
+                        if (Math.Abs(light.OuterConeAngle - 17.5f) > 0.001f) lightData["OuterConeAngle"] = light.OuterConeAngle;
+                    }
+                    componentsData["Light"] = lightData;
+                    break;
+
+                case RigidBody rb:
+                    var rbData = new Dictionary<string, object> { ["IsStatic"] = rb.IsStatic };
+                    if (!rb.IsStatic) rbData["Mass"] = rb.Mass;
+                    if (rb.Friction != 0.5f) rbData["Friction"] = rb.Friction;
+                    if (rb.Bounciness != 0.5f) rbData["Bounciness"] = rb.Bounciness;
+                    componentsData["RigidBody"] = rbData;
+                    break;
+
+                case Script script:
+                    componentsData[script.GetType().Name] = SerializeScriptProperties(script);
+                    break;
+            }
+        }
+        return componentsData;
+    }
+
+    private static void GetHierarchy(GameObject go, List<GameObject> list)
+    {
+        list.Add(go);
+        foreach (var child in go.Transform.Children)
+        {
+            GetHierarchy(child.GameObject, list);
+        }
     }
 
     private static Dictionary<string, object> SerializeScriptProperties(Script script)

@@ -32,6 +32,72 @@ public class SceneLoader
         _componentFactories[typeName] = factory;
     }
 
+    public List<GameObject> LoadPrefab(string filePath)
+    {
+        var input = new StringReader(File.ReadAllText(filePath));
+        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
+
+        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
+        {
+            return new List<GameObject>();
+        }
+
+        var createdGameObjects = new List<GameObject>();
+        var oldToNewIdMap = new Dictionary<Guid, Guid>();
+        var newIdToGameObjectMap = new Dictionary<Guid, GameObject>();
+        var childToParentMap = new Dictionary<Guid, Guid>(); // <new_child_id, old_parent_id>
+
+        // Pass 1: Create all GameObjects with new GUIDs and deserialize their components
+        foreach (var goData in gameObjectDatas)
+        {
+            string name = "GameObject";
+            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName) name = goName;
+
+            Guid oldId = Guid.Empty;
+            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId)) oldId = parsedId;
+
+            Guid newId = Guid.NewGuid();
+            oldToNewIdMap[oldId] = newId;
+
+            var go = new GameObject(name, newId);
+            newIdToGameObjectMap[newId] = go;
+            createdGameObjects.Add(go);
+
+            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
+            {
+                childToParentMap[newId] = parentId;
+            }
+
+            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
+            {
+                if (componentsDict.TryGetValue("Transform", out var transformProperties))
+                {
+                    ApplyTransformProperties(go.Transform, transformProperties);
+                }
+
+                foreach (var componentKvp in componentsDict)
+                {
+                    if (componentKvp.Key as string == "Transform") continue;
+                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
+                }
+            }
+        }
+
+        // Pass 2: Hook up parent-child relationships using the remapped GUIDs
+        foreach (var (newChildId, oldParentId) in childToParentMap)
+        {
+            if (oldToNewIdMap.TryGetValue(oldParentId, out Guid newParentId))
+            {
+                var child = newIdToGameObjectMap[newChildId];
+                var parent = newIdToGameObjectMap[newParentId];
+                child.Transform.Parent = parent.Transform;
+            }
+        }
+
+        return createdGameObjects.Where(go => go.Transform.Parent == null).ToList();
+    }
+
+
     public List<GameObject> LoadScene(string filePath)
     {
         var input = new StringReader(File.ReadAllText(filePath));

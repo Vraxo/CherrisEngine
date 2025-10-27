@@ -10,7 +10,7 @@ public class ContentBrowserPanel : IDisposable
     private readonly EditorTextureManager _textureManager;
     private readonly string _assetRootPath;
     private string _currentAssetPath;
-    private static IntPtr _payloadPtr = IntPtr.Zero;
+    private static IntPtr _payloadStringPtr = IntPtr.Zero; // For string payloads
 
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
@@ -19,6 +19,7 @@ public class ContentBrowserPanel : IDisposable
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
         _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
+        _textureManager.LoadTexture("Prefab", "Assets/Icons/prefab.png"); // Added for prefabs
 
         _assetRootPath = Path.GetFullPath("Assets");
         _currentAssetPath = _assetRootPath;
@@ -26,16 +27,37 @@ public class ContentBrowserPanel : IDisposable
 
     public void Draw()
     {
-        // Free any unmanaged memory from the previous frame's drag-drop operation.
-        if (_payloadPtr != IntPtr.Zero)
+        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
+        if (_payloadStringPtr != IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadPtr);
-            _payloadPtr = IntPtr.Zero;
+            Marshal.FreeHGlobal(_payloadStringPtr);
+            _payloadStringPtr = IntPtr.Zero;
         }
 
         ImGui.Begin("Content Browser");
         DrawHeader();
         DrawGrid();
+
+        // Make the entire panel a drop target for creating prefabs
+        if (ImGui.BeginDragDropTarget())
+        {
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+            if (payload.Data != IntPtr.Zero)
+            {
+                byte[] data = new byte[payload.DataSize];
+                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                var goId = new Guid(data);
+                var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
+
+                if (go != null)
+                {
+                    string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
+                    _editor.CreatePrefabFromGameObject(go, prefabPath);
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
         ImGui.End();
     }
 
@@ -92,24 +114,25 @@ public class ContentBrowserPanel : IDisposable
             // Handle single-click
         }
 
-        // --- DRAG SOURCE LOGIC ---
         string extension = Path.GetExtension(path).ToLowerInvariant();
-        if (EditorTextureManager.ImageExtensions.Contains(extension))
+
+        // --- Drag Source for Textures and Prefabs (string path payload) ---
+        string payloadType = null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension)) payloadType = "ASSET_PATH_TEXTURE";
+        else if (EditorTextureManager.PrefabExtensions.Contains(extension)) payloadType = "ASSET_PATH_PREFAB";
+
+        if (payloadType != null && ImGui.BeginDragDropSource())
         {
-            if (ImGui.BeginDragDropSource())
-            {
-                // Set payload to be the file path
-                _payloadPtr = Marshal.StringToHGlobalAnsi(path);
-                ImGui.SetDragDropPayload("ASSET_PATH_TEXTURE", _payloadPtr, (uint)(path.Length + 1));
+            // Allocate memory and hold onto the pointer until the next frame.
+            _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
+            ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
 
-                // Show a preview while dragging
-                ImGui.Image(textureHandle, new Vector2(50, 50));
-                ImGui.SameLine();
-                ImGui.Text(itemName);
-
-                ImGui.EndDragDropSource();
-            }
+            ImGui.Image(textureHandle, new Vector2(50, 50));
+            ImGui.SameLine();
+            ImGui.Text(itemName);
+            ImGui.EndDragDropSource();
         }
+
 
         if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
@@ -148,10 +171,10 @@ public class ContentBrowserPanel : IDisposable
     public void Dispose()
     {
         // Ensure we free the handle on shutdown if it's still allocated
-        if (_payloadPtr != IntPtr.Zero)
+        if (_payloadStringPtr != IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadPtr);
-            _payloadPtr = IntPtr.Zero;
+            Marshal.FreeHGlobal(_payloadStringPtr);
+            _payloadStringPtr = IntPtr.Zero;
         }
     }
 }
