@@ -65,17 +65,21 @@ public class SceneSerializer
                     case MeshRenderer mr:
                         var mrData = new Dictionary<string, object>
                         {
-                            ["Mesh"] = mr.MeshName,
-                            ["Texture"] = mr.TextureName
+                            ["Mesh"] = mr.MeshName
                         };
-                        if (mr.TextureTiling != Vector2.One)
-                            mrData["TextureTiling"] = mr.TextureTiling;
-                        if (mr.EmissiveColor != Vector3.Zero)
-                            mrData["EmissiveColor"] = mr.EmissiveColor;
-                        if (Math.Abs(mr.SpecularIntensity - 0.5f) > 0.001f)
-                            mrData["SpecularIntensity"] = mr.SpecularIntensity;
-                        if (Math.Abs(mr.Shininess - 32.0f) > 0.001f)
-                            mrData["Shininess"] = mr.Shininess;
+                        var materialData = new Dictionary<string, object>
+                        {
+                            ["Texture"] = mr.Material.TextureName
+                        };
+                        if (mr.Material.TextureTiling != Vector2.One)
+                            materialData["TextureTiling"] = mr.Material.TextureTiling;
+                        if (mr.Material.EmissiveColor != Vector3.Zero)
+                            materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                        if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+                            materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                        if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+                            materialData["Shininess"] = mr.Material.Shininess;
+                        mrData["Material"] = materialData;
                         componentsData["MeshRenderer"] = mrData;
                         break;
 

@@ -28,7 +28,14 @@ public class MeshRendererInspector : IComponentInspector
     public unsafe bool Draw(Component component)
     {
         var mr = (MeshRenderer)component;
+        var material = mr.Material;
         bool dirty = false;
+
+        if (material is null)
+        {
+            ImGui.Text("No Material assigned.");
+            return false;
+        }
 
         if (!ImGui.BeginTable("MRTable", 3)) return false;
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
@@ -45,7 +52,7 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableSetColumnIndex(1);
 
         IntPtr textureHandle = IntPtr.Zero;
-        if (mr.Texture?.GetBackendHandle() is int handle && handle != 0)
+        if (material.Texture?.GetBackendHandle() is int handle && handle != 0)
         {
             textureHandle = (IntPtr)handle;
         }
@@ -67,7 +74,7 @@ public class MeshRendererInspector : IComponentInspector
                     string newTextureName = Path.GetFileNameWithoutExtension(path);
                     var newTexture = _editor.ResourceManager.GetTexture(newTextureName);
 
-                    _history.Execute(new ChangeTextureCommand(mr, mr.TextureName, mr.Texture, newTextureName, newTexture, _editor.ResourceManager));
+                    _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newTextureName, newTexture));
                     dirty = true;
                 }
             }
@@ -75,13 +82,13 @@ public class MeshRendererInspector : IComponentInspector
         }
 
         ImGui.SameLine();
-        ImGui.Text(mr.TextureName);
+        ImGui.Text(material.TextureName);
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetTexture", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
             var newTexture = _editor.ResourceManager.GetTexture("White");
-            _history.Execute(new ChangeTextureCommand(mr, mr.TextureName, mr.Texture, "White", newTexture, _editor.ResourceManager));
+            _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", newTexture));
             dirty = true;
         }
 
@@ -89,23 +96,23 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Texture Tiling");
         ImGui.TableSetColumnIndex(1);
-        var tilingBeforeEdit = mr.TextureTiling;
+        var tilingBeforeEdit = material.TextureTiling;
         var tiling = tilingBeforeEdit;
         if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling, out bool activated, out bool deactivated))
         {
-            mr.TextureTiling = tiling; dirty = true;
+            material.TextureTiling = tiling; dirty = true;
         }
-        HandleUndo(mr, nameof(MeshRenderer.TextureTiling), tilingBeforeEdit, activated, deactivated);
+        HandleUndo(material, nameof(Material.TextureTiling), tilingBeforeEdit, activated, deactivated);
 
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            var valueBeforeReset = mr.TextureTiling;
+            var valueBeforeReset = material.TextureTiling;
             if (valueBeforeReset != Vector2.One)
             {
-                mr.TextureTiling = Vector2.One;
-                _history.Execute(new ChangePropertyCommand(mr, typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.TextureTiling)), valueBeforeReset, Vector2.One));
+                material.TextureTiling = Vector2.One;
+                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.TextureTiling)), valueBeforeReset, Vector2.One));
                 dirty = true;
             }
         }
@@ -115,22 +122,22 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Emissive Color");
         ImGui.TableSetColumnIndex(1);
-        var emissiveBeforeEdit = mr.EmissiveColor;
+        var emissiveBeforeEdit = material.EmissiveColor;
         var emissive = emissiveBeforeEdit;
         if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive, out bool emissiveActivated, out bool emissiveDeactivated))
         {
-            mr.EmissiveColor = emissive; dirty = true;
+            material.EmissiveColor = emissive; dirty = true;
         }
-        HandleUndo(mr, nameof(MeshRenderer.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
+        HandleUndo(material, nameof(Material.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            var valueBeforeReset = mr.EmissiveColor;
+            var valueBeforeReset = material.EmissiveColor;
             if (valueBeforeReset != Vector3.Zero)
             {
-                mr.EmissiveColor = Vector3.Zero;
-                _history.Execute(new ChangePropertyCommand(mr, typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.EmissiveColor)), valueBeforeReset, Vector3.Zero));
+                material.EmissiveColor = Vector3.Zero;
+                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.EmissiveColor)), valueBeforeReset, Vector3.Zero));
                 dirty = true;
             }
         }
@@ -162,23 +169,21 @@ public class MeshRendererInspector : IComponentInspector
     }
 
     // Inner class for the specific command
-    private class ChangeTextureCommand : ICommand
+    private class ChangeMaterialTextureCommand : ICommand
     {
-        private readonly MeshRenderer _target;
+        private readonly Material _target;
         private readonly string _oldTextureName;
         private readonly Cherris.Rendering.ITexture _oldTexture;
         private readonly string _newTextureName;
         private readonly Cherris.Rendering.ITexture _newTexture;
-        private readonly Cherris.Rendering.IResourceManager _resourceManager;
 
-        public ChangeTextureCommand(MeshRenderer target, string oldTextureName, Cherris.Rendering.ITexture oldTexture, string newTextureName, Cherris.Rendering.ITexture newTexture, Cherris.Rendering.IResourceManager resourceManager)
+        public ChangeMaterialTextureCommand(Material target, string oldTextureName, Cherris.Rendering.ITexture oldTexture, string newTextureName, Cherris.Rendering.ITexture newTexture)
         {
             _target = target;
             _oldTextureName = oldTextureName;
             _oldTexture = oldTexture;
             _newTextureName = newTextureName;
             _newTexture = newTexture;
-            _resourceManager = resourceManager;
         }
 
         public void Execute()

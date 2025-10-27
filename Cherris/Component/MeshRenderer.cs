@@ -1,8 +1,5 @@
-﻿using Cherris.OpenTK;
-using Cherris.Rendering;
+﻿using Cherris.Rendering;
 using System;
-using System.Globalization;
-using System.Numerics;
 
 namespace Cherris;
 
@@ -11,38 +8,28 @@ public class MeshRenderer : Component, IDisposable
     public Mesh Mesh { get; }
     public string MeshName { get; }
 
-    private ITexture _texture;
-    public ITexture Texture
+    private Material _material;
+    public Material Material
     {
-        get => _texture;
+        get => _material;
         set
         {
-            if (_texture != value)
+            if (_material != value)
             {
-                _texture = value;
+                _material = value;
                 InvalidateBackendData();
             }
         }
     }
-    public string TextureName { get; set; }
-
-    // MODIFIED: Added setters to allow editing from the inspector
-    public Vector2 TextureTiling { get; set; }
-    public Vector3 EmissiveColor { get; set; }
-    public float SpecularIntensity { get; set; } = 0.5f;
-    public float Shininess { get; set; } = 32.0f;
 
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }
 
-    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor, string textureName, string meshName)
+    public MeshRenderer(Mesh mesh, Material material, string meshName)
     {
         Mesh = mesh;
         MeshName = meshName;
-        _texture = texture; // Set backing field directly to avoid invalidation in constructor
-        TextureName = textureName;
-        TextureTiling = textureTiling;
-        EmissiveColor = emissiveColor;
+        _material = material;
     }
 
     private void InvalidateBackendData()

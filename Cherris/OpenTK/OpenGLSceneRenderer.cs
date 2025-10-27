@@ -169,7 +169,8 @@ void main()
 
     private void DrawObject(GameObject go, MeshRenderer meshRenderer, OpenGLMeshRendererData data)
     {
-        if (meshRenderer.Texture is OpenTKTexture glTexture)
+        var material = meshRenderer.Material;
+        if (material.Texture is OpenTKTexture glTexture)
         {
             glTexture.Bind(TextureUnit.Texture0);
         }
@@ -181,10 +182,10 @@ void main()
         var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
 
         GL.UniformMatrix4(_modelLocation, false, ref model);
-        GL.Uniform2(_tilingLocation, meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
-        GL.Uniform3(_emissiveLocation, meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);
-        GL.Uniform1(_specularIntensityLocation, meshRenderer.SpecularIntensity);
-        GL.Uniform1(_shininessLocation, meshRenderer.Shininess);
+        GL.Uniform2(_tilingLocation, material.TextureTiling.X, material.TextureTiling.Y);
+        GL.Uniform3(_emissiveLocation, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
+        GL.Uniform1(_specularIntensityLocation, material.SpecularIntensity);
+        GL.Uniform1(_shininessLocation, material.Shininess);
 
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);

@@ -111,39 +111,34 @@ public abstract class Engine
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict)
+            if (properties is not Dictionary<object, object> propsDict) return null;
+
+            // Get Mesh
+            if (!propsDict.TryGetValue("Mesh", out var meshNameObj) || meshNameObj is not string meshName) return null;
+            Mesh? mesh = ResourceManager.GetMesh(meshName);
+            if (mesh is null) return null;
+
+            // Get Material properties from a nested dictionary
+            if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
             {
+                Console.WriteLine($"[Engine] Warning: MeshRenderer on '{meshName}' is missing a 'Material' section. Skipping.");
                 return null;
             }
 
-            Mesh? mesh = null;
-            string meshName = string.Empty;
-
-            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string parsedMeshName)
-            {
-                meshName = parsedMeshName;
-                mesh = ResourceManager.GetMesh(meshName);
-            }
-
-            if (mesh is null)
-            {
-                return null;
-            }
-
+            // Inside Material dictionary
             string textureName = "White"; // Default value
-            if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
+            if (matProps.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
             {
                 textureName = parsedTextureName;
             }
             ITexture texture = ResourceManager.GetTexture(textureName);
+            var material = new Material(texture, textureName);
 
-            Vector2 textureTiling = Vector2.One;
-
-            if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
+            if (matProps.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
                 {
-                    textureTiling = new Vector2(
+                    material.TextureTiling = new Vector2(
                         Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
                         Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
                 }
@@ -153,13 +148,11 @@ public abstract class Engine
                 }
             }
 
-            Vector3 emissiveColor = Vector3.Zero;
-
-            if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
+            if (matProps.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
             {
                 try
                 {
-                    emissiveColor = new(
+                    material.EmissiveColor = new(
                         Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
                         Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
                         Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
@@ -170,19 +163,17 @@ public abstract class Engine
                 }
             }
 
-            var mr = new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
-
-            if (propsDict.TryGetValue("SpecularIntensity", out var specIntObj))
+            if (matProps.TryGetValue("SpecularIntensity", out var specIntObj))
             {
-                mr.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
+                material.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
             }
 
-            if (propsDict.TryGetValue("Shininess", out var shininessObj))
+            if (matProps.TryGetValue("Shininess", out var shininessObj))
             {
-                mr.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
+                material.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
             }
 
-            return mr;
+            return new MeshRenderer(mesh, material, meshName);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>

@@ -34,7 +34,8 @@ public class Renderer : IRenderer
 
         public VeldridMeshRendererData(GraphicsDevice gd, MeshRenderer meshRenderer, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
         {
-            var texture = (Texture)meshRenderer.Texture.GetBackendHandle();
+            var material = meshRenderer.Material;
+            var texture = (Texture)material.Texture.GetBackendHandle();
             ResourceFactory factory = gd.ResourceFactory;
 
             VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
@@ -48,8 +49,8 @@ public class Renderer : IRenderer
 
             MaterialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
             var materialData = new Vector4[2];
-            materialData[0] = new Vector4(meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y, 0, 0);
-            materialData[1] = new Vector4(meshRenderer.EmissiveColor, 1.0f);
+            materialData[0] = new Vector4(material.TextureTiling.X, material.TextureTiling.Y, 0, 0);
+            materialData[1] = new Vector4(material.EmissiveColor, 1.0f);
             gd.UpdateBuffer(MaterialPropertiesBuffer, 0, materialData);
 
             MaterialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(materialLayout, MaterialPropertiesBuffer));

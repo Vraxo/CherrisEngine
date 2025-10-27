@@ -4597,6 +4597,119 @@ void main()
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenGLDebugRenderer.cs">
+using OpenTK.Graphics.OpenGL4;
+using OpenTK.Mathematics;
+using System;
+using System.Collections.Generic;
+
+namespace Cherris.OpenTK;
+
+internal struct DebugVertex
+{
+    public Vector3 Position;
+    public Vector3 Color;
+    public static readonly int Size = Vector3.SizeInBytes * 2;
+}
+
+internal class OpenGLDebugRenderer : IDisposable
+{
+    private readonly ShaderProgram _shader;
+    private readonly int _viewLocation, _projectionLocation;
+    private readonly List<DebugVertex> _vertices = new();
+    private readonly int _vao;
+    private readonly int _vbo;
+
+    public OpenGLDebugRenderer()
+    {
+        const string vertSource = @"
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aColor;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 f_color;
+
+void main()
+{
+    gl_Position = projection * view * vec4(aPosition, 1.0);
+    f_color = aColor;
+}";
+        const string fragSource = @"
+#version 330 core
+in vec3 f_color;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(f_color, 1.0);
+}";
+
+        _shader = new ShaderProgram(vertSource, fragSource);
+        _viewLocation = _shader.GetUniformLocation("view");
+        _projectionLocation = _shader.GetUniformLocation("projection");
+
+        _vao = GL.GenVertexArray();
+        _vbo = GL.GenBuffer();
+
+        GL.BindVertexArray(_vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+        // Position
+        GL.EnableVertexAttribArray(0);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, 0);
+        // Color
+        GL.EnableVertexAttribArray(1);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, Vector3.SizeInBytes);
+        GL.BindVertexArray(0);
+    }
+
+    public void AddLine(System.Numerics.Vector3 start, System.Numerics.Vector3 end, System.Numerics.Vector3 color)
+    {
+        _vertices.Add(new DebugVertex { Position = ToOpenTKVector(start), Color = ToOpenTKVector(color) });
+        _vertices.Add(new DebugVertex { Position = ToOpenTKVector(end), Color = ToOpenTKVector(color) });
+    }
+
+    public void Clear()
+    {
+        _vertices.Clear();
+    }
+
+    public void Render(Matrix4 view, Matrix4 projection)
+    {
+        if (_vertices.Count == 0) return;
+
+        _shader.Use();
+        GL.UniformMatrix4(_viewLocation, false, ref view);
+        GL.UniformMatrix4(_projectionLocation, false, ref projection);
+
+        GL.BindVertexArray(_vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, _vertices.Count * DebugVertex.Size, _vertices.ToArray(), BufferUsageHint.DynamicDraw);
+
+        GL.Disable(EnableCap.DepthTest);
+        GL.DrawArrays(PrimitiveType.Lines, 0, _vertices.Count);
+        GL.Enable(EnableCap.DepthTest);
+
+        GL.BindVertexArray(0);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+    }
+
+    private static Vector3 ToOpenTKVector(System.Numerics.Vector3 v)
+    {
+        return new Vector3(v.X, v.Y, v.Z);
+    }
+
+    public void Dispose()
+    {
+        _shader?.Dispose();
+        GL.DeleteVertexArray(_vao);
+        GL.DeleteBuffer(_vbo);
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\OpenTK\OpenGLMeshRendererData.cs">
 using Cherris;
 using OpenTK.Graphics.OpenGL;
@@ -4944,7 +5057,7 @@ void main()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
         _compositeTexture = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, _compositeTexture);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8, width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _compositeTexture, 0);
@@ -5127,8 +5240,11 @@ void main()
         if (directionalLight != null)
         {
             GL.Uniform1(_hasLightLocation, 1);
-            var lightDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
-            GL.Uniform3(_lightDirLocation, lightDirection.X, lightDirection.Y, lightDirection.Z);
+            // The light's forward vector is the direction it's traveling.
+            // For lighting calculations, we need the vector FROM the surface TO the light, which is the inverse.
+            var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
+            var directionToLight = -lightTravelDirection;
+            GL.Uniform3(_lightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
             GL.Uniform3(_lightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
             GL.Uniform1(_lightIntensityLocation, directionalLight.Intensity);
         }
@@ -5676,6 +5792,7 @@ namespace Cherris
         private readonly OpenGLSkyboxRenderer _skyboxRenderer;
         private readonly OpenGLPostProcessor _postProcessor;
         private readonly ImGuiController _imGuiController;
+        private readonly OpenGLDebugRenderer _debugRenderer;
 
         private Vector2i _viewportSize = new(1, 1);
         private Vector2i _windowSize;
@@ -5686,6 +5803,7 @@ namespace Cherris
             _skyboxRenderer = new OpenGLSkyboxRenderer();
             _postProcessor = new OpenGLPostProcessor();
             _imGuiController = imGuiController;
+            _debugRenderer = new OpenGLDebugRenderer();
 
             GL.FrontFace(FrontFaceDirection.Cw);
         }
@@ -5709,6 +5827,8 @@ namespace Cherris
             // 1. Render scene to texture if the viewport is visible
             if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
             {
+                GL.Enable(EnableCap.FramebufferSrgb);
+
                 _postProcessor.BeginFrame();
                 GL.Enable(EnableCap.DepthTest);
                 GL.Enable(EnableCap.CullFace);
@@ -5722,16 +5842,25 @@ namespace Cherris
                     mainCamera.NearClipPlane,
                     mainCamera.FarClipPlane);
 
+                _debugRenderer.Clear();
+                if (selectedObject is not null && selectedObject.GetComponent<Light>() is { Type: LightType.Directional } light)
+                {
+                    DrawDirectionalLightGizmo(light);
+                }
+
                 if (skybox?.CubeMapTexture is not null)
                 {
                     _skyboxRenderer.Render(skybox, view, projection);
                 }
 
                 _sceneRenderer.Render(gameObjects, view, projection);
+                _debugRenderer.Render(view, projection);
 
                 _postProcessor.ResolveMsaa();
                 _postProcessor.RenderBloom();
                 _postProcessor.Composite(exposure);
+
+                GL.Disable(EnableCap.FramebufferSrgb);
             }
 
             // 2. Clear main window and render UI
@@ -5743,6 +5872,41 @@ namespace Cherris
             _imGuiController.Render();
         }
 
+        private void DrawDirectionalLightGizmo(Light light)
+        {
+            var transform = light.GameObject.Transform;
+            var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
+            float gizmoSize = 2.0f;
+            float arrowHeadSize = 0.25f;
+            float arrowLength = 1.0f * gizmoSize;
+
+            var direction = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, transform.Rotation);
+            var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
+            var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
+
+            var start = transform.Position;
+            var end = start + direction * arrowLength;
+            _debugRenderer.AddLine(start, end, color);
+
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize + right * arrowHeadSize, color);
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize - right * arrowHeadSize, color);
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize + up * arrowHeadSize, color);
+            _debugRenderer.AddLine(end, end - direction * arrowHeadSize - up * arrowHeadSize, color);
+
+            const int circleSegments = 16;
+            float circleRadius = 0.5f * gizmoSize;
+            for (int i = 0; i < circleSegments; i++)
+            {
+                float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
+                float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
+
+                var p1 = transform.Position + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * circleRadius;
+                var p2 = transform.Position + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * circleRadius;
+                _debugRenderer.AddLine(p1, p2, color);
+            }
+        }
+
+
         public void OnWindowResized() { }
 
         public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
@@ -5753,6 +5917,7 @@ namespace Cherris
             _sceneRenderer?.Dispose();
             _skyboxRenderer?.Dispose();
             _postProcessor?.Dispose();
+            _debugRenderer?.Dispose();
         }
 
         private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
@@ -9021,8 +9186,8 @@ GameObjects:
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Cube
-      Texture: White
-      EmissiveColor: [2, 0.2, 0.2]
+      Texture: crate
+      EmissiveColor: [20, 2, 2]
       SpecularIntensity: 0.8
       Shininess: 128
     Spinner:
@@ -9036,7 +9201,7 @@ GameObjects:
       Scale: [0.75, 0.75, 0.75]
     MeshRenderer:
       Mesh: Cube
-      Texture: White
+      Texture: crate
       SpecularIntensity: 0.3
       Shininess: 16
 - Id: fa6c7e61-829e-4f4e-8ad6-e370835d1b46
@@ -9048,7 +9213,8 @@ GameObjects:
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Plane
-      Texture: White
+      Texture: Asphalt
+      TextureTiling: [5, 5]
       SpecularIntensity: 0.1
       Shininess: 8
 </file>
