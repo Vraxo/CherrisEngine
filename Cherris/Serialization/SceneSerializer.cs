@@ -103,10 +103,17 @@ public class SceneSerializer
                         {
                             lightData["AmbientStrength"] = light.AmbientStrength;
                         }
-                        if (light.Type == LightType.Point)
+                        if (light.Type == LightType.Point || light.Type == LightType.Spot)
                         {
                             if (Math.Abs(light.Range - 50.0f) > 0.001f)
                                 lightData["Range"] = light.Range;
+                        }
+                        if (light.Type == LightType.Spot)
+                        {
+                            if (Math.Abs(light.InnerConeAngle - 12.5f) > 0.001f)
+                                lightData["InnerConeAngle"] = light.InnerConeAngle;
+                            if (Math.Abs(light.OuterConeAngle - 17.5f) > 0.001f)
+                                lightData["OuterConeAngle"] = light.OuterConeAngle;
                         }
                         componentsData["Light"] = lightData;
                         break;

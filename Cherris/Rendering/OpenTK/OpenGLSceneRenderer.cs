@@ -11,6 +11,7 @@ namespace Cherris;
 internal class OpenGLSceneRenderer : IDisposable
 {
     private const int MAX_POINT_LIGHTS = 4;
+    private const int MAX_SPOT_LIGHTS = 4;
 
     private readonly ShaderProgram _shaderProgram;
     private readonly int _modelLocation, _viewLocation, _projectionLocation;
@@ -29,6 +30,16 @@ internal class OpenGLSceneRenderer : IDisposable
     private readonly int[] _pointLightColorLocations = new int[MAX_POINT_LIGHTS];
     private readonly int[] _pointLightIntensityLocations = new int[MAX_POINT_LIGHTS];
     private readonly int[] _pointLightRangeLocations = new int[MAX_POINT_LIGHTS];
+
+    // Spot Light Uniform Locations
+    private readonly int _numSpotLightsLocation;
+    private readonly int[] _spotLightPosLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int[] _spotLightDirLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int[] _spotLightColorLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int[] _spotLightIntensityLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int[] _spotLightRangeLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int[] _spotLightInnerCutOffLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int[] _spotLightOuterCutOffLocations = new int[MAX_SPOT_LIGHTS];
 
 
     public OpenGLSceneRenderer()
@@ -63,6 +74,7 @@ void main()
         const string fragSource = @"
 #version 330 core
 #define MAX_POINT_LIGHTS 4
+#define MAX_SPOT_LIGHTS 4
 
 in vec4 fsin_Color;
 in vec2 fsin_TexCoord;
@@ -89,6 +101,16 @@ struct PointLight {
     float range;
 };
 
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float range;
+    float innerCutOff;
+    float outerCutOff;
+};
+
 out vec4 FragColor;
 
 // --- Uniforms ---
@@ -102,10 +124,14 @@ uniform bool uHasDirLight;
 uniform PointLight uPointLights[MAX_POINT_LIGHTS];
 uniform int uNumPointLights;
 
+uniform SpotLight uSpotLights[MAX_SPOT_LIGHTS];
+uniform int uNumSpotLights;
+
 
 // --- Function Declarations ---
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo);
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
 
 void main()
 {
@@ -128,8 +154,12 @@ void main()
         finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
     }
 
+    for(int i = 0; i < uNumSpotLights; i++) {
+        finalColor += CalcSpotLight(uSpotLights[i], norm, FragPos, viewDir, albedo);
+    }
+
     // If there are no lights at all, render with the base texture color.
-    if (!uHasDirLight && uNumPointLights == 0) {
+    if (!uHasDirLight && uNumPointLights == 0 && uNumSpotLights == 0) {
         finalColor = albedo;
     }
 
@@ -176,6 +206,39 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
     vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff;
 
     return lightContribution;
+}
+
+// Calculates the diffuse and specular parts of a spot light.
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Spotlight intensity (cone)
+    float theta = dot(lightDir, normalize(-light.direction));
+    float epsilon = light.innerCutOff - light.outerCutOff;
+    float spotIntensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
+    if (spotIntensity <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Attenuation (range)
+    float distance = length(light.position - fragPos);
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
+    if (falloff <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
+
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff * spotIntensity;
+
+    return lightContribution;
 }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
@@ -209,6 +272,19 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
             _pointLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].intensity");
             _pointLightRangeLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].range");
         }
+
+        // Spot light uniforms
+        _numSpotLightsLocation = _shaderProgram.GetUniformLocation("uNumSpotLights");
+        for (int i = 0; i < MAX_SPOT_LIGHTS; i++)
+        {
+            _spotLightPosLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].position");
+            _spotLightDirLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].direction");
+            _spotLightColorLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].color");
+            _spotLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].intensity");
+            _spotLightRangeLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].range");
+            _spotLightInnerCutOffLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].innerCutOff");
+            _spotLightOuterCutOffLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].outerCutOff");
+        }
     }
 
     public void Render(IEnumerable<GameObject> gameObjects, Matrix4 view, Matrix4 projection)
@@ -226,6 +302,7 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
         var allLights = gameObjects.Select(g => g.GetComponent<Light>()).Where(l => l is not null).ToList();
         var directionalLight = allLights.FirstOrDefault(l => l.Type == LightType.Directional);
         var pointLights = allLights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
+        var spotLights = allLights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
 
         if (directionalLight != null)
         {
@@ -250,6 +327,21 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
             GL.Uniform3(_pointLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
             GL.Uniform1(_pointLightIntensityLocations[i], light.Intensity);
             GL.Uniform1(_pointLightRangeLocations[i], light.Range);
+        }
+
+        GL.Uniform1(_numSpotLightsLocation, spotLights.Count);
+        for (int i = 0; i < spotLights.Count; i++)
+        {
+            var light = spotLights[i];
+            var transform = light.GameObject.Transform;
+            var direction = transform.Forward;
+            GL.Uniform3(_spotLightPosLocations[i], transform.Position.X, transform.Position.Y, transform.Position.Z);
+            GL.Uniform3(_spotLightDirLocations[i], direction.X, direction.Y, direction.Z);
+            GL.Uniform3(_spotLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
+            GL.Uniform1(_spotLightIntensityLocations[i], light.Intensity);
+            GL.Uniform1(_spotLightRangeLocations[i], light.Range);
+            GL.Uniform1(_spotLightInnerCutOffLocations[i], MathF.Cos(light.InnerConeAngle * (MathF.PI / 180.0f)));
+            GL.Uniform1(_spotLightOuterCutOffLocations[i], MathF.Cos(light.OuterConeAngle * (MathF.PI / 180.0f)));
         }
 
         // Render each object

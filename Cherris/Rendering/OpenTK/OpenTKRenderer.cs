@@ -64,9 +64,16 @@ namespace Cherris
                     mainCamera.FarClipPlane);
 
                 _debugRenderer.Clear();
-                if (selectedObject is not null && selectedObject.GetComponent<Light>() is { Type: LightType.Directional } light)
+                if (selectedObject?.GetComponent<Light>() is Light light)
                 {
-                    DrawDirectionalLightGizmo(light);
+                    if (light.Type == LightType.Directional)
+                    {
+                        DrawDirectionalLightGizmo(light);
+                    }
+                    else if (light.Type == LightType.Spot)
+                    {
+                        DrawSpotlightGizmo(light);
+                    }
                 }
 
                 if (skybox?.CubeMapTexture is not null)
@@ -123,6 +130,41 @@ namespace Cherris
 
                 var p1 = transform.Position + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * circleRadius;
                 var p2 = transform.Position + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * circleRadius;
+                _debugRenderer.AddLine(p1, p2, color);
+            }
+        }
+
+        private void DrawSpotlightGizmo(Light light)
+        {
+            var transform = light.GameObject.Transform;
+            var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
+
+            var origin = transform.Position;
+            var direction = transform.Forward;
+            var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
+            var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
+
+            float range = light.Range;
+            float outerAngleRad = light.OuterConeAngle * MathF.PI / 180.0f;
+            float outerRadius = range * MathF.Tan(outerAngleRad);
+
+            var circleCenter = origin + direction * range;
+
+            // Draw lines from origin to the edge of the cone circle
+            _debugRenderer.AddLine(origin, circleCenter + right * outerRadius, color);
+            _debugRenderer.AddLine(origin, circleCenter - right * outerRadius, color);
+            _debugRenderer.AddLine(origin, circleCenter + up * outerRadius, color);
+            _debugRenderer.AddLine(origin, circleCenter - up * outerRadius, color);
+
+            // Draw the circle at the end of the range
+            const int circleSegments = 16;
+            for (int i = 0; i < circleSegments; i++)
+            {
+                float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
+                float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
+
+                var p1 = circleCenter + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * outerRadius;
+                var p2 = circleCenter + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * outerRadius;
                 _debugRenderer.AddLine(p1, p2, color);
             }
         }

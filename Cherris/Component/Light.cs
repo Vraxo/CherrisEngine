@@ -5,7 +5,8 @@ namespace Cherris;
 public enum LightType
 {
     Directional,
-    Point
+    Point,
+    Spot
 }
 
 public class Light : Component
@@ -17,6 +18,10 @@ public class Light : Component
     // Used by DirectionalLight for global ambient term
     public float AmbientStrength { get; set; } = 0.3f;
 
-    // Point Light range
+    // Point Light / Spot Light
     public float Range { get; set; } = 50.0f;
+
+    // Spot Light
+    public float InnerConeAngle { get; set; } = 12.5f; // In degrees
+    public float OuterConeAngle { get; set; } = 17.5f; // In degrees
 }

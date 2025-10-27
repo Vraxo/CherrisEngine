@@ -235,11 +235,23 @@ public abstract class Engine
                 light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
             }
 
-            if (light.Type == LightType.Point)
+            if (light.Type == LightType.Point || light.Type == LightType.Spot)
             {
                 if (propsDict.TryGetValue("Range", out var rangeObj))
                 {
                     light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
+                }
+            }
+
+            if (light.Type == LightType.Spot)
+            {
+                if (propsDict.TryGetValue("InnerConeAngle", out var innerAngleObj))
+                {
+                    light.InnerConeAngle = Convert.ToSingle(innerAngleObj, CultureInfo.InvariantCulture);
+                }
+                if (propsDict.TryGetValue("OuterConeAngle", out var outerAngleObj))
+                {
+                    light.OuterConeAngle = Convert.ToSingle(outerAngleObj, CultureInfo.InvariantCulture);
                 }
             }
 

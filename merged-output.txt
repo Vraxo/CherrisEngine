@@ -1,214 +1,3 @@
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Game.cs">
-using Cherris;
-
-namespace Apexverse;
-
-public class Game : Engine
-{
-    public Game(GraphicsAPI api) : base("Apexverse", true, api)
-    {
-        Exposure = 0.5f;
-    }
-
-    protected override void LoadContent()
-    {
-        // Pre-load assets that the scene will need
-        ResourceManager.LoadInitialAssets();
-
-        // Register custom components that the scene can use
-        SceneLoader.RegisterComponentFactory("Spinner", _ => new Spinner());
-        SceneLoader.RegisterComponentFactory("PlayerController", _ => new PlayerController());
-
-        // Load the scene from the file and populate the SceneManager
-        var loadedObjects = SceneLoader.LoadScene("Assets/Scene.yaml");
-        SceneManager.SetScene(loadedObjects);
-    }
-
-    protected override void Update(float deltaTime)
-    {
-        // Update all game scripts and logic
-        SceneManager.Update(deltaTime);
-
-        // The base engine Update now handles calling Update on the UI controller, etc.
-        base.Update(deltaTime);
-    }
-}
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Program.cs">
-using Cherris;
-
-namespace Apexverse;
-
-class Program
-{
-    static void Main(string[] args)
-    {
-        Game game = new(GraphicsAPI.OpenTK);
-        game.Run();
-    }
-}
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scene.yaml">
-GameObjects:
-  - Name: SkyboxContainer
-    Components:
-      Skybox:
-        # NOTE: This requires 6 images in your Assets folder, named like:
-        # Assets/sky/day_right.png, ..._left.png, ..._top.png, ..._bottom.png, ..._back.png, ..._front.png
-        CubeMap: sky/day
-
-#  - Name: DebugCamera
-#    Components:
-#      Transform:
-#        Position: [0, 1, 5] # Positioned to clearly see the static cube
-#        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-#        Scale: [1, 1, 1]
-#      Camera:
-
-  - Name: Player
-    Components:
-      Transform:
-        Position: [0, 1, 3] # Start at a good vantage point
-        Rotation: [0, 0, 0] # Looking forward (towards -Z)
-        Scale: [1, 1, 1]
-      PlayerController:
-      Camera:
-
-  - Name: SpinningCube
-    Components:
-      Transform:
-        Position: [0, 0, 0]
-        Rotation: [0, 0, 0]
-        Scale: [1, 1, 1]
-      MeshRenderer:
-        Mesh: Cube
-        Texture: crate
-        EmissiveColor: [20, 2, 2] # Intense Red
-      Spinner:
-
-  - Name: StaticCube
-    Components:
-      Transform:
-        Position: [2.5, 0, 0]
-        Rotation: [0, 45, 0]
-        Scale: [0.75, 0.75, 0.75]
-      MeshRenderer:
-        Mesh: Cube
-        Texture: crate
-        
-  - Name: GroundPlane
-    Components:
-      Transform:
-        Position: [0, -0.75, 0]
-        Rotation: [0, 0, 0]
-        Scale: [1, 1, 1]
-      MeshRenderer:
-        Mesh: Plane
-        Texture: Asphalt
-        TextureTiling: [1, 1]
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scripts.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Apexverse.Assets
-{
-    internal class Scripts
-    {
-    }
-}
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scripts\PlayerController.cs">
-using Cherris;
-using System;
-using System.Numerics;
-
-namespace Apexverse
-{
-    public class PlayerController : Script
-    {
-        public float Speed { get; set; } = 3.0f;
-        public float MouseSensitivity { get; set; } = 0.0015f;
-
-        private float _yaw;
-        private float _pitch;
-
-        public override void Update(float deltaTime)
-        {
-            // --- Mouse Look ---
-            Vector2 mouseDelta = Input.MouseDelta;
-            _yaw -= mouseDelta.X * MouseSensitivity;
-            _pitch -= mouseDelta.Y * MouseSensitivity;
-
-            // Clamp the pitch to prevent the camera from flipping upside down
-            _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-            // Update rotation from yaw and pitch
-            GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw) *
-                                              Quaternion.CreateFromAxisAngle(Vector3.UnitX, _pitch);
-
-            // --- Keyboard Movement ---
-            var moveDirection = Vector3.Zero;
-
-            if (Input.IsKeyDown(Key.W))
-            {
-                moveDirection -= Vector3.UnitZ;
-            }
-            if (Input.IsKeyDown(Key.S))
-            {
-                moveDirection += Vector3.UnitZ;
-            }
-            if (Input.IsKeyDown(Key.A))
-            {
-                moveDirection -= Vector3.UnitX;
-            }
-            if (Input.IsKeyDown(Key.D))
-            {
-                moveDirection += Vector3.UnitX;
-            }
-
-            if (moveDirection != Vector3.Zero)
-            {
-                moveDirection = Vector3.Normalize(moveDirection);
-
-                // Create a rotation that only includes the horizontal (yaw) component.
-                var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-                // Transform the local direction vector by the horizontal-only rotation.
-                var worldDirection = Vector3.Transform(moveDirection, yawRotation);
-                GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-            }
-        }
-    }
-}
-</file>
-
-<file path="E:\Parsa Stuff\Visual Studio\Cherris\Apexverse\Assets\Scripts\Spinner.cs">
-using System.Numerics;
-using Cherris;
-
-namespace Apexverse;
-
-public class Spinner : Script
-{
-    private float _totalTime;
-
-    public override void Update(float deltaTime)
-    {
-        _totalTime += deltaTime;
-        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
-    }
-}
-</file>
-
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Camera.cs">
 using System;
 using System.Numerics;
@@ -266,7 +55,8 @@ namespace Cherris;
 
 public enum LightType
 {
-    Directional
+    Directional,
+    Point
 }
 
 public class Light : Component
@@ -274,7 +64,12 @@ public class Light : Component
     public LightType Type { get; set; } = LightType.Directional;
     public Vector3 Color { get; set; } = Vector3.One;
     public float Intensity { get; set; } = 1.0f;
-    public float AmbientStrength { get; set; } = 2.5f;
+
+    // Used by DirectionalLight for global ambient term
+    public float AmbientStrength { get; set; } = 0.3f;
+
+    // Point Light range
+    public float Range { get; set; } = 50.0f;
 }
 </file>
 
@@ -929,9 +724,10 @@ public abstract class Engine
             // Get Material properties from a nested dictionary
             if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
             {
-                Console.WriteLine($"[Engine] Warning: MeshRenderer on '{meshName}' is missing a 'Material' section. Skipping.");
-                return null;
+                // For backward compatibility, check for top-level properties.
+                matProps = propsDict;
             }
+
 
             // Inside Material dictionary
             string textureName = "White"; // Default value
@@ -1040,6 +836,14 @@ public abstract class Engine
             if (propsDict.TryGetValue("AmbientStrength", out var ambientObj))
             {
                 light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
+            }
+
+            if (light.Type == LightType.Point)
+            {
+                if (propsDict.TryGetValue("Range", out var rangeObj))
+                {
+                    light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
+                }
             }
 
             return light;
@@ -3924,6 +3728,11 @@ public class SceneSerializer
                         {
                             lightData["AmbientStrength"] = light.AmbientStrength;
                         }
+                        if (light.Type == LightType.Point)
+                        {
+                            if (Math.Abs(light.Range - 50.0f) > 0.001f)
+                                lightData["Range"] = light.Range;
+                        }
                         componentsData["Light"] = lightData;
                         break;
 
@@ -5062,13 +4871,25 @@ namespace Cherris;
 
 internal class OpenGLSceneRenderer : IDisposable
 {
+    private const int MAX_POINT_LIGHTS = 4;
+
     private readonly ShaderProgram _shaderProgram;
     private readonly int _modelLocation, _viewLocation, _projectionLocation;
-    private readonly int _textureLocation, _tilingLocation, _emissiveLocation;
-    private readonly int _viewPosLocation;
-    private readonly int _hasLightLocation;
-    private readonly int _lightDirLocation, _lightColorLocation, _lightIntensityLocation, _lightAmbientStrengthLocation;
-    private readonly int _specularIntensityLocation, _shininessLocation;
+    private readonly int _tilingLocation, _emissiveLocation, _viewPosLocation;
+
+    // Material Uniform Locations
+    private readonly int _materialTextureLocation, _materialShininessLocation, _materialSpecularIntensityLocation;
+
+    // Directional Light Uniform Locations
+    private readonly int _dirLightDirLocation, _dirLightColorLocation, _dirLightIntensityLocation, _dirLightAmbientStrengthLocation;
+    private readonly int _hasDirLightLocation;
+
+    // Point Light Uniform Locations
+    private readonly int _numPointLightsLocation;
+    private readonly int[] _pointLightPosLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightColorLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightIntensityLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int[] _pointLightRangeLocations = new int[MAX_POINT_LIGHTS];
 
 
     public OpenGLSceneRenderer()
@@ -5102,80 +4923,153 @@ void main()
 
         const string fragSource = @"
 #version 330 core
+#define MAX_POINT_LIGHTS 4
+
 in vec4 fsin_Color;
 in vec2 fsin_TexCoord;
 in vec3 FragPos;
 in vec3 Normal;
 
-uniform sampler2D uTexture;
-uniform vec3 uEmissive;
-uniform vec3 uViewPos;
+struct Material {
+    sampler2D texture_diffuse;
+    float shininess;
+    float specularIntensity;
+};
 
-// Material
-uniform float uSpecularIntensity;
-uniform float uShininess;
+struct DirLight {
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float ambientStrength;
+};
 
-// Light
-uniform bool uHasLight;
-uniform vec3 uLightDir;
-uniform vec3 uLightColor;
-uniform float uLightIntensity;
-uniform float uLightAmbientStrength;
-
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float intensity;
+    float range;
+};
 
 out vec4 FragColor;
 
+// --- Uniforms ---
+uniform vec3 uViewPos;
+uniform vec3 uEmissive;
+
+uniform Material uMaterial;
+uniform DirLight uDirLight;
+uniform bool uHasDirLight;
+
+uniform PointLight uPointLights[MAX_POINT_LIGHTS];
+uniform int uNumPointLights;
+
+
+// --- Function Declarations ---
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo);
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+
 void main()
 {
-    vec3 albedo = texture(uTexture, fsin_TexCoord).rgb * fsin_Color.rgb;
+    vec3 albedo = texture(uMaterial.texture_diffuse, fsin_TexCoord).rgb * fsin_Color.rgb;
     vec3 norm = normalize(Normal);
-    vec3 finalColor;
+    vec3 viewDir = normalize(uViewPos - FragPos);
 
-    if(uHasLight) {
-        // Ambient
-        vec3 ambient = uLightAmbientStrength * uLightColor * uLightIntensity;
+    // Start with the ambient term, which acts as a base light level.
+    vec3 finalColor = vec3(0.0);
+    if(uHasDirLight) {
+        finalColor = uDirLight.ambientStrength * uDirLight.color * uDirLight.intensity * albedo;
+    }
 
-        // Diffuse
-        vec3 lightDir = normalize(uLightDir);
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 diffuse = diff * uLightColor * uLightIntensity;
+    // Additively blend the diffuse and specular contributions of each light.
+    if(uHasDirLight) {
+        finalColor += CalcDirLight(uDirLight, norm, viewDir, albedo);
+    }
 
-        // Specular (Blinn-Phong)
-        vec3 viewDir = normalize(uViewPos - FragPos);
-        vec3 halfwayDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(norm, halfwayDir), 0.0), uShininess);
-        vec3 specular = uSpecularIntensity * spec * uLightColor * uLightIntensity;
+    for(int i = 0; i < uNumPointLights; i++) {
+        finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
+    }
 
-        finalColor = (ambient + diffuse) * albedo + specular;
-    } else {
-        // No light in scene, just use albedo
+    // If there are no lights at all, render with the base texture color.
+    if (!uHasDirLight && uNumPointLights == 0) {
         finalColor = albedo;
     }
-    
+
+    // Finally, add any emissive color.
     finalColor += uEmissive;
 
-    FragColor = vec4(finalColor, texture(uTexture, fsin_TexCoord).a * fsin_Color.a);
+    FragColor = vec4(finalColor, texture(uMaterial.texture_diffuse, fsin_TexCoord).a * fsin_Color.a);
+}
+
+// Calculates only the diffuse and specular parts of a directional light.
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.direction);
+    
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color * light.intensity;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
+
+    return (diffuse * albedo) + specular;
+}
+
+// Calculates the diffuse and specular parts of a point light, including attenuation.
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
+
+    // Attenuation based on range
+    float distance = length(light.position - fragPos);
+    // Use a squared falloff for a more natural look (bright center, fades quickly at the edge)
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
+    
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff;
+
+    return lightContribution;
 }";
 
         _shaderProgram = new ShaderProgram(vertSource, fragSource);
+
+        // Standard uniforms
         _modelLocation = _shaderProgram.GetUniformLocation("model");
         _viewLocation = _shaderProgram.GetUniformLocation("view");
         _projectionLocation = _shaderProgram.GetUniformLocation("projection");
-
-        _textureLocation = _shaderProgram.GetUniformLocation("uTexture");
         _tilingLocation = _shaderProgram.GetUniformLocation("uTiling");
         _emissiveLocation = _shaderProgram.GetUniformLocation("uEmissive");
-
         _viewPosLocation = _shaderProgram.GetUniformLocation("uViewPos");
 
-        _hasLightLocation = _shaderProgram.GetUniformLocation("uHasLight");
-        _lightDirLocation = _shaderProgram.GetUniformLocation("uLightDir");
-        _lightColorLocation = _shaderProgram.GetUniformLocation("uLightColor");
-        _lightIntensityLocation = _shaderProgram.GetUniformLocation("uLightIntensity");
-        _lightAmbientStrengthLocation = _shaderProgram.GetUniformLocation("uLightAmbientStrength");
+        // Material uniforms
+        _materialTextureLocation = _shaderProgram.GetUniformLocation("uMaterial.texture_diffuse");
+        _materialShininessLocation = _shaderProgram.GetUniformLocation("uMaterial.shininess");
+        _materialSpecularIntensityLocation = _shaderProgram.GetUniformLocation("uMaterial.specularIntensity");
 
-        _specularIntensityLocation = _shaderProgram.GetUniformLocation("uSpecularIntensity");
-        _shininessLocation = _shaderProgram.GetUniformLocation("uShininess");
+        // Directional light uniforms
+        _hasDirLightLocation = _shaderProgram.GetUniformLocation("uHasDirLight");
+        _dirLightDirLocation = _shaderProgram.GetUniformLocation("uDirLight.direction");
+        _dirLightColorLocation = _shaderProgram.GetUniformLocation("uDirLight.color");
+        _dirLightIntensityLocation = _shaderProgram.GetUniformLocation("uDirLight.intensity");
+        _dirLightAmbientStrengthLocation = _shaderProgram.GetUniformLocation("uDirLight.ambientStrength");
+
+        // Point light uniforms
+        _numPointLightsLocation = _shaderProgram.GetUniformLocation("uNumPointLights");
+        for (int i = 0; i < MAX_POINT_LIGHTS; i++)
+        {
+            _pointLightPosLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].position");
+            _pointLightColorLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].color");
+            _pointLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].intensity");
+            _pointLightRangeLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].range");
+        }
     }
 
     public void Render(IEnumerable<GameObject> gameObjects, Matrix4 view, Matrix4 projection)
@@ -5183,32 +5077,40 @@ void main()
         _shaderProgram.Use();
 
         // Set uniforms that are constant for the frame
-        GL.Uniform1(_textureLocation, 0);
+        GL.Uniform1(_materialTextureLocation, 0);
         GL.UniformMatrix4(_viewLocation, false, ref view);
         GL.UniformMatrix4(_projectionLocation, false, ref projection);
         var viewPos = view.Inverted().Row3.Xyz;
         GL.Uniform3(_viewPosLocation, viewPos.X, viewPos.Y, viewPos.Z);
 
         // Find and set light uniforms
-        var directionalLight = gameObjects
-            .Select(g => g.GetComponent<Light>())
-            .FirstOrDefault(l => l is not null && l.Type == LightType.Directional);
+        var allLights = gameObjects.Select(g => g.GetComponent<Light>()).Where(l => l is not null).ToList();
+        var directionalLight = allLights.FirstOrDefault(l => l.Type == LightType.Directional);
+        var pointLights = allLights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
 
         if (directionalLight != null)
         {
-            GL.Uniform1(_hasLightLocation, 1);
-            // The light's forward vector is the direction it's traveling.
-            // For lighting calculations, we need the vector FROM the surface TO the light, which is the inverse.
+            GL.Uniform1(_hasDirLightLocation, 1);
             var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
             var directionToLight = -lightTravelDirection;
-            GL.Uniform3(_lightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
-            GL.Uniform3(_lightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
-            GL.Uniform1(_lightIntensityLocation, directionalLight.Intensity);
-            GL.Uniform1(_lightAmbientStrengthLocation, directionalLight.AmbientStrength);
+            GL.Uniform3(_dirLightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
+            GL.Uniform3(_dirLightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
+            GL.Uniform1(_dirLightIntensityLocation, directionalLight.Intensity);
+            GL.Uniform1(_dirLightAmbientStrengthLocation, directionalLight.AmbientStrength);
         }
         else
         {
-            GL.Uniform1(_hasLightLocation, 0);
+            GL.Uniform1(_hasDirLightLocation, 0);
+        }
+
+        GL.Uniform1(_numPointLightsLocation, pointLights.Count);
+        for (int i = 0; i < pointLights.Count; i++)
+        {
+            var light = pointLights[i];
+            GL.Uniform3(_pointLightPosLocations[i], light.GameObject.Transform.Position.X, light.GameObject.Transform.Position.Y, light.GameObject.Transform.Position.Z);
+            GL.Uniform3(_pointLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
+            GL.Uniform1(_pointLightIntensityLocations[i], light.Intensity);
+            GL.Uniform1(_pointLightRangeLocations[i], light.Range);
         }
 
         // Render each object
@@ -5238,8 +5140,8 @@ void main()
         GL.UniformMatrix4(_modelLocation, false, ref model);
         GL.Uniform2(_tilingLocation, material.TextureTiling.X, material.TextureTiling.Y);
         GL.Uniform3(_emissiveLocation, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
-        GL.Uniform1(_specularIntensityLocation, material.SpecularIntensity);
-        GL.Uniform1(_shininessLocation, material.Shininess);
+        GL.Uniform1(_materialSpecularIntensityLocation, material.SpecularIntensity);
+        GL.Uniform1(_materialShininessLocation, material.Shininess);
 
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
@@ -9203,7 +9105,7 @@ GameObjects:
       Type: Directional
       Color: [1, 1, 1]
       Intensity: 1
-      AmbientStrength: 2.5
+      AmbientStrength: 0.3
 - Id: e036456a-17e9-4b36-aa03-c86985afe187
   Name: SpinningCube
   Components:
@@ -9215,7 +9117,6 @@ GameObjects:
       Mesh: Cube
       Material:
         Texture: crate
-        EmissiveColor: [20, 2, 2]
         SpecularIntensity: 0.8
         Shininess: 128
     Spinner:
@@ -9247,6 +9148,30 @@ GameObjects:
         TextureTiling: [5, 5]
         SpecularIntensity: 0.1
         Shininess: 8
+- Id: c4b1d2e3-f6a5-4b8c-9a1d-2e3f4a5b6c7d
+  Name: PointLightObject
+  Components:
+    Transform:
+      Position: [1.5, 0.5, 1.5]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    Light:
+      Type: Point
+      Color: [1, 0.8, 0.6]
+      Intensity: 2
+      Range: 15
+- Id: d5c2e3f4-a7b6-5c9d-8b2e-3f4a5b6c7d8e
+  Name: PointLightVisual
+  Components:
+    Transform:
+      Position: [1.5, 0.5, 1.5]
+      Rotation: [0, 0, 0]
+      Scale: [0.1, 0.1, 0.1]
+    MeshRenderer:
+      Mesh: Cube
+      Material:
+        Texture: White
+        EmissiveColor: [50, 40, 30]
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs">
