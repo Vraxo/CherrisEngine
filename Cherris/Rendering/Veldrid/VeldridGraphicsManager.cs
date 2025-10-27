@@ -4,7 +4,7 @@ using Veldrid.Sdl2;
 
 namespace Cherris;
 
-public class GraphicsManager : IDisposable
+public class VeldridGraphicsManager : IDisposable
 {
     public GraphicsDevice GraphicsDevice { get; }
     public CommandList CommandList { get; }
@@ -35,7 +35,7 @@ public class GraphicsManager : IDisposable
 
     private readonly TextureSampleCount _msaaSampleCount;
 
-    public GraphicsManager(GraphicsDevice graphicsDevice, Sdl2Window window, TextureSampleCount msaaSampleCount)
+    public VeldridGraphicsManager(GraphicsDevice graphicsDevice, Sdl2Window window, TextureSampleCount msaaSampleCount)
     {
         _msaaSampleCount = msaaSampleCount;
         GraphicsDevice = graphicsDevice;

@@ -12,7 +12,7 @@ public class VeldridBackend : RenderingInterface
     public IResourceManager ResourceManager { get; private set; }
     public IUIController? UIController => null; // ImGui not implemented for Veldrid yet
     private GraphicsDevice _graphicsDevice;
-    private GraphicsManager _graphicsManager;
+    private VeldridGraphicsManager _graphicsManager;
 
     public VeldridBackend() { }
 
@@ -29,7 +29,7 @@ public class VeldridBackend : RenderingInterface
         _graphicsDevice = VeldridStartup.CreateGraphicsDevice(window.SdlWindow, options);
         window.SetGraphicsDevice(_graphicsDevice);
 
-        _graphicsManager = new GraphicsManager(_graphicsDevice, window.SdlWindow, TextureSampleCount.Count4);
+        _graphicsManager = new VeldridGraphicsManager(_graphicsDevice, window.SdlWindow, TextureSampleCount.Count4);
 
         GameWindow = window;
         ResourceManager = new ResourceManager(_graphicsDevice);

@@ -10,7 +10,7 @@ namespace Cherris;
 // This class now acts as the Veldrid implementation of IRenderer
 public class Renderer : IRenderer
 {
-    private readonly GraphicsManager _graphicsManager;
+    private readonly VeldridGraphicsManager _graphicsManager;
     private readonly GraphicsDevice _graphicsDevice;
     private SceneRenderer _sceneRenderer;
     private SkyboxRenderer _skyboxRenderer;
@@ -66,7 +66,7 @@ public class Renderer : IRenderer
         }
     }
 
-    public Renderer(GraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
+    public Renderer(VeldridGraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
     {
         _graphicsManager = graphicsManager;
         _graphicsDevice = graphicsDevice;

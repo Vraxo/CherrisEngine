@@ -3,7 +3,7 @@
 public static class AssetFinder
 {
     private const string AssetRootPath = "Assets";
-    private static readonly string[] SupportedExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
+    private static readonly string[] SupportedExtensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga"];
 
     public static string? FindAssetPath(string assetName)
     {
@@ -18,7 +18,9 @@ public static class AssetFinder
 
             if (matchingFiles.Length > 1)
             {
-                Console.WriteLine($"[AssetFinder] Warning: Found multiple files for asset '{assetName}'. Using '{matchingFiles[0]}'.");
+                Console.WriteLine(
+                    $"[AssetFinder] Warning: Found multiple files for asset '{assetName}'." +
+                    $"Using '{matchingFiles[0]}'.");
             }
 
             return matchingFiles.FirstOrDefault();
@@ -32,10 +34,10 @@ public static class AssetFinder
 
     private static string[] GetMatchingFiles(string assetName)
     {
-        return GetPotentialFilePaths(assetName).SelectMany(name =>
+        return [.. GetPotentialFilePaths(assetName).SelectMany(name =>
         {
             return Directory.GetFiles(AssetRootPath, name, SearchOption.AllDirectories);
-        }).ToArray();
+        })];
     }
 
     private static IEnumerable<string> GetPotentialFilePaths(string assetName)
