@@ -583,39 +583,34 @@ public abstract class Engine
     {
         SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
         {
-            if (properties is not Dictionary<object, object> propsDict)
+            if (properties is not Dictionary<object, object> propsDict) return null;
+
+            // Get Mesh
+            if (!propsDict.TryGetValue("Mesh", out var meshNameObj) || meshNameObj is not string meshName) return null;
+            Mesh? mesh = ResourceManager.GetMesh(meshName);
+            if (mesh is null) return null;
+
+            // Get Material properties from a nested dictionary
+            if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
             {
+                Console.WriteLine($"[Engine] Warning: MeshRenderer on '{meshName}' is missing a 'Material' section. Skipping.");
                 return null;
             }
 
-            Mesh? mesh = null;
-            string meshName = string.Empty;
-
-            if (propsDict.TryGetValue("Mesh", out var meshNameObj) && meshNameObj is string parsedMeshName)
-            {
-                meshName = parsedMeshName;
-                mesh = ResourceManager.GetMesh(meshName);
-            }
-
-            if (mesh is null)
-            {
-                return null;
-            }
-
+            // Inside Material dictionary
             string textureName = "White"; // Default value
-            if (propsDict.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
+            if (matProps.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
             {
                 textureName = parsedTextureName;
             }
             ITexture texture = ResourceManager.GetTexture(textureName);
+            var material = new Material(texture, textureName);
 
-            Vector2 textureTiling = Vector2.One;
-
-            if (propsDict.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
+            if (matProps.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
             {
                 try
                 {
-                    textureTiling = new Vector2(
+                    material.TextureTiling = new Vector2(
                         Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
                         Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
                 }
@@ -625,13 +620,11 @@ public abstract class Engine
                 }
             }
 
-            Vector3 emissiveColor = Vector3.Zero;
-
-            if (propsDict.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
+            if (matProps.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
             {
                 try
                 {
-                    emissiveColor = new(
+                    material.EmissiveColor = new(
                         Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
                         Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
                         Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
@@ -642,19 +635,17 @@ public abstract class Engine
                 }
             }
 
-            var mr = new MeshRenderer(mesh, texture, textureTiling, emissiveColor, textureName, meshName);
-
-            if (propsDict.TryGetValue("SpecularIntensity", out var specIntObj))
+            if (matProps.TryGetValue("SpecularIntensity", out var specIntObj))
             {
-                mr.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
+                material.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
             }
 
-            if (propsDict.TryGetValue("Shininess", out var shininessObj))
+            if (matProps.TryGetValue("Shininess", out var shininessObj))
             {
-                mr.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
+                material.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
             }
 
-            return mr;
+            return new MeshRenderer(mesh, material, meshName);
         });
 
         SceneLoader.RegisterComponentFactory("Camera", (properties) =>
@@ -1514,6 +1505,29 @@ public static class JitterConvert
 }
 </file>
 
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Material.cs">
+using Cherris.Rendering;
+using System.Numerics;
+
+namespace Cherris;
+
+public class Material
+{
+    public ITexture Texture { get; set; }
+    public string TextureName { get; set; }
+    public Vector2 TextureTiling { get; set; } = Vector2.One;
+    public Vector3 EmissiveColor { get; set; } = Vector3.Zero;
+    public float SpecularIntensity { get; set; } = 0.5f;
+    public float Shininess { get; set; } = 32.0f;
+
+    public Material(ITexture texture, string textureName)
+    {
+        Texture = texture;
+        TextureName = textureName;
+    }
+}
+</file>
+
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\PhysicsSystem.cs">
 namespace Cherris;
 
@@ -1697,7 +1711,8 @@ public class Renderer : IRenderer
 
         public VeldridMeshRendererData(GraphicsDevice gd, MeshRenderer meshRenderer, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
         {
-            var texture = (Texture)meshRenderer.Texture.GetBackendHandle();
+            var material = meshRenderer.Material;
+            var texture = (Texture)material.Texture.GetBackendHandle();
             ResourceFactory factory = gd.ResourceFactory;
 
             VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
@@ -1711,8 +1726,8 @@ public class Renderer : IRenderer
 
             MaterialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
             var materialData = new Vector4[2];
-            materialData[0] = new Vector4(meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y, 0, 0);
-            materialData[1] = new Vector4(meshRenderer.EmissiveColor, 1.0f);
+            materialData[0] = new Vector4(material.TextureTiling.X, material.TextureTiling.Y, 0, 0);
+            materialData[1] = new Vector4(material.EmissiveColor, 1.0f);
             gd.UpdateBuffer(MaterialPropertiesBuffer, 0, materialData);
 
             MaterialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(materialLayout, MaterialPropertiesBuffer));
@@ -3020,17 +3035,21 @@ public class SceneSerializer
                     case MeshRenderer mr:
                         var mrData = new Dictionary<string, object>
                         {
-                            ["Mesh"] = mr.MeshName,
-                            ["Texture"] = mr.TextureName
+                            ["Mesh"] = mr.MeshName
                         };
-                        if (mr.TextureTiling != Vector2.One)
-                            mrData["TextureTiling"] = mr.TextureTiling;
-                        if (mr.EmissiveColor != Vector3.Zero)
-                            mrData["EmissiveColor"] = mr.EmissiveColor;
-                        if (Math.Abs(mr.SpecularIntensity - 0.5f) > 0.001f)
-                            mrData["SpecularIntensity"] = mr.SpecularIntensity;
-                        if (Math.Abs(mr.Shininess - 32.0f) > 0.001f)
-                            mrData["Shininess"] = mr.Shininess;
+                        var materialData = new Dictionary<string, object>
+                        {
+                            ["Texture"] = mr.Material.TextureName
+                        };
+                        if (mr.Material.TextureTiling != Vector2.One)
+                            materialData["TextureTiling"] = mr.Material.TextureTiling;
+                        if (mr.Material.EmissiveColor != Vector3.Zero)
+                            materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                        if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+                            materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                        if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+                            materialData["Shininess"] = mr.Material.Shininess;
+                        mrData["Material"] = materialData;
                         componentsData["MeshRenderer"] = mrData;
                         break;
 
@@ -4011,11 +4030,8 @@ public class Mesh
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
-using Cherris.OpenTK;
 using Cherris.Rendering;
 using System;
-using System.Globalization;
-using System.Numerics;
 
 namespace Cherris;
 
@@ -4024,38 +4040,28 @@ public class MeshRenderer : Component, IDisposable
     public Mesh Mesh { get; }
     public string MeshName { get; }
 
-    private ITexture _texture;
-    public ITexture Texture
+    private Material _material;
+    public Material Material
     {
-        get => _texture;
+        get => _material;
         set
         {
-            if (_texture != value)
+            if (_material != value)
             {
-                _texture = value;
+                _material = value;
                 InvalidateBackendData();
             }
         }
     }
-    public string TextureName { get; set; }
-
-    // MODIFIED: Added setters to allow editing from the inspector
-    public Vector2 TextureTiling { get; set; }
-    public Vector3 EmissiveColor { get; set; }
-    public float SpecularIntensity { get; set; } = 0.5f;
-    public float Shininess { get; set; } = 32.0f;
 
     // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
     public object BackendData { get; set; }
 
-    public MeshRenderer(Mesh mesh, ITexture texture, Vector2 textureTiling, Vector3 emissiveColor, string textureName, string meshName)
+    public MeshRenderer(Mesh mesh, Material material, string meshName)
     {
         Mesh = mesh;
         MeshName = meshName;
-        _texture = texture; // Set backing field directly to avoid invalidation in constructor
-        TextureName = textureName;
-        TextureTiling = textureTiling;
-        EmissiveColor = emissiveColor;
+        _material = material;
     }
 
     private void InvalidateBackendData()
@@ -5265,7 +5271,8 @@ void main()
 
     private void DrawObject(GameObject go, MeshRenderer meshRenderer, OpenGLMeshRendererData data)
     {
-        if (meshRenderer.Texture is OpenTKTexture glTexture)
+        var material = meshRenderer.Material;
+        if (material.Texture is OpenTKTexture glTexture)
         {
             glTexture.Bind(TextureUnit.Texture0);
         }
@@ -5277,10 +5284,10 @@ void main()
         var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
 
         GL.UniformMatrix4(_modelLocation, false, ref model);
-        GL.Uniform2(_tilingLocation, meshRenderer.TextureTiling.X, meshRenderer.TextureTiling.Y);
-        GL.Uniform3(_emissiveLocation, meshRenderer.EmissiveColor.X, meshRenderer.EmissiveColor.Y, meshRenderer.EmissiveColor.Z);
-        GL.Uniform1(_specularIntensityLocation, meshRenderer.SpecularIntensity);
-        GL.Uniform1(_shininessLocation, meshRenderer.Shininess);
+        GL.Uniform2(_tilingLocation, material.TextureTiling.X, material.TextureTiling.Y);
+        GL.Uniform3(_emissiveLocation, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
+        GL.Uniform1(_specularIntensityLocation, material.SpecularIntensity);
+        GL.Uniform1(_shininessLocation, material.Shininess);
 
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
@@ -8154,7 +8161,14 @@ public class MeshRendererInspector : IComponentInspector
     public unsafe bool Draw(Component component)
     {
         var mr = (MeshRenderer)component;
+        var material = mr.Material;
         bool dirty = false;
+
+        if (material is null)
+        {
+            ImGui.Text("No Material assigned.");
+            return false;
+        }
 
         if (!ImGui.BeginTable("MRTable", 3)) return false;
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
@@ -8171,7 +8185,7 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableSetColumnIndex(1);
 
         IntPtr textureHandle = IntPtr.Zero;
-        if (mr.Texture?.GetBackendHandle() is int handle && handle != 0)
+        if (material.Texture?.GetBackendHandle() is int handle && handle != 0)
         {
             textureHandle = (IntPtr)handle;
         }
@@ -8193,7 +8207,7 @@ public class MeshRendererInspector : IComponentInspector
                     string newTextureName = Path.GetFileNameWithoutExtension(path);
                     var newTexture = _editor.ResourceManager.GetTexture(newTextureName);
 
-                    _history.Execute(new ChangeTextureCommand(mr, mr.TextureName, mr.Texture, newTextureName, newTexture, _editor.ResourceManager));
+                    _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newTextureName, newTexture));
                     dirty = true;
                 }
             }
@@ -8201,13 +8215,13 @@ public class MeshRendererInspector : IComponentInspector
         }
 
         ImGui.SameLine();
-        ImGui.Text(mr.TextureName);
+        ImGui.Text(material.TextureName);
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetTexture", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
             var newTexture = _editor.ResourceManager.GetTexture("White");
-            _history.Execute(new ChangeTextureCommand(mr, mr.TextureName, mr.Texture, "White", newTexture, _editor.ResourceManager));
+            _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", newTexture));
             dirty = true;
         }
 
@@ -8215,23 +8229,23 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Texture Tiling");
         ImGui.TableSetColumnIndex(1);
-        var tilingBeforeEdit = mr.TextureTiling;
+        var tilingBeforeEdit = material.TextureTiling;
         var tiling = tilingBeforeEdit;
         if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling, out bool activated, out bool deactivated))
         {
-            mr.TextureTiling = tiling; dirty = true;
+            material.TextureTiling = tiling; dirty = true;
         }
-        HandleUndo(mr, nameof(MeshRenderer.TextureTiling), tilingBeforeEdit, activated, deactivated);
+        HandleUndo(material, nameof(Material.TextureTiling), tilingBeforeEdit, activated, deactivated);
 
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            var valueBeforeReset = mr.TextureTiling;
+            var valueBeforeReset = material.TextureTiling;
             if (valueBeforeReset != Vector2.One)
             {
-                mr.TextureTiling = Vector2.One;
-                _history.Execute(new ChangePropertyCommand(mr, typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.TextureTiling)), valueBeforeReset, Vector2.One));
+                material.TextureTiling = Vector2.One;
+                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.TextureTiling)), valueBeforeReset, Vector2.One));
                 dirty = true;
             }
         }
@@ -8241,22 +8255,22 @@ public class MeshRendererInspector : IComponentInspector
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0); ImGui.Text("Emissive Color");
         ImGui.TableSetColumnIndex(1);
-        var emissiveBeforeEdit = mr.EmissiveColor;
+        var emissiveBeforeEdit = material.EmissiveColor;
         var emissive = emissiveBeforeEdit;
         if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive, out bool emissiveActivated, out bool emissiveDeactivated))
         {
-            mr.EmissiveColor = emissive; dirty = true;
+            material.EmissiveColor = emissive; dirty = true;
         }
-        HandleUndo(mr, nameof(MeshRenderer.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
+        HandleUndo(material, nameof(Material.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
 
         ImGui.TableSetColumnIndex(2);
         if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
         {
-            var valueBeforeReset = mr.EmissiveColor;
+            var valueBeforeReset = material.EmissiveColor;
             if (valueBeforeReset != Vector3.Zero)
             {
-                mr.EmissiveColor = Vector3.Zero;
-                _history.Execute(new ChangePropertyCommand(mr, typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.EmissiveColor)), valueBeforeReset, Vector3.Zero));
+                material.EmissiveColor = Vector3.Zero;
+                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.EmissiveColor)), valueBeforeReset, Vector3.Zero));
                 dirty = true;
             }
         }
@@ -8288,23 +8302,21 @@ public class MeshRendererInspector : IComponentInspector
     }
 
     // Inner class for the specific command
-    private class ChangeTextureCommand : ICommand
+    private class ChangeMaterialTextureCommand : ICommand
     {
-        private readonly MeshRenderer _target;
+        private readonly Material _target;
         private readonly string _oldTextureName;
         private readonly Cherris.Rendering.ITexture _oldTexture;
         private readonly string _newTextureName;
         private readonly Cherris.Rendering.ITexture _newTexture;
-        private readonly Cherris.Rendering.IResourceManager _resourceManager;
 
-        public ChangeTextureCommand(MeshRenderer target, string oldTextureName, Cherris.Rendering.ITexture oldTexture, string newTextureName, Cherris.Rendering.ITexture newTexture, Cherris.Rendering.IResourceManager resourceManager)
+        public ChangeMaterialTextureCommand(Material target, string oldTextureName, Cherris.Rendering.ITexture oldTexture, string newTextureName, Cherris.Rendering.ITexture newTexture)
         {
             _target = target;
             _oldTextureName = oldTextureName;
             _oldTexture = oldTexture;
             _newTextureName = newTextureName;
             _newTexture = newTexture;
-            _resourceManager = resourceManager;
         }
 
         public void Execute()
@@ -9158,8 +9170,8 @@ GameObjects:
   Name: Player
   Components:
     Transform:
-      Position: [5.861215, 1, 3.552466]
-      Rotation: [-11.946166, 20.79838, 0]
+      Position: [3.702409, 3.2569447, 6.1479545]
+      Rotation: [-26.298765, 17.962116, 0]
       Scale: [1, 1, 1]
     PlayerController:
       Speed: 3
@@ -9170,13 +9182,13 @@ GameObjects:
   Name: DirectionalLight
   Components:
     Transform:
-      Position: [0, 0, 0]
-      Rotation: [45, -45, 0]
-      Scale: [1, 1, 1]
+      Position: [-0.5148658, 4.625517, -0.7980118]
+      Rotation: [-84.91004, -45.000088, 0.00020767628]
+      Scale: [1, 1.0000011, 1.0000005]
     Light:
       Type: Directional
       Color: [1, 1, 0.95]
-      Intensity: 1.2
+      Intensity: 3.8
 - Id: e036456a-17e9-4b36-aa03-c86985afe187
   Name: SpinningCube
   Components:
@@ -9186,10 +9198,11 @@ GameObjects:
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Cube
-      Texture: crate
-      EmissiveColor: [20, 2, 2]
-      SpecularIntensity: 0.8
-      Shininess: 128
+      Material:
+        Texture: crate
+        EmissiveColor: [20, 2, 2]
+        SpecularIntensity: 0.8
+        Shininess: 128
     Spinner:
       Enabled: false
 - Id: 46f63d25-5bcb-4aa4-9e7c-20ec47bc3087
@@ -9197,13 +9210,14 @@ GameObjects:
   Components:
     Transform:
       Position: [2.5, 0, 0]
-      Rotation: [0, 45, 0]
+      Rotation: [0, 45.000004, 0]
       Scale: [0.75, 0.75, 0.75]
     MeshRenderer:
       Mesh: Cube
-      Texture: crate
-      SpecularIntensity: 0.3
-      Shininess: 16
+      Material:
+        Texture: crate
+        SpecularIntensity: 0.3
+        Shininess: 16
 - Id: fa6c7e61-829e-4f4e-8ad6-e370835d1b46
   Name: GroundPlane
   Components:
@@ -9213,10 +9227,11 @@ GameObjects:
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Plane
-      Texture: Asphalt
-      TextureTiling: [5, 5]
-      SpecularIntensity: 0.1
-      Shininess: 8
+      Material:
+        Texture: Asphalt
+        TextureTiling: [5, 5]
+        SpecularIntensity: 0.1
+        Shininess: 8
 </file>
 
 <file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs">

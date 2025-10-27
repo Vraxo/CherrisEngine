@@ -15,7 +15,7 @@ internal class OpenGLSceneRenderer : IDisposable
     private readonly int _textureLocation, _tilingLocation, _emissiveLocation;
     private readonly int _viewPosLocation;
     private readonly int _hasLightLocation;
-    private readonly int _lightDirLocation, _lightColorLocation, _lightIntensityLocation;
+    private readonly int _lightDirLocation, _lightColorLocation, _lightIntensityLocation, _lightAmbientStrengthLocation;
     private readonly int _specularIntensityLocation, _shininessLocation;
 
 
@@ -68,6 +68,7 @@ uniform bool uHasLight;
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
 uniform float uLightIntensity;
+uniform float uLightAmbientStrength;
 
 
 out vec4 FragColor;
@@ -80,8 +81,7 @@ void main()
 
     if(uHasLight) {
         // Ambient
-        float ambientStrength = 0.1;
-        vec3 ambient = ambientStrength * uLightColor * uLightIntensity;
+        vec3 ambient = uLightAmbientStrength * uLightColor * uLightIntensity;
 
         // Diffuse
         vec3 lightDir = normalize(uLightDir);
@@ -120,6 +120,7 @@ void main()
         _lightDirLocation = _shaderProgram.GetUniformLocation("uLightDir");
         _lightColorLocation = _shaderProgram.GetUniformLocation("uLightColor");
         _lightIntensityLocation = _shaderProgram.GetUniformLocation("uLightIntensity");
+        _lightAmbientStrengthLocation = _shaderProgram.GetUniformLocation("uLightAmbientStrength");
 
         _specularIntensityLocation = _shaderProgram.GetUniformLocation("uSpecularIntensity");
         _shininessLocation = _shaderProgram.GetUniformLocation("uShininess");
@@ -151,6 +152,7 @@ void main()
             GL.Uniform3(_lightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
             GL.Uniform3(_lightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
             GL.Uniform1(_lightIntensityLocation, directionalLight.Intensity);
+            GL.Uniform1(_lightAmbientStrengthLocation, directionalLight.AmbientStrength);
         }
         else
         {

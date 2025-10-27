@@ -229,6 +229,11 @@ public abstract class Engine
                 light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
             }
 
+            if (propsDict.TryGetValue("AmbientStrength", out var ambientObj))
+            {
+                light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
+            }
+
             return light;
         });
 
