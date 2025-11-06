@@ -1,2 +1,2 @@
-fuse
+coalesce
 pause
