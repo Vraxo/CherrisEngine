@@ -37,18 +37,19 @@ namespace Cherris.OpenTK
             var io = ImGui.GetIO();
 
             // --- FONT LOADING LOGIC (SIMPLE AND ROBUST) ---
-            // This relies on a clean build environment (no rogue DLLs) and a working AssetFinder.
+            // After a full dependency clean, this is the correct and simplest approach.
+            // If the font isn't found, ImGui will fall back to its default.
+            // The crash was not due to file loading, but a native library mismatch.
             const float baseFontSize = 18.0f;
             string? fontPath = AssetFinder.FindAssetPath("Fonts/RobotoMono-Regular.ttf");
 
             if (fontPath is not null && File.Exists(fontPath))
             {
-                Console.WriteLine(fontPath);
                 io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
             }
             else
             {
-                Console.WriteLine($"[ImGuiController] Warning: Font not found. Using default font.");
+                Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
                 io.Fonts.AddFontDefault();
             }
 

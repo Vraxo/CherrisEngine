@@ -5,7 +5,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        var editor = new Editor(GraphicsAPI.OpenTK);
+        Editor editor = new(GraphicsAPI.OpenTK);
         editor.Run();
     }
 }

@@ -9,7 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ImGui.NET.Docking" Version="1.75.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.0.0-1.25277.114">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
