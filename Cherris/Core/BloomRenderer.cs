@@ -2,7 +2,7 @@
 using Veldrid;
 using Veldrid.SPIRV;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class BloomRenderer : IDisposable
 {
@@ -25,29 +25,38 @@ public class BloomRenderer : IDisposable
 
         Vector3[] quadVertices =
         {
-            new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
-            new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
+            new(-1.0f, -1.0f, 0.0f), new(1.0f, -1.0f, 0.0f),
+            new(-1.0f, 1.0f, 0.0f), new(1.0f, 1.0f, 0.0f)
         };
-        _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+
+        _vertexBuffer = factory.CreateBuffer(new((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
-        _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+        _textureLayout = factory.CreateResourceLayout(new(
+            new ResourceLayoutElementDescription(
+                "SourceTexture",
+                ResourceKind.TextureReadOnly,
+                ShaderStages.Fragment),
+            new ResourceLayoutElementDescription(
+                "SourceSampler",
+                ResourceKind.Sampler,
+                ShaderStages.Fragment)));
 
-        _blurParamsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("BlurParams", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+        _blurParamsLayout = factory.CreateResourceLayout(new(
+            new ResourceLayoutElementDescription(
+                "BlurParams",
+                ResourceKind.UniformBuffer,
+                ShaderStages.Fragment)));
 
-        _blurParamsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+        _blurParamsBuffer = factory.CreateBuffer(new(16, BufferUsage.UniformBuffer));
 
-        _clampSampler = factory.CreateSampler(new SamplerDescription
+        _clampSampler = factory.CreateSampler(new()
         {
             AddressModeU = SamplerAddressMode.Clamp,
             AddressModeV = SamplerAddressMode.Clamp,
             AddressModeW = SamplerAddressMode.Clamp,
             Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
         });
-
 
         (_vertexShader, _brightPassFragmentShader, _blurFragmentShader) = LoadShaders(factory);
     }
@@ -58,7 +67,7 @@ public class BloomRenderer : IDisposable
         _blurPipeline?.Dispose();
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        var quadLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
+        VertexLayoutDescription quadLayout = new(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
 
         _brightPassPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -67,7 +76,7 @@ public class BloomRenderer : IDisposable
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
             ResourceLayouts = new[] { _textureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { quadLayout }, new[] { _vertexShader, _brightPassFragmentShader }),
+            ShaderSet = new ShaderSetDescription([quadLayout], [_vertexShader, _brightPassFragmentShader]),
             Outputs = brightPassTarget.OutputDescription
         });
 
@@ -77,8 +86,8 @@ public class BloomRenderer : IDisposable
             DepthStencilState = DepthStencilStateDescription.Disabled,
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-            ResourceLayouts = new[] { _textureLayout, _blurParamsLayout },
-            ShaderSet = new ShaderSetDescription(new[] { quadLayout }, new[] { _vertexShader, _blurFragmentShader }),
+            ResourceLayouts = [_textureLayout, _blurParamsLayout],
+            ShaderSet = new ShaderSetDescription([quadLayout], [_vertexShader, _blurFragmentShader]),
             Outputs = blurTarget.OutputDescription
         });
     }
@@ -181,10 +190,10 @@ public class BloomRenderer : IDisposable
                 fsout_Color = vec4(result, 1.0);
             }";
 
-        var vertexShaderDesc = new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription vertexShaderDesc = new(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
 
-        var brightPassFragmentDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(brightPassFragmentCode), "main");
-        var blurFragmentDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(blurFragmentCode), "main");
+        ShaderDescription brightPassFragmentDesc = new(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(brightPassFragmentCode), "main");
+        ShaderDescription blurFragmentDesc = new(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(blurFragmentCode), "main");
 
         Shader[] brightPassShaders = factory.CreateFromSpirv(vertexShaderDesc, brightPassFragmentDesc);
         Shader[] blurShaders = factory.CreateFromSpirv(vertexShaderDesc, blurFragmentDesc);

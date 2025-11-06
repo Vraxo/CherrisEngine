@@ -1,6 +1,6 @@
 ﻿using Cherris.Rendering;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class Skybox : Component
 {

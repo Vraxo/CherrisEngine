@@ -1,4 +1,4 @@
-﻿namespace Cherris;
+﻿namespace Cherris.Components;
 
 public class MeshRenderer : Component, IDisposable
 {

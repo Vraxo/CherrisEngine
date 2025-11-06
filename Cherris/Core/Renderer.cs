@@ -1,4 +1,6 @@
-﻿using Cherris.Rendering;
+﻿using Cherris.Components;
+using Cherris.Core;
+using Cherris.Rendering;
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;

@@ -1,4 +1,5 @@
-﻿using Cherris.OpenTK;
+﻿using Cherris.Components;
+using Cherris.OpenTK;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;

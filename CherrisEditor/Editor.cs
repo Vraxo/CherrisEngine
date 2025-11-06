@@ -1,4 +1,6 @@
 ﻿using Cherris;
+using Cherris.Components;
+using Cherris.Core;
 using Cherris.OpenTK;
 using CherrisEditor.Undo;
 using System.Numerics;

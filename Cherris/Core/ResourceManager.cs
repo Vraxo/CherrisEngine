@@ -1,4 +1,5 @@
-﻿using Cherris.Rendering;
+﻿using Cherris.Components;
+using Cherris.Rendering;
 using Veldrid;
 
 namespace Cherris;

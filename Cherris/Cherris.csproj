@@ -9,11 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Component\Script.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="Component\Script.cs" />
+    <Compile Remove="Component\**" />
+    <EmbeddedResource Remove="Component\**" />
+    <None Remove="Component\**" />
   </ItemGroup>
 
   <ItemGroup>

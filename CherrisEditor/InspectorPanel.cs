@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using Cherris.Components;
 using CherrisEditor.Inspectors;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -121,7 +122,7 @@ internal class InspectorPanel
             if (component is Light) textureKey = "Component_Light";
 
             IntPtr icon = _textureManager.GetTexture(textureKey);
-            if (icon == IntPtr.Zero && typeof(Cherris.Script).IsAssignableFrom(component.GetType()))
+            if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
             {
                 icon = _textureManager.GetTexture("Component_Script");
             }
@@ -237,7 +238,7 @@ internal class InspectorPanel
             {
                 if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
                 {
-                    var newComponent = (Cherris.Script)Activator.CreateInstance(scriptType);
+                    var newComponent = (Script)Activator.CreateInstance(scriptType);
                     go.AddComponent(newComponent);
                     _editor.SceneManager.ActiveScene.IsDirty = true;
 
@@ -263,7 +264,7 @@ internal class InspectorPanel
                     Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
                     if (newScriptType is not null)
                     {
-                        var newComponent = (Cherris.Script)Activator.CreateInstance(newScriptType);
+                        var newComponent = (Script)Activator.CreateInstance(newScriptType);
                         go.AddComponent(newComponent);
                         _editor.SceneManager.ActiveScene.IsDirty = true;
                         if (_editor.State != EditorState.Playing)

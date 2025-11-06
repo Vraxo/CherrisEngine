@@ -1,4 +1,4 @@
-﻿using Cherris;
+﻿using Cherris.Components;
 
 namespace CherrisEditor.Inspectors;
 

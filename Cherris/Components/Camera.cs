@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class Camera : Component
 {
@@ -11,9 +11,10 @@ public class Camera : Component
     public Matrix4x4 GetViewMatrix()
     {
         // Assumes camera looks along its local -Z axis
-        var transform = GameObject.Transform;
-        var lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
-        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        Transform transform = GameObject.Transform;
+        Vector3 lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
+        Vector3 up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+
         return Matrix4x4.CreateLookAt(transform.Position, lookAt, up);
     }
 

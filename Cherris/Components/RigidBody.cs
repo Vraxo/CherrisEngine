@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class RigidBody : Script
 {

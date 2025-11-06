@@ -1,4 +1,6 @@
-﻿namespace Cherris.Rendering;
+﻿using Cherris.Components;
+
+namespace Cherris.Rendering;
 
 public interface IRenderer : IDisposable
 {

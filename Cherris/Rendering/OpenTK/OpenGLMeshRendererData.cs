@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using Cherris.Components;
 using OpenTK.Graphics.OpenGL;
 
 internal class OpenGLMeshRendererData : IDisposable

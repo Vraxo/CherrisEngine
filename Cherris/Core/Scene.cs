@@ -1,126 +1,147 @@
-﻿using HarfBuzzSharp;
+﻿using Cherris.Components;
 using System.Numerics;
 
-namespace Cherris
+namespace Cherris.Core;
+
+public class Scene : IDisposable
 {
-    public class Scene : IDisposable
+    public Guid Id { get; } = Guid.NewGuid();
+    public string Name { get; set; }
+    public string FilePath { get; set; }
+    public List<GameObject> GameObjects { get; } = [];
+    public List<Light> Lights { get; } = [];
+    public Camera? MainCamera { get; set; } = null;
+    public Skybox? Skybox { get; private set; } = null;
+    public bool IsDirty { get; set; }
+
+    public Scene(string filePath, List<GameObject> gameObjects)
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public string Name { get; set; }
-        public string FilePath { get; set; }
-        public List<GameObject> GameObjects { get; } = new List<GameObject>();
-        public List<Light> Lights { get; } = new List<Light>();
-        public Camera MainCamera { get; set; }
-        public Skybox Skybox { get; private set; }
-        public bool IsDirty { get; set; }
+        FilePath = filePath;
 
-        public Scene(string filePath, List<GameObject> gameObjects)
+        Name = string.IsNullOrEmpty(filePath) 
+            ? "Untitled Scene" 
+            : Path.GetFileName(filePath);
+
+        GameObjects.AddRange(gameObjects);
+        FindMainComponents();
+    }
+
+    public void AddGameObject(GameObject go)
+    {
+        GameObjects.Add(go);
+        var light = go.GetComponent<Light>();
+        
+        if (light is not null)
         {
-            FilePath = filePath;
-            Name = string.IsNullOrEmpty(filePath) ? "Untitled Scene" : Path.GetFileName(filePath);
-            GameObjects.AddRange(gameObjects);
-            FindMainComponents();
+            Lights.Add(light);
         }
 
-        public void AddGameObject(GameObject go)
+        IsDirty = true;
+    }
+
+    public void RemoveGameObject(GameObject go)
+    {
+        // Recursively remove children first to avoid modifying collection during iteration
+        foreach (Transform? childTransform in go.Transform.Children.ToList())
         {
-            GameObjects.Add(go);
-            var light = go.GetComponent<Light>();
-            if (light is not null) Lights.Add(light);
-            IsDirty = true;
+            RemoveGameObject(childTransform.GameObject);
         }
 
-        public void RemoveGameObject(GameObject go)
+        // Remove the object from its parent's list
+        go.Transform.Parent = null;
+
+        // Remove from the root scene list
+        GameObjects.Remove(go);
+
+        // Remove light from cached list
+        var light = go.GetComponent<Light>();
+        
+        if (light is not null)
         {
-            // Recursively remove children first to avoid modifying collection during iteration
-            foreach (var childTransform in go.Transform.Children.ToList())
+            Lights.Remove(light);
+        }
+
+        // Dispose its managed resources
+        go.GetComponent<MeshRenderer>()?.Dispose();
+        IsDirty = true;
+    }
+
+    public void Start(PhysicsSystem physicsSystem)
+    {
+        FindMainComponents();
+
+        // Initialize scripts
+        foreach (GameObject gameObject in GameObjects)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
             {
-                RemoveGameObject(childTransform.GameObject);
-            }
-
-            // Remove the object from its parent's list
-            go.Transform.Parent = null;
-
-            // Remove from the root scene list
-            GameObjects.Remove(go);
-
-            // Remove light from cached list
-            var light = go.GetComponent<Light>();
-            if (light is not null) Lights.Remove(light);
-
-            // Dispose its managed resources
-            go.GetComponent<MeshRenderer>()?.Dispose();
-            IsDirty = true;
-        }
-
-        public void Start(PhysicsSystem physicsSystem)
-        {
-            FindMainComponents();
-
-            // Initialize scripts
-            foreach (var gameObject in GameObjects)
-            {
-                foreach (var script in gameObject.GetComponents<Script>())
+                if (script is RigidBody rb)
                 {
-                    if (script is RigidBody rb)
-                    {
-                        rb.Initialize(physicsSystem);
-                    }
-                    script.Start();
+                    rb.Initialize(physicsSystem);
                 }
-            }
 
-            // Handle case where no camera was found in the scene
-            if (MainCamera is null)
-            {
-                CreateDefaultCamera();
+                script.Start();
             }
         }
 
-        public void Update(float deltaTime)
+        // Handle case where no camera was found in the scene
+        if (MainCamera is not null)
         {
-            foreach (var gameObject in GameObjects)
+            return;
+        }
+
+        CreateDefaultCamera();
+    }
+
+    public void Update(float deltaTime)
+    {
+        foreach (var gameObject in GameObjects)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
             {
-                foreach (var script in gameObject.GetComponents<Script>())
+                if (!script.Enabled)
                 {
-                    if (script.Enabled)
-                    {
-                        script.Update(deltaTime);
-                    }
+                    continue;
                 }
+
+                script.Update(deltaTime);
             }
         }
+    }
 
-        public void FindMainComponents()
+    public void FindMainComponents()
+    {
+        MainCamera = null;
+        Skybox = null;
+        Lights.Clear();
+
+        foreach (GameObject gameObject in GameObjects)
         {
-            MainCamera = null;
-            Skybox = null;
-            Lights.Clear();
+            MainCamera ??= gameObject.GetComponent<Camera>();
+            Skybox ??= gameObject.GetComponent<Skybox>();
+            var light = gameObject.GetComponent<Light>();
 
-            foreach (var gameObject in GameObjects)
+            if (light is not null)
             {
-                if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
-                if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
-                var light = gameObject.GetComponent<Light>();
-                if (light is not null) Lights.Add(light);
+                Lights.Add(light);
             }
         }
+    }
 
-        private void CreateDefaultCamera()
-        {
-            Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
-            var go = new GameObject("Default Camera");
-            go.Transform.Position = new Vector3(0, 1, 3);
-            MainCamera = go.AddComponent(new Camera());
-            GameObjects.Add(go);
-        }
+    private void CreateDefaultCamera()
+    {
+        Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
+        GameObject go = new("Default Camera");
+        go.Transform.Position = new Vector3(0, 1, 3);
+        MainCamera = go.AddComponent(new Camera());
+        GameObjects.Add(go);
+    }
 
-        public void Dispose()
+    public void Dispose()
+    {
+        foreach (GameObject gameObject in GameObjects)
         {
-            foreach (var gameObject in GameObjects)
-            {
-                gameObject.GetComponent<MeshRenderer>()?.Dispose();
-            }
+            gameObject.GetComponent<MeshRenderer>()?.Dispose();
         }
     }
 }

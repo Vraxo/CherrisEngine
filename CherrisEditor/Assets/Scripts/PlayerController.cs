@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using Cherris.Components;
 using System.Numerics;
 
 namespace Apexverse;
@@ -25,7 +26,7 @@ public class PlayerController : Script
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
 
         // --- Keyboard Movement ---
-        var moveDirection = Vector3.Zero;
+        Vector3 moveDirection = Vector3.Zero;
 
         if (Input.IsKeyDown(Key.W))
         {
@@ -52,7 +53,7 @@ public class PlayerController : Script
             var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
 
             // Transform the local direction vector by the horizontal-only rotation.
-            var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
             GameObject.Transform.Position += worldDirection * Speed * deltaTime;
         }
     }

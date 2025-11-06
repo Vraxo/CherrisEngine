@@ -1,4 +1,4 @@
-﻿namespace Cherris;
+﻿namespace Cherris.Components;
 
 public abstract class Script : Component
 {

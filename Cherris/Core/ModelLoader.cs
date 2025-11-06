@@ -3,9 +3,11 @@
 // Add it to your project:
 // dotnet add package SharpGLTF.Core
 
+using Cherris.Components;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
+using Mesh = Cherris.Components.Mesh;
 
 namespace Cherris;
 

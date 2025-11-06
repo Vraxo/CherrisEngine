@@ -1,7 +1,7 @@
 ﻿using System.Numerics;
 using Veldrid;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public struct BoundingBox
 {

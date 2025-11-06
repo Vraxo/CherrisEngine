@@ -1,4 +1,7 @@
-﻿namespace Cherris;
+﻿using Cherris.Components;
+using Cherris.Core;
+
+namespace Cherris;
 
 public class SceneManager
 {

@@ -1,4 +1,5 @@
-﻿using Cherris.Rendering;
+﻿using Cherris.Components;
+using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
 

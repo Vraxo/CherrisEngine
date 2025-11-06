@@ -1,5 +1,6 @@
 ﻿namespace Cherris;
 
+using Cherris.Components;
 using Jitter.Collision;
 using System.Collections.Generic;
 using System.Numerics;
