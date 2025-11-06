@@ -1,4 +1,8 @@
-﻿using OpenTK.Graphics.OpenGL4;
+﻿using Cherris;
+using Cherris.Components;
+using Cherris.Core;
+using OpenTK.Graphics.OpenGL4;
+using System.Diagnostics;
 
 namespace Cherris;
 
@@ -130,80 +134,9 @@ internal class OpenGLPostProcessor : IDisposable
 
     private void SetupShaders()
     {
-        const string quadVert = @"
-#version 330 core
-layout (location = 0) in vec2 aPosition;
-layout (location = 1) in vec2 aTexCoords;
-out vec2 TexCoords;
-void main()
-{
-    TexCoords = aTexCoords;
-    gl_Position = vec4(aPosition, 0.0, 1.0);
-}";
-
-        const string brightPassFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoords;
-uniform sampler2D image;
-const float threshold = 1.1;
-void main()
-{
-    vec3 color = texture(image, TexCoords).rgb;
-    vec3 finalColor = max(vec3(0.0), color - threshold);
-    FragColor = vec4(finalColor, 1.0);
-}";
-        _brightPassShader = new ShaderProgram(quadVert, brightPassFrag);
-
-        const string blurFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoords;
-uniform sampler2D image;
-uniform bool horizontal;
-
-// 5-tap Gaussian blur (Veldrid equivalent)
-const float weights[3] = float[](0.227027, 0.316216, 0.070270);
-const float offsets[3] = float[](0.0, 1.384615, 3.230769);
-
-void main()
-{
-    vec2 texelSize = 1.0 / textureSize(image, 0);
-    vec3 result = texture(image, TexCoords).rgb * weights[0];
-    vec2 dir = horizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
-
-    for (int i = 1; i < 3; i++) {
-        result += texture(image, TexCoords + offsets[i] * dir).rgb * weights[i];
-        result += texture(image, TexCoords - offsets[i] * dir).rgb * weights[i];
-    }
-    FragColor = vec4(result, 1.0);
-}";
-        _blurShader = new ShaderProgram(quadVert, blurFrag);
-
-        const string finalCompositeFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoords;
-uniform sampler2D image;
-uniform float exposure;
-uniform bool isBloomPass;
-
-vec3 tonemap_reinhard(vec3 color) {
-    return color / (color + vec3(1.0));
-}
-
-void main()
-{
-    vec3 color = texture(image, TexCoords).rgb;
-    if (!isBloomPass) { // This is the main scene pass
-        color *= exposure;
-        color = tonemap_reinhard(color);
-    }
-    // else, this is the bloom pass, so we output the raw color for additive blending.
-    
-    FragColor = vec4(color, 1.0);
-}";
-        _finalCompositeShader = new ShaderProgram(quadVert, finalCompositeFrag);
+        _brightPassShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
+        _blurShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_blur.frag");
+        _finalCompositeShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_composite.frag");
     }
 
     private void SetupQuad()

@@ -1,4 +1,5 @@
-﻿using OpenTK.Graphics.OpenGL;
+﻿using Cherris;
+using OpenTK.Graphics.OpenGL;
 
 public class ShaderProgram : IDisposable
 {
@@ -27,6 +28,31 @@ public class ShaderProgram : IDisposable
         GL.DeleteShader(vertexShader);
         GL.DeleteShader(fragmentShader);
     }
+
+    public static ShaderProgram? FromFiles(string vertexPath, string fragmentPath)
+    {
+        var vertSourcePath = AssetFinder.FindAssetPath(vertexPath);
+        var fragSourcePath = AssetFinder.FindAssetPath(fragmentPath);
+
+        if (vertSourcePath is null || fragSourcePath is null)
+        {
+            Console.WriteLine($"[ShaderProgram] Error: Could not find shader files: {vertexPath}, {fragmentPath}");
+            return null;
+        }
+
+        try
+        {
+            var vertSource = File.ReadAllText(vertSourcePath);
+            var fragSource = File.ReadAllText(fragSourcePath);
+            return new ShaderProgram(vertSource, fragSource);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ShaderProgram] Error creating shader from files: {ex.Message}");
+            return null;
+        }
+    }
+
 
     private static int CompileShader(ShaderType type, string source)
     {
