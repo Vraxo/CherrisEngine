@@ -131,6 +131,11 @@ public static class ComponentDeserializer
             var rb = new RigidBody();
             if (properties is not Dictionary<object, object> propsDict) return rb;
 
+            if (propsDict.TryGetValue("Shape", out var shapeObj) && Enum.TryParse<ColliderType>(shapeObj as string, out var shape))
+            {
+                rb.Shape = shape;
+            }
+
             if (propsDict.TryGetValue("IsStatic", out var isStaticObj)) rb.IsStatic = Convert.ToBoolean(isStaticObj);
             if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic) rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
             if (propsDict.TryGetValue("Friction", out var frictionObj)) rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);

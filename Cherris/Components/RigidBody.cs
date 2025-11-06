@@ -10,7 +10,18 @@ public enum ColliderType
 
 public class RigidBody : Script
 {
-    public ColliderType Shape { get; set; } = ColliderType.Box;
+    private ColliderType _shape = ColliderType.Box;
+    public ColliderType Shape
+    {
+        get => _shape;
+        set
+        {
+            if (_shape == value) return;
+            _shape = value;
+            RecreatePhysicsBody();
+        }
+    }
+
     public float Mass { get; set; } = 1.0f;
     public bool IsStatic { get; set; } = false;
     public float Friction { get; set; } = 0.5f;
@@ -33,7 +44,20 @@ public class RigidBody : Script
         {
             return;
         }
+        CreateAndRegisterJitterBody();
+    }
 
+    private void RecreatePhysicsBody()
+    {
+        if (JitterBody == null || _physicsSystem == null) return;
+
+        _physicsSystem.RemoveBody(JitterBody);
+        JitterBody = null;
+        CreateAndRegisterJitterBody();
+    }
+
+    private void CreateAndRegisterJitterBody()
+    {
         var meshRenderer = GameObject.GetComponent<MeshRenderer>();
 
         if (meshRenderer == null)
@@ -60,7 +84,6 @@ public class RigidBody : Script
                 shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
                 break;
         }
-
 
         JitterBody = new(shape)
         {

@@ -147,6 +147,7 @@ public class SceneSerializer
 
                 case RigidBody rb:
                     var rbData = new Dictionary<string, object> { ["IsStatic"] = rb.IsStatic };
+                    if (rb.Shape != ColliderType.Box) rbData["Shape"] = rb.Shape.ToString();
                     if (!rb.IsStatic) rbData["Mass"] = rb.Mass;
                     if (rb.Friction != 0.5f) rbData["Friction"] = rb.Friction;
                     if (rb.Bounciness != 0.5f) rbData["Bounciness"] = rb.Bounciness;

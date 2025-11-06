@@ -80,6 +80,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
                 }
             }
 
+            foreach (var go in gameObjects)
+            {
+                DrawRigidBodyGizmo(go);
+            }
+
             if (skybox?.CubeMapTexture is not null)
             {
                 _skyboxRenderer.Render(skybox, view, projection);
@@ -175,6 +180,26 @@ public class OpenTKRenderer : IRenderer, IDisposable
             var p1 = circleCenter + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * outerRadius;
             var p2 = circleCenter + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * outerRadius;
             _debugRenderer.AddLine(p1, p2, color);
+        }
+    }
+
+    private void DrawRigidBodyGizmo(GameObject go)
+    {
+        var rb = go.GetComponent<RigidBody>();
+        if (rb?.JitterBody == null) return;
+
+        var color = rb.JitterBody.IsStatic ? new System.Numerics.Vector3(0.2f, 0.8f, 0.2f) : new System.Numerics.Vector3(0.8f, 0.2f, 0.8f); // Green for static, purple for dynamic
+
+        var position = rb.JitterBody.Position.ToNumerics();
+        var orientation = rb.JitterBody.Orientation.ToNumerics();
+
+        if (rb.JitterBody.Shape is Jitter.Collision.Shapes.BoxShape box)
+        {
+            _debugRenderer.AddBox(position, orientation, box.Size.ToNumerics(), color);
+        }
+        else if (rb.JitterBody.Shape is Jitter.Collision.Shapes.SphereShape sphere)
+        {
+            _debugRenderer.AddSphere(position, sphere.Radius, color);
         }
     }
 

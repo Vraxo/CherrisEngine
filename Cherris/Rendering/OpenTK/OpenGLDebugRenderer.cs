@@ -69,6 +69,82 @@ void main()
         _vertices.Add(new DebugVertex { Position = ToOpenTKVector(end), Color = ToOpenTKVector(color) });
     }
 
+    public void AddBox(System.Numerics.Vector3 center, System.Numerics.Quaternion orientation, System.Numerics.Vector3 size, System.Numerics.Vector3 color)
+    {
+        Vector3 halfSize = ToOpenTKVector(size * 0.5f);
+        Vector3[] corners = {
+            new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),
+            new Vector3( halfSize.X, -halfSize.Y, -halfSize.Z),
+            new Vector3( halfSize.X,  halfSize.Y, -halfSize.Z),
+            new Vector3(-halfSize.X,  halfSize.Y, -halfSize.Z),
+            new Vector3(-halfSize.X, -halfSize.Y,  halfSize.Z),
+            new Vector3( halfSize.X, -halfSize.Y,  halfSize.Z),
+            new Vector3( halfSize.X,  halfSize.Y,  halfSize.Z),
+            new Vector3(-halfSize.X,  halfSize.Y,  halfSize.Z)
+        };
+
+        var otkOrientation = new Quaternion(orientation.X, orientation.Y, orientation.Z, orientation.W);
+        var otkCenter = ToOpenTKVector(center);
+
+        for (int i = 0; i < 8; i++)
+        {
+            corners[i] = Vector3.Transform(corners[i], otkOrientation) + otkCenter;
+        }
+
+        // Connect the corners
+        int[] indices = {
+            0, 1, 1, 2, 2, 3, 3, 0, // Bottom face
+            4, 5, 5, 6, 6, 7, 7, 4, // Top face
+            0, 4, 1, 5, 2, 6, 3, 7  // Connecting lines
+        };
+
+        var tkColor = ToOpenTKVector(color);
+        for (int i = 0; i < indices.Length; i += 2)
+        {
+            _vertices.Add(new DebugVertex { Position = corners[indices[i]], Color = tkColor });
+            _vertices.Add(new DebugVertex { Position = corners[indices[i + 1]], Color = tkColor });
+        }
+    }
+
+    public void AddSphere(System.Numerics.Vector3 center, float radius, System.Numerics.Vector3 color)
+    {
+        const int segments = 16;
+        var tkColor = ToOpenTKVector(color);
+        var tkCenter = ToOpenTKVector(center);
+
+        // Draw three circles on XY, XZ, YZ planes
+        for (int axis = 0; axis < 3; axis++)
+        {
+            for (int i = 0; i < segments; i++)
+            {
+                float angle1 = (i / (float)segments) * 2.0f * MathF.PI;
+                float angle2 = ((i + 1) / (float)segments) * 2.0f * MathF.PI;
+
+                Vector3 p1 = Vector3.Zero;
+                Vector3 p2 = Vector3.Zero;
+
+                if (axis == 0) // XY plane
+                {
+                    p1 = new Vector3(MathF.Cos(angle1) * radius, MathF.Sin(angle1) * radius, 0);
+                    p2 = new Vector3(MathF.Cos(angle2) * radius, MathF.Sin(angle2) * radius, 0);
+                }
+                else if (axis == 1) // XZ plane
+                {
+                    p1 = new Vector3(MathF.Cos(angle1) * radius, 0, MathF.Sin(angle1) * radius);
+                    p2 = new Vector3(MathF.Cos(angle2) * radius, 0, MathF.Sin(angle2) * radius);
+                }
+                else // YZ plane
+                {
+                    p1 = new Vector3(0, MathF.Cos(angle1) * radius, MathF.Sin(angle1) * radius);
+                    p2 = new Vector3(0, MathF.Cos(angle2) * radius, MathF.Sin(angle2) * radius);
+                }
+
+                _vertices.Add(new DebugVertex { Position = p1 + tkCenter, Color = tkColor });
+                _vertices.Add(new DebugVertex { Position = p2 + tkCenter, Color = tkColor });
+            }
+        }
+    }
+
     public void Clear()
     {
         _vertices.Clear();
