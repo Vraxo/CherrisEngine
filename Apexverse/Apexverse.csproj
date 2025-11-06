@@ -16,10 +16,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Cherris\Cherris.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="Assets\Asphalt.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

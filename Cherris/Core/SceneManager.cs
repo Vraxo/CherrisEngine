@@ -14,6 +14,7 @@ public class SceneManager
     public Camera MainCamera => _activeScene?.MainCamera;
     public Skybox Skybox => _activeScene?.Skybox;
     public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
+    public IEnumerable<Light> Lights => _activeScene?.Lights ?? Enumerable.Empty<Light>();
 
     public SceneManager()
     {

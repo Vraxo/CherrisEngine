@@ -36,26 +36,22 @@ namespace Cherris.OpenTK
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
 
-            // --- FONT LOADING LOGIC (FINAL TUNED VALUE) ---
-            // This is the single value you should change to fine-tune the font size.
-            // 18.0f is a standard, comfortable size for 1440p monitors.
-            const string fontPath = "Assets/Fonts/RobotoMono-Regular.ttf";
-
-            // <<< YOUR CONTROL KNOB IS HERE >>>
+            // --- FONT LOADING LOGIC (SIMPLE AND ROBUST) ---
+            // This relies on a clean build environment (no rogue DLLs) and a working AssetFinder.
             const float baseFontSize = 18.0f;
+            string? fontPath = AssetFinder.FindAssetPath("Fonts/RobotoMono-Regular.ttf");
 
-            if (File.Exists(fontPath))
+            if (fontPath is not null && File.Exists(fontPath))
             {
+                Console.WriteLine(fontPath);
                 io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
             }
             else
             {
-                // Fallback if the font is not found
-                Console.WriteLine($"[ImGuiController] Warning: Font not found at '{fontPath}'. Using default font.");
+                Console.WriteLine($"[ImGuiController] Warning: Font not found. Using default font.");
                 io.Fonts.AddFontDefault();
             }
 
-            // Keep scale at 1.0f and control size with baseFontSize.
             io.FontGlobalScale = 1.0f;
             // --- END FONT LOADING ---
 
