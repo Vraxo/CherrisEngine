@@ -56,22 +56,32 @@ public class GameObject
     public BoundingBox GetWorldSpaceAABB()
     {
         var meshRenderer = GetComponent<MeshRenderer>();
+        
         if (meshRenderer?.Mesh is null)
         {
             // If there's no mesh, check for other components that should be selectable
             if (GetComponent<Light>() is not null)
             {
                 const float selectionVolumeSize = 0.5f;
-                var halfSize = new Vector3(selectionVolumeSize / 2);
-                return new BoundingBox(Transform.Position - halfSize, Transform.Position + halfSize);
+                Vector3 halfSize = new(selectionVolumeSize / 2);
+
+                return new()
+                {
+                    Min = Transform.Position - halfSize,
+                    Max = Transform.Position + halfSize
+                };
             }
 
             // Default fallback for objects with no visible/selectable component
-            return new BoundingBox(Transform.Position, Transform.Position);
+            return new()
+            {
+                Min = Transform.Position,
+                Max = Transform.Position
+            };
         }
 
-        var localAABB = meshRenderer.Mesh.AABB;
-        var worldTransform = Transform.GetModelMatrix();
+        BoundingBox localAABB = meshRenderer.Mesh.AABB;
+        Matrix4x4 worldTransform = Transform.GetModelMatrix();
 
         Vector3[] corners = {
             new(localAABB.Min.X, localAABB.Min.Y, localAABB.Min.Z),
@@ -84,16 +94,20 @@ public class GameObject
             new(localAABB.Max.X, localAABB.Max.Y, localAABB.Max.Z)
         };
 
-        var worldMin = new Vector3(float.MaxValue);
-        var worldMax = new Vector3(float.MinValue);
+        Vector3 worldMin = new(float.MaxValue);
+        Vector3 worldMax = new(float.MinValue);
 
-        foreach (var corner in corners)
+        foreach (Vector3 corner in corners)
         {
-            var transformedCorner = Vector3.Transform(corner, worldTransform);
+            Vector3 transformedCorner = Vector3.Transform(corner, worldTransform);
             worldMin = Vector3.Min(worldMin, transformedCorner);
             worldMax = Vector3.Max(worldMax, transformedCorner);
         }
 
-        return new BoundingBox(worldMin, worldMax);
+        return new()
+        {
+            Min = worldMin,
+            Max = worldMax
+        };
     }
 }

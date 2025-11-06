@@ -1,9 +1,9 @@
-### `Cherris\Component\Camera.cs`
+### `Cherris\Components\Camera.cs`
 
 ```csharp
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class Camera : Component
 {
@@ -14,9 +14,10 @@ public class Camera : Component
     public Matrix4x4 GetViewMatrix()
     {
         // Assumes camera looks along its local -Z axis
-        var transform = GameObject.Transform;
-        var lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
-        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        Transform transform = GameObject.Transform;
+        Vector3 lookAt = transform.Position + Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
+        Vector3 up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+
         return Matrix4x4.CreateLookAt(transform.Position, lookAt, up);
     }
 
@@ -33,33 +34,26 @@ public class Camera : Component
 
 ---
 
-### `Cherris\Component\Component.cs`
+### `Cherris\Components\Component.cs`
 
 ```csharp
-namespace Cherris;
+namespace Cherris.Components;
 
 public abstract class Component
 {
     [HideInInspector]
     public GameObject GameObject { get; internal set; }
 }
-
-public abstract class Script : Component
-{
-    public bool Enabled { get; set; } = true;
-    public virtual void Start() { }
-    public virtual void Update(float deltaTime) { }
-}
 ```
 
 ---
 
-### `Cherris\Component\Light.cs`
+### `Cherris\Components\Light.cs`
 
 ```csharp
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public enum LightType
 {
@@ -88,13 +82,13 @@ public class Light : Component
 
 ---
 
-### `Cherris\Component\Mesh.cs`
+### `Cherris\Components\Mesh.cs`
 
 ```csharp
 using System.Numerics;
 using Veldrid;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public struct BoundingBox
 {
@@ -215,10 +209,10 @@ public class Mesh
 
 ---
 
-### `Cherris\Component\MeshRenderer.cs`
+### `Cherris\Components\MeshRenderer.cs`
 
 ```csharp
-namespace Cherris;
+namespace Cherris.Components;
 
 public class MeshRenderer : Component, IDisposable
 {
@@ -264,12 +258,12 @@ public class MeshRenderer : Component, IDisposable
 
 ---
 
-### `Cherris\Component\RigidBody.cs`
+### `Cherris\Components\RigidBody.cs`
 
 ```csharp
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class RigidBody : Script
 {
@@ -334,12 +328,27 @@ public class RigidBody : Script
 
 ---
 
-### `Cherris\Component\Skybox.cs`
+### `Cherris\Components\Script.cs`
+
+```csharp
+namespace Cherris.Components;
+
+public abstract class Script : Component
+{
+	public bool Enabled { get; set; } = true;
+	public virtual void Start() { }
+	public virtual void Update(float deltaTime) { }
+}
+```
+
+---
+
+### `Cherris\Components\Skybox.cs`
 
 ```csharp
 using Cherris.Rendering;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class Skybox : Component
 {
@@ -361,12 +370,12 @@ public class Skybox : Component
 
 ---
 
-### `Cherris\Component\Transform.cs`
+### `Cherris\Components\Transform.cs`
 
 ```csharp
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Components;
 
 public class Transform
 {
@@ -426,7 +435,7 @@ using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class BloomRenderer : IDisposable
 {
@@ -449,29 +458,38 @@ public class BloomRenderer : IDisposable
 
         Vector3[] quadVertices =
         {
-            new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
-            new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
+            new(-1.0f, -1.0f, 0.0f), new(1.0f, -1.0f, 0.0f),
+            new(-1.0f, 1.0f, 0.0f), new(1.0f, 1.0f, 0.0f)
         };
-        _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+
+        _vertexBuffer = factory.CreateBuffer(new((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
 
-        _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-            new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+        _textureLayout = factory.CreateResourceLayout(new(
+            new ResourceLayoutElementDescription(
+                "SourceTexture",
+                ResourceKind.TextureReadOnly,
+                ShaderStages.Fragment),
+            new ResourceLayoutElementDescription(
+                "SourceSampler",
+                ResourceKind.Sampler,
+                ShaderStages.Fragment)));
 
-        _blurParamsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("BlurParams", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+        _blurParamsLayout = factory.CreateResourceLayout(new(
+            new ResourceLayoutElementDescription(
+                "BlurParams",
+                ResourceKind.UniformBuffer,
+                ShaderStages.Fragment)));
 
-        _blurParamsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+        _blurParamsBuffer = factory.CreateBuffer(new(16, BufferUsage.UniformBuffer));
 
-        _clampSampler = factory.CreateSampler(new SamplerDescription
+        _clampSampler = factory.CreateSampler(new()
         {
             AddressModeU = SamplerAddressMode.Clamp,
             AddressModeV = SamplerAddressMode.Clamp,
             AddressModeW = SamplerAddressMode.Clamp,
             Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
         });
-
 
         (_vertexShader, _brightPassFragmentShader, _blurFragmentShader) = LoadShaders(factory);
     }
@@ -482,7 +500,7 @@ public class BloomRenderer : IDisposable
         _blurPipeline?.Dispose();
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        var quadLayout = new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
+        VertexLayoutDescription quadLayout = new(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3));
 
         _brightPassPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -491,7 +509,7 @@ public class BloomRenderer : IDisposable
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
             ResourceLayouts = new[] { _textureLayout },
-            ShaderSet = new ShaderSetDescription(new[] { quadLayout }, new[] { _vertexShader, _brightPassFragmentShader }),
+            ShaderSet = new ShaderSetDescription([quadLayout], [_vertexShader, _brightPassFragmentShader]),
             Outputs = brightPassTarget.OutputDescription
         });
 
@@ -501,8 +519,8 @@ public class BloomRenderer : IDisposable
             DepthStencilState = DepthStencilStateDescription.Disabled,
             RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
             PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-            ResourceLayouts = new[] { _textureLayout, _blurParamsLayout },
-            ShaderSet = new ShaderSetDescription(new[] { quadLayout }, new[] { _vertexShader, _blurFragmentShader }),
+            ResourceLayouts = [_textureLayout, _blurParamsLayout],
+            ShaderSet = new ShaderSetDescription([quadLayout], [_vertexShader, _blurFragmentShader]),
             Outputs = blurTarget.OutputDescription
         });
     }
@@ -605,10 +623,10 @@ public class BloomRenderer : IDisposable
                 fsout_Color = vec4(result, 1.0);
             }";
 
-        var vertexShaderDesc = new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
+        ShaderDescription vertexShaderDesc = new(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main");
 
-        var brightPassFragmentDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(brightPassFragmentCode), "main");
-        var blurFragmentDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(blurFragmentCode), "main");
+        ShaderDescription brightPassFragmentDesc = new(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(brightPassFragmentCode), "main");
+        ShaderDescription blurFragmentDesc = new(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(blurFragmentCode), "main");
 
         Shader[] brightPassShaders = factory.CreateFromSpirv(vertexShaderDesc, brightPassFragmentDesc);
         Shader[] blurShaders = factory.CreateFromSpirv(vertexShaderDesc, blurFragmentDesc);
@@ -637,6 +655,7 @@ public class BloomRenderer : IDisposable
 ### `Cherris\Core\Engine.cs`
 
 ```csharp
+using Cherris.Components;
 using Cherris.OpenTK;
 using Cherris.Rendering;
 using System.Globalization;
@@ -712,7 +731,7 @@ public abstract class Engine
         // Subscribe to resize event
         _gameWindow.Resized += OnWindowResized;
 
-        RegisterEngineComponents();
+        ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
     }
 
     protected virtual void Update(float deltaTime)
@@ -746,189 +765,6 @@ public abstract class Engine
         };
     }
 
-    private void RegisterEngineComponents()
-    {
-        SceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
-        {
-            if (properties is not Dictionary<object, object> propsDict) return null;
-
-            // Get Mesh
-            if (!propsDict.TryGetValue("Mesh", out var meshNameObj) || meshNameObj is not string meshName) return null;
-            Mesh? mesh = ResourceManager.GetMesh(meshName);
-            if (mesh is null) return null;
-
-            // Get Material properties from a nested dictionary
-            if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
-            {
-                // For backward compatibility, check for top-level properties.
-                matProps = propsDict;
-            }
-
-
-            // Inside Material dictionary
-            string textureName = "White"; // Default value
-            if (matProps.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
-            {
-                textureName = parsedTextureName;
-            }
-            ITexture texture = ResourceManager.GetTexture(textureName);
-            var material = new Material(texture, textureName);
-
-            if (matProps.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
-            {
-                try
-                {
-                    material.TextureTiling = new Vector2(
-                        Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Engine] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (matProps.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
-            {
-                try
-                {
-                    material.EmissiveColor = new(
-                        Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Engine] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (matProps.TryGetValue("SpecularIntensity", out var specIntObj))
-            {
-                material.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
-            }
-
-            if (matProps.TryGetValue("Shininess", out var shininessObj))
-            {
-                material.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
-            }
-
-            return new MeshRenderer(mesh, material, meshName);
-        });
-
-        SceneLoader.RegisterComponentFactory("Camera", (properties) =>
-        {
-            return new Camera();
-        });
-
-        SceneLoader.RegisterComponentFactory("Skybox", (properties) =>
-        {
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return null;
-            }
-
-            if (propsDict.TryGetValue("CubeMap", out var cubemapNameObj) && cubemapNameObj is string cubemapName)
-            {
-                return ResourceManager.GetSkybox(cubemapName);
-            }
-
-            return null;
-        });
-
-        SceneLoader.RegisterComponentFactory("Light", (properties) =>
-        {
-            var light = new Light();
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return light;
-            }
-
-            if (propsDict.TryGetValue("Type", out var typeObj) && Enum.TryParse<LightType>(typeObj as string, out var type))
-            {
-                light.Type = type;
-            }
-
-            if (propsDict.TryGetValue("Color", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
-            {
-                try
-                {
-                    light.Color = new Vector3(
-                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Engine] Warning: Could not parse Light Color values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (propsDict.TryGetValue("Intensity", out var intensityObj))
-            {
-                light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
-            }
-
-            if (propsDict.TryGetValue("AmbientStrength", out var ambientObj))
-            {
-                light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
-            }
-
-            if (light.Type == LightType.Point || light.Type == LightType.Spot)
-            {
-                if (propsDict.TryGetValue("Range", out var rangeObj))
-                {
-                    light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
-                }
-            }
-
-            if (light.Type == LightType.Spot)
-            {
-                if (propsDict.TryGetValue("InnerConeAngle", out var innerAngleObj))
-                {
-                    light.InnerConeAngle = Convert.ToSingle(innerAngleObj, CultureInfo.InvariantCulture);
-                }
-                if (propsDict.TryGetValue("OuterConeAngle", out var outerAngleObj))
-                {
-                    light.OuterConeAngle = Convert.ToSingle(outerAngleObj, CultureInfo.InvariantCulture);
-                }
-            }
-
-            return light;
-        });
-
-        SceneLoader.RegisterComponentFactory("RigidBody", (properties) =>
-        {
-            var rb = new RigidBody();
-            if (properties is not Dictionary<object, object> propsDict)
-            {
-                return rb;
-            }
-
-            if (propsDict.TryGetValue("IsStatic", out var isStaticObj))
-            {
-                rb.IsStatic = Convert.ToBoolean(isStaticObj);
-            }
-
-            if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic)
-            {
-                rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
-            }
-
-            if (propsDict.TryGetValue("Friction", out var frictionObj))
-            {
-                rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);
-            }
-
-            if (propsDict.TryGetValue("Bounciness", out var bouncinessObj))
-            {
-                rb.Bounciness = Convert.ToSingle(bouncinessObj, CultureInfo.InvariantCulture);
-            }
-
-            return rb;
-        });
-    }
-
     public void Run()
     {
         LoadContent();
@@ -959,7 +795,7 @@ public abstract class Engine
         }
 
         Renderer.RenderFrame(
-            SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects,
+            SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects, SceneManager.Lights,
             SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
 
         Renderer.ProcessSnapshot();
@@ -1032,6 +868,7 @@ public class GameLoop
 ### `Cherris\Core\GameObject.cs`
 
 ```csharp
+using Cherris.Components;
 using System.Numerics;
 
 namespace Cherris;
@@ -1563,9 +1400,11 @@ public class Material
 // Add it to your project:
 // dotnet add package SharpGLTF.Core
 
+using Cherris.Components;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
+using Mesh = Cherris.Components.Mesh;
 
 namespace Cherris;
 
@@ -1662,6 +1501,7 @@ public static class ModelLoader
 ```csharp
 namespace Cherris;
 
+using Cherris.Components;
 using Jitter.Collision;
 using System.Collections.Generic;
 using System.Numerics;
@@ -1735,6 +1575,7 @@ public class PhysicsSystem
 ### `Cherris\Core\Ray.cs`
 
 ```csharp
+using Cherris.Components;
 using System.Numerics;
 
 namespace Cherris;
@@ -1814,6 +1655,8 @@ public struct Ray
 ### `Cherris\Core\Renderer.cs`
 
 ```csharp
+using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using System.Numerics;
 using Veldrid;
@@ -1940,7 +1783,7 @@ public class Renderer : IRenderer
         return newData;
     }
 
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
         if (mainCamera is null) return;
 
@@ -2329,6 +2172,7 @@ void main()
 ### `Cherris\Core\ResourceManager.cs`
 
 ```csharp
+using Cherris.Components;
 using Cherris.Rendering;
 using Veldrid;
 
@@ -2497,120 +2341,239 @@ public class ResourceManager : IResourceManager
 
 ---
 
+### `Cherris\Core\ResourceManagerBase.cs`
+
+```csharp
+using Cherris.Components;
+using Cherris.Rendering;
+
+namespace Cherris;
+
+public abstract class ResourceManagerBase : IResourceManager
+{
+    protected readonly Dictionary<string, Mesh> _meshes = new();
+
+    public Mesh GetMesh(string name)
+    {
+        // Case 1: Mesh is already cached (primitive or from a previously loaded model).
+        if (_meshes.TryGetValue(name, out var mesh))
+        {
+            return mesh;
+        }
+
+        // Case 2: Mesh name looks like a model file that needs to be loaded.
+        string[] parts = name.Split('#');
+        string filePathPart = parts[0];
+
+        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
+            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            // Check if we've already processed this file by looking for any of its meshes in the cache.
+            // If we find one, it means all meshes from that file are already cached, but the specific
+            // one requested (`name`) was not found. So we can return null early.
+            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
+            {
+                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
+                return null;
+            }
+
+            // It's a new model file, let's load it.
+            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            if (fullPath is null)
+            {
+                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
+                return null;
+            }
+
+            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
+            if (!loadedMeshes.Any())
+            {
+                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
+                return null;
+            }
+
+            // Cache all meshes from the file.
+            foreach (var (meshName, loadedMesh) in loadedMeshes)
+            {
+                string cacheKey = $"{filePathPart}#{meshName}";
+                _meshes[cacheKey] = loadedMesh;
+            }
+            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
+
+
+            // Now that the file is loaded and meshes are cached, try to retrieve the requested mesh again.
+            if (_meshes.TryGetValue(name, out var finalMesh))
+            {
+                return finalMesh;
+            }
+
+            // If the user didn't specify a mesh name (e.g., "model.gltf"), return the first one.
+            if (parts.Length == 1)
+            {
+                return loadedMeshes.Values.First();
+            }
+        }
+
+        // If it's not cached and not a model file path, it doesn't exist.
+        return null;
+    }
+
+    public abstract void LoadInitialAssets();
+    public abstract ITexture GetTexture(string name);
+    public abstract Skybox GetSkybox(string name);
+    public abstract void Dispose();
+}
+```
+
+---
+
 ### `Cherris\Core\Scene.cs`
 
 ```csharp
+using Cherris.Components;
 using System.Numerics;
 
-namespace Cherris
+namespace Cherris.Core;
+
+public class Scene : IDisposable
 {
-    public class Scene : IDisposable
+    public Guid Id { get; } = Guid.NewGuid();
+    public string Name { get; set; }
+    public string FilePath { get; set; }
+    public List<GameObject> GameObjects { get; } = [];
+    public List<Light> Lights { get; } = [];
+    public Camera? MainCamera { get; set; } = null;
+    public Skybox? Skybox { get; private set; } = null;
+    public bool IsDirty { get; set; }
+
+    public Scene(string filePath, List<GameObject> gameObjects)
     {
-        public Guid Id { get; } = Guid.NewGuid();
-        public string Name { get; set; }
-        public string FilePath { get; set; }
-        public List<GameObject> GameObjects { get; } = new List<GameObject>();
-        public Camera MainCamera { get; set; }
-        public Skybox Skybox { get; private set; }
-        public bool IsDirty { get; set; }
+        FilePath = filePath;
 
-        public Scene(string filePath, List<GameObject> gameObjects)
+        Name = string.IsNullOrEmpty(filePath) 
+            ? "Untitled Scene" 
+            : Path.GetFileName(filePath);
+
+        GameObjects.AddRange(gameObjects);
+        FindMainComponents();
+    }
+
+    public void AddGameObject(GameObject go)
+    {
+        GameObjects.Add(go);
+        var light = go.GetComponent<Light>();
+        
+        if (light is not null)
         {
-            FilePath = filePath;
-            Name = string.IsNullOrEmpty(filePath) ? "Untitled Scene" : Path.GetFileName(filePath);
-            GameObjects.AddRange(gameObjects);
-            FindMainComponents();
+            Lights.Add(light);
         }
 
-        public void AddGameObject(GameObject go)
+        IsDirty = true;
+    }
+
+    public void RemoveGameObject(GameObject go)
+    {
+        // Recursively remove children first to avoid modifying collection during iteration
+        foreach (Transform? childTransform in go.Transform.Children.ToList())
         {
-            GameObjects.Add(go);
-            IsDirty = true;
+            RemoveGameObject(childTransform.GameObject);
         }
 
-        public void RemoveGameObject(GameObject go)
+        // Remove the object from its parent's list
+        go.Transform.Parent = null;
+
+        // Remove from the root scene list
+        GameObjects.Remove(go);
+
+        // Remove light from cached list
+        var light = go.GetComponent<Light>();
+        
+        if (light is not null)
         {
-            // Recursively remove children first to avoid modifying collection during iteration
-            foreach (var childTransform in go.Transform.Children.ToList())
+            Lights.Remove(light);
+        }
+
+        // Dispose its managed resources
+        go.GetComponent<MeshRenderer>()?.Dispose();
+        IsDirty = true;
+    }
+
+    public void Start(PhysicsSystem physicsSystem)
+    {
+        FindMainComponents();
+
+        // Initialize scripts
+        foreach (GameObject gameObject in GameObjects)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
             {
-                RemoveGameObject(childTransform.GameObject);
-            }
-
-            // Remove the object from its parent's list
-            go.Transform.Parent = null;
-
-            // Remove from the root scene list
-            GameObjects.Remove(go);
-
-            // Dispose its managed resources
-            go.GetComponent<MeshRenderer>()?.Dispose();
-            IsDirty = true;
-        }
-
-        public void Start(PhysicsSystem physicsSystem)
-        {
-            FindMainComponents();
-
-            // Initialize scripts
-            foreach (var gameObject in GameObjects)
-            {
-                foreach (var script in gameObject.GetComponents<Script>())
+                if (script is RigidBody rb)
                 {
-                    if (script is RigidBody rb)
-                    {
-                        rb.Initialize(physicsSystem);
-                    }
-                    script.Start();
+                    rb.Initialize(physicsSystem);
                 }
-            }
 
-            // Handle case where no camera was found in the scene
-            if (MainCamera is null)
-            {
-                CreateDefaultCamera();
+                script.Start();
             }
         }
 
-        public void Update(float deltaTime)
+        // Handle case where no camera was found in the scene
+        if (MainCamera is not null)
         {
-            foreach (var gameObject in GameObjects)
+            return;
+        }
+
+        CreateDefaultCamera();
+    }
+
+    public void Update(float deltaTime)
+    {
+        foreach (var gameObject in GameObjects)
+        {
+            foreach (var script in gameObject.GetComponents<Script>())
             {
-                foreach (var script in gameObject.GetComponents<Script>())
+                if (!script.Enabled)
                 {
-                    if (script.Enabled)
-                    {
-                        script.Update(deltaTime);
-                    }
+                    continue;
                 }
+
+                script.Update(deltaTime);
             }
         }
+    }
 
-        public void FindMainComponents()
+    public void FindMainComponents()
+    {
+        MainCamera = null;
+        Skybox = null;
+        Lights.Clear();
+
+        foreach (GameObject gameObject in GameObjects)
         {
-            MainCamera = null;
-            Skybox = null;
-            foreach (var gameObject in GameObjects)
+            MainCamera ??= gameObject.GetComponent<Camera>();
+            Skybox ??= gameObject.GetComponent<Skybox>();
+            var light = gameObject.GetComponent<Light>();
+
+            if (light is not null)
             {
-                if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
-                if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
+                Lights.Add(light);
             }
         }
+    }
 
-        private void CreateDefaultCamera()
-        {
-            Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
-            var go = new GameObject("Default Camera");
-            go.Transform.Position = new Vector3(0, 1, 3);
-            MainCamera = go.AddComponent(new Camera());
-            GameObjects.Add(go);
-        }
+    private void CreateDefaultCamera()
+    {
+        Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
+        GameObject go = new("Default Camera");
+        go.Transform.Position = new Vector3(0, 1, 3);
+        MainCamera = go.AddComponent(new Camera());
+        GameObjects.Add(go);
+    }
 
-        public void Dispose()
+    public void Dispose()
+    {
+        foreach (GameObject gameObject in GameObjects)
         {
-            foreach (var gameObject in GameObjects)
-            {
-                gameObject.GetComponent<MeshRenderer>()?.Dispose();
-            }
+            gameObject.GetComponent<MeshRenderer>()?.Dispose();
         }
     }
 }
@@ -2621,6 +2584,9 @@ namespace Cherris
 ### `Cherris\Core\SceneManager.cs`
 
 ```csharp
+using Cherris.Components;
+using Cherris.Core;
+
 namespace Cherris;
 
 public class SceneManager
@@ -2637,6 +2603,7 @@ public class SceneManager
     public Camera MainCamera => _activeScene?.MainCamera;
     public Skybox Skybox => _activeScene?.Skybox;
     public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
+    public IEnumerable<Light> Lights => _activeScene?.Lights ?? Enumerable.Empty<Light>();
 
     public SceneManager()
     {
@@ -2749,6 +2716,7 @@ public class SceneManager
 ### `Cherris\Core\SceneRenderer.cs`
 
 ```csharp
+using Cherris.Components;
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -3014,6 +2982,7 @@ public class SceneRenderer : IDisposable
 ### `Cherris\Core\SkyboxLoader.cs`
 
 ```csharp
+using Cherris.Components;
 using StbImageSharp;
 using Veldrid;
 
@@ -3157,6 +3126,7 @@ public static class SkyboxLoader
 ### `Cherris\Core\SkyboxRenderer.cs`
 
 ```csharp
+using Cherris.Components;
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -3689,12 +3659,14 @@ public interface IGameWindow : IDisposable
 ### `Cherris\RenderingInterface\IRenderer.cs`
 
 ```csharp
+using Cherris.Components;
+
 namespace Cherris.Rendering;
 
 public interface IRenderer : IDisposable
 {
     void OnWindowResized();
-    void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure);
+    void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure);
     void RequestSnapshot(string path);
     void ProcessSnapshot();
 }
@@ -3705,6 +3677,8 @@ public interface IRenderer : IDisposable
 ### `Cherris\RenderingInterface\IResourceManager.cs`
 
 ```csharp
+using Cherris.Components;
+
 namespace Cherris.Rendering;
 
 public interface IResourceManager : IDisposable
@@ -3763,9 +3737,159 @@ public interface RenderingInterface : IDisposable
 
 ---
 
+### `Cherris\Serialization\ComponentDeserializer.cs`
+
+```csharp
+using Cherris.Components;
+using Cherris.Rendering;
+using System.Globalization;
+using System.Numerics;
+
+namespace Cherris;
+
+/// <summary>
+/// Handles the registration of component factories used by the SceneLoader.
+/// </summary>
+public static class ComponentDeserializer
+{
+    public static void RegisterFactories(SceneLoader sceneLoader, IResourceManager resourceManager)
+    {
+        sceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
+        {
+            if (properties is not Dictionary<object, object> propsDict) return null;
+
+            // Get Mesh
+            if (!propsDict.TryGetValue("Mesh", out var meshNameObj) || meshNameObj is not string meshName) return null;
+            Mesh? mesh = resourceManager.GetMesh(meshName);
+            if (mesh is null) return null;
+
+            // Get Material properties from a nested dictionary
+            if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
+            {
+                // For backward compatibility, check for top-level properties.
+                matProps = propsDict;
+            }
+
+            // Inside Material dictionary
+            string textureName = "White"; // Default value
+            if (matProps.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
+            {
+                textureName = parsedTextureName;
+            }
+            ITexture texture = resourceManager.GetTexture(textureName);
+            var material = new Material(texture, textureName);
+
+            if (matProps.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
+            {
+                try
+                {
+                    material.TextureTiling = new Vector2(
+                        Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Deserializer] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
+                }
+            }
+
+            if (matProps.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
+            {
+                try
+                {
+                    material.EmissiveColor = new(
+                        Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Deserializer] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
+                }
+            }
+
+            if (matProps.TryGetValue("SpecularIntensity", out var specIntObj))
+            {
+                material.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
+            }
+
+            if (matProps.TryGetValue("Shininess", out var shininessObj))
+            {
+                material.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
+            }
+
+            return new MeshRenderer(mesh, material, meshName);
+        });
+
+        sceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
+
+        sceneLoader.RegisterComponentFactory("Skybox", (properties) =>
+        {
+            if (properties is Dictionary<object, object> propsDict &&
+                propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
+                cubemapNameObj is string cubemapName)
+            {
+                return resourceManager.GetSkybox(cubemapName);
+            }
+            return null;
+        });
+
+        sceneLoader.RegisterComponentFactory("Light", (properties) =>
+        {
+            var light = new Light();
+            if (properties is not Dictionary<object, object> propsDict) return light;
+
+            if (propsDict.TryGetValue("Type", out var typeObj) && Enum.TryParse<LightType>(typeObj as string, out var type))
+            {
+                light.Type = type;
+            }
+
+            if (propsDict.TryGetValue("Color", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
+            {
+                try
+                {
+                    light.Color = new Vector3(
+                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
+                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[Deserializer] Warning: Could not parse Light Color values. Using default. Error: {e.Message}");
+                }
+            }
+
+            if (propsDict.TryGetValue("Intensity", out var intensityObj)) light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
+            if (propsDict.TryGetValue("AmbientStrength", out var ambientObj)) light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
+            if (propsDict.TryGetValue("Range", out var rangeObj)) light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
+            if (propsDict.TryGetValue("InnerConeAngle", out var innerAngleObj)) light.InnerConeAngle = Convert.ToSingle(innerAngleObj, CultureInfo.InvariantCulture);
+            if (propsDict.TryGetValue("OuterConeAngle", out var outerAngleObj)) light.OuterConeAngle = Convert.ToSingle(outerAngleObj, CultureInfo.InvariantCulture);
+
+            return light;
+        });
+
+        sceneLoader.RegisterComponentFactory("RigidBody", (properties) =>
+        {
+            var rb = new RigidBody();
+            if (properties is not Dictionary<object, object> propsDict) return rb;
+
+            if (propsDict.TryGetValue("IsStatic", out var isStaticObj)) rb.IsStatic = Convert.ToBoolean(isStaticObj);
+            if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic) rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
+            if (propsDict.TryGetValue("Friction", out var frictionObj)) rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);
+            if (propsDict.TryGetValue("Bounciness", out var bouncinessObj)) rb.Bounciness = Convert.ToSingle(bouncinessObj, CultureInfo.InvariantCulture);
+
+            return rb;
+        });
+    }
+}
+```
+
+---
+
 ### `Cherris\Serialization\SceneLoader.cs`
 
 ```csharp
+using Cherris.Components;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -3995,6 +4119,7 @@ public class SceneLoader
 ### `Cherris\Serialization\SceneSerializer.cs`
 
 ```csharp
+using Cherris.Components;
 using System.Numerics;
 using System.Reflection;
 using YamlDotNet.Serialization;
@@ -4278,18 +4403,47 @@ namespace Cherris;
 
 public static class AssetFinder
 {
-    private const string AssetRootPath = "Assets";
+    private static readonly string? _assetRootPath = FindAssetRootPath();
+
+    private static string? FindAssetRootPath()
+    {
+        string currentPath = AppContext.BaseDirectory;
+        DirectoryInfo? directoryInfo = new(currentPath);
+
+        while (directoryInfo != null)
+        {
+            // Normalize path separators for a consistent check
+            string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
+
+            // This is the robust check. We ensure we are not in a build artifact folder.
+            if (!normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/"))
+            {
+                string potentialPath = Path.Combine(directoryInfo.FullName, "Assets");
+                if (Directory.Exists(potentialPath))
+                {
+                    Console.WriteLine($"[AssetFinder] Found asset root at: {potentialPath}");
+                    return potentialPath;
+                }
+            }
+
+            directoryInfo = directoryInfo.Parent;
+        }
+
+        Console.WriteLine("[AssetFinder] FATAL: Could not find the 'Assets' directory in any parent path.");
+        return null;
+    }
 
     public static string? FindAssetPath(string assetName)
     {
-        if (string.IsNullOrWhiteSpace(assetName) || !Directory.Exists(AssetRootPath))
+        if (string.IsNullOrWhiteSpace(assetName) || _assetRootPath is null)
         {
+            Console.WriteLine($"[AssetFinder] Warning: Asset root not found or asset name '{assetName}' is null/empty.");
             return null;
         }
 
         // Sanitize path to use correct OS separators
         string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-        string fullPath = Path.Combine(AssetRootPath, sanitizedName);
+        string fullPath = Path.Combine(_assetRootPath, sanitizedName);
 
         // Case 1: The provided name is an exact relative path (with extension).
         if (File.Exists(fullPath))
@@ -4318,13 +4472,13 @@ public static class AssetFinder
         try
         {
             string fileNameOnly = Path.GetFileName(sanitizedName);
-            var files = Directory.GetFiles(AssetRootPath, fileNameOnly, SearchOption.AllDirectories);
+            var files = Directory.GetFiles(_assetRootPath, fileNameOnly, SearchOption.AllDirectories);
             if (files.Any()) return files[0];
 
             // If still not found, try searching with wildcard extension.
             if (!Path.HasExtension(fileNameOnly))
             {
-                var filesWithWildcard = Directory.GetFiles(AssetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
+                var filesWithWildcard = Directory.GetFiles(_assetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
                 if (filesWithWildcard.Any()) return filesWithWildcard[0];
             }
         }
@@ -4446,26 +4600,23 @@ namespace Cherris.OpenTK
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
 
-            // --- FONT LOADING LOGIC (FINAL TUNED VALUE) ---
-            // This is the single value you should change to fine-tune the font size.
-            // 18.0f is a standard, comfortable size for 1440p monitors.
-            const string fontPath = "Assets/Fonts/RobotoMono-Regular.ttf";
-
-            // <<< YOUR CONTROL KNOB IS HERE >>>
+            // --- FONT LOADING LOGIC (SIMPLE AND ROBUST) ---
+            // After a full dependency clean, this is the correct and simplest approach.
+            // If the font isn't found, ImGui will fall back to its default.
+            // The crash was not due to file loading, but a native library mismatch.
             const float baseFontSize = 18.0f;
+            string? fontPath = AssetFinder.FindAssetPath("Fonts/RobotoMono-Regular.ttf");
 
-            if (File.Exists(fontPath))
+            if (fontPath is not null && File.Exists(fontPath))
             {
                 io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
             }
             else
             {
-                // Fallback if the font is not found
-                Console.WriteLine($"[ImGuiController] Warning: Font not found at '{fontPath}'. Using default font.");
+                Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
                 io.Fonts.AddFontDefault();
             }
 
-            // Keep scale at 1.0f and control size with baseFontSize.
             io.FontGlobalScale = 1.0f;
             // --- END FONT LOADING ---
 
@@ -4907,6 +5058,7 @@ void main()
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using OpenTK.Graphics.OpenGL;
 
 internal class OpenGLMeshRendererData : IDisposable
@@ -5295,6 +5447,7 @@ void main()
 ### `Cherris\Rendering\OpenTK\OpenGLSceneRenderer.cs`
 
 ```csharp
+using Cherris.Components;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
@@ -5580,7 +5733,7 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
         }
     }
 
-    public void Render(IEnumerable<GameObject> gameObjects, Matrix4 view, Matrix4 projection)
+    public void Render(IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, Matrix4 view, Matrix4 projection)
     {
         _shaderProgram.Use();
 
@@ -5591,11 +5744,10 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
         var viewPos = view.Inverted().Row3.Xyz;
         GL.Uniform3(_viewPosLocation, viewPos.X, viewPos.Y, viewPos.Z);
 
-        // Find and set light uniforms
-        var allLights = gameObjects.Select(g => g.GetComponent<Light>()).Where(l => l is not null).ToList();
-        var directionalLight = allLights.FirstOrDefault(l => l.Type == LightType.Directional);
-        var pointLights = allLights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
-        var spotLights = allLights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
+        // Find and set light uniforms from the cached list
+        var directionalLight = lights.FirstOrDefault(l => l.Type == LightType.Directional);
+        var pointLights = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
+        var spotLights = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
 
         if (directionalLight != null)
         {
@@ -5715,6 +5867,7 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
 ### `Cherris\Rendering\OpenTK\OpenGLSkyboxRenderer.cs`
 
 ```csharp
+using Cherris.Components;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
@@ -6179,208 +6332,209 @@ public class OpenTKGameWindow : IGameWindow
 ### `Cherris\Rendering\OpenTK\OpenTKRenderer.cs`
 
 ```csharp
+using Cherris.Components;
 using Cherris.OpenTK;
+using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
 
-namespace Cherris
+namespace Cherris;
+
+public class OpenTKRenderer : IRenderer, IDisposable
 {
-    public class OpenTKRenderer : Rendering.IRenderer, IDisposable
+    private readonly OpenGLSceneRenderer _sceneRenderer;
+    private readonly OpenGLSkyboxRenderer _skyboxRenderer;
+    private readonly OpenGLPostProcessor _postProcessor;
+    private readonly ImGuiController _imGuiController;
+    private readonly OpenGLDebugRenderer _debugRenderer;
+
+    private Vector2i _viewportSize = new(1, 1);
+    private Vector2i _windowSize;
+
+    public OpenTKRenderer(ImGuiController imGuiController)
     {
-        private readonly OpenGLSceneRenderer _sceneRenderer;
-        private readonly OpenGLSkyboxRenderer _skyboxRenderer;
-        private readonly OpenGLPostProcessor _postProcessor;
-        private readonly ImGuiController _imGuiController;
-        private readonly OpenGLDebugRenderer _debugRenderer;
+        _sceneRenderer = new OpenGLSceneRenderer();
+        _skyboxRenderer = new OpenGLSkyboxRenderer();
+        _postProcessor = new OpenGLPostProcessor();
+        _imGuiController = imGuiController;
+        _debugRenderer = new OpenGLDebugRenderer();
 
-        private Vector2i _viewportSize = new(1, 1);
-        private Vector2i _windowSize;
+        GL.FrontFace(FrontFaceDirection.Cw);
+    }
 
-        public OpenTKRenderer(ImGuiController imGuiController)
+    public IntPtr GetSceneTextureHandle() => (IntPtr)_postProcessor.FinalSceneTexture;
+
+    public void SetViewportSize(System.Numerics.Vector2 size)
+    {
+        var newSize = new Vector2i((int)Math.Max(size.X, 1), (int)Math.Max(size.Y, 1));
+        if (newSize != _viewportSize)
         {
-            _sceneRenderer = new OpenGLSceneRenderer();
-            _skyboxRenderer = new OpenGLSkyboxRenderer();
-            _postProcessor = new OpenGLPostProcessor();
-            _imGuiController = imGuiController;
-            _debugRenderer = new OpenGLDebugRenderer();
-
-            GL.FrontFace(FrontFaceDirection.Cw);
+            _viewportSize = newSize;
+            _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
         }
+    }
 
-        public IntPtr GetSceneTextureHandle() => (IntPtr)_postProcessor.FinalSceneTexture;
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
+    {
+        _windowSize = new Vector2i((int)windowWidth, (int)windowHeight);
 
-        public void SetViewportSize(System.Numerics.Vector2 size)
+        // 1. Render scene to texture if the viewport is visible
+        if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
         {
-            var newSize = new Vector2i((int)Math.Max(size.X, 1), (int)Math.Max(size.Y, 1));
-            if (newSize != _viewportSize)
+            GL.Enable(EnableCap.FramebufferSrgb);
+
+            _postProcessor.BeginFrame();
+            GL.Enable(EnableCap.DepthTest);
+            GL.Enable(EnableCap.CullFace);
+            GL.CullFace(CullFaceMode.Back);
+            GL.Disable(EnableCap.Blend);
+
+            var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
+            var projection = Matrix4.CreatePerspectiveFieldOfView(
+                mainCamera.FieldOfView * (float)Math.PI / 180.0f,
+                (float)_viewportSize.X / _viewportSize.Y,
+                mainCamera.NearClipPlane,
+                mainCamera.FarClipPlane);
+
+            _debugRenderer.Clear();
+            if (selectedObject?.GetComponent<Light>() is Light light)
             {
-                _viewportSize = newSize;
-                _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
-            }
-        }
-
-        public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
-        {
-            _windowSize = new Vector2i((int)windowWidth, (int)windowHeight);
-
-            // 1. Render scene to texture if the viewport is visible
-            if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
-            {
-                GL.Enable(EnableCap.FramebufferSrgb);
-
-                _postProcessor.BeginFrame();
-                GL.Enable(EnableCap.DepthTest);
-                GL.Enable(EnableCap.CullFace);
-                GL.CullFace(CullFaceMode.Back);
-                GL.Disable(EnableCap.Blend);
-
-                var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
-                var projection = Matrix4.CreatePerspectiveFieldOfView(
-                    mainCamera.FieldOfView * (float)Math.PI / 180.0f,
-                    (float)_viewportSize.X / _viewportSize.Y,
-                    mainCamera.NearClipPlane,
-                    mainCamera.FarClipPlane);
-
-                _debugRenderer.Clear();
-                if (selectedObject?.GetComponent<Light>() is Light light)
+                if (light.Type == LightType.Directional)
                 {
-                    if (light.Type == LightType.Directional)
-                    {
-                        DrawDirectionalLightGizmo(light);
-                    }
-                    else if (light.Type == LightType.Spot)
-                    {
-                        DrawSpotlightGizmo(light);
-                    }
+                    DrawDirectionalLightGizmo(light);
                 }
-
-                if (skybox?.CubeMapTexture is not null)
+                else if (light.Type == LightType.Spot)
                 {
-                    _skyboxRenderer.Render(skybox, view, projection);
+                    DrawSpotlightGizmo(light);
                 }
-
-                _sceneRenderer.Render(gameObjects, view, projection);
-                _debugRenderer.Render(view, projection);
-
-                _postProcessor.ResolveMsaa();
-                _postProcessor.RenderBloom();
-                _postProcessor.Composite(exposure);
-
-                GL.Disable(EnableCap.FramebufferSrgb);
             }
 
-            // 2. Clear main window and render UI
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            GL.Viewport(0, 0, _windowSize.X, _windowSize.Y);
-            GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
-            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
-            _imGuiController.Render();
-        }
-
-        private void DrawDirectionalLightGizmo(Light light)
-        {
-            var transform = light.GameObject.Transform;
-            var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
-            float gizmoSize = 2.0f;
-            float arrowHeadSize = 0.25f;
-            float arrowLength = 1.0f * gizmoSize;
-
-            var direction = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, transform.Rotation);
-            var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
-            var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
-
-            var start = transform.Position;
-            var end = start + direction * arrowLength;
-            _debugRenderer.AddLine(start, end, color);
-
-            _debugRenderer.AddLine(end, end - direction * arrowHeadSize + right * arrowHeadSize, color);
-            _debugRenderer.AddLine(end, end - direction * arrowHeadSize - right * arrowHeadSize, color);
-            _debugRenderer.AddLine(end, end - direction * arrowHeadSize + up * arrowHeadSize, color);
-            _debugRenderer.AddLine(end, end - direction * arrowHeadSize - up * arrowHeadSize, color);
-
-            const int circleSegments = 16;
-            float circleRadius = 0.5f * gizmoSize;
-            for (int i = 0; i < circleSegments; i++)
+            if (skybox?.CubeMapTexture is not null)
             {
-                float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
-                float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
-
-                var p1 = transform.Position + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * circleRadius;
-                var p2 = transform.Position + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * circleRadius;
-                _debugRenderer.AddLine(p1, p2, color);
+                _skyboxRenderer.Render(skybox, view, projection);
             }
+
+            _sceneRenderer.Render(gameObjects, lights, view, projection);
+            _debugRenderer.Render(view, projection);
+
+            _postProcessor.ResolveMsaa();
+            _postProcessor.RenderBloom();
+            _postProcessor.Composite(exposure);
+
+            GL.Disable(EnableCap.FramebufferSrgb);
         }
 
-        private void DrawSpotlightGizmo(Light light)
+        // 2. Clear main window and render UI
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        GL.Viewport(0, 0, _windowSize.X, _windowSize.Y);
+        GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
+        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+        _imGuiController.Render();
+    }
+
+    private void DrawDirectionalLightGizmo(Light light)
+    {
+        var transform = light.GameObject.Transform;
+        var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
+        float gizmoSize = 2.0f;
+        float arrowHeadSize = 0.25f;
+        float arrowLength = 1.0f * gizmoSize;
+
+        var direction = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, transform.Rotation);
+        var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
+        var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
+
+        var start = transform.Position;
+        var end = start + direction * arrowLength;
+        _debugRenderer.AddLine(start, end, color);
+
+        _debugRenderer.AddLine(end, end - direction * arrowHeadSize + right * arrowHeadSize, color);
+        _debugRenderer.AddLine(end, end - direction * arrowHeadSize - right * arrowHeadSize, color);
+        _debugRenderer.AddLine(end, end - direction * arrowHeadSize + up * arrowHeadSize, color);
+        _debugRenderer.AddLine(end, end - direction * arrowHeadSize - up * arrowHeadSize, color);
+
+        const int circleSegments = 16;
+        float circleRadius = 0.5f * gizmoSize;
+        for (int i = 0; i < circleSegments; i++)
         {
-            var transform = light.GameObject.Transform;
-            var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
+            float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
+            float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
 
-            var origin = transform.Position;
-            var direction = transform.Forward;
-            var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
-            var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
-
-            float range = light.Range;
-            float outerAngleRad = light.OuterConeAngle * MathF.PI / 180.0f;
-            float outerRadius = range * MathF.Tan(outerAngleRad);
-
-            var circleCenter = origin + direction * range;
-
-            // Draw lines from origin to the edge of the cone circle
-            _debugRenderer.AddLine(origin, circleCenter + right * outerRadius, color);
-            _debugRenderer.AddLine(origin, circleCenter - right * outerRadius, color);
-            _debugRenderer.AddLine(origin, circleCenter + up * outerRadius, color);
-            _debugRenderer.AddLine(origin, circleCenter - up * outerRadius, color);
-
-            // Draw the circle at the end of the range
-            const int circleSegments = 16;
-            for (int i = 0; i < circleSegments; i++)
-            {
-                float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
-                float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
-
-                var p1 = circleCenter + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * outerRadius;
-                var p2 = circleCenter + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * outerRadius;
-                _debugRenderer.AddLine(p1, p2, color);
-            }
+            var p1 = transform.Position + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * circleRadius;
+            var p2 = transform.Position + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * circleRadius;
+            _debugRenderer.AddLine(p1, p2, color);
         }
+    }
 
+    private void DrawSpotlightGizmo(Light light)
+    {
+        var transform = light.GameObject.Transform;
+        var color = new System.Numerics.Vector3(1.0f, 0.9f, 0.2f); // Yellow
 
-        public void OnWindowResized() { }
+        var origin = transform.Position;
+        var direction = transform.Forward;
+        var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, transform.Rotation);
+        var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, transform.Rotation);
 
-        public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
-        public void ProcessSnapshot() { /* Not implemented for OpenTK */ }
+        float range = light.Range;
+        float outerAngleRad = light.OuterConeAngle * MathF.PI / 180.0f;
+        float outerRadius = range * MathF.Tan(outerAngleRad);
 
-        public void Dispose()
+        var circleCenter = origin + direction * range;
+
+        // Draw lines from origin to the edge of the cone circle
+        _debugRenderer.AddLine(origin, circleCenter + right * outerRadius, color);
+        _debugRenderer.AddLine(origin, circleCenter - right * outerRadius, color);
+        _debugRenderer.AddLine(origin, circleCenter + up * outerRadius, color);
+        _debugRenderer.AddLine(origin, circleCenter - up * outerRadius, color);
+
+        // Draw the circle at the end of the range
+        const int circleSegments = 16;
+        for (int i = 0; i < circleSegments; i++)
         {
-            _sceneRenderer?.Dispose();
-            _skyboxRenderer?.Dispose();
-            _postProcessor?.Dispose();
-            _debugRenderer?.Dispose();
+            float angle1 = (i / (float)circleSegments) * 2.0f * MathF.PI;
+            float angle2 = ((i + 1) / (float)circleSegments) * 2.0f * MathF.PI;
+
+            var p1 = circleCenter + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * outerRadius;
+            var p2 = circleCenter + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * outerRadius;
+            _debugRenderer.AddLine(p1, p2, color);
         }
+    }
 
-        private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
-        {
-            return new Matrix4(
-                m.M11, m.M12, m.M13, m.M14,
-                m.M21, m.M22, m.M23, m.M24,
-                m.M31, m.M32, m.M33, m.M34,
-                m.M41, m.M42, m.M43, m.M44
-            );
-        }
 
-        [Conditional("DEBUG")]
-        private static void CheckGLError(string context)
+    public void OnWindowResized() { }
+
+    public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
+    public void ProcessSnapshot() { /* Not implemented for OpenTK */ }
+
+    public void Dispose()
+    {
+        _sceneRenderer?.Dispose();
+        _skyboxRenderer?.Dispose();
+        _postProcessor?.Dispose();
+        _debugRenderer?.Dispose();
+    }
+
+    private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
+    {
+        return new Matrix4(
+            m.M11, m.M12, m.M13, m.M14,
+            m.M21, m.M22, m.M23, m.M24,
+            m.M31, m.M32, m.M33, m.M34,
+            m.M41, m.M42, m.M43, m.M44
+        );
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckGLError(string context)
+    {
+        var error = GL.GetError();
+        while (error != ErrorCode.NoError)
         {
-            var error = GL.GetError();
-            while (error != ErrorCode.NoError)
-            {
-                Console.WriteLine($"[OpenGL Error] After {context}: {error}");
-                error = GL.GetError();
-            }
+            Console.WriteLine($"[OpenGL Error] After {context}: {error}");
+            error = GL.GetError();
         }
     }
 }
@@ -6391,21 +6545,21 @@ namespace Cherris
 ### `Cherris\Rendering\OpenTK\OpenTKResourceManager.cs`
 
 ```csharp
+using Cherris.Components;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
 
 namespace Cherris;
 
-public class OpenTKResourceManager : IResourceManager
+public class OpenTKResourceManager : ResourceManagerBase
 {
-    private readonly Dictionary<string, Mesh> _meshes = new();
     private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
     private static readonly string[] FaceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
 
 
-    public void LoadInitialAssets()
+    public override void LoadInitialAssets()
     {
         Console.WriteLine("[OpenTKResourceManager] Initial assets loaded.");
         _meshes.Add("Cube", Mesh.CreateCube());
@@ -6427,62 +6581,7 @@ public class OpenTKResourceManager : IResourceManager
         return new OpenTKTexture(handle);
     }
 
-    public Mesh GetMesh(string name)
-    {
-        if (_meshes.TryGetValue(name, out var mesh))
-        {
-            return mesh;
-        }
-
-        string[] parts = name.Split('#');
-        string filePathPart = parts[0];
-
-        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
-            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
-        {
-            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
-            {
-                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
-                return null;
-            }
-
-            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
-            if (fullPath is null)
-            {
-                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
-                return null;
-            }
-
-            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
-            if (!loadedMeshes.Any())
-            {
-                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
-                return null;
-            }
-
-            foreach (var (meshName, loadedMesh) in loadedMeshes)
-            {
-                string cacheKey = $"{filePathPart}#{meshName}";
-                _meshes[cacheKey] = loadedMesh;
-            }
-            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
-
-            if (_meshes.TryGetValue(name, out var finalMesh))
-            {
-                return finalMesh;
-            }
-
-            if (parts.Length == 1)
-            {
-                return loadedMeshes.Values.First();
-            }
-        }
-
-        return null;
-    }
-
-
-    public ITexture GetTexture(string name)
+    public override ITexture GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out var texture))
         {
@@ -6542,7 +6641,7 @@ public class OpenTKResourceManager : IResourceManager
         }
     }
 
-    public Skybox GetSkybox(string name)
+    public override Skybox GetSkybox(string name)
     {
         if (_skyboxes.TryGetValue(name, out var skybox))
         {
@@ -6589,7 +6688,7 @@ public class OpenTKResourceManager : IResourceManager
         }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         foreach (var texture in _textures.Values)
         {
@@ -7034,6 +7133,8 @@ public class ContentBrowserPanel : IDisposable
 
 ```csharp
 using Cherris;
+using Cherris.Components;
+using Cherris.Core;
 using Cherris.OpenTK;
 using CherrisEditor.Undo;
 using System.Numerics;
@@ -7538,6 +7639,7 @@ public class EditorAppLogic : IDisposable
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using ImGuizmoNET;
 using System.Numerics;
 
@@ -7947,12 +8049,14 @@ public static class EditorTheme
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using CherrisEditor.Inspectors;
 using CherrisEditor.Undo;
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using static SDL3.Mixer;
 
 namespace CherrisEditor;
 
@@ -8048,62 +8152,24 @@ internal class InspectorPanel
         }
         ImGui.Separator();
 
-        // --- Transform Component Header ---
+        // --- Transform Component ---
         ImGui.PushID("TransformComponent");
-        bool transformHeaderOpen;
         IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
-        var style = ImGui.GetStyle();
-
-        // Use a group to handle the custom layout
-        ImGui.BeginGroup();
-        // Calculate vertical padding to center the icon
-        float iconSize = 20.0f;
-        float frameHeight = ImGui.GetFrameHeight();
-        float yPadding = (frameHeight - iconSize) * 0.5f;
-
-        // Save original cursor pos
-        var startPos = ImGui.GetCursorPos();
-
-        // Draw icon at padded Y position
-        ImGui.SetCursorPos(new Vector2(startPos.X, startPos.Y + yPadding));
-        if (transformIcon != IntPtr.Zero)
-        {
-            ImGui.Image(transformIcon, new Vector2(iconSize, iconSize));
-        }
-        else
-        {
-            ImGui.Dummy(new Vector2(iconSize, iconSize)); // Placeholder
-        }
-
-        // Draw header at original Y position but offset X
-        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
-        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
-        transformHeaderOpen = ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen);
-        ImGui.EndGroup();
-
-        if (transformHeaderOpen)
+        if (DrawComponentHeader("Transform", transformIcon, out bool transformHeaderOpen))
         {
             _transformInspector.Draw(go.Transform);
         }
         ImGui.PopID();
 
-
         // --- Other Components ---
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
-            string componentName = SplitPascalCase(component.GetType().Name);
-
             ImGui.PushID(component.GetHashCode());
 
-            bool headerOpen;
-
+            string componentName = SplitPascalCase(component.GetType().Name);
             string textureKey = $"Component_{component.GetType().Name}";
-            if (component is Light)
-            {
-                textureKey = "Component_Light";
-            }
+            if (component is Light) textureKey = "Component_Light";
 
             IntPtr icon = _textureManager.GetTexture(textureKey);
             if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
@@ -8111,57 +8177,58 @@ internal class InspectorPanel
                 icon = _textureManager.GetTexture("Component_Script");
             }
 
-            ImGui.BeginGroup();
-            startPos = ImGui.GetCursorPos();
-            ImGui.SetCursorPos(new Vector2(startPos.X, startPos.Y + yPadding));
-            if (icon != IntPtr.Zero)
+            if (DrawComponentHeader(componentName, icon, out bool headerOpen))
             {
-                ImGui.Image(icon, new Vector2(iconSize, iconSize));
+                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
+                {
+                    if (customInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
+                }
+                else
+                {
+                    if (_defaultInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
+                }
             }
-            else
-            {
-                ImGui.Dummy(new Vector2(iconSize, iconSize)); // Placeholder
-            }
-            headerX = startPos.X + iconSize + style.ItemSpacing.X;
-            ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
-            headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
-            ImGui.EndGroup();
 
-
-            if (ImGui.BeginPopupContextItem())
+            if (ImGui.BeginPopupContextItem("ComponentContextMenu"))
             {
                 if (ImGui.MenuItem("Remove Component"))
                 {
                     go.RemoveComponent(component);
                     _editor.SceneManager.ActiveScene.IsDirty = true;
-                    ImGui.EndPopup();
+                    ImGui.CloseCurrentPopup();
                     ImGui.PopID();
-                    return;
+                    ImGui.EndPopup();
+                    return; // Exit loop as collection was modified
                 }
                 ImGui.EndPopup();
             }
 
-            if (headerOpen)
-            {
-                bool componentChanged = false;
-                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
-                {
-                    if (customInspector.Draw(component)) componentChanged = true;
-                }
-                else
-                {
-                    if (_defaultInspector.Draw(component)) componentChanged = true;
-                }
-                if (componentChanged)
-                {
-                    _editor.SceneManager.ActiveScene.IsDirty = true;
-                }
-            }
             ImGui.PopID();
         }
 
         DrawAddComponentButton(go);
+    }
+
+    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
+    {
+        var style = ImGui.GetStyle();
+        float iconSize = 20.0f;
+        float frameHeight = ImGui.GetFrameHeight();
+        float yPadding = (frameHeight - iconSize) * 0.5f;
+
+        ImGui.BeginGroup();
+
+        var startPos = ImGui.GetCursorPos();
+        ImGui.SetCursorPosY(startPos.Y + yPadding);
+        ImGui.Image(icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File"), new Vector2(iconSize, iconSize));
+
+        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
+        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+        isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
+
+        ImGui.EndGroup();
+        return isOpen;
     }
 
     private void DrawAddComponentButton(GameObject go)
@@ -8282,7 +8349,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        var editor = new Editor(GraphicsAPI.OpenTK);
+        Editor editor = new(GraphicsAPI.OpenTK);
         editor.Run();
     }
 }
@@ -8430,6 +8497,7 @@ public class CustomInspectorAttribute : Attribute
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
@@ -8779,7 +8847,7 @@ public class DefaultInspector : IComponentInspector
 ### `CherrisEditor\Inspectors\IComponentInspector.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Components;
 
 namespace CherrisEditor.Inspectors;
 
@@ -8794,7 +8862,7 @@ public interface IComponentInspector
 ### `CherrisEditor\Inspectors\LightInspector.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Components;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
@@ -9068,6 +9136,7 @@ public class LightInspector : IComponentInspector
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
@@ -9273,6 +9342,7 @@ public class MeshRendererInspector : IComponentInspector
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
@@ -9704,6 +9774,7 @@ public class Toolbar
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
@@ -9984,6 +10055,7 @@ public class HistoryManager
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using System.Numerics;
 
 namespace Apexverse;
@@ -10010,7 +10082,7 @@ public class PlayerController : Script
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
 
         // --- Keyboard Movement ---
-        var moveDirection = Vector3.Zero;
+        Vector3 moveDirection = Vector3.Zero;
 
         if (Input.IsKeyDown(Key.W))
         {
@@ -10037,7 +10109,7 @@ public class PlayerController : Script
             var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
 
             // Transform the local direction vector by the horizontal-only rotation.
-            var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
             GameObject.Transform.Position += worldDirection * Speed * deltaTime;
         }
     }
@@ -10050,6 +10122,7 @@ public class PlayerController : Script
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using System.Numerics;
 
 namespace Apexverse;
@@ -10108,7 +10181,7 @@ public class ChangePropertyCommand : ICommand
 ### `CherrisEditor\Undo\Commands\ChangeTransformCommand.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Components;
 using System.Numerics;
 
 namespace CherrisEditor.Undo.Commands;
@@ -10293,6 +10366,7 @@ GameObjects:
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using System.Numerics;
 
 namespace Apexverse;
@@ -10319,7 +10393,7 @@ public class PlayerController : Script
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
 
         // --- Keyboard Movement ---
-        var moveDirection = Vector3.Zero;
+        Vector3 moveDirection = Vector3.Zero;
 
         if (Input.IsKeyDown(Key.W))
         {
@@ -10346,7 +10420,7 @@ public class PlayerController : Script
             var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
 
             // Transform the local direction vector by the horizontal-only rotation.
-            var worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
             GameObject.Transform.Position += worldDirection * Speed * deltaTime;
         }
     }
@@ -10359,6 +10433,7 @@ public class PlayerController : Script
 
 ```csharp
 using Cherris;
+using Cherris.Components;
 using System.Numerics;
 
 namespace Apexverse;

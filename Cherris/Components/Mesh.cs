@@ -5,14 +5,8 @@ namespace Cherris.Components;
 
 public struct BoundingBox
 {
-    public Vector3 Min;
-    public Vector3 Max;
-
-    public BoundingBox(Vector3 min, Vector3 max)
-    {
-        Min = min;
-        Max = max;
-    }
+    public required Vector3 Min;
+    public required Vector3 Max;
 }
 
 public class Mesh
@@ -32,19 +26,27 @@ public class Mesh
     {
         if (Vertices.Length == 0)
         {
-            return new BoundingBox(Vector3.Zero, Vector3.Zero);
+            return new() 
+            { 
+                Min = Vector3.Zero, 
+                Max = Vector3.Zero 
+            };
         }
 
-        var min = new Vector3(float.MaxValue);
-        var max = new Vector3(float.MinValue);
+        Vector3 min = new(float.MaxValue);
+        Vector3 max = new(float.MinValue);
 
-        foreach (var vertex in Vertices)
+        foreach (Vertex vertex in Vertices)
         {
             min = Vector3.Min(min, vertex.Position);
             max = Vector3.Max(max, vertex.Position);
         }
 
-        return new BoundingBox(min, max);
+        return new()
+        {
+            Min = min,
+            Max = max
+        };
     }
 
     public static Mesh CreateCube()
