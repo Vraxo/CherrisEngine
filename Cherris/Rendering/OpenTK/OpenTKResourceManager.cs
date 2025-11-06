@@ -1,7 +1,7 @@
 ﻿using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
-using StbImageSharp;
 
 namespace Cherris;
 
@@ -9,8 +9,6 @@ public class OpenTKResourceManager : ResourceManagerBase
 {
     private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
-    private static readonly string[] FaceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
-
 
     public override void LoadInitialAssets()
     {
@@ -22,7 +20,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         _textures.Add("White", CreateWhiteTexture());
     }
 
-    private ITexture CreateWhiteTexture()
+    private static ITexture CreateWhiteTexture()
     {
         int handle = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, handle);
@@ -48,34 +46,27 @@ public class OpenTKResourceManager : ResourceManagerBase
             return _textures["White"];
         }
 
-        try
+        var imageData = ImageLoader.LoadFromFile(path);
+        if (imageData is null)
         {
-            // Flip vertically as OpenGL expects the origin at the bottom-left
-            StbImage.stbi_set_flip_vertically_on_load(1);
-            using var stream = File.OpenRead(path);
-            ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-
-            int handle = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, handle);
-
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8,
-                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
-
-            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
-            SetTextureParameters(TextureTarget.Texture2D);
-
-            var newTexture = new OpenTKTexture(handle);
-            _textures.Add(name, newTexture);
-            return newTexture;
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[OpenTKResourceManager] Error loading texture '{name}': {e.Message}");
             return _textures["White"];
         }
+
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, handle);
+
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8,
+            imageData.Value.Width, imageData.Value.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, imageData.Value.Data);
+
+        GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+        SetTextureParameters(TextureTarget.Texture2D);
+
+        var newTexture = new OpenTKTexture(handle);
+        _textures.Add(name, newTexture);
+        return newTexture;
     }
 
-    private void SetTextureParameters(TextureTarget target)
+    private static void SetTextureParameters(TextureTarget target)
     {
         if (target == TextureTarget.Texture2D)
         {
@@ -101,44 +92,29 @@ public class OpenTKResourceManager : ResourceManagerBase
             return skybox;
         }
 
-        var facePaths = FaceSuffixes.Select(suffix => AssetFinder.FindAssetPath(name + suffix)).ToArray();
-        if (facePaths.Any(p => p is null))
+        var faceImages = GenericCubemapLoader.LoadCubemapFaces(name);
+        if (faceImages is null)
         {
-            Console.WriteLine($"[OpenTKResourceManager] Error: Could not find all 6 faces for skybox '{name}'.");
+            Console.WriteLine($"[OpenTKResourceManager] Error: Could not load faces for skybox '{name}'.");
             return null;
         }
 
-        try
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.TextureCubeMap, handle);
+
+        for (int i = 0; i < faceImages.Length; i++)
         {
-            StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps should not be flipped
-
-            int handle = GL.GenTexture();
-            GL.BindTexture(TextureTarget.TextureCubeMap, handle);
-
-            for (int i = 0; i < facePaths.Length; i++)
-            {
-                using var stream = File.OpenRead(facePaths[i]);
-                ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + i, 0, PixelInternalFormat.Srgb8Alpha8,
-                    image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
-            }
-
-            SetTextureParameters(TextureTarget.TextureCubeMap);
-
-            var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
-            var newSkybox = new Skybox(newTexture, name);
-            _skyboxes.Add(name, newSkybox);
-            return newSkybox;
+            var image = faceImages[i];
+            GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + i, 0, PixelInternalFormat.Srgb8Alpha8,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
         }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[OpenTKResourceManager] Error loading skybox '{name}': {e.Message}");
-            return null;
-        }
-        finally
-        {
-            StbImage.stbi_set_flip_vertically_on_load(1); // Reset to default for other textures
-        }
+
+        SetTextureParameters(TextureTarget.TextureCubeMap);
+
+        var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
+        var newSkybox = new Skybox(newTexture, name);
+        _skyboxes.Add(name, newSkybox);
+        return newSkybox;
     }
 
     public override void Dispose()
