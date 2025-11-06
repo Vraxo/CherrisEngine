@@ -17,7 +17,6 @@ public class ViewportPanel
     private OPERATION _currentOperation = OPERATION.TRANSLATE;
     private Vector2 _viewportSize = Vector2.Zero;
 
-    // For gizmo undo
     private bool _isManipulatingGizmo;
     private Vector3 _initialPosition;
     private Quaternion _initialRotation;
@@ -31,14 +30,24 @@ public class ViewportPanel
 
     public void Update()
     {
-        if (_editor.State == EditorState.Editing)
+        if (_editor.State != EditorState.Editing || ImGui.GetIO().WantCaptureKeyboard)
         {
-            if (!ImGui.GetIO().WantCaptureKeyboard)
-            {
-                if (ImGui.IsKeyPressed(ImGuiKey.W)) _currentOperation = OPERATION.TRANSLATE;
-                if (ImGui.IsKeyPressed(ImGuiKey.E)) _currentOperation = OPERATION.ROTATE;
-                if (ImGui.IsKeyPressed(ImGuiKey.R)) _currentOperation = OPERATION.SCALE;
-            }
+            return;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.W))
+        {
+            _currentOperation = OPERATION.TRANSLATE;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.E))
+        {
+            _currentOperation = OPERATION.ROTATE;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.R))
+        {
+            _currentOperation = OPERATION.SCALE;
         }
     }
 
@@ -47,8 +56,8 @@ public class ViewportPanel
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-        var openScenes = _editor.SceneManager.OpenScenes.ToList();
-        var activeScene = _editor.SceneManager.ActiveScene;
+        List<Scene> openScenes = _editor.SceneManager.OpenScenes.ToList();
+        Scene activeScene = _editor.SceneManager.ActiveScene;
 
         // Default the viewport to not hovered. It will be set to true only if the image within the active tab is hovered.
         _editor.IsViewportHovered = false;
@@ -83,7 +92,7 @@ public class ViewportPanel
                     // Only render the viewport content for the currently active scene
                     if (scene == activeScene)
                     {
-                        ImGui.BeginChild("ViewportToolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+                        ImGui.BeginChild("ViewportToolbar", new(0, ImGui.GetFrameHeightWithSpacing()), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
                         DrawViewportOptions();
                         ImGui.EndChild();
 
@@ -98,6 +107,7 @@ public class ViewportPanel
                             }
 
                             IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
+
                             if (textureHandle != IntPtr.Zero)
                             {
                                 ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
@@ -113,8 +123,8 @@ public class ViewportPanel
 
                         _editor.IsViewportHovered = ImGui.IsItemHovered();
 
-                        var viewportPos = ImGui.GetItemRectMin();
-                        var viewportSize = ImGui.GetItemRectSize();
+                        Vector2 viewportPos = ImGui.GetItemRectMin();
+                        Vector2 viewportSize = ImGui.GetItemRectSize();
 
                         if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing() && !ImGuizmo.IsOver())
                         {
@@ -174,59 +184,66 @@ public class ViewportPanel
         GameObject? selectedObject = _editor.GetSelectedGameObject();
         Camera? camera = _editor.SceneManager.MainCamera;
 
-        if (selectedObject is not null && camera is not null && viewportSize.X > 0 && viewportSize.Y > 0)
+        if (selectedObject is null || camera is null || viewportSize.X <= 0 || viewportSize.Y <= 0)
         {
-            var cameraView = camera.GetViewMatrix();
-            var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
-            var objectMatrix = selectedObject.Transform.GetModelMatrix();
-
-            // Capture initial state when manipulation starts
-            if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
-            {
-                _isManipulatingGizmo = true;
-                _initialPosition = selectedObject.Transform.Position;
-                _initialRotation = selectedObject.Transform.Rotation;
-                _initialScale = selectedObject.Transform.Scale;
-            }
-
-            if (ImGuizmo.Manipulate(
-                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
-                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
-                _currentOperation,
-                MODE.LOCAL,
-                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
-            {
-                Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
-                selectedObject.Transform.Position = position;
-                selectedObject.Transform.Rotation = rotation;
-                selectedObject.Transform.Scale = scale;
-            }
-
-            // Create command when manipulation ends
-            if (!ImGuizmo.IsUsing() && _isManipulatingGizmo)
-            {
-                _isManipulatingGizmo = false;
-                var newPosition = selectedObject.Transform.Position;
-                var newRotation = selectedObject.Transform.Rotation;
-                var newScale = selectedObject.Transform.Scale;
-
-                // Only create command if something actually changed
-                if (newPosition != _initialPosition || newRotation != _initialRotation || newScale != _initialScale)
-                {
-                    // Revert the change so the command can apply it
-                    selectedObject.Transform.Position = _initialPosition;
-                    selectedObject.Transform.Rotation = _initialRotation;
-                    selectedObject.Transform.Scale = _initialScale;
-
-                    var command = new ChangeTransformCommand(
-                        selectedObject.Transform,
-                        _initialPosition, _initialRotation, _initialScale,
-                        newPosition, newRotation, newScale
-                    );
-                    _history.Execute(command);
-                }
-            }
+            return;
         }
+
+        Matrix4x4 cameraView = camera.GetViewMatrix();
+        Matrix4x4 cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
+        Matrix4x4 objectMatrix = selectedObject.Transform.GetModelMatrix();
+
+        // Capture initial state when manipulation starts
+        if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
+        {
+            _isManipulatingGizmo = true;
+            _initialPosition = selectedObject.Transform.Position;
+            _initialRotation = selectedObject.Transform.Rotation;
+            _initialScale = selectedObject.Transform.Scale;
+        }
+
+        if (ImGuizmo.Manipulate(
+            ref Unsafe.As<Matrix4x4, float>(ref cameraView),
+            ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
+            _currentOperation,
+            MODE.LOCAL,
+            ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+        {
+            Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
+            selectedObject.Transform.Position = position;
+            selectedObject.Transform.Rotation = rotation;
+            selectedObject.Transform.Scale = scale;
+        }
+
+        // Create command when manipulation ends
+        if (ImGuizmo.IsUsing() || !_isManipulatingGizmo)
+        {
+            return;
+        }
+
+        _isManipulatingGizmo = false;
+        Vector3 newPosition = selectedObject.Transform.Position;
+        Quaternion newRotation = selectedObject.Transform.Rotation;
+        Vector3 newScale = selectedObject.Transform.Scale;
+
+        // Only create command if something actually changed
+        if (newPosition == _initialPosition && newRotation == _initialRotation && newScale == _initialScale)
+        {
+            return;
+        }
+
+        // Revert the change so the command can apply it
+        selectedObject.Transform.Position = _initialPosition;
+        selectedObject.Transform.Rotation = _initialRotation;
+        selectedObject.Transform.Scale = _initialScale;
+
+        ChangeTransformCommand command = new(
+            selectedObject.Transform,
+            _initialPosition, _initialRotation, _initialScale,
+            newPosition, newRotation, newScale
+        );
+
+        _history.Execute(command);
     }
 
     private void HandleObjectSelection(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
@@ -237,15 +254,27 @@ public class ViewportPanel
 
         foreach (GameObject gameObject in _editor.SceneManager.GameObjects)
         {
-            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null) continue;
+            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null)
+            {
+                continue;
+            }
 
             BoundingBox aabb = gameObject.GetWorldSpaceAABB();
-            if (!ray.Intersects(aabb, out float distance)) continue;
-            if (distance >= closestDistance) continue;
+            
+            if (!ray.Intersects(aabb, out float distance))
+            {
+                continue;
+            }
+
+            if (distance >= closestDistance)
+            {
+                continue;
+            }
 
             closestDistance = distance;
             closestObject = gameObject;
         }
+
         _editor.SetSelectedGameObject(closestObject);
     }
 }
