@@ -1,3 +1,19 @@
+### `Cherris\Components\BoundingBox.cs`
+
+```csharp
+using System.Numerics;
+
+namespace Cherris.Components;
+
+public struct BoundingBox
+{
+    public required Vector3 Min;
+    public required Vector3 Max;
+}
+```
+
+---
+
 ### `Cherris\Components\Camera.cs`
 
 ```csharp
@@ -37,6 +53,8 @@ public class Camera : Component
 ### `Cherris\Components\Component.cs`
 
 ```csharp
+using Cherris.Core;
+
 namespace Cherris.Components;
 
 public abstract class Component
@@ -90,18 +108,6 @@ using Veldrid;
 
 namespace Cherris.Components;
 
-public struct BoundingBox
-{
-    public Vector3 Min;
-    public Vector3 Max;
-
-    public BoundingBox(Vector3 min, Vector3 max)
-    {
-        Min = min;
-        Max = max;
-    }
-}
-
 public class Mesh
 {
     public Vertex[] Vertices { get; }
@@ -119,19 +125,27 @@ public class Mesh
     {
         if (Vertices.Length == 0)
         {
-            return new BoundingBox(Vector3.Zero, Vector3.Zero);
+            return new() 
+            { 
+                Min = Vector3.Zero, 
+                Max = Vector3.Zero 
+            };
         }
 
-        var min = new Vector3(float.MaxValue);
-        var max = new Vector3(float.MinValue);
+        Vector3 min = new(float.MaxValue);
+        Vector3 max = new(float.MinValue);
 
-        foreach (var vertex in Vertices)
+        foreach (Vertex vertex in Vertices)
         {
             min = Vector3.Min(min, vertex.Position);
             max = Vector3.Max(max, vertex.Position);
         }
 
-        return new BoundingBox(min, max);
+        return new()
+        {
+            Min = min,
+            Max = max
+        };
     }
 
     public static Mesh CreateCube()
@@ -180,7 +194,7 @@ public class Mesh
             20,21,22, 20,22,23,
         };
 
-        return new Mesh(vertices, indices);
+        return new(vertices, indices);
     }
 
     public static Mesh CreatePlane(float size)
@@ -202,7 +216,7 @@ public class Mesh
             0,2,1, 0,3,2
         };
 
-        return new Mesh(vertices, indices);
+        return new(vertices, indices);
     }
 }
 ```
@@ -373,6 +387,7 @@ public class Skybox : Component
 ### `Cherris\Components\Transform.cs`
 
 ```csharp
+using Cherris.Core;
 using System.Numerics;
 
 namespace Cherris.Components;
@@ -656,6 +671,7 @@ public class BloomRenderer : IDisposable
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.OpenTK;
 using Cherris.Rendering;
 using System.Globalization;
@@ -871,7 +887,7 @@ public class GameLoop
 using Cherris.Components;
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class GameObject
 {
@@ -886,7 +902,7 @@ public class GameObject
     {
         Name = name;
         Id = id ?? Guid.NewGuid();
-        Transform = new Transform(this);
+        Transform = new(this);
     }
 
     public T AddComponent<T>(T component) where T : Component
@@ -896,7 +912,7 @@ public class GameObject
         return component;
     }
 
-    public T GetComponent<T>() where T : Component
+    public T? GetComponent<T>() where T : Component
     {
         return _components.OfType<T>().FirstOrDefault();
     }
@@ -926,22 +942,32 @@ public class GameObject
     public BoundingBox GetWorldSpaceAABB()
     {
         var meshRenderer = GetComponent<MeshRenderer>();
+        
         if (meshRenderer?.Mesh is null)
         {
             // If there's no mesh, check for other components that should be selectable
             if (GetComponent<Light>() is not null)
             {
                 const float selectionVolumeSize = 0.5f;
-                var halfSize = new Vector3(selectionVolumeSize / 2);
-                return new BoundingBox(Transform.Position - halfSize, Transform.Position + halfSize);
+                Vector3 halfSize = new(selectionVolumeSize / 2);
+
+                return new()
+                {
+                    Min = Transform.Position - halfSize,
+                    Max = Transform.Position + halfSize
+                };
             }
 
             // Default fallback for objects with no visible/selectable component
-            return new BoundingBox(Transform.Position, Transform.Position);
+            return new()
+            {
+                Min = Transform.Position,
+                Max = Transform.Position
+            };
         }
 
-        var localAABB = meshRenderer.Mesh.AABB;
-        var worldTransform = Transform.GetModelMatrix();
+        BoundingBox localAABB = meshRenderer.Mesh.AABB;
+        Matrix4x4 worldTransform = Transform.GetModelMatrix();
 
         Vector3[] corners = {
             new(localAABB.Min.X, localAABB.Min.Y, localAABB.Min.Z),
@@ -954,17 +980,21 @@ public class GameObject
             new(localAABB.Max.X, localAABB.Max.Y, localAABB.Max.Z)
         };
 
-        var worldMin = new Vector3(float.MaxValue);
-        var worldMax = new Vector3(float.MinValue);
+        Vector3 worldMin = new(float.MaxValue);
+        Vector3 worldMax = new(float.MinValue);
 
-        foreach (var corner in corners)
+        foreach (Vector3 corner in corners)
         {
-            var transformedCorner = Vector3.Transform(corner, worldTransform);
+            Vector3 transformedCorner = Vector3.Transform(corner, worldTransform);
             worldMin = Vector3.Min(worldMin, transformedCorner);
             worldMax = Vector3.Max(worldMax, transformedCorner);
         }
 
-        return new BoundingBox(worldMin, worldMax);
+        return new()
+        {
+            Min = worldMin,
+            Max = worldMax
+        };
     }
 }
 ```
@@ -2717,6 +2747,7 @@ public class SceneManager
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -3660,6 +3691,7 @@ public interface IGameWindow : IDisposable
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 
 namespace Cherris.Rendering;
 
@@ -3890,6 +3922,7 @@ public static class ComponentDeserializer
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -4120,6 +4153,7 @@ public class SceneLoader
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using System.Numerics;
 using System.Reflection;
 using YamlDotNet.Serialization;
@@ -5448,6 +5482,7 @@ void main()
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
@@ -6333,6 +6368,7 @@ public class OpenTKGameWindow : IGameWindow
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.OpenTK;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
@@ -8048,8 +8084,8 @@ public static class EditorTheme
 ### `CherrisEditor\InspectorPanel.cs`
 
 ```csharp
-using Cherris;
 using Cherris.Components;
+using Cherris.Core;
 using CherrisEditor.Inspectors;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -9568,7 +9604,7 @@ public class MenuBar
 ### `CherrisEditor\UI\OutlinerPanel.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Core;
 using ImGuiNET;
 using System.Runtime.InteropServices;
 
@@ -9775,6 +9811,7 @@ public class Toolbar
 ```csharp
 using Cherris;
 using Cherris.Components;
+using Cherris.Core;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;

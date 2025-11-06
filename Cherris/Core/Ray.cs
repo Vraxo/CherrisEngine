@@ -16,58 +16,22 @@ public struct Ray
     }
 
     // Slab method for ray-AABB intersection.
-    public bool Intersects(BoundingBox box, out float distance)
+    public readonly bool Intersects(BoundingBox box, out float distance)
     {
-        distance = 0.0f;
-        float tmin = 0.0f;
-        float tmax = float.MaxValue;
+        Vector3 invDir = Vector3.One / Direction;
+        Vector3 t1 = (box.Min - Origin) * invDir;
+        Vector3 t2 = (box.Max - Origin) * invDir;
 
-        if (Math.Abs(Direction.X) < 1e-6)
-        {
-            if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.X;
-            float t1 = (box.Min.X - Origin.X) * ood;
-            float t2 = (box.Max.X - Origin.X) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
+        Vector3 tMinVec = Vector3.Min(t1, t2);
+        Vector3 tMaxVec = Vector3.Max(t1, t2);
 
-        if (Math.Abs(Direction.Y) < 1e-6)
-        {
-            if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.Y;
-            float t1 = (box.Min.Y - Origin.Y) * ood;
-            float t2 = (box.Max.Y - Origin.Y) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
-
-        if (Math.Abs(Direction.Z) < 1e-6)
-        {
-            if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.Z;
-            float t1 = (box.Min.Z - Origin.Z) * ood;
-            float t2 = (box.Max.Z - Origin.Z) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
+        float tmin = Math.Max(tMinVec.X, Math.Max(tMinVec.Y, tMinVec.Z));
+        float tmax = Math.Min(tMaxVec.X, Math.Min(tMaxVec.Y, tMaxVec.Z));
 
         distance = tmin;
-        return true;
+
+        // if tmax < 0, ray is intersecting AABB, but the whole AABB is behind us
+        // if tmin > tmax, ray doesn't intersect AABB
+        return tmax >= Math.Max(tmin, 0.0f);
     }
 }

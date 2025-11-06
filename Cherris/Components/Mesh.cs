@@ -3,12 +3,6 @@ using Veldrid;
 
 namespace Cherris.Components;
 
-public struct BoundingBox
-{
-    public required Vector3 Min;
-    public required Vector3 Max;
-}
-
 public class Mesh
 {
     public Vertex[] Vertices { get; }
@@ -95,7 +89,7 @@ public class Mesh
             20,21,22, 20,22,23,
         };
 
-        return new Mesh(vertices, indices);
+        return new(vertices, indices);
     }
 
     public static Mesh CreatePlane(float size)
@@ -117,6 +111,6 @@ public class Mesh
             0,2,1, 0,3,2
         };
 
-        return new Mesh(vertices, indices);
+        return new(vertices, indices);
     }
 }

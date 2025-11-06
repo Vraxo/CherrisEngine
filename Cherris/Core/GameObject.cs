@@ -39,18 +39,23 @@ public class GameObject
     public void RemoveComponent<T>() where T : Component
     {
         var componentToRemove = GetComponent<T>();
-        if (componentToRemove is not null)
+
+        if (componentToRemove is null)
         {
-            _components.Remove(componentToRemove);
+            return;
         }
+
+        _components.Remove(componentToRemove);
     }
 
     public void RemoveComponent(Component componentToRemove)
     {
-        if (componentToRemove is not null)
+        if (componentToRemove is null)
         {
-            _components.Remove(componentToRemove);
+            return;
         }
+
+        _components.Remove(componentToRemove);
     }
 
     public BoundingBox GetWorldSpaceAABB()
