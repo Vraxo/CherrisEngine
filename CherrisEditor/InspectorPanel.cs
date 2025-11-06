@@ -1,5 +1,5 @@
-﻿using Cherris;
-using Cherris.Components;
+﻿using Cherris.Components;
+using Cherris.Core;
 using CherrisEditor.Inspectors;
 using CherrisEditor.Undo;
 using ImGuiNET;

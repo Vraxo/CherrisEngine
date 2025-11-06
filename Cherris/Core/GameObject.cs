@@ -1,7 +1,7 @@
 ﻿using Cherris.Components;
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class GameObject
 {
@@ -16,7 +16,7 @@ public class GameObject
     {
         Name = name;
         Id = id ?? Guid.NewGuid();
-        Transform = new Transform(this);
+        Transform = new(this);
     }
 
     public T AddComponent<T>(T component) where T : Component
@@ -26,7 +26,7 @@ public class GameObject
         return component;
     }
 
-    public T GetComponent<T>() where T : Component
+    public T? GetComponent<T>() where T : Component
     {
         return _components.OfType<T>().FirstOrDefault();
     }

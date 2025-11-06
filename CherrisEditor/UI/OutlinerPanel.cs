@@ -1,4 +1,4 @@
-﻿using Cherris;
+﻿using Cherris.Core;
 using ImGuiNET;
 using System.Runtime.InteropServices;
 

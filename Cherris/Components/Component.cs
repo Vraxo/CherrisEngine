@@ -1,4 +1,6 @@
-﻿namespace Cherris.Components;
+﻿using Cherris.Core;
+
+namespace Cherris.Components;
 
 public abstract class Component
 {
