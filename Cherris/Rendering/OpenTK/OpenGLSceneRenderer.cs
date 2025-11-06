@@ -283,7 +283,7 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
         }
     }
 
-    public void Render(IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, Matrix4 view, Matrix4 projection)
+    public void Render(IEnumerable<GameObject> gameObjects, Matrix4 view, Matrix4 projection)
     {
         _shaderProgram.Use();
 
@@ -294,10 +294,11 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
         var viewPos = view.Inverted().Row3.Xyz;
         GL.Uniform3(_viewPosLocation, viewPos.X, viewPos.Y, viewPos.Z);
 
-        // Find and set light uniforms from the cached list
-        var directionalLight = lights.FirstOrDefault(l => l.Type == LightType.Directional);
-        var pointLights = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
-        var spotLights = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
+        // Find and set light uniforms
+        var allLights = gameObjects.Select(g => g.GetComponent<Light>()).Where(l => l is not null).ToList();
+        var directionalLight = allLights.FirstOrDefault(l => l.Type == LightType.Directional);
+        var pointLights = allLights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
+        var spotLights = allLights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
 
         if (directionalLight != null)
         {

@@ -5,7 +5,6 @@ using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using static SDL3.Mixer;
 
 namespace CherrisEditor;
 
@@ -101,83 +100,120 @@ internal class InspectorPanel
         }
         ImGui.Separator();
 
-        // --- Transform Component ---
+        // --- Transform Component Header ---
         ImGui.PushID("TransformComponent");
+        bool transformHeaderOpen;
         IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
-        if (DrawComponentHeader("Transform", transformIcon, out bool transformHeaderOpen))
+        var style = ImGui.GetStyle();
+
+        // Use a group to handle the custom layout
+        ImGui.BeginGroup();
+        // Calculate vertical padding to center the icon
+        float iconSize = 20.0f;
+        float frameHeight = ImGui.GetFrameHeight();
+        float yPadding = (frameHeight - iconSize) * 0.5f;
+
+        // Save original cursor pos
+        var startPos = ImGui.GetCursorPos();
+
+        // Draw icon at padded Y position
+        ImGui.SetCursorPos(new Vector2(startPos.X, startPos.Y + yPadding));
+        if (transformIcon != IntPtr.Zero)
+        {
+            ImGui.Image(transformIcon, new Vector2(iconSize, iconSize));
+        }
+        else
+        {
+            ImGui.Dummy(new Vector2(iconSize, iconSize)); // Placeholder
+        }
+
+        // Draw header at original Y position but offset X
+        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
+        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+        transformHeaderOpen = ImGui.CollapsingHeader("Transform", ImGuiTreeNodeFlags.DefaultOpen);
+        ImGui.EndGroup();
+
+        if (transformHeaderOpen)
         {
             _transformInspector.Draw(go.Transform);
         }
         ImGui.PopID();
 
+
         // --- Other Components ---
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
+            string componentName = SplitPascalCase(component.GetType().Name);
+
             ImGui.PushID(component.GetHashCode());
 
-            string componentName = SplitPascalCase(component.GetType().Name);
+            bool headerOpen;
+
             string textureKey = $"Component_{component.GetType().Name}";
-            if (component is Light) textureKey = "Component_Light";
+            if (component is Light)
+            {
+                textureKey = "Component_Light";
+            }
 
             IntPtr icon = _textureManager.GetTexture(textureKey);
-            if (icon == IntPtr.Zero && typeof(Cherris.Script).IsAssignableFrom(component.GetType()))
+            if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
             {
                 icon = _textureManager.GetTexture("Component_Script");
             }
 
-            if (DrawComponentHeader(componentName, icon, out bool headerOpen))
+            ImGui.BeginGroup();
+            startPos = ImGui.GetCursorPos();
+            ImGui.SetCursorPos(new Vector2(startPos.X, startPos.Y + yPadding));
+            if (icon != IntPtr.Zero)
             {
-                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
-                {
-                    if (customInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
-                }
-                else
-                {
-                    if (_defaultInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
-                }
+                ImGui.Image(icon, new Vector2(iconSize, iconSize));
             }
+            else
+            {
+                ImGui.Dummy(new Vector2(iconSize, iconSize)); // Placeholder
+            }
+            headerX = startPos.X + iconSize + style.ItemSpacing.X;
+            ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+            headerOpen = ImGui.CollapsingHeader(componentName, ImGuiTreeNodeFlags.DefaultOpen);
+            ImGui.EndGroup();
 
-            if (ImGui.BeginPopupContextItem("ComponentContextMenu"))
+
+            if (ImGui.BeginPopupContextItem())
             {
                 if (ImGui.MenuItem("Remove Component"))
                 {
                     go.RemoveComponent(component);
                     _editor.SceneManager.ActiveScene.IsDirty = true;
-                    ImGui.CloseCurrentPopup();
-                    ImGui.PopID();
                     ImGui.EndPopup();
-                    return; // Exit loop as collection was modified
+                    ImGui.PopID();
+                    return;
                 }
                 ImGui.EndPopup();
             }
 
+            if (headerOpen)
+            {
+                bool componentChanged = false;
+                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
+                {
+                    if (customInspector.Draw(component)) componentChanged = true;
+                }
+                else
+                {
+                    if (_defaultInspector.Draw(component)) componentChanged = true;
+                }
+                if (componentChanged)
+                {
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                }
+            }
             ImGui.PopID();
         }
 
         DrawAddComponentButton(go);
-    }
-
-    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
-    {
-        var style = ImGui.GetStyle();
-        float iconSize = 20.0f;
-        float frameHeight = ImGui.GetFrameHeight();
-        float yPadding = (frameHeight - iconSize) * 0.5f;
-
-        ImGui.BeginGroup();
-
-        var startPos = ImGui.GetCursorPos();
-        ImGui.SetCursorPosY(startPos.Y + yPadding);
-        ImGui.Image(icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File"), new Vector2(iconSize, iconSize));
-
-        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
-        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
-        isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
-
-        ImGui.EndGroup();
-        return isOpen;
     }
 
     private void DrawAddComponentButton(GameObject go)
@@ -237,7 +273,7 @@ internal class InspectorPanel
             {
                 if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
                 {
-                    var newComponent = (Cherris.Script)Activator.CreateInstance(scriptType);
+                    var newComponent = (Script)Activator.CreateInstance(scriptType);
                     go.AddComponent(newComponent);
                     _editor.SceneManager.ActiveScene.IsDirty = true;
 
@@ -263,7 +299,7 @@ internal class InspectorPanel
                     Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
                     if (newScriptType is not null)
                     {
-                        var newComponent = (Cherris.Script)Activator.CreateInstance(newScriptType);
+                        var newComponent = (Script)Activator.CreateInstance(newScriptType);
                         go.AddComponent(newComponent);
                         _editor.SceneManager.ActiveScene.IsDirty = true;
                         if (_editor.State != EditorState.Playing)

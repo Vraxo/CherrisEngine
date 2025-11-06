@@ -1,6 +1,4 @@
-### `Cherris\Component\Camera.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Camera.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -29,13 +27,9 @@ public class Camera : Component
             FarClipPlane);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Component\Component.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Component.cs">
 namespace Cherris;
 
 public abstract class Component
@@ -50,13 +44,9 @@ public abstract class Script : Component
     public virtual void Start() { }
     public virtual void Update(float deltaTime) { }
 }
-```
+</file>
 
----
-
-### `Cherris\Component\Light.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Light.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -84,13 +74,9 @@ public class Light : Component
     public float InnerConeAngle { get; set; } = 12.5f; // In degrees
     public float OuterConeAngle { get; set; } = 17.5f; // In degrees
 }
-```
+</file>
 
----
-
-### `Cherris\Component\Mesh.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Mesh.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -211,13 +197,9 @@ public class Mesh
         return new Mesh(vertices, indices);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Component\MeshRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\MeshRenderer.cs">
 namespace Cherris;
 
 public class MeshRenderer : Component, IDisposable
@@ -260,13 +242,9 @@ public class MeshRenderer : Component, IDisposable
         InvalidateBackendData();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Component\RigidBody.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\RigidBody.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -330,13 +308,9 @@ public class RigidBody : Script
         _physicsSystem.AddBody(this, JitterBody);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Component\Skybox.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Skybox.cs">
 using Cherris.Rendering;
 
 namespace Cherris;
@@ -357,13 +331,9 @@ public class Skybox : Component
         CubeMapTexture.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Component\Transform.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Component\Transform.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -415,13 +385,9 @@ public class Transform
         return localMatrix;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\BloomRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\BloomRenderer.cs">
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -630,13 +596,9 @@ public class BloomRenderer : IDisposable
         _clampSampler.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Engine.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Engine.cs">
 using Cherris.OpenTK;
 using Cherris.Rendering;
 using System.Globalization;
@@ -977,13 +939,9 @@ public abstract class Engine
         _backend.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\GameLoop.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GameLoop.cs">
 using Cherris.Rendering;
 using System.Diagnostics;
 
@@ -1025,13 +983,9 @@ public class GameLoop
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\GameObject.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GameObject.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -1130,13 +1084,9 @@ public class GameObject
         return new BoundingBox(worldMin, worldMax);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\GameWindow.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GameWindow.cs">
 using Cherris.Rendering;
 using System.Numerics;
 using Veldrid;
@@ -1302,13 +1252,9 @@ public static class VeldridKeyMapper
         return (MouseButton)button;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\GraphicsAPI.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\GraphicsAPI.cs">
 namespace Cherris;
 
 public enum GraphicsAPI
@@ -1316,13 +1262,9 @@ public enum GraphicsAPI
     Veldrid,
     OpenTK
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Input.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Input.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -1411,13 +1353,9 @@ public static class Input
     public static bool IsMouseButtonDown(MouseButton button) => _pressedMouseButtons.Contains(button);
     public static bool WasMouseButtonPressed(MouseButton button) => _justPressedMouseButtons.Contains(button);
 }
-```
+</file>
 
----
-
-### `Cherris\Core\InputEnums.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\InputEnums.cs">
 namespace Cherris;
 
 // Based on Veldrid.Key, but now backend-agnostic.
@@ -1487,13 +1425,9 @@ public enum MouseButton
     Button9,
     LastButton
 }
-```
+</file>
 
----
-
-### `Cherris\Core\JitterConvert.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\JitterConvert.cs">
 using Jitter.LinearMath;
 using System.Numerics;
 
@@ -1524,13 +1458,9 @@ public static class JitterConvert
         return new(jq.X, jq.Y, jq.Z, jq.W);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Material.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Material.cs">
 using Cherris.Rendering;
 using System.Numerics;
 
@@ -1551,13 +1481,9 @@ public class Material
         TextureName = textureName;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\ModelLoader.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\ModelLoader.cs">
 // --- REQUIRED NUGET PACKAGE ---
 // This file requires the 'SharpGLTF.Core' package.
 // Add it to your project:
@@ -1653,13 +1579,9 @@ public static class ModelLoader
         return loadedMeshes;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\PhysicsSystem.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\PhysicsSystem.cs">
 namespace Cherris;
 
 using Jitter.Collision;
@@ -1728,13 +1650,9 @@ public class PhysicsSystem
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Ray.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Ray.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -1807,13 +1725,9 @@ public struct Ray
         return true;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Renderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Renderer.cs">
 using Cherris.Rendering;
 using System.Numerics;
 using Veldrid;
@@ -2192,13 +2106,9 @@ public class Renderer : IRenderer
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\ResolveRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\ResolveRenderer.cs">
 using System.Numerics;
 using Veldrid;
 using Veldrid.SPIRV;
@@ -2322,13 +2232,9 @@ void main()
         _vertexBuffer.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\ResourceManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\ResourceManager.cs">
 using Cherris.Rendering;
 using Veldrid;
 
@@ -2493,13 +2399,9 @@ public class ResourceManager : IResourceManager
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Scene.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Scene.cs">
 using System.Numerics;
 
 namespace Cherris
@@ -2614,13 +2516,9 @@ namespace Cherris
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\SceneManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SceneManager.cs">
 namespace Cherris;
 
 public class SceneManager
@@ -2742,13 +2640,9 @@ public class SceneManager
         _openScenes.Clear();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\SceneRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SceneRenderer.cs">
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -3007,13 +2901,9 @@ public class SceneRenderer : IDisposable
         _mvpBuffer.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\SkyboxLoader.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SkyboxLoader.cs">
 using StbImageSharp;
 using Veldrid;
 
@@ -3150,13 +3040,9 @@ public static class SkyboxLoader
         return new(cubemap, textureView);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\SkyboxRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\SkyboxRenderer.cs">
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -3325,13 +3211,9 @@ public class SkyboxRenderer
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Snapshotter.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Snapshotter.cs">
 using System.Runtime.InteropServices;
 using Veldrid;
 
@@ -3453,13 +3335,9 @@ public class Snapshotter : IDisposable
         _stagingTexture?.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Texture.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Texture.cs">
 using Cherris.Rendering;
 using Veldrid;
 
@@ -3484,13 +3362,9 @@ public class Texture : ITexture
 
     public object GetBackendHandle() => this;
 }
-```
+</file>
 
----
-
-### `Cherris\Core\TextureLoader.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\TextureLoader.cs">
 using StbImageSharp;
 using Veldrid;
 
@@ -3555,13 +3429,9 @@ public static class TextureLoader
         return new Texture(veldridTexture, textureView);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\VeldridBackend.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\VeldridBackend.cs">
 using Cherris.Rendering;
 using Veldrid;
 using Veldrid.StartupUtilities;
@@ -3608,13 +3478,9 @@ public class VeldridBackend : RenderingInterface
         GameWindow?.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\Vertex.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\Vertex.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -3637,13 +3503,9 @@ public struct Vertex
         TexCoord = texCoord;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Core\VertexPositionColor.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Core\VertexPositionColor.cs">
 using System.Numerics;
 using Veldrid;
 
@@ -3662,13 +3524,9 @@ public struct VertexPositionColor
         Color = color;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\RenderingInterface\IGameWindow.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface\IGameWindow.cs">
 namespace Cherris.Rendering;
 
 public interface IGameWindow : IDisposable
@@ -3682,13 +3540,9 @@ public interface IGameWindow : IDisposable
     event Action Resized;
     Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 }
-```
+</file>
 
----
-
-### `Cherris\RenderingInterface\IRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface\IRenderer.cs">
 namespace Cherris.Rendering;
 
 public interface IRenderer : IDisposable
@@ -3698,13 +3552,9 @@ public interface IRenderer : IDisposable
     void RequestSnapshot(string path);
     void ProcessSnapshot();
 }
-```
+</file>
 
----
-
-### `Cherris\RenderingInterface\IResourceManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface\IResourceManager.cs">
 namespace Cherris.Rendering;
 
 public interface IResourceManager : IDisposable
@@ -3714,26 +3564,18 @@ public interface IResourceManager : IDisposable
     ITexture GetTexture(string name);
     Skybox GetSkybox(string name);
 }
-```
+</file>
 
----
-
-### `Cherris\RenderingInterface\ITexture.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface\ITexture.cs">
 namespace Cherris.Rendering;
 
 public interface ITexture : IDisposable
 {
     object GetBackendHandle();
 }
-```
+</file>
 
----
-
-### `Cherris\RenderingInterface\IUIController.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface\IUIController.cs">
 namespace Cherris.Rendering;
 
 public interface IUIController : IDisposable
@@ -3741,13 +3583,9 @@ public interface IUIController : IDisposable
     void Update(float deltaTime);
     void Render();
 }
-```
+</file>
 
----
-
-### `Cherris\RenderingInterface\RenderingInterface.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\RenderingInterface\RenderingInterface.cs">
 namespace Cherris.Rendering;
 
 public interface RenderingInterface : IDisposable
@@ -3759,13 +3597,9 @@ public interface RenderingInterface : IDisposable
 
     void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked);
 }
-```
+</file>
 
----
-
-### `Cherris\Serialization\SceneLoader.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\SceneLoader.cs">
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -3799,72 +3633,6 @@ public class SceneLoader
     {
         _componentFactories[typeName] = factory;
     }
-
-    public List<GameObject> LoadPrefab(string filePath)
-    {
-        var input = new StringReader(File.ReadAllText(filePath));
-        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
-
-        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
-        {
-            return new List<GameObject>();
-        }
-
-        var createdGameObjects = new List<GameObject>();
-        var oldToNewIdMap = new Dictionary<Guid, Guid>();
-        var newIdToGameObjectMap = new Dictionary<Guid, GameObject>();
-        var childToParentMap = new Dictionary<Guid, Guid>(); // <new_child_id, old_parent_id>
-
-        // Pass 1: Create all GameObjects with new GUIDs and deserialize their components
-        foreach (var goData in gameObjectDatas)
-        {
-            string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName) name = goName;
-
-            Guid oldId = Guid.Empty;
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId)) oldId = parsedId;
-
-            Guid newId = Guid.NewGuid();
-            oldToNewIdMap[oldId] = newId;
-
-            var go = new GameObject(name, newId);
-            newIdToGameObjectMap[newId] = go;
-            createdGameObjects.Add(go);
-
-            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
-            {
-                childToParentMap[newId] = parentId;
-            }
-
-            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
-            {
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
-                {
-                    ApplyTransformProperties(go.Transform, transformProperties);
-                }
-
-                foreach (var componentKvp in componentsDict)
-                {
-                    if (componentKvp.Key as string == "Transform") continue;
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
-                }
-            }
-        }
-
-        // Pass 2: Hook up parent-child relationships using the remapped GUIDs
-        foreach (var (newChildId, oldParentId) in childToParentMap)
-        {
-            if (oldToNewIdMap.TryGetValue(oldParentId, out Guid newParentId))
-            {
-                var child = newIdToGameObjectMap[newChildId];
-                var parent = newIdToGameObjectMap[newParentId];
-                child.Transform.Parent = parent.Transform;
-            }
-        }
-
-        return createdGameObjects.Where(go => go.Transform.Parent == null).ToList();
-    }
-
 
     public List<GameObject> LoadScene(string filePath)
     {
@@ -3988,13 +3756,9 @@ public class SceneLoader
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Serialization\SceneSerializer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\SceneSerializer.cs">
 using System.Numerics;
 using System.Reflection;
 using YamlDotNet.Serialization;
@@ -4015,41 +3779,6 @@ public class SceneSerializer
             .Build();
     }
 
-    public void SavePrefab(GameObject rootGo, string filePath)
-    {
-        var hierarchy = new List<GameObject>();
-        GetHierarchy(rootGo, hierarchy);
-
-        var gameObjectsData = new List<Dictionary<string, object>>();
-
-        foreach (var go in hierarchy)
-        {
-            var goData = new Dictionary<string, object>
-            {
-                ["Id"] = go.Id.ToString(),
-                ["Name"] = go.Name
-            };
-
-            // Only save parent if it's part of the prefab hierarchy
-            if (go.Transform.Parent != null && hierarchy.Contains(go.Transform.Parent.GameObject))
-            {
-                goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
-            }
-
-            var componentsData = SerializeGameObjectComponents(go);
-            goData["Components"] = componentsData;
-            gameObjectsData.Add(goData);
-        }
-
-        var root = new Dictionary<string, object>
-        {
-            { "GameObjects", gameObjectsData }
-        };
-
-        var yaml = _serializer.Serialize(root);
-        File.WriteAllText(filePath, yaml);
-    }
-
     public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
     {
         var gameObjectsData = new List<Dictionary<string, object>>();
@@ -4067,7 +3796,110 @@ public class SceneSerializer
                 goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
             }
 
-            var componentsData = SerializeGameObjectComponents(go);
+            var componentsData = new Dictionary<string, object>();
+
+            var transformData = new Dictionary<string, object>
+            {
+                ["Position"] = go.Transform.Position
+            };
+
+            // ToEulerAngles returns (Pitch, Yaw, Roll).
+            // The loader expects this order to create the quaternion.
+            // We save it directly in this logical order.
+            var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
+            transformData["Rotation"] = eulerDegrees;
+            transformData["Scale"] = go.Transform.Scale;
+            componentsData["Transform"] = transformData;
+
+            foreach (var component in go.Components)
+            {
+                // This is the critical fix: skip serializing the EditorController component,
+                // but not the entire GameObject it's attached to.
+                if (component.GetType().Name == "EditorController") continue;
+
+                switch (component)
+                {
+                    case MeshRenderer mr:
+                        var mrData = new Dictionary<string, object>
+                        {
+                            ["Mesh"] = mr.MeshName
+                        };
+                        var materialData = new Dictionary<string, object>
+                        {
+                            ["Texture"] = mr.Material.TextureName
+                        };
+                        if (mr.Material.TextureTiling != Vector2.One)
+                            materialData["TextureTiling"] = mr.Material.TextureTiling;
+                        if (mr.Material.EmissiveColor != Vector3.Zero)
+                            materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                        if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+                            materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                        if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+                            materialData["Shininess"] = mr.Material.Shininess;
+                        mrData["Material"] = materialData;
+                        componentsData["MeshRenderer"] = mrData;
+                        break;
+
+                    case Camera:
+                        componentsData["Camera"] = new Dictionary<string, object>();
+                        break;
+
+                    case Skybox skybox:
+                        var skyboxData = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
+                        componentsData["Skybox"] = skyboxData;
+                        break;
+
+                    case Light light:
+                        var lightData = new Dictionary<string, object>
+                        {
+                            ["Type"] = light.Type.ToString(),
+                            ["Color"] = light.Color,
+                            ["Intensity"] = light.Intensity
+                        };
+                        if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f)
+                        {
+                            lightData["AmbientStrength"] = light.AmbientStrength;
+                        }
+                        if (light.Type == LightType.Point || light.Type == LightType.Spot)
+                        {
+                            if (Math.Abs(light.Range - 50.0f) > 0.001f)
+                                lightData["Range"] = light.Range;
+                        }
+                        if (light.Type == LightType.Spot)
+                        {
+                            if (Math.Abs(light.InnerConeAngle - 12.5f) > 0.001f)
+                                lightData["InnerConeAngle"] = light.InnerConeAngle;
+                            if (Math.Abs(light.OuterConeAngle - 17.5f) > 0.001f)
+                                lightData["OuterConeAngle"] = light.OuterConeAngle;
+                        }
+                        componentsData["Light"] = lightData;
+                        break;
+
+                    case RigidBody rb:
+                        var rbData = new Dictionary<string, object>
+                        {
+                            ["IsStatic"] = rb.IsStatic
+                        };
+                        if (!rb.IsStatic)
+                        {
+                            rbData["Mass"] = rb.Mass;
+                        }
+                        if (rb.Friction != 0.5f)
+                        {
+                            rbData["Friction"] = rb.Friction;
+                        }
+                        if (rb.Bounciness != 0.5f)
+                        {
+                            rbData["Bounciness"] = rb.Bounciness;
+                        }
+                        componentsData["RigidBody"] = rbData;
+                        break;
+
+                    case Script script:
+                        componentsData[script.GetType().Name] = SerializeScriptProperties(script);
+                        break;
+                }
+            }
             goData["Components"] = componentsData;
             gameObjectsData.Add(goData);
         }
@@ -4079,90 +3911,6 @@ public class SceneSerializer
 
         var yaml = _serializer.Serialize(root);
         File.WriteAllText(filePath, yaml);
-    }
-
-    private Dictionary<string, object> SerializeGameObjectComponents(GameObject go)
-    {
-        var componentsData = new Dictionary<string, object>();
-
-        var transformData = new Dictionary<string, object>
-        {
-            ["Position"] = go.Transform.Position
-        };
-
-        var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
-        transformData["Rotation"] = eulerDegrees;
-        transformData["Scale"] = go.Transform.Scale;
-        componentsData["Transform"] = transformData;
-
-        foreach (var component in go.Components)
-        {
-            if (component.GetType().Name == "EditorController") continue;
-
-            switch (component)
-            {
-                case MeshRenderer mr:
-                    var mrData = new Dictionary<string, object> { ["Mesh"] = mr.MeshName };
-                    var materialData = new Dictionary<string, object> { ["Texture"] = mr.Material.TextureName };
-                    if (mr.Material.TextureTiling != Vector2.One) materialData["TextureTiling"] = mr.Material.TextureTiling;
-                    if (mr.Material.EmissiveColor != Vector3.Zero) materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                    if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f) materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                    if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f) materialData["Shininess"] = mr.Material.Shininess;
-                    mrData["Material"] = materialData;
-                    componentsData["MeshRenderer"] = mrData;
-                    break;
-
-                case Camera:
-                    componentsData["Camera"] = new Dictionary<string, object>();
-                    break;
-
-                case Skybox skybox:
-                    componentsData["Skybox"] = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
-                    break;
-
-                case Light light:
-                    var lightData = new Dictionary<string, object>
-                    {
-                        ["Type"] = light.Type.ToString(),
-                        ["Color"] = light.Color,
-                        ["Intensity"] = light.Intensity
-                    };
-                    if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f) lightData["AmbientStrength"] = light.AmbientStrength;
-                    if (light.Type is LightType.Point or LightType.Spot)
-                    {
-                        if (Math.Abs(light.Range - 50.0f) > 0.001f) lightData["Range"] = light.Range;
-                    }
-                    if (light.Type == LightType.Spot)
-                    {
-                        if (Math.Abs(light.InnerConeAngle - 12.5f) > 0.001f) lightData["InnerConeAngle"] = light.InnerConeAngle;
-                        if (Math.Abs(light.OuterConeAngle - 17.5f) > 0.001f) lightData["OuterConeAngle"] = light.OuterConeAngle;
-                    }
-                    componentsData["Light"] = lightData;
-                    break;
-
-                case RigidBody rb:
-                    var rbData = new Dictionary<string, object> { ["IsStatic"] = rb.IsStatic };
-                    if (!rb.IsStatic) rbData["Mass"] = rb.Mass;
-                    if (rb.Friction != 0.5f) rbData["Friction"] = rb.Friction;
-                    if (rb.Bounciness != 0.5f) rbData["Bounciness"] = rb.Bounciness;
-                    componentsData["RigidBody"] = rbData;
-                    break;
-
-                case Script script:
-                    componentsData[script.GetType().Name] = SerializeScriptProperties(script);
-                    break;
-            }
-        }
-        return componentsData;
-    }
-
-    private static void GetHierarchy(GameObject go, List<GameObject> list)
-    {
-        list.Add(go);
-        foreach (var child in go.Transform.Children)
-        {
-            GetHierarchy(child.GameObject, list);
-        }
     }
 
     private static Dictionary<string, object> SerializeScriptProperties(Script script)
@@ -4179,13 +3927,9 @@ public class SceneSerializer
         return propertiesData;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Serialization\Vector2YamlTypeConverter.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\Vector2YamlTypeConverter.cs">
 using System.Globalization;
 using System.Numerics;
 using YamlDotNet.Core;
@@ -4219,13 +3963,9 @@ public class Vector2YamlTypeConverter : IYamlTypeConverter
         emitter.Emit(new SequenceEnd());
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Serialization\Vector3YamlTypeConverter.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Serialization\Vector3YamlTypeConverter.cs">
 using System.Globalization;
 using System.Numerics;
 using YamlDotNet.Core;
@@ -4267,13 +4007,9 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         emitter.Emit(new SequenceEnd());
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Utils\AssetFinder.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Utils\AssetFinder.cs">
 namespace Cherris;
 
 public static class AssetFinder
@@ -4336,13 +4072,9 @@ public static class AssetFinder
         return null; // Not found
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Utils\EngineMath.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Utils\EngineMath.cs">
 using System.Numerics;
 
 namespace Cherris;
@@ -4384,13 +4116,9 @@ public static class EngineMath
         return angles;
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Utils\HideInInspectorAttribute.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Utils\HideInInspectorAttribute.cs">
 namespace Cherris;
 
 /// <summary>
@@ -4401,13 +4129,9 @@ namespace Cherris;
 public class HideInInspectorAttribute : Attribute
 {
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\ImGuiController.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\ImGuiController.cs">
 using Cherris.Rendering;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
@@ -4784,13 +4508,9 @@ void main()
         };
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenGLDebugRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLDebugRenderer.cs">
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
@@ -4899,13 +4619,9 @@ void main()
         GL.DeleteBuffer(_vbo);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenGLMeshRendererData.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLMeshRendererData.cs">
 using Cherris;
 using OpenTK.Graphics.OpenGL;
 
@@ -4966,13 +4682,9 @@ internal class OpenGLMeshRendererData : IDisposable
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenGLPostProcessor.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLPostProcessor.cs">
 using OpenTK.Graphics.OpenGL4;
 
 namespace Cherris;
@@ -5288,13 +5000,9 @@ void main()
         DisposeFramebuffers();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenGLSceneRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLSceneRenderer.cs">
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
@@ -5708,13 +5416,9 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
         _shaderProgram?.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenGLSkyboxRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLSkyboxRenderer.cs">
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
@@ -5798,13 +5502,9 @@ void main()
         _skyboxCubeData?.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenGLUIRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenGLUIRenderer.cs">
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
@@ -5885,13 +5585,9 @@ internal class OpenGLUIRenderer : IDisposable
         _uiTextService?.Cleanup();
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenTKBackend.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKBackend.cs">
 using Cherris.Rendering;
 
 namespace Cherris.OpenTK
@@ -5927,13 +5623,9 @@ namespace Cherris.OpenTK
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenTKGameWindow.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKGameWindow.cs">
 using Cherris.Rendering;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
@@ -6172,13 +5864,9 @@ public class OpenTKGameWindow : IGameWindow
         };
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenTKRenderer.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKRenderer.cs">
 using Cherris.OpenTK;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -6384,13 +6072,9 @@ namespace Cherris
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenTKResourceManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKResourceManager.cs">
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
@@ -6601,13 +6285,9 @@ public class OpenTKResourceManager : IResourceManager
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\OpenTKTexture.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\OpenTKTexture.cs">
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
 
@@ -6637,13 +6317,9 @@ public class OpenTKTexture : ITexture
         GL.DeleteTexture(Handle);
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\OpenTK\ShaderProgram.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\OpenTK\ShaderProgram.cs">
 using OpenTK.Graphics.OpenGL;
 
 public class ShaderProgram : IDisposable
@@ -6701,13 +6377,9 @@ public class ShaderProgram : IDisposable
         }
     }
 }
-```
+</file>
 
----
-
-### `Cherris\Rendering\Veldrid\VeldridGraphicsManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\Cherris\Rendering\Veldrid\VeldridGraphicsManager.cs">
 using Veldrid;
 using Veldrid.Sdl2;
 
@@ -6839,13 +6511,9 @@ public class VeldridGraphicsManager : IDisposable
         // The GraphicsDevice is managed by the backend, so we don't dispose it here.
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\ContentBrowserPanel.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\ContentBrowserPanel.cs">
 using ImGuiNET;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -6858,7 +6526,7 @@ public class ContentBrowserPanel : IDisposable
     private readonly EditorTextureManager _textureManager;
     private readonly string _assetRootPath;
     private string _currentAssetPath;
-    private static IntPtr _payloadStringPtr = IntPtr.Zero; // For string payloads
+    private static IntPtr _payloadPtr = IntPtr.Zero;
 
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
@@ -6867,7 +6535,6 @@ public class ContentBrowserPanel : IDisposable
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
         _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
-        _textureManager.LoadTexture("Prefab", "Assets/Icons/prefab.png"); // Added for prefabs
 
         _assetRootPath = Path.GetFullPath("Assets");
         _currentAssetPath = _assetRootPath;
@@ -6875,37 +6542,16 @@ public class ContentBrowserPanel : IDisposable
 
     public void Draw()
     {
-        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
-        if (_payloadStringPtr != IntPtr.Zero)
+        // Free any unmanaged memory from the previous frame's drag-drop operation.
+        if (_payloadPtr != IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadStringPtr);
-            _payloadStringPtr = IntPtr.Zero;
+            Marshal.FreeHGlobal(_payloadPtr);
+            _payloadPtr = IntPtr.Zero;
         }
 
         ImGui.Begin("Content Browser");
         DrawHeader();
         DrawGrid();
-
-        // Make the entire panel a drop target for creating prefabs
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (payload.Data != IntPtr.Zero)
-            {
-                byte[] data = new byte[payload.DataSize];
-                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                var goId = new Guid(data);
-                var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
-
-                if (go != null)
-                {
-                    string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
-                    _editor.CreatePrefabFromGameObject(go, prefabPath);
-                }
-            }
-            ImGui.EndDragDropTarget();
-        }
-
         ImGui.End();
     }
 
@@ -6962,25 +6608,24 @@ public class ContentBrowserPanel : IDisposable
             // Handle single-click
         }
 
+        // --- DRAG SOURCE LOGIC ---
         string extension = Path.GetExtension(path).ToLowerInvariant();
-
-        // --- Drag Source for Textures and Prefabs (string path payload) ---
-        string payloadType = null;
-        if (EditorTextureManager.ImageExtensions.Contains(extension)) payloadType = "ASSET_PATH_TEXTURE";
-        else if (EditorTextureManager.PrefabExtensions.Contains(extension)) payloadType = "ASSET_PATH_PREFAB";
-
-        if (payloadType != null && ImGui.BeginDragDropSource())
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
         {
-            // Allocate memory and hold onto the pointer until the next frame.
-            _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
-            ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
+            if (ImGui.BeginDragDropSource())
+            {
+                // Set payload to be the file path
+                _payloadPtr = Marshal.StringToHGlobalAnsi(path);
+                ImGui.SetDragDropPayload("ASSET_PATH_TEXTURE", _payloadPtr, (uint)(path.Length + 1));
 
-            ImGui.Image(textureHandle, new Vector2(50, 50));
-            ImGui.SameLine();
-            ImGui.Text(itemName);
-            ImGui.EndDragDropSource();
+                // Show a preview while dragging
+                ImGui.Image(textureHandle, new Vector2(50, 50));
+                ImGui.SameLine();
+                ImGui.Text(itemName);
+
+                ImGui.EndDragDropSource();
+            }
         }
-
 
         if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
@@ -7019,20 +6664,16 @@ public class ContentBrowserPanel : IDisposable
     public void Dispose()
     {
         // Ensure we free the handle on shutdown if it's still allocated
-        if (_payloadStringPtr != IntPtr.Zero)
+        if (_payloadPtr != IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadStringPtr);
-            _payloadStringPtr = IntPtr.Zero;
+            Marshal.FreeHGlobal(_payloadPtr);
+            _payloadPtr = IntPtr.Zero;
         }
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Editor.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Editor.cs">
 using Cherris;
 using Cherris.OpenTK;
 using CherrisEditor.Undo;
@@ -7053,42 +6694,11 @@ public class Editor : Engine
 
     private Camera? _editorCamera;
     private AssemblyLoadContext _gameAssemblyContext;
-    private readonly SceneSerializer _sceneSerializer;
-
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
         Exposure = 0.5f;
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
-        _sceneSerializer = new SceneSerializer();
-    }
-
-    public void CreatePrefabFromGameObject(GameObject go, string path)
-    {
-        if (go == null || string.IsNullOrEmpty(path)) return;
-        Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
-        _sceneSerializer.SavePrefab(go, path);
-    }
-
-    public void InstantiatePrefab(string path)
-    {
-        if (!File.Exists(path))
-        {
-            Console.WriteLine($"[Editor] Prefab file not found: {path}");
-            return;
-        }
-
-        var rootObjects = SceneLoader.LoadPrefab(path);
-        foreach (var root in rootObjects)
-        {
-            SceneManager.AddGameObject(root);
-        }
-
-        if (rootObjects.Any())
-        {
-            SetSelectedGameObject(rootObjects.First());
-        }
-        SceneManager.ActiveScene.IsDirty = true;
     }
 
     public void EnterPlayMode()
@@ -7194,7 +6804,7 @@ public class Editor : Engine
 
     protected override void OnStart()
     {
-        _editorAppLogic = new(this, _sceneSerializer);
+        _editorAppLogic = new(this);
         OnDrawUI = _editorAppLogic.DrawUI();
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
         InitializeEditingState();
@@ -7387,13 +6997,9 @@ public class Editor : Engine
     public void SetSelectedGameObject(GameObject? go) => SelectedGameObject = go;
     public GameObject? GetSelectedGameObject() => SelectedGameObject;
 }
-```
+</file>
 
----
-
-### `CherrisEditor\EditorAppLogic.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorAppLogic.cs">
 using Cherris;
 using CherrisEditor.UI;
 using CherrisEditor.Undo;
@@ -7417,12 +7023,12 @@ public class EditorAppLogic : IDisposable
     private readonly ContentBrowserPanel _contentBrowserPanel;
     private readonly EditorTextureManager _textureManager;
 
-    public EditorAppLogic(Editor editor, SceneSerializer sceneSerializer)
+    public EditorAppLogic(Editor editor)
     {
         _editor = editor;
         _history = editor.History;
         _textureManager = new EditorTextureManager();
-        _sceneSerializer = sceneSerializer;
+        _sceneSerializer = new SceneSerializer();
 
         _menuBar = new MenuBar(editor, _sceneSerializer, _history);
         _toolbar = new Toolbar(editor, _textureManager);
@@ -7526,17 +7132,12 @@ public class EditorAppLogic : IDisposable
     public void Dispose()
     {
         _contentBrowserPanel.Dispose();
-        _outlinerPanel.Dispose();
         _textureManager.Dispose();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\EditorController.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorController.cs">
 using Cherris;
 using ImGuizmoNET;
 using System.Numerics;
@@ -7682,13 +7283,9 @@ public class EditorController : Script
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\EditorState.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorState.cs">
 namespace CherrisEditor;
 
 public enum EditorState
@@ -7697,13 +7294,9 @@ public enum EditorState
     Playing,
     Paused
 }
-```
+</file>
 
----
-
-### `CherrisEditor\EditorTextureManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorTextureManager.cs">
 using OpenTK.Graphics.OpenGL4;
 using StbImageSharp;
 
@@ -7717,8 +7310,6 @@ public class EditorTextureManager : IDisposable
     private readonly Dictionary<string, int> _textures = new();
     public static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
     private static readonly string[] ScriptExtensions = { ".cs" };
-    public static readonly string[] PrefabExtensions = { ".prefab" };
-
 
     /// <summary>
     /// Loads an image from a file into an OpenGL texture and caches it.
@@ -7768,11 +7359,6 @@ public class EditorTextureManager : IDisposable
         if (ScriptExtensions.Contains(extension))
         {
             return GetTexture("Script");
-        }
-
-        if (PrefabExtensions.Contains(extension))
-        {
-            return GetTexture("Prefab");
         }
 
         if (ImageExtensions.Contains(extension))
@@ -7833,13 +7419,9 @@ public class EditorTextureManager : IDisposable
         _textures.Clear();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\EditorTheme.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\EditorTheme.cs">
 using ImGuiNET;
 using System.Numerics;
 
@@ -7939,13 +7521,9 @@ public static class EditorTheme
         style.TabRounding = 0;
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\InspectorPanel.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\InspectorPanel.cs">
 using Cherris;
 using CherrisEditor.Inspectors;
 using CherrisEditor.Undo;
@@ -8268,13 +7846,9 @@ internal class InspectorPanel
 
     private static string SplitPascalCase(string input) => Regex.Replace(input, "(?<!^)([A-Z])", " $1");
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Program.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Program.cs">
 using Cherris;
 using CherrisEditor;
 
@@ -8286,13 +7860,9 @@ class Program
         editor.Run();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\ScriptCompiler.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\ScriptCompiler.cs">
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System.Reflection;
@@ -8367,13 +7937,9 @@ public static class ScriptCompiler
         return context.LoadFromStream(ms);
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\ScriptTemplate.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\ScriptTemplate.cs">
 namespace CherrisEditor;
 
 public static class ScriptTemplate
@@ -8400,13 +7966,9 @@ public class {scriptName} : Script
 ";
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Attributes\CustomInspectorAttribute.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Attributes\CustomInspectorAttribute.cs">
 namespace CherrisEditor;
 
 /// <summary>
@@ -8422,13 +7984,9 @@ public class CustomInspectorAttribute : Attribute
         InspectedType = inspectedType;
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Inspectors\DefaultInspector.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\DefaultInspector.cs">
 using Cherris;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
@@ -8772,13 +8330,9 @@ public class DefaultInspector : IComponentInspector
         return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Inspectors\IComponentInspector.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\IComponentInspector.cs">
 using Cherris;
 
 namespace CherrisEditor.Inspectors;
@@ -8787,13 +8341,9 @@ public interface IComponentInspector
 {
     bool Draw(Component component);
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Inspectors\LightInspector.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\LightInspector.cs">
 using Cherris;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
@@ -9060,13 +8610,9 @@ public class LightInspector : IComponentInspector
         }
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Inspectors\MeshRendererInspector.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\MeshRendererInspector.cs">
 using Cherris;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
@@ -9265,13 +8811,9 @@ public class MeshRendererInspector : IComponentInspector
         }
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Inspectors\TransformInspector.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Inspectors\TransformInspector.cs">
 using Cherris;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
@@ -9408,13 +8950,9 @@ public class TransformInspector
         }
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\UI\ConsolePanel.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\ConsolePanel.cs">
 using ImGuiNET;
 
 namespace CherrisEditor.UI;
@@ -9428,13 +8966,9 @@ public static class ConsolePanel
         ImGui.End();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\UI\MenuBar.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\MenuBar.cs">
 using Cherris;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -9491,38 +9025,26 @@ public class MenuBar
         ImGui.EndMenuBar();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\UI\OutlinerPanel.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\OutlinerPanel.cs">
 using Cherris;
 using ImGuiNET;
 using System.Runtime.InteropServices;
 
 namespace CherrisEditor.UI;
 
-public class OutlinerPanel : IDisposable
+public class OutlinerPanel
 {
     private readonly Editor _editor;
-    private static IntPtr _payloadGuidPtr = IntPtr.Zero; // For GUID payloads
 
     public OutlinerPanel(Editor editor)
     {
         _editor = editor;
     }
 
-    public void Draw()
+    public unsafe void Draw()
     {
-        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
-        if (_payloadGuidPtr != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_payloadGuidPtr);
-            _payloadGuidPtr = IntPtr.Zero;
-        }
-
         ImGui.Begin("Outliner");
         DrawOutlinerContextMenu();
 
@@ -9531,37 +9053,10 @@ public class OutlinerPanel : IDisposable
             DrawGameObjectNode(go);
         }
 
-        // Use the remaining space in the window as a drop target to instantiate prefabs at the root
-        ImGui.InvisibleButton("OutlinerDropTarget", ImGui.GetContentRegionAvail());
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr prefabPayload = ImGui.AcceptDragDropPayload("ASSET_PATH_PREFAB");
-            if (prefabPayload.Data != IntPtr.Zero)
-            {
-                string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
-                _editor.InstantiatePrefab(path);
-            }
-
-            ImGuiPayloadPtr goPayload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (goPayload.Data != IntPtr.Zero)
-            {
-                byte[] data = new byte[goPayload.DataSize];
-                Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
-                var draggedId = new Guid(data);
-                var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
-                if (draggedObject != null)
-                {
-                    draggedObject.Transform.Parent = null; // Unparent
-                }
-            }
-
-            ImGui.EndDragDropTarget();
-        }
-
         ImGui.End();
     }
 
-    private void DrawGameObjectNode(GameObject go)
+    private unsafe void DrawGameObjectNode(GameObject go)
     {
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.SpanAvailWidth;
         if (_editor.GetSelectedGameObject() == go) flags |= ImGuiTreeNodeFlags.Selected;
@@ -9574,11 +9069,10 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropSource())
         {
             byte[] guidBytes = go.Id.ToByteArray();
-            // Allocate memory and hold onto the pointer until the next frame.
-            _payloadGuidPtr = Marshal.AllocHGlobal(guidBytes.Length);
-            Marshal.Copy(guidBytes, 0, _payloadGuidPtr, guidBytes.Length);
-            ImGui.SetDragDropPayload("GAMEOBJECT_ID", _payloadGuidPtr, (uint)guidBytes.Length);
-
+            fixed (byte* ptr = guidBytes)
+            {
+                ImGui.SetDragDropPayload("GAMEOBJECT_ID", (IntPtr)ptr, (uint)guidBytes.Length);
+            }
             ImGui.Text(go.Name);
             ImGui.EndDragDropSource();
         }
@@ -9586,7 +9080,7 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (payload.Data != IntPtr.Zero)
+            if (payload.NativePtr is not null)
             {
                 byte[] data = new byte[payload.DataSize];
                 Marshal.Copy(payload.Data, data, 0, payload.DataSize);
@@ -9629,24 +9123,10 @@ public class OutlinerPanel : IDisposable
 
         ImGui.EndPopup();
     }
-
-    public void Dispose()
-    {
-        // Ensure we free the handle on shutdown if it's still allocated
-        if (_payloadGuidPtr != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_payloadGuidPtr);
-            _payloadGuidPtr = IntPtr.Zero;
-        }
-    }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\UI\ToolBar.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\ToolBar.cs">
 using ImGuiNET;
 using System.Numerics;
 
@@ -9696,13 +9176,9 @@ public class Toolbar
         ImGui.EndChild();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\UI\ViewportPanel.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\UI\ViewportPanel.cs">
 using Cherris;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
@@ -9922,13 +9398,9 @@ public class ViewportPanel
         _editor.SetSelectedGameObject(closestObject);
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Undo\HistoryManager.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\HistoryManager.cs">
 namespace CherrisEditor.Undo;
 
 public class HistoryManager
@@ -9976,13 +9448,9 @@ public class HistoryManager
         OnHistoryChanged?.Invoke();
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Assets\Scripts\PlayerController.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scripts\PlayerController.cs">
 using Cherris;
 using System.Numerics;
 
@@ -10042,13 +9510,9 @@ public class PlayerController : Script
         }
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Assets\Scripts\Spinner.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Assets\Scripts\Spinner.cs">
 using Cherris;
 using System.Numerics;
 
@@ -10065,13 +9529,9 @@ public class Spinner : Script
                                            Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Undo\Commands\ChangePropertyCommand.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\Commands\ChangePropertyCommand.cs">
 using System.Reflection;
 
 namespace CherrisEditor.Undo.Commands;
@@ -10101,13 +9561,9 @@ public class ChangePropertyCommand : ICommand
         _property.SetValue(_target, _oldValue);
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Undo\Commands\ChangeTransformCommand.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\Commands\ChangeTransformCommand.cs">
 using Cherris;
 using System.Numerics;
 
@@ -10150,13 +9606,9 @@ public class ChangeTransformCommand : ICommand
         _target.Scale = _oldScale;
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\Undo\Commands\ICommand.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\Undo\Commands\ICommand.cs">
 namespace CherrisEditor.Undo;
 
 public interface ICommand
@@ -10164,13 +9616,9 @@ public interface ICommand
     void Execute();
     void Undo();
 }
-```
+</file>
 
----
-
-### `CherrisEditor\bin\Debug\net9.0\Assets\Scene.yaml`
-
-```yaml
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scene.yaml">
 GameObjects:
 - Id: ccb01030-3225-48a9-9551-643e8ee2907f
   Name: SkyboxContainer
@@ -10285,14 +9733,11 @@ GameObjects:
       Range: 20
       InnerConeAngle: 20
       OuterConeAngle: 25
-```
+</file>
 
----
-
-### `CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs`
-
-```csharp
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs">
 using Cherris;
+using System;
 using System.Numerics;
 
 namespace Apexverse;
@@ -10351,15 +9796,11 @@ public class PlayerController : Script
         }
     }
 }
-```
+</file>
 
----
-
-### `CherrisEditor\bin\Debug\net9.0\Assets\Scripts\Spinner.cs`
-
-```csharp
-using Cherris;
+<file path="E:\Parsa Stuff\Visual Studio\Cherris\CherrisEditor\bin\Debug\net9.0\Assets\Scripts\Spinner.cs">
 using System.Numerics;
+using Cherris;
 
 namespace Apexverse;
 
@@ -10374,7 +9815,5 @@ public class Spinner : Script
                                            Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
-```
-
----
+</file>
 

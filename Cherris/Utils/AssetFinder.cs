@@ -2,47 +2,18 @@
 
 public static class AssetFinder
 {
-    private static readonly string? _assetRootPath = FindAssetRootPath();
-
-    private static string? FindAssetRootPath()
-    {
-        string currentPath = AppContext.BaseDirectory;
-        DirectoryInfo? directoryInfo = new(currentPath);
-
-        while (directoryInfo != null)
-        {
-            // Normalize path separators for a consistent check
-            string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
-
-            // This is the robust check. We ensure we are not in a build artifact folder.
-            if (!normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/"))
-            {
-                string potentialPath = Path.Combine(directoryInfo.FullName, "Assets");
-                if (Directory.Exists(potentialPath))
-                {
-                    Console.WriteLine($"[AssetFinder] Found asset root at: {potentialPath}");
-                    return potentialPath;
-                }
-            }
-
-            directoryInfo = directoryInfo.Parent;
-        }
-
-        Console.WriteLine("[AssetFinder] FATAL: Could not find the 'Assets' directory in any parent path.");
-        return null;
-    }
+    private const string AssetRootPath = "Assets";
 
     public static string? FindAssetPath(string assetName)
     {
-        if (string.IsNullOrWhiteSpace(assetName) || _assetRootPath is null)
+        if (string.IsNullOrWhiteSpace(assetName) || !Directory.Exists(AssetRootPath))
         {
-            Console.WriteLine($"[AssetFinder] Warning: Asset root not found or asset name '{assetName}' is null/empty.");
             return null;
         }
 
         // Sanitize path to use correct OS separators
         string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-        string fullPath = Path.Combine(_assetRootPath, sanitizedName);
+        string fullPath = Path.Combine(AssetRootPath, sanitizedName);
 
         // Case 1: The provided name is an exact relative path (with extension).
         if (File.Exists(fullPath))
@@ -71,13 +42,13 @@ public static class AssetFinder
         try
         {
             string fileNameOnly = Path.GetFileName(sanitizedName);
-            var files = Directory.GetFiles(_assetRootPath, fileNameOnly, SearchOption.AllDirectories);
+            var files = Directory.GetFiles(AssetRootPath, fileNameOnly, SearchOption.AllDirectories);
             if (files.Any()) return files[0];
 
             // If still not found, try searching with wildcard extension.
             if (!Path.HasExtension(fileNameOnly))
             {
-                var filesWithWildcard = Directory.GetFiles(_assetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
+                var filesWithWildcard = Directory.GetFiles(AssetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
                 if (filesWithWildcard.Any()) return filesWithWildcard[0];
             }
         }

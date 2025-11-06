@@ -1,5 +1,4 @@
-﻿using HarfBuzzSharp;
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Cherris
 {
@@ -9,7 +8,6 @@ namespace Cherris
         public string Name { get; set; }
         public string FilePath { get; set; }
         public List<GameObject> GameObjects { get; } = new List<GameObject>();
-        public List<Light> Lights { get; } = new List<Light>();
         public Camera MainCamera { get; set; }
         public Skybox Skybox { get; private set; }
         public bool IsDirty { get; set; }
@@ -25,8 +23,6 @@ namespace Cherris
         public void AddGameObject(GameObject go)
         {
             GameObjects.Add(go);
-            var light = go.GetComponent<Light>();
-            if (light is not null) Lights.Add(light);
             IsDirty = true;
         }
 
@@ -43,10 +39,6 @@ namespace Cherris
 
             // Remove from the root scene list
             GameObjects.Remove(go);
-
-            // Remove light from cached list
-            var light = go.GetComponent<Light>();
-            if (light is not null) Lights.Remove(light);
 
             // Dispose its managed resources
             go.GetComponent<MeshRenderer>()?.Dispose();
@@ -95,14 +87,10 @@ namespace Cherris
         {
             MainCamera = null;
             Skybox = null;
-            Lights.Clear();
-
             foreach (var gameObject in GameObjects)
             {
                 if (MainCamera is null) MainCamera = gameObject.GetComponent<Camera>();
                 if (Skybox is null) Skybox = gameObject.GetComponent<Skybox>();
-                var light = gameObject.GetComponent<Light>();
-                if (light is not null) Lights.Add(light);
             }
         }
 

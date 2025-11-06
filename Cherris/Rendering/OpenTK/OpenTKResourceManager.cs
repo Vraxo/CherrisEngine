@@ -4,14 +4,15 @@ using StbImageSharp;
 
 namespace Cherris;
 
-public class OpenTKResourceManager : ResourceManagerBase
+public class OpenTKResourceManager : IResourceManager
 {
+    private readonly Dictionary<string, Mesh> _meshes = new();
     private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
     private static readonly string[] FaceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
 
 
-    public override void LoadInitialAssets()
+    public void LoadInitialAssets()
     {
         Console.WriteLine("[OpenTKResourceManager] Initial assets loaded.");
         _meshes.Add("Cube", Mesh.CreateCube());
@@ -33,7 +34,62 @@ public class OpenTKResourceManager : ResourceManagerBase
         return new OpenTKTexture(handle);
     }
 
-    public override ITexture GetTexture(string name)
+    public Mesh GetMesh(string name)
+    {
+        if (_meshes.TryGetValue(name, out var mesh))
+        {
+            return mesh;
+        }
+
+        string[] parts = name.Split('#');
+        string filePathPart = parts[0];
+
+        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
+            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
+            {
+                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
+                return null;
+            }
+
+            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            if (fullPath is null)
+            {
+                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
+                return null;
+            }
+
+            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
+            if (!loadedMeshes.Any())
+            {
+                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
+                return null;
+            }
+
+            foreach (var (meshName, loadedMesh) in loadedMeshes)
+            {
+                string cacheKey = $"{filePathPart}#{meshName}";
+                _meshes[cacheKey] = loadedMesh;
+            }
+            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
+
+            if (_meshes.TryGetValue(name, out var finalMesh))
+            {
+                return finalMesh;
+            }
+
+            if (parts.Length == 1)
+            {
+                return loadedMeshes.Values.First();
+            }
+        }
+
+        return null;
+    }
+
+
+    public ITexture GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out var texture))
         {
@@ -93,7 +149,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         }
     }
 
-    public override Skybox GetSkybox(string name)
+    public Skybox GetSkybox(string name)
     {
         if (_skyboxes.TryGetValue(name, out var skybox))
         {
@@ -140,7 +196,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         }
     }
 
-    public override void Dispose()
+    public void Dispose()
     {
         foreach (var texture in _textures.Values)
         {
