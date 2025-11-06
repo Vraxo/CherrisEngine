@@ -21,6 +21,7 @@ public class Renderer : IRenderer
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
     private string _snapshotPath;
+    public bool ShowGrid { get; set; }
 
     // Veldrid-specific data associated with a MeshRenderer component
     internal class VeldridMeshRendererData : IDisposable

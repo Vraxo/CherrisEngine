@@ -83,6 +83,10 @@ public class ViewportPanel
                     // Only render the viewport content for the currently active scene
                     if (scene == activeScene)
                     {
+                        ImGui.BeginChild("ViewportToolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+                        DrawViewportOptions();
+                        ImGui.EndChild();
+
                         var currentSize = ImGui.GetContentRegionAvail();
 
                         if (_editor.Renderer is OpenTKRenderer otkRenderer)
@@ -133,6 +137,32 @@ public class ViewportPanel
         }
 
         ImGui.End();
+        ImGui.PopStyleVar();
+    }
+
+    private void DrawViewportOptions()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
+        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.2f, 0.2f, 0.8f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.3f, 0.3f, 0.3f, 0.9f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.25f, 0.25f, 0.25f, 0.9f));
+
+        if (ImGui.Button("Options"))
+        {
+            ImGui.OpenPopup("ViewportOptionsPopup");
+        }
+
+        if (ImGui.BeginPopup("ViewportOptionsPopup"))
+        {
+            var showGrid = _editor.Renderer.ShowGrid;
+            if (ImGui.Checkbox("Show Grid", ref showGrid))
+            {
+                _editor.Renderer.ShowGrid = showGrid;
+            }
+            ImGui.EndPopup();
+        }
+
+        ImGui.PopStyleColor(3);
         ImGui.PopStyleVar();
     }
 

@@ -15,9 +15,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLPostProcessor _postProcessor;
     private readonly ImGuiController _imGuiController;
     private readonly OpenGLDebugRenderer _debugRenderer;
+    private readonly OpenGLGridRenderer _gridRenderer;
 
     private Vector2i _viewportSize = new(1, 1);
     private Vector2i _windowSize;
+    public bool ShowGrid { get; set; } = true;
 
     public OpenTKRenderer(ImGuiController imGuiController)
     {
@@ -26,6 +28,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _postProcessor = new OpenGLPostProcessor();
         _imGuiController = imGuiController;
         _debugRenderer = new OpenGLDebugRenderer();
+        _gridRenderer = new OpenGLGridRenderer();
 
         GL.FrontFace(FrontFaceDirection.Cw);
     }
@@ -80,6 +83,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
             if (skybox?.CubeMapTexture is not null)
             {
                 _skyboxRenderer.Render(skybox, view, projection);
+            }
+
+            if (ShowGrid)
+            {
+                _gridRenderer.Render(view, projection);
             }
 
             _sceneRenderer.Render(gameObjects, lights, view, projection);
@@ -182,6 +190,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _skyboxRenderer?.Dispose();
         _postProcessor?.Dispose();
         _debugRenderer?.Dispose();
+        _gridRenderer?.Dispose();
     }
 
     private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)

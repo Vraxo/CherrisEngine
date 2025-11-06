@@ -925,18 +925,23 @@ public class GameObject
     public void RemoveComponent<T>() where T : Component
     {
         var componentToRemove = GetComponent<T>();
-        if (componentToRemove is not null)
+
+        if (componentToRemove is null)
         {
-            _components.Remove(componentToRemove);
+            return;
         }
+
+        _components.Remove(componentToRemove);
     }
 
     public void RemoveComponent(Component componentToRemove)
     {
-        if (componentToRemove is not null)
+        if (componentToRemove is null)
         {
-            _components.Remove(componentToRemove);
+            return;
         }
+
+        _components.Remove(componentToRemove);
     }
 
     public BoundingBox GetWorldSpaceAABB()
@@ -1173,6 +1178,43 @@ public static class VeldridKeyMapper
 
 ---
 
+### `Cherris\Core\GenericCubemapLoader.cs`
+
+```csharp
+using Cherris.Core;
+
+namespace Cherris.Rendering;
+
+public static class GenericCubemapLoader
+{
+    private static readonly string[] FaceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
+
+    public static ImageData[]? LoadCubemapFaces(string baseName)
+    {
+        var images = new ImageData[6];
+        for (int i = 0; i < FaceSuffixes.Length; i++)
+        {
+            string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
+            if (path is null)
+            {
+                Console.WriteLine($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
+                return null;
+            }
+
+            var imageData = ImageLoader.LoadFromFile(path, flipVertical: false);
+            if (imageData is null)
+            {
+                return null; // Error already logged by ImageLoader
+            }
+            images[i] = imageData.Value;
+        }
+        return images;
+    }
+}
+```
+
+---
+
 ### `Cherris\Core\GraphicsAPI.cs`
 
 ```csharp
@@ -1182,6 +1224,62 @@ public enum GraphicsAPI
 {
     Veldrid,
     OpenTK
+}
+```
+
+---
+
+### `Cherris\Core\ImageData.cs`
+
+```csharp
+namespace Cherris.Core;
+
+public struct ImageData
+{
+    public byte[] Data;
+    public int Width;
+    public int Height;
+}
+```
+
+---
+
+### `Cherris\Core\ImageLoader.cs`
+
+```csharp
+using StbImageSharp;
+
+namespace Cherris.Core;
+
+public static class ImageLoader
+{
+    public static ImageData? LoadFromFile(string path, bool flipVertical = true)
+    {
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"[ImageLoader] Error: Image file not found at '{path}'");
+            return null;
+        }
+
+        try
+        {
+            int originalFlipState = StbImage.stbi__vertically_flip_on_load_global;
+            StbImage.stbi_set_flip_vertically_on_load(flipVertical ? 1 : 0);
+
+            using var stream = File.OpenRead(path);
+            ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+
+            // Always reset to original state
+            StbImage.stbi_set_flip_vertically_on_load(originalFlipState);
+
+            return new ImageData { Data = image.Data, Width = image.Width, Height = image.Height };
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ImageLoader] Error loading image '{path}': {e.Message}");
+            return null;
+        }
+    }
 }
 ```
 
@@ -1623,59 +1721,23 @@ public struct Ray
     }
 
     // Slab method for ray-AABB intersection.
-    public bool Intersects(BoundingBox box, out float distance)
+    public readonly bool Intersects(BoundingBox box, out float distance)
     {
-        distance = 0.0f;
-        float tmin = 0.0f;
-        float tmax = float.MaxValue;
+        Vector3 invDir = Vector3.One / Direction;
+        Vector3 t1 = (box.Min - Origin) * invDir;
+        Vector3 t2 = (box.Max - Origin) * invDir;
 
-        if (Math.Abs(Direction.X) < 1e-6)
-        {
-            if (Origin.X < box.Min.X || Origin.X > box.Max.X) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.X;
-            float t1 = (box.Min.X - Origin.X) * ood;
-            float t2 = (box.Max.X - Origin.X) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
+        Vector3 tMinVec = Vector3.Min(t1, t2);
+        Vector3 tMaxVec = Vector3.Max(t1, t2);
 
-        if (Math.Abs(Direction.Y) < 1e-6)
-        {
-            if (Origin.Y < box.Min.Y || Origin.Y > box.Max.Y) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.Y;
-            float t1 = (box.Min.Y - Origin.Y) * ood;
-            float t2 = (box.Max.Y - Origin.Y) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
-
-        if (Math.Abs(Direction.Z) < 1e-6)
-        {
-            if (Origin.Z < box.Min.Z || Origin.Z > box.Max.Z) return false;
-        }
-        else
-        {
-            float ood = 1.0f / Direction.Z;
-            float t1 = (box.Min.Z - Origin.Z) * ood;
-            float t2 = (box.Max.Z - Origin.Z) * ood;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            tmin = Math.Max(tmin, t1);
-            tmax = Math.Min(tmax, t2);
-            if (tmin > tmax) return false;
-        }
+        float tmin = Math.Max(tMinVec.X, Math.Max(tMinVec.Y, tMinVec.Z));
+        float tmax = Math.Min(tMaxVec.X, Math.Min(tMaxVec.Y, tMaxVec.Z));
 
         distance = tmin;
-        return true;
+
+        // if tmax < 0, ray is intersecting AABB, but the whole AABB is behind us
+        // if tmin > tmax, ray doesn't intersect AABB
+        return tmax >= Math.Max(tmin, 0.0f);
     }
 }
 ```
@@ -5159,7 +5221,11 @@ internal class OpenGLMeshRendererData : IDisposable
 ### `Cherris\Rendering\OpenTK\OpenGLPostProcessor.cs`
 
 ```csharp
+using Cherris;
+using Cherris.Components;
+using Cherris.Core;
 using OpenTK.Graphics.OpenGL4;
+using System.Diagnostics;
 
 namespace Cherris;
 
@@ -5291,80 +5357,9 @@ internal class OpenGLPostProcessor : IDisposable
 
     private void SetupShaders()
     {
-        const string quadVert = @"
-#version 330 core
-layout (location = 0) in vec2 aPosition;
-layout (location = 1) in vec2 aTexCoords;
-out vec2 TexCoords;
-void main()
-{
-    TexCoords = aTexCoords;
-    gl_Position = vec4(aPosition, 0.0, 1.0);
-}";
-
-        const string brightPassFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoords;
-uniform sampler2D image;
-const float threshold = 1.1;
-void main()
-{
-    vec3 color = texture(image, TexCoords).rgb;
-    vec3 finalColor = max(vec3(0.0), color - threshold);
-    FragColor = vec4(finalColor, 1.0);
-}";
-        _brightPassShader = new ShaderProgram(quadVert, brightPassFrag);
-
-        const string blurFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoords;
-uniform sampler2D image;
-uniform bool horizontal;
-
-// 5-tap Gaussian blur (Veldrid equivalent)
-const float weights[3] = float[](0.227027, 0.316216, 0.070270);
-const float offsets[3] = float[](0.0, 1.384615, 3.230769);
-
-void main()
-{
-    vec2 texelSize = 1.0 / textureSize(image, 0);
-    vec3 result = texture(image, TexCoords).rgb * weights[0];
-    vec2 dir = horizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
-
-    for (int i = 1; i < 3; i++) {
-        result += texture(image, TexCoords + offsets[i] * dir).rgb * weights[i];
-        result += texture(image, TexCoords - offsets[i] * dir).rgb * weights[i];
-    }
-    FragColor = vec4(result, 1.0);
-}";
-        _blurShader = new ShaderProgram(quadVert, blurFrag);
-
-        const string finalCompositeFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoords;
-uniform sampler2D image;
-uniform float exposure;
-uniform bool isBloomPass;
-
-vec3 tonemap_reinhard(vec3 color) {
-    return color / (color + vec3(1.0));
-}
-
-void main()
-{
-    vec3 color = texture(image, TexCoords).rgb;
-    if (!isBloomPass) { // This is the main scene pass
-        color *= exposure;
-        color = tonemap_reinhard(color);
-    }
-    // else, this is the bloom pass, so we output the raw color for additive blending.
-    
-    FragColor = vec4(color, 1.0);
-}";
-        _finalCompositeShader = new ShaderProgram(quadVert, finalCompositeFrag);
+        _brightPassShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
+        _blurShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_blur.frag");
+        _finalCompositeShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_composite.frag");
     }
 
     private void SetupQuad()
@@ -5525,204 +5520,7 @@ internal class OpenGLSceneRenderer : IDisposable
 
     public OpenGLSceneRenderer()
     {
-        const string vertSource = @"
-#version 330 core
-layout (location = 0) in vec3 aPosition;
-layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec4 aColor;
-layout (location = 3) in vec2 aTexCoord;
-
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-uniform vec2 uTiling;
-
-out vec3 FragPos;
-out vec3 Normal;
-out vec4 fsin_Color;
-out vec2 fsin_TexCoord;
-
-void main()
-{
-    FragPos = vec3(model * vec4(aPosition, 1.0));
-    Normal = mat3(transpose(inverse(model))) * aNormal;
-    
-    gl_Position = projection * view * vec4(FragPos, 1.0);
-    fsin_Color = aColor;
-    fsin_TexCoord = aTexCoord * uTiling;
-}";
-
-        const string fragSource = @"
-#version 330 core
-#define MAX_POINT_LIGHTS 4
-#define MAX_SPOT_LIGHTS 4
-
-in vec4 fsin_Color;
-in vec2 fsin_TexCoord;
-in vec3 FragPos;
-in vec3 Normal;
-
-struct Material {
-    sampler2D texture_diffuse;
-    float shininess;
-    float specularIntensity;
-};
-
-struct DirLight {
-    vec3 direction;
-    vec3 color;
-    float intensity;
-    float ambientStrength;
-};
-
-struct PointLight {
-    vec3 position;
-    vec3 color;
-    float intensity;
-    float range;
-};
-
-struct SpotLight {
-    vec3 position;
-    vec3 direction;
-    vec3 color;
-    float intensity;
-    float range;
-    float innerCutOff;
-    float outerCutOff;
-};
-
-out vec4 FragColor;
-
-// --- Uniforms ---
-uniform vec3 uViewPos;
-uniform vec3 uEmissive;
-
-uniform Material uMaterial;
-uniform DirLight uDirLight;
-uniform bool uHasDirLight;
-
-uniform PointLight uPointLights[MAX_POINT_LIGHTS];
-uniform int uNumPointLights;
-
-uniform SpotLight uSpotLights[MAX_SPOT_LIGHTS];
-uniform int uNumSpotLights;
-
-
-// --- Function Declarations ---
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo);
-vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
-vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
-
-void main()
-{
-    vec3 albedo = texture(uMaterial.texture_diffuse, fsin_TexCoord).rgb * fsin_Color.rgb;
-    vec3 norm = normalize(Normal);
-    vec3 viewDir = normalize(uViewPos - FragPos);
-
-    // Start with the ambient term, which acts as a base light level.
-    vec3 finalColor = vec3(0.0);
-    if(uHasDirLight) {
-        finalColor = uDirLight.ambientStrength * uDirLight.color * uDirLight.intensity * albedo;
-    }
-
-    // Additively blend the diffuse and specular contributions of each light.
-    if(uHasDirLight) {
-        finalColor += CalcDirLight(uDirLight, norm, viewDir, albedo);
-    }
-
-    for(int i = 0; i < uNumPointLights; i++) {
-        finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
-    }
-
-    for(int i = 0; i < uNumSpotLights; i++) {
-        finalColor += CalcSpotLight(uSpotLights[i], norm, FragPos, viewDir, albedo);
-    }
-
-    // If there are no lights at all, render with the base texture color.
-    if (!uHasDirLight && uNumPointLights == 0 && uNumSpotLights == 0) {
-        finalColor = albedo;
-    }
-
-    // Finally, add any emissive color.
-    finalColor += uEmissive;
-
-    FragColor = vec4(finalColor, texture(uMaterial.texture_diffuse, fsin_TexCoord).a * fsin_Color.a);
-}
-
-// Calculates only the diffuse and specular parts of a directional light.
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
-    vec3 lightDir = normalize(light.direction);
-    
-    // Diffuse
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * light.color * light.intensity;
-
-    // Specular
-    vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
-    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
-
-    return (diffuse * albedo) + specular;
-}
-
-// Calculates the diffuse and specular parts of a point light, including attenuation.
-vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
-    vec3 lightDir = normalize(light.position - fragPos);
-
-    // Diffuse
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * light.color;
-
-    // Specular
-    vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
-    vec3 specular = uMaterial.specularIntensity * spec * light.color;
-
-    // Attenuation based on range
-    float distance = length(light.position - fragPos);
-    // Use a squared falloff for a more natural look (bright center, fades quickly at the edge)
-    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
-    
-    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff;
-
-    return lightContribution;
-}
-
-// Calculates the diffuse and specular parts of a spot light.
-vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
-    vec3 lightDir = normalize(light.position - fragPos);
-
-    // Spotlight intensity (cone)
-    float theta = dot(lightDir, normalize(-light.direction));
-    float epsilon = light.innerCutOff - light.outerCutOff;
-    float spotIntensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
-    if (spotIntensity <= 0.0) {
-        return vec3(0.0);
-    }
-
-    // Attenuation (range)
-    float distance = length(light.position - fragPos);
-    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
-    if (falloff <= 0.0) {
-        return vec3(0.0);
-    }
-
-    // Diffuse
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * light.color;
-
-    // Specular
-    vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
-    vec3 specular = uMaterial.specularIntensity * spec * light.color;
-
-    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff * spotIntensity;
-
-    return lightContribution;
-}";
-
-        _shaderProgram = new ShaderProgram(vertSource, fragSource);
+        _shaderProgram = ShaderProgram.FromFiles("Shaders/scene.vert", "Shaders/scene.frag");
 
         // Standard uniforms
         _modelLocation = _shaderProgram.GetUniformLocation("model");
@@ -6582,9 +6380,9 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using OpenTK.Graphics.OpenGL4;
-using StbImageSharp;
 
 namespace Cherris;
 
@@ -6592,8 +6390,6 @@ public class OpenTKResourceManager : ResourceManagerBase
 {
     private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
-    private static readonly string[] FaceSuffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
-
 
     public override void LoadInitialAssets()
     {
@@ -6605,7 +6401,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         _textures.Add("White", CreateWhiteTexture());
     }
 
-    private ITexture CreateWhiteTexture()
+    private static ITexture CreateWhiteTexture()
     {
         int handle = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, handle);
@@ -6631,34 +6427,27 @@ public class OpenTKResourceManager : ResourceManagerBase
             return _textures["White"];
         }
 
-        try
+        var imageData = ImageLoader.LoadFromFile(path);
+        if (imageData is null)
         {
-            // Flip vertically as OpenGL expects the origin at the bottom-left
-            StbImage.stbi_set_flip_vertically_on_load(1);
-            using var stream = File.OpenRead(path);
-            ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-
-            int handle = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, handle);
-
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8,
-                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
-
-            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
-            SetTextureParameters(TextureTarget.Texture2D);
-
-            var newTexture = new OpenTKTexture(handle);
-            _textures.Add(name, newTexture);
-            return newTexture;
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[OpenTKResourceManager] Error loading texture '{name}': {e.Message}");
             return _textures["White"];
         }
+
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, handle);
+
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8,
+            imageData.Value.Width, imageData.Value.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, imageData.Value.Data);
+
+        GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+        SetTextureParameters(TextureTarget.Texture2D);
+
+        var newTexture = new OpenTKTexture(handle);
+        _textures.Add(name, newTexture);
+        return newTexture;
     }
 
-    private void SetTextureParameters(TextureTarget target)
+    private static void SetTextureParameters(TextureTarget target)
     {
         if (target == TextureTarget.Texture2D)
         {
@@ -6684,44 +6473,29 @@ public class OpenTKResourceManager : ResourceManagerBase
             return skybox;
         }
 
-        var facePaths = FaceSuffixes.Select(suffix => AssetFinder.FindAssetPath(name + suffix)).ToArray();
-        if (facePaths.Any(p => p is null))
+        var faceImages = GenericCubemapLoader.LoadCubemapFaces(name);
+        if (faceImages is null)
         {
-            Console.WriteLine($"[OpenTKResourceManager] Error: Could not find all 6 faces for skybox '{name}'.");
+            Console.WriteLine($"[OpenTKResourceManager] Error: Could not load faces for skybox '{name}'.");
             return null;
         }
 
-        try
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.TextureCubeMap, handle);
+
+        for (int i = 0; i < faceImages.Length; i++)
         {
-            StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps should not be flipped
-
-            int handle = GL.GenTexture();
-            GL.BindTexture(TextureTarget.TextureCubeMap, handle);
-
-            for (int i = 0; i < facePaths.Length; i++)
-            {
-                using var stream = File.OpenRead(facePaths[i]);
-                ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + i, 0, PixelInternalFormat.Srgb8Alpha8,
-                    image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
-            }
-
-            SetTextureParameters(TextureTarget.TextureCubeMap);
-
-            var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
-            var newSkybox = new Skybox(newTexture, name);
-            _skyboxes.Add(name, newSkybox);
-            return newSkybox;
+            var image = faceImages[i];
+            GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + i, 0, PixelInternalFormat.Srgb8Alpha8,
+                image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
         }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[OpenTKResourceManager] Error loading skybox '{name}': {e.Message}");
-            return null;
-        }
-        finally
-        {
-            StbImage.stbi_set_flip_vertically_on_load(1); // Reset to default for other textures
-        }
+
+        SetTextureParameters(TextureTarget.TextureCubeMap);
+
+        var newTexture = new OpenTKTexture(handle, TextureTarget.TextureCubeMap);
+        var newSkybox = new Skybox(newTexture, name);
+        _skyboxes.Add(name, newSkybox);
+        return newSkybox;
     }
 
     public override void Dispose()
@@ -6779,6 +6553,7 @@ public class OpenTKTexture : ITexture
 ### `Cherris\Rendering\OpenTK\ShaderProgram.cs`
 
 ```csharp
+using Cherris;
 using OpenTK.Graphics.OpenGL;
 
 public class ShaderProgram : IDisposable
@@ -6808,6 +6583,31 @@ public class ShaderProgram : IDisposable
         GL.DeleteShader(vertexShader);
         GL.DeleteShader(fragmentShader);
     }
+
+    public static ShaderProgram? FromFiles(string vertexPath, string fragmentPath)
+    {
+        var vertSourcePath = AssetFinder.FindAssetPath(vertexPath);
+        var fragSourcePath = AssetFinder.FindAssetPath(fragmentPath);
+
+        if (vertSourcePath is null || fragSourcePath is null)
+        {
+            Console.WriteLine($"[ShaderProgram] Error: Could not find shader files: {vertexPath}, {fragmentPath}");
+            return null;
+        }
+
+        try
+        {
+            var vertSource = File.ReadAllText(vertSourcePath);
+            var fragSource = File.ReadAllText(fragSourcePath);
+            return new ShaderProgram(vertSource, fragSource);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ShaderProgram] Error creating shader from files: {ex.Message}");
+            return null;
+        }
+    }
+
 
     private static int CompileShader(ShaderType type, string source)
     {
