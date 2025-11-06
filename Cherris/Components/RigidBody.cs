@@ -2,8 +2,15 @@
 
 namespace Cherris.Components;
 
+public enum ColliderType
+{
+    Box,
+    Sphere
+}
+
 public class RigidBody : Script
 {
+    public ColliderType Shape { get; set; } = ColliderType.Box;
     public float Mass { get; set; } = 1.0f;
     public bool IsStatic { get; set; } = false;
     public float Friction { get; set; } = 0.5f;
@@ -37,7 +44,23 @@ public class RigidBody : Script
 
         BoundingBox aabb = meshRenderer.Mesh.AABB;
         Vector3 size = (aabb.Max - aabb.Min) * GameObject.Transform.Scale;
-        Jitter.Collision.Shapes.BoxShape shape = new(size.ToJitter());
+
+        Jitter.Collision.Shapes.Shape shape;
+        switch (Shape)
+        {
+            case ColliderType.Box:
+                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
+                break;
+            case ColliderType.Sphere:
+                float radius = (size.X + size.Y + size.Z) / 6.0f; // Average radius
+                shape = new Jitter.Collision.Shapes.SphereShape(radius);
+                break;
+            default:
+                Console.WriteLine($"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'. Defaulting to Box.");
+                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
+                break;
+        }
+
 
         JitterBody = new(shape)
         {

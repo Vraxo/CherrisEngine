@@ -1770,6 +1770,7 @@ public class Renderer : IRenderer
     private Snapshotter _snapshotter;
     private bool _snapshotRequested;
     private string _snapshotPath;
+    public bool ShowGrid { get; set; }
 
     // Veldrid-specific data associated with a MeshRenderer component
     internal class VeldridMeshRendererData : IDisposable
@@ -3759,6 +3760,7 @@ namespace Cherris.Rendering;
 
 public interface IRenderer : IDisposable
 {
+    bool ShowGrid { get; set; }
     void OnWindowResized();
     void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure);
     void RequestSnapshot(string path);
@@ -5150,6 +5152,127 @@ void main()
 
 ---
 
+### `Cherris\Rendering\OpenTK\OpenGLGridrRenderer.cs`
+
+```csharp
+using Cherris.Components;
+using Cherris.Core;
+using OpenTK.Graphics.OpenGL4;
+using OpenTK.Mathematics;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+
+namespace Cherris.OpenTK;
+
+internal struct GridVertex
+{
+    public Vector3 Position;
+    public Vector3 Color;
+    public static readonly int Size = Vector3.SizeInBytes * 2;
+}
+
+internal class OpenGLGridRenderer : IDisposable
+{
+    private readonly ShaderProgram _shader;
+    private readonly int _viewLocation, _projectionLocation;
+    private readonly int _vao;
+    private readonly int _vbo;
+    private readonly int _vertexCount;
+    private bool _disposed;
+
+    public OpenGLGridRenderer(int size = 20, float step = 1.0f)
+    {
+        const string vertSource = @"
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aColor;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 f_color;
+
+void main()
+{
+    gl_Position = projection * view * vec4(aPosition, 1.0);
+    f_color = aColor;
+}";
+        const string fragSource = @"
+#version 330 core
+in vec3 f_color;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(f_color, 1.0);
+}";
+
+        _shader = new ShaderProgram(vertSource, fragSource);
+        _viewLocation = _shader.GetUniformLocation("view");
+        _projectionLocation = _shader.GetUniformLocation("projection");
+
+        var vertices = new List<GridVertex>();
+        var gridColor = new Vector3(0.3f, 0.3f, 0.3f);
+        var axisColorX = new Vector3(0.8f, 0.2f, 0.2f);
+        var axisColorZ = new Vector3(0.2f, 0.3f, 0.8f);
+
+        for (float i = -size; i <= size; i += step)
+        {
+            // Lines parallel to Z axis (along X)
+            vertices.Add(new GridVertex { Position = new Vector3(i, 0, -size), Color = (i == 0) ? axisColorZ : gridColor });
+            vertices.Add(new GridVertex { Position = new Vector3(i, 0, size), Color = (i == 0) ? axisColorZ : gridColor });
+
+            // Lines parallel to X axis (along Z)
+            vertices.Add(new GridVertex { Position = new Vector3(-size, 0, i), Color = (i == 0) ? axisColorX : gridColor });
+            vertices.Add(new GridVertex { Position = new Vector3(size, 0, i), Color = (i == 0) ? axisColorX : gridColor });
+        }
+        _vertexCount = vertices.Count;
+
+        _vao = GL.GenVertexArray();
+        _vbo = GL.GenBuffer();
+
+        GL.BindVertexArray(_vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, _vertexCount * GridVertex.Size, vertices.ToArray(), BufferUsageHint.StaticDraw);
+
+        // Position attribute
+        GL.EnableVertexAttribArray(0);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, GridVertex.Size, 0);
+        // Color attribute
+        GL.EnableVertexAttribArray(1);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, GridVertex.Size, Vector3.SizeInBytes);
+        GL.BindVertexArray(0);
+    }
+
+    public void Render(Matrix4 view, Matrix4 projection)
+    {
+        if (_vertexCount == 0) return;
+
+        _shader.Use();
+        GL.UniformMatrix4(_viewLocation, false, ref view);
+        GL.UniformMatrix4(_projectionLocation, false, ref projection);
+
+        GL.BindVertexArray(_vao);
+        GL.DrawArrays(PrimitiveType.Lines, 0, _vertexCount);
+        GL.BindVertexArray(0);
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _shader?.Dispose();
+            GL.DeleteVertexArray(_vao);
+            GL.DeleteBuffer(_vbo);
+            _disposed = true;
+        }
+    }
+}
+```
+
+---
+
 ### `Cherris\Rendering\OpenTK\OpenGLMeshRendererData.cs`
 
 ```csharp
@@ -6182,9 +6305,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLPostProcessor _postProcessor;
     private readonly ImGuiController _imGuiController;
     private readonly OpenGLDebugRenderer _debugRenderer;
+    private readonly OpenGLGridRenderer _gridRenderer;
 
     private Vector2i _viewportSize = new(1, 1);
     private Vector2i _windowSize;
+    public bool ShowGrid { get; set; } = true;
 
     public OpenTKRenderer(ImGuiController imGuiController)
     {
@@ -6193,6 +6318,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _postProcessor = new OpenGLPostProcessor();
         _imGuiController = imGuiController;
         _debugRenderer = new OpenGLDebugRenderer();
+        _gridRenderer = new OpenGLGridRenderer();
 
         GL.FrontFace(FrontFaceDirection.Cw);
     }
@@ -6247,6 +6373,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
             if (skybox?.CubeMapTexture is not null)
             {
                 _skyboxRenderer.Render(skybox, view, projection);
+            }
+
+            if (ShowGrid)
+            {
+                _gridRenderer.Render(view, projection);
             }
 
             _sceneRenderer.Render(gameObjects, lights, view, projection);
@@ -6349,6 +6480,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _skyboxRenderer?.Dispose();
         _postProcessor?.Dispose();
         _debugRenderer?.Dispose();
+        _gridRenderer?.Dispose();
     }
 
     private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
@@ -9628,7 +9760,6 @@ public class ViewportPanel
     private OPERATION _currentOperation = OPERATION.TRANSLATE;
     private Vector2 _viewportSize = Vector2.Zero;
 
-    // For gizmo undo
     private bool _isManipulatingGizmo;
     private Vector3 _initialPosition;
     private Quaternion _initialRotation;
@@ -9642,14 +9773,24 @@ public class ViewportPanel
 
     public void Update()
     {
-        if (_editor.State == EditorState.Editing)
+        if (_editor.State != EditorState.Editing || ImGui.GetIO().WantCaptureKeyboard)
         {
-            if (!ImGui.GetIO().WantCaptureKeyboard)
-            {
-                if (ImGui.IsKeyPressed(ImGuiKey.W)) _currentOperation = OPERATION.TRANSLATE;
-                if (ImGui.IsKeyPressed(ImGuiKey.E)) _currentOperation = OPERATION.ROTATE;
-                if (ImGui.IsKeyPressed(ImGuiKey.R)) _currentOperation = OPERATION.SCALE;
-            }
+            return;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.W))
+        {
+            _currentOperation = OPERATION.TRANSLATE;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.E))
+        {
+            _currentOperation = OPERATION.ROTATE;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.R))
+        {
+            _currentOperation = OPERATION.SCALE;
         }
     }
 
@@ -9658,8 +9799,8 @@ public class ViewportPanel
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-        var openScenes = _editor.SceneManager.OpenScenes.ToList();
-        var activeScene = _editor.SceneManager.ActiveScene;
+        List<Scene> openScenes = _editor.SceneManager.OpenScenes.ToList();
+        Scene activeScene = _editor.SceneManager.ActiveScene;
 
         // Default the viewport to not hovered. It will be set to true only if the image within the active tab is hovered.
         _editor.IsViewportHovered = false;
@@ -9694,6 +9835,10 @@ public class ViewportPanel
                     // Only render the viewport content for the currently active scene
                     if (scene == activeScene)
                     {
+                        ImGui.BeginChild("ViewportToolbar", new(0, ImGui.GetFrameHeightWithSpacing()), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+                        DrawViewportOptions();
+                        ImGui.EndChild();
+
                         var currentSize = ImGui.GetContentRegionAvail();
 
                         if (_editor.Renderer is OpenTKRenderer otkRenderer)
@@ -9705,6 +9850,7 @@ public class ViewportPanel
                             }
 
                             IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
+
                             if (textureHandle != IntPtr.Zero)
                             {
                                 ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
@@ -9720,8 +9866,8 @@ public class ViewportPanel
 
                         _editor.IsViewportHovered = ImGui.IsItemHovered();
 
-                        var viewportPos = ImGui.GetItemRectMin();
-                        var viewportSize = ImGui.GetItemRectSize();
+                        Vector2 viewportPos = ImGui.GetItemRectMin();
+                        Vector2 viewportSize = ImGui.GetItemRectSize();
 
                         if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing() && !ImGuizmo.IsOver())
                         {
@@ -9747,6 +9893,32 @@ public class ViewportPanel
         ImGui.PopStyleVar();
     }
 
+    private void DrawViewportOptions()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
+        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.2f, 0.2f, 0.8f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.3f, 0.3f, 0.3f, 0.9f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.25f, 0.25f, 0.25f, 0.9f));
+
+        if (ImGui.Button("Options"))
+        {
+            ImGui.OpenPopup("ViewportOptionsPopup");
+        }
+
+        if (ImGui.BeginPopup("ViewportOptionsPopup"))
+        {
+            var showGrid = _editor.Renderer.ShowGrid;
+            if (ImGui.Checkbox("Show Grid", ref showGrid))
+            {
+                _editor.Renderer.ShowGrid = showGrid;
+            }
+            ImGui.EndPopup();
+        }
+
+        ImGui.PopStyleColor(3);
+        ImGui.PopStyleVar();
+    }
+
     private void DrawGizmo(Vector2 viewportPos, Vector2 viewportSize)
     {
         ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
@@ -9755,59 +9927,66 @@ public class ViewportPanel
         GameObject? selectedObject = _editor.GetSelectedGameObject();
         Camera? camera = _editor.SceneManager.MainCamera;
 
-        if (selectedObject is not null && camera is not null && viewportSize.X > 0 && viewportSize.Y > 0)
+        if (selectedObject is null || camera is null || viewportSize.X <= 0 || viewportSize.Y <= 0)
         {
-            var cameraView = camera.GetViewMatrix();
-            var cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
-            var objectMatrix = selectedObject.Transform.GetModelMatrix();
-
-            // Capture initial state when manipulation starts
-            if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
-            {
-                _isManipulatingGizmo = true;
-                _initialPosition = selectedObject.Transform.Position;
-                _initialRotation = selectedObject.Transform.Rotation;
-                _initialScale = selectedObject.Transform.Scale;
-            }
-
-            if (ImGuizmo.Manipulate(
-                ref Unsafe.As<Matrix4x4, float>(ref cameraView),
-                ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
-                _currentOperation,
-                MODE.LOCAL,
-                ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
-            {
-                Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
-                selectedObject.Transform.Position = position;
-                selectedObject.Transform.Rotation = rotation;
-                selectedObject.Transform.Scale = scale;
-            }
-
-            // Create command when manipulation ends
-            if (!ImGuizmo.IsUsing() && _isManipulatingGizmo)
-            {
-                _isManipulatingGizmo = false;
-                var newPosition = selectedObject.Transform.Position;
-                var newRotation = selectedObject.Transform.Rotation;
-                var newScale = selectedObject.Transform.Scale;
-
-                // Only create command if something actually changed
-                if (newPosition != _initialPosition || newRotation != _initialRotation || newScale != _initialScale)
-                {
-                    // Revert the change so the command can apply it
-                    selectedObject.Transform.Position = _initialPosition;
-                    selectedObject.Transform.Rotation = _initialRotation;
-                    selectedObject.Transform.Scale = _initialScale;
-
-                    var command = new ChangeTransformCommand(
-                        selectedObject.Transform,
-                        _initialPosition, _initialRotation, _initialScale,
-                        newPosition, newRotation, newScale
-                    );
-                    _history.Execute(command);
-                }
-            }
+            return;
         }
+
+        Matrix4x4 cameraView = camera.GetViewMatrix();
+        Matrix4x4 cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
+        Matrix4x4 objectMatrix = selectedObject.Transform.GetModelMatrix();
+
+        // Capture initial state when manipulation starts
+        if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
+        {
+            _isManipulatingGizmo = true;
+            _initialPosition = selectedObject.Transform.Position;
+            _initialRotation = selectedObject.Transform.Rotation;
+            _initialScale = selectedObject.Transform.Scale;
+        }
+
+        if (ImGuizmo.Manipulate(
+            ref Unsafe.As<Matrix4x4, float>(ref cameraView),
+            ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
+            _currentOperation,
+            MODE.LOCAL,
+            ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
+        {
+            Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
+            selectedObject.Transform.Position = position;
+            selectedObject.Transform.Rotation = rotation;
+            selectedObject.Transform.Scale = scale;
+        }
+
+        // Create command when manipulation ends
+        if (ImGuizmo.IsUsing() || !_isManipulatingGizmo)
+        {
+            return;
+        }
+
+        _isManipulatingGizmo = false;
+        Vector3 newPosition = selectedObject.Transform.Position;
+        Quaternion newRotation = selectedObject.Transform.Rotation;
+        Vector3 newScale = selectedObject.Transform.Scale;
+
+        // Only create command if something actually changed
+        if (newPosition == _initialPosition && newRotation == _initialRotation && newScale == _initialScale)
+        {
+            return;
+        }
+
+        // Revert the change so the command can apply it
+        selectedObject.Transform.Position = _initialPosition;
+        selectedObject.Transform.Rotation = _initialRotation;
+        selectedObject.Transform.Scale = _initialScale;
+
+        ChangeTransformCommand command = new(
+            selectedObject.Transform,
+            _initialPosition, _initialRotation, _initialScale,
+            newPosition, newRotation, newScale
+        );
+
+        _history.Execute(command);
     }
 
     private void HandleObjectSelection(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
@@ -9818,15 +9997,27 @@ public class ViewportPanel
 
         foreach (GameObject gameObject in _editor.SceneManager.GameObjects)
         {
-            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null) continue;
+            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null)
+            {
+                continue;
+            }
 
             BoundingBox aabb = gameObject.GetWorldSpaceAABB();
-            if (!ray.Intersects(aabb, out float distance)) continue;
-            if (distance >= closestDistance) continue;
+            
+            if (!ray.Intersects(aabb, out float distance))
+            {
+                continue;
+            }
+
+            if (distance >= closestDistance)
+            {
+                continue;
+            }
 
             closestDistance = distance;
             closestObject = gameObject;
         }
+
         _editor.SetSelectedGameObject(closestObject);
     }
 }
@@ -9893,6 +10084,7 @@ public class HistoryManager
 ```csharp
 using Cherris;
 using Cherris.Components;
+using System;
 using System.Numerics;
 
 namespace Apexverse;
@@ -10095,8 +10287,8 @@ GameObjects:
   Name: Player
   Components:
     Transform:
-      Position: [2.6258476, 1.2966704, 3.1509564]
-      Rotation: [-14.266628, 14.696258, 0]
+      Position: [1.2218183, 2.7862098, 4.7504783]
+      Rotation: [-30.93975, -12.805729, 2.1888778E-07]
       Scale: [1, 1, 1]
     PlayerController:
       Speed: 3
@@ -10108,13 +10300,12 @@ GameObjects:
   Components:
     Transform:
       Position: [-0.5148658, 4.625517, -0.7980118]
-      Rotation: [-84.910065, -44.999878, 1.931865E-05]
+      Rotation: [-84.91005, -44.99985, -2.4148303E-06]
       Scale: [1, 1.0000011, 1.0000005]
     Light:
       Type: Directional
       Color: [1, 1, 1]
       Intensity: 1
-      AmbientStrength: 0.3
 - Id: e036456a-17e9-4b36-aa03-c86985afe187
   Name: SpinningHelmet
   Components:
@@ -10134,7 +10325,7 @@ GameObjects:
   Name: StaticCube
   Components:
     Transform:
-      Position: [2.5, 0, 0]
+      Position: [2.5, 0.5, 0]
       Rotation: [0, 45.000004, 0]
       Scale: [0.75, 0.75, 0.75]
     MeshRenderer:
@@ -10147,7 +10338,7 @@ GameObjects:
   Name: GroundPlane
   Components:
     Transform:
-      Position: [0, -0.8, 0]
+      Position: [0, 0, 0]
       Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     MeshRenderer:
@@ -10204,6 +10395,7 @@ GameObjects:
 ```csharp
 using Cherris;
 using Cherris.Components;
+using System;
 using System.Numerics;
 
 namespace Apexverse;

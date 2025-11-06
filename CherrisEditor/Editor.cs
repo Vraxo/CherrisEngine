@@ -147,6 +147,7 @@ public class Editor : Engine
     protected override void LoadContent()
     {
         ResourceManager.LoadInitialAssets();
+        RegisterBuiltInComponents();
         CompileAndRegisterGameScripts();
         LoadSceneFromFile("Assets/Scene.yaml");
 
@@ -249,17 +250,40 @@ public class Editor : Engine
         SceneManager.OpenScene(newScene);
     }
 
+    private void RegisterBuiltInComponents()
+    {
+        AvailableScriptTypes.Clear();
+
+        Assembly coreAssembly = typeof(Script).Assembly;
+        var scriptTypes = coreAssembly.GetTypes()
+            .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(Script) && t != typeof(EditorController));
+
+        foreach (var type in scriptTypes)
+        {
+            RegisterScriptComponent(type);
+        }
+    }
+
     private void CompileAndRegisterGameScripts()
     {
-        // Unload the previous context if it exists
+        // Unload the previous context if it exists and remove its types from our list
         if (_gameAssemblyContext.Assemblies.Any())
         {
+            var typesToRemove = AvailableScriptTypes
+                .Where(t => AssemblyLoadContext.GetLoadContext(t.Assembly) == _gameAssemblyContext)
+                .ToList();
+
+            foreach (var type in typesToRemove)
+            {
+                AvailableScriptTypes.Remove(type);
+            }
+
             _gameAssemblyContext.Unload();
             Console.WriteLine("[Editor] Unloaded old game assembly.");
         }
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
-        AvailableScriptTypes.Clear();
+        // Compile and add the new types from the user's scripts
         Assembly? gameAssembly = ScriptCompiler.Compile("Assets", _gameAssemblyContext);
 
         if (gameAssembly is null)
@@ -273,11 +297,13 @@ public class Editor : Engine
             IEnumerable<Type> scriptTypes = gameAssembly.GetTypes()
                 .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
 
+            int count = 0;
             foreach (Type type in scriptTypes)
             {
                 RegisterScriptComponent(type);
+                count++;
             }
-            Console.WriteLine($"[Editor] Loaded {AvailableScriptTypes.Count} custom components from runtime-compiled assembly.");
+            Console.WriteLine($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
         }
         catch (Exception ex)
         {
@@ -290,7 +316,7 @@ public class Editor : Engine
         AvailableScriptTypes.Add(scriptType);
         Component Factory(object _) => (Component)Activator.CreateInstance(scriptType)!;
         SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Console.WriteLine($"[Editor] Registered custom component: {scriptType.Name}");
+        Console.WriteLine($"[Editor] Registered component: {scriptType.Name}");
     }
 
     private void SetScriptsEnabledForPlayMode()
