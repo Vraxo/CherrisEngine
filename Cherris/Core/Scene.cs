@@ -18,8 +18,8 @@ public class Scene : IDisposable
     {
         FilePath = filePath;
 
-        Name = string.IsNullOrEmpty(filePath) 
-            ? "Untitled Scene" 
+        Name = string.IsNullOrEmpty(filePath)
+            ? "Untitled Scene"
             : Path.GetFileName(filePath);
 
         GameObjects.AddRange(gameObjects);
@@ -30,7 +30,7 @@ public class Scene : IDisposable
     {
         GameObjects.Add(go);
         var light = go.GetComponent<Light>();
-        
+
         if (light is not null)
         {
             Lights.Add(light);
@@ -55,7 +55,7 @@ public class Scene : IDisposable
 
         // Remove light from cached list
         var light = go.GetComponent<Light>();
-        
+
         if (light is not null)
         {
             Lights.Remove(light);
@@ -66,11 +66,11 @@ public class Scene : IDisposable
         IsDirty = true;
     }
 
-    public void Start(PhysicsSystem physicsSystem)
+    public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
         FindMainComponents();
 
-        // Initialize scripts
+        // Initialize scripts and components
         foreach (GameObject gameObject in GameObjects)
         {
             foreach (var script in gameObject.GetComponents<Script>())
@@ -81,6 +81,12 @@ public class Scene : IDisposable
                 }
 
                 script.Start();
+            }
+
+            foreach (var audioSource in gameObject.GetComponents<AudioSource>())
+            {
+                audioSource.Initialize(audioSystem);
+                audioSource.Start();
             }
         }
 

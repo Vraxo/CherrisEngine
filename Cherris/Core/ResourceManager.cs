@@ -1,4 +1,5 @@
 ﻿using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using Veldrid;
 
@@ -134,6 +135,12 @@ public class ResourceManager : IResourceManager
         }
 
         Console.WriteLine($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
+        return null;
+    }
+
+    public AudioClip GetAudioClip(string name)
+    {
+        Console.WriteLine("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
         return null;
     }
 

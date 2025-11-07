@@ -100,7 +100,10 @@ public class SceneManager
     public void Start()
     {
         // Start only the active scene when entering play mode.
-        _activeScene?.Start(PhysicsSystem);
+        if (_activeScene is not null)
+        {
+            _activeScene.Start(PhysicsSystem, AudioSystem);
+        }
     }
 
     public void Update(float deltaTime, bool stepPhysics = true)

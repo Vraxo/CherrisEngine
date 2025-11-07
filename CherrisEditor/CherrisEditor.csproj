@@ -36,6 +36,9 @@
     <None Update="Assets\Asphalt.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Assets\Audio\impact.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Assets\crate.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

@@ -1,4 +1,5 @@
 ﻿using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 
 namespace Cherris;
@@ -75,5 +76,6 @@ public abstract class ResourceManagerBase : IResourceManager
     public abstract void LoadInitialAssets();
     public abstract ITexture GetTexture(string name);
     public abstract Skybox GetSkybox(string name);
+    public abstract AudioClip GetAudioClip(string name);
     public abstract void Dispose();
 }

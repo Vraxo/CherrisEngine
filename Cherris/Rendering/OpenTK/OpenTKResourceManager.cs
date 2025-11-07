@@ -9,6 +9,7 @@ public class OpenTKResourceManager : ResourceManagerBase
 {
     private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
+    private readonly Dictionary<string, AudioClip> _audioClips = new();
 
     public override void LoadInitialAssets()
     {
@@ -117,6 +118,30 @@ public class OpenTKResourceManager : ResourceManagerBase
         return newSkybox;
     }
 
+    public override AudioClip GetAudioClip(string name)
+    {
+        if (_audioClips.TryGetValue(name, out var clip))
+        {
+            return clip;
+        }
+
+        string path = AssetFinder.FindAssetPath(name);
+        if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find audio clip '{name}'. Only .wav is supported.");
+            return null;
+        }
+
+        var newClip = AudioLoader.LoadFromFile(path);
+        if (newClip is not null)
+        {
+            _audioClips.Add(name, newClip);
+            return newClip;
+        }
+
+        return null;
+    }
+
     public override void Dispose()
     {
         foreach (var texture in _textures.Values)
@@ -126,6 +151,10 @@ public class OpenTKResourceManager : ResourceManagerBase
         foreach (var skybox in _skyboxes.Values)
         {
             skybox.Dispose();
+        }
+        foreach (var clip in _audioClips.Values)
+        {
+            clip.Dispose();
         }
     }
 }

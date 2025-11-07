@@ -1,4 +1,5 @@
 ﻿using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -15,7 +16,7 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
-        sceneLoader.RegisterComponentFactory("AudioSource", CreateAndPopulateComponent<AudioSource>);
+        sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
     }
 
@@ -32,6 +33,21 @@ public static class ComponentDeserializer
         var material = CreateMaterialFromProperties(propsDict, resourceManager);
 
         return new MeshRenderer(mesh, material, meshName);
+    }
+
+    private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
+    {
+        var audioSource = new AudioSource();
+        if (properties is not Dictionary<object, object> propsDict) return audioSource;
+
+        PopulateComponentProperties(audioSource, propsDict);
+
+        if (propsDict.TryGetValue("ClipName", out var clipNameObj) && clipNameObj is string clipName && !string.IsNullOrEmpty(clipName))
+        {
+            audioSource.Clip = resourceManager.GetAudioClip(clipName);
+        }
+
+        return audioSource;
     }
 
     private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)

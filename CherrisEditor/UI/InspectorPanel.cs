@@ -6,7 +6,6 @@ using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using static SDL3.Mixer;
 
 namespace CherrisEditor;
 

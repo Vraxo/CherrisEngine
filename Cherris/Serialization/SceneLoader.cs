@@ -210,9 +210,18 @@ public class SceneLoader
 
             try
             {
-                // YamlDotNet may deserialize numbers as different types (e.g., double, long).
-                // We must convert the value to the actual type of the property.
-                var convertedValue = Convert.ChangeType(propKvp.Value, propertyInfo.PropertyType, CultureInfo.InvariantCulture);
+                object convertedValue;
+                var propType = propertyInfo.PropertyType;
+                var yamlValue = propKvp.Value;
+
+                if (propType.IsEnum && yamlValue is string stringValue)
+                {
+                    convertedValue = Enum.Parse(propType, stringValue, true);
+                }
+                else
+                {
+                    convertedValue = Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
+                }
                 propertyInfo.SetValue(script, convertedValue);
             }
             catch (Exception ex)

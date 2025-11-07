@@ -9,30 +9,44 @@ public class AudioSource : Component
 {
     public string ClipName { get; set; } = string.Empty;
 
+    [HideInInspector]
+    public AudioClip Clip { get; internal set; }
+
     public float Volume { get; set; } = 1.0f;
     public float Pitch { get; set; } = 1.0f;
     public bool Loop { get; set; } = false;
     public bool PlayOnAwake { get; set; } = true;
 
-    // Methods that would be called by scripts to control playback.
-    // In this example, they will just log to the console.
+    private AudioSystem _audioSystem;
+
+    // Called by the Scene to provide the AudioSystem instance.
+    internal void Initialize(AudioSystem audioSystem)
+    {
+        _audioSystem = audioSystem;
+    }
+
+    internal void Start()
+    {
+        if (PlayOnAwake)
+        {
+            Play();
+        }
+    }
+
     public void Play()
     {
-        if (!string.IsNullOrEmpty(ClipName))
-        {
-            Console.WriteLine($"[AudioSource] Playing '{ClipName}' on '{GameObject.Name}'.");
-        }
-        else
+        if (Clip is null)
         {
             Console.WriteLine($"[AudioSource] Warning: No AudioClip assigned to '{GameObject.Name}'.");
+            return;
         }
+
+        Console.WriteLine($"[AudioSource] Requesting playback for '{ClipName}' on '{GameObject.Name}'.");
+        _audioSystem?.Play(this);
     }
 
     public void Stop()
     {
-        if (!string.IsNullOrEmpty(ClipName))
-        {
-            Console.WriteLine($"[AudioSource] Stopping '{ClipName}' on '{GameObject.Name}'.");
-        }
+        _audioSystem?.Stop(this);
     }
 }
