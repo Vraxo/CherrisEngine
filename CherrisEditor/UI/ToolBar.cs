@@ -16,34 +16,125 @@ public class Toolbar
 
     public void Draw()
     {
-        float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
-        ImGui.BeginChild("ToolbarChild", new Vector2(0, toolbarHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-
-        var style = ImGui.GetStyle();
-        float size = ImGui.GetContentRegionAvail().Y;
-        float totalWidth = (size * 3) + (style.ItemSpacing.X * 2);
-        ImGui.SetCursorPosX((ImGui.GetWindowWidth() * 0.5f) - (totalWidth * 0.5f));
-
-        bool isPlaying = _editor.State == EditorState.Playing;
-        bool isEditing = _editor.State == EditorState.Editing;
-
-        IntPtr playPauseIcon = isPlaying ? _textureManager.GetTexture("Pause") : _textureManager.GetTexture("Play");
-        if (ImGui.ImageButton("PlayPause", playPauseIcon, new Vector2(size, size)))
+        if (!BeginToolbar())
         {
-            if (isPlaying) _editor.EnterPauseMode();
-            else _editor.EnterPlayMode();
+            return;
         }
 
-        ImGui.SameLine();
-        if (isEditing) { ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f); ImGui.BeginDisabled(); }
-        if (ImGui.ImageButton("Stop", _textureManager.GetTexture("Stop"), new Vector2(size, size))) _editor.EnterEditMode();
-        if (isEditing) { ImGui.EndDisabled(); ImGui.PopStyleVar(); }
-
-        ImGui.SameLine();
-        if (isEditing) { ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f); ImGui.BeginDisabled(); }
-        if (ImGui.ImageButton("Restart", _textureManager.GetTexture("Restart"), new Vector2(size, size))) _editor.RestartPlayMode();
-        if (isEditing) { ImGui.EndDisabled(); ImGui.PopStyleVar(); }
-
+        DrawToolbarContent();
         ImGui.EndChild();
+    }
+
+    private static bool BeginToolbar()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
+
+        bool isVisible = ImGui.BeginChild(
+            "ToolbarChild",
+            new(0, toolbarHeight),
+            false,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
+        ImGui.PopStyleVar();
+
+        return isVisible;
+    }
+
+    private void DrawToolbarContent()
+    {
+        ImGuiStylePtr style = ImGui.GetStyle();
+        float availableHeight = ImGui.GetContentRegionAvail().Y;
+
+        const float buttonVerticalMargin = 4.0f;
+        float iconSize = availableHeight - (style.FramePadding.Y * 2) - buttonVerticalMargin;
+        Vector2 buttonIconSize = new Vector2(x: iconSize, iconSize);
+
+        PositionButtonsInCenter(iconSize, style);
+
+        DrawPlayPauseButton(buttonIconSize);
+        ImGui.SameLine();
+        DrawStopButton(buttonIconSize, style);
+        ImGui.SameLine();
+        DrawRestartButton(buttonIconSize, style);
+    }
+
+    private void PositionButtonsInCenter(float iconSize, ImGuiStylePtr style)
+    {
+        const int buttonCount = 3;
+        float buttonsTotalWidth = (iconSize * buttonCount) + (style.ItemSpacing.X * (buttonCount - 1));
+        float horizontalCenteringOffset = (ImGui.GetWindowWidth() - buttonsTotalWidth) / 2.0f;
+
+        float buttonHeightWithPadding = iconSize + (style.FramePadding.Y * 2);
+        float verticalCenteringOffset = (ImGui.GetContentRegionAvail().Y - buttonHeightWithPadding) / 2.0f;
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + horizontalCenteringOffset);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + verticalCenteringOffset);
+    }
+
+    private void DrawPlayPauseButton(Vector2 buttonIconSize)
+    {
+        bool isPlaying = _editor.State == EditorState.Playing;
+        IntPtr playPauseIcon = isPlaying ? _textureManager.GetTexture("Pause") : _textureManager.GetTexture("Play");
+
+        if (!ImGui.ImageButton("PlayPause", playPauseIcon, buttonIconSize))
+        {
+            return;
+        }
+
+        if (isPlaying)
+        {
+            _editor.EnterPauseMode();
+        }
+        else
+        {
+            _editor.EnterPlayMode();
+        }
+    }
+
+    private void DrawStopButton(Vector2 buttonIconSize, ImGuiStylePtr style)
+    {
+        bool isEditing = _editor.State == EditorState.Editing;
+
+        if (isEditing)
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.ImageButton("Stop", _textureManager.GetTexture("Stop"), buttonIconSize))
+        {
+            _editor.EnterEditMode();
+        }
+
+        if (!isEditing)
+        {
+            return;
+        }
+
+        ImGui.EndDisabled();
+        ImGui.PopStyleVar();
+    }
+
+    private void DrawRestartButton(Vector2 buttonIconSize, ImGuiStylePtr style)
+    {
+        bool isEditing = _editor.State == EditorState.Editing;
+        
+        if (isEditing)
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, style.Alpha * 0.5f);
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.ImageButton("Restart", _textureManager.GetTexture("Restart"), buttonIconSize))
+        {
+            _editor.RestartPlayMode();
+        }
+
+        if (isEditing)
+        {
+            ImGui.EndDisabled();
+            ImGui.PopStyleVar();
+        }
     }
 }
