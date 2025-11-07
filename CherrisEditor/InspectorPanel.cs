@@ -49,18 +49,18 @@ internal class InspectorPanel
                 var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
                 var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
 
-                if (ctorWithAll != null)
+                if (ctorWithAll is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
-                else if (ctorWithEditor != null)
+                else if (ctorWithEditor is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
-                else if (ctorWithHistory != null)
+                else if (ctorWithHistory is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
-                else if (ctorSimple != null)
+                else if (ctorSimple is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
-                else if (ctorParameterless != null)
+                else if (ctorParameterless is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
 
-                if (instance != null)
+                if (instance is not null)
                 {
                     _customInspectors[attribute.InspectedType] = instance;
                     Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
@@ -207,7 +207,7 @@ internal class InspectorPanel
             bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
 
             // Built-in components
-            if (go.GetComponent<Camera>() == null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
             {
                 if (ImGui.MenuItem("Camera"))
                 {
@@ -217,7 +217,7 @@ internal class InspectorPanel
                 }
             }
 
-            if (go.GetComponent<Light>() == null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            if (go.GetComponent<Light>() is null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
             {
                 if (ImGui.MenuItem("Light"))
                 {

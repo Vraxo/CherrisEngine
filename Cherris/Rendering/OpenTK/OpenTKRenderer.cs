@@ -186,7 +186,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private void DrawRigidBodyGizmo(GameObject go)
     {
         var rb = go.GetComponent<RigidBody>();
-        if (rb?.JitterBody == null) return;
+        if (rb?.JitterBody is null) return;
 
         var color = rb.JitterBody.IsStatic ? new System.Numerics.Vector3(0.2f, 0.8f, 0.2f) : new System.Numerics.Vector3(0.8f, 0.2f, 0.8f); // Green for static, purple for dynamic
 

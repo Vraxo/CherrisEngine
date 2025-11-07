@@ -34,7 +34,7 @@ public class SceneManager
         if (_activeScene is null) return;
 
         var rb = go.GetComponent<RigidBody>();
-        if (rb?.JitterBody != null)
+        if (rb?.JitterBody is not null)
         {
             PhysicsSystem.RemoveBody(rb.JitterBody);
         }
@@ -54,7 +54,7 @@ public class SceneManager
 
     public void CloseScene(Scene scene)
     {
-        if (scene == null) return;
+        if (scene is null) return;
 
         int sceneIndex = _openScenes.IndexOf(scene);
         if (sceneIndex == -1) return;
@@ -79,7 +79,7 @@ public class SceneManager
 
     public void SetActiveScene(Scene scene)
     {
-        if (scene != null && _openScenes.Contains(scene) && _activeScene != scene)
+        if (scene is not null && _openScenes.Contains(scene) && _activeScene != scene)
         {
             _activeScene = scene;
             OnActiveSceneChanged?.Invoke(_activeScene);
@@ -88,7 +88,7 @@ public class SceneManager
 
     public void SetMainCamera(Camera camera)
     {
-        if (_activeScene != null)
+        if (_activeScene is not null)
         {
             _activeScene.MainCamera = camera;
         }

@@ -104,7 +104,7 @@ internal class OpenGLSceneRenderer : IDisposable
         var pointLights = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
         var spotLights = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
 
-        if (directionalLight != null)
+        if (directionalLight is not null)
         {
             GL.Uniform1(_hasDirLightLocation, 1);
             var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));

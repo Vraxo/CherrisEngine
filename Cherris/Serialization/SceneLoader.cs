@@ -96,7 +96,7 @@ public class SceneLoader
             }
         }
 
-        return createdGameObjects.Where(go => go.Transform.Parent == null).ToList();
+        return createdGameObjects.Where(go => go.Transform.Parent is null).ToList();
     }
 
 
@@ -206,7 +206,7 @@ public class SceneLoader
             if (propKvp.Key is not string propName) continue;
 
             PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo == null || !propertyInfo.CanWrite) continue;
+            if (propertyInfo is null || !propertyInfo.CanWrite) continue;
 
             try
             {

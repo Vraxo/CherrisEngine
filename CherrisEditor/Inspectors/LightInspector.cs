@@ -244,7 +244,7 @@ public class LightInspector : IComponentInspector
     private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
-        if (property == null) return;
+        if (property is null) return;
 
         if (activated)
         {
@@ -254,7 +254,7 @@ public class LightInspector : IComponentInspector
         if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
             {
                 // Revert the change so the command can apply it
                 property.SetValue(target, _undoInitialValue);

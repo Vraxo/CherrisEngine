@@ -2,6 +2,7 @@
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.OpenTK;
+using Cherris.Serialization;
 using CherrisEditor.Undo;
 using System.Numerics;
 using System.Reflection;
@@ -32,7 +33,7 @@ public class Editor : Engine
 
     public void CreatePrefabFromGameObject(GameObject go, string path)
     {
-        if (go == null || string.IsNullOrEmpty(path)) return;
+        if (go is null || string.IsNullOrEmpty(path)) return;
         Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
         _sceneSerializer.SavePrefab(go, path);
     }
@@ -67,9 +68,9 @@ public class Editor : Engine
             // Find any camera in the scene that is NOT the editor's camera.
             var gameCamera = SceneManager.GameObjects
                 .Select(g => g.GetComponent<Camera>())
-                .FirstOrDefault(c => c != null && c != _editorCamera);
+                .FirstOrDefault(c => c is not null && c != _editorCamera);
 
-            if (gameCamera != null)
+            if (gameCamera is not null)
             {
                 SceneManager.SetMainCamera(gameCamera);
             }
@@ -153,7 +154,7 @@ public class Editor : Engine
 
         History.OnHistoryChanged += () =>
         {
-            if (SceneManager.ActiveScene != null)
+            if (SceneManager.ActiveScene is not null)
             {
                 SceneManager.ActiveScene.IsDirty = true;
             }
@@ -213,7 +214,7 @@ public class Editor : Engine
         // Fallback if the main camera was deleted or doesn't exist.
         if (cameraGo is null)
         {
-            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c != null)?.GameObject;
+            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
         }
 
         if (cameraGo is not null)
@@ -233,7 +234,7 @@ public class Editor : Engine
     public void LoadSceneFromFile(string scenePath)
     {
         var existingScene = SceneManager.OpenScenes.FirstOrDefault(s => s.FilePath == scenePath);
-        if (existingScene != null)
+        if (existingScene is not null)
         {
             SceneManager.SetActiveScene(existingScene);
             return;
@@ -338,7 +339,7 @@ public class Editor : Engine
     private void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
         EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        if (editorController == null)
+        if (editorController is null)
         {
             editorController = cameraGo.AddComponent(new EditorController(this));
             // The crucial fix: Call Start() to initialize the controller's state

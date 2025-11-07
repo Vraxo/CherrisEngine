@@ -49,7 +49,7 @@ public class RigidBody : Script
 
     private void RecreatePhysicsBody()
     {
-        if (JitterBody == null || _physicsSystem == null) return;
+        if (JitterBody is null || _physicsSystem is null) return;
 
         _physicsSystem.RemoveBody(JitterBody);
         JitterBody = null;
@@ -60,7 +60,7 @@ public class RigidBody : Script
     {
         var meshRenderer = GameObject.GetComponent<MeshRenderer>();
 
-        if (meshRenderer == null)
+        if (meshRenderer is null)
         {
             Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
             return;

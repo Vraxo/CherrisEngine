@@ -58,7 +58,7 @@ public class DefaultInspector : IComponentInspector
             if (deactivated)
             {
                 object valueAfterEdit = prop.GetValue(component);
-                if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+                if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
                 {
                     prop.SetValue(component, _undoInitialValue);
                     _history.Execute(new ChangePropertyCommand(component, prop, _undoInitialValue, valueAfterEdit));
@@ -72,7 +72,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.ImageButton($"Reset##{prop.Name}", resetIcon, new Vector2(buttonSize, buttonSize)))
             {
                 object defaultValue = GetDefaultValue(componentType, prop.Name);
-                if (defaultValue != null)
+                if (defaultValue is not null)
                 {
                     prop.SetValue(component, defaultValue);
                     dirty = true;
@@ -321,7 +321,7 @@ public class DefaultInspector : IComponentInspector
         {
             try
             {
-                if (componentType.GetConstructor(Type.EmptyTypes) != null)
+                if (componentType.GetConstructor(Type.EmptyTypes) is not null)
                 {
                     defaultInstance = Activator.CreateInstance(componentType);
                     _defaultComponentCache[componentType] = defaultInstance;
@@ -330,7 +330,7 @@ public class DefaultInspector : IComponentInspector
             catch { return null; }
         }
 
-        if (defaultInstance != null)
+        if (defaultInstance is not null)
         {
             return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
         }

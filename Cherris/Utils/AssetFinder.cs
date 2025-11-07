@@ -9,7 +9,7 @@ public static class AssetFinder
         string currentPath = AppContext.BaseDirectory;
         DirectoryInfo? directoryInfo = new(currentPath);
 
-        while (directoryInfo != null)
+        while (directoryInfo is not null)
         {
             // Normalize path separators for a consistent check
             string normalizedPath = directoryInfo.FullName.Replace('\\', '/');

@@ -32,7 +32,7 @@ public class PhysicsSystem
 
     public void RemoveBody(Jitter.Dynamics.RigidBody jitterBody)
     {
-        if (jitterBody == null || !_bodyMap.ContainsKey(jitterBody))
+        if (jitterBody is null || !_bodyMap.ContainsKey(jitterBody))
         {
             return;
         }

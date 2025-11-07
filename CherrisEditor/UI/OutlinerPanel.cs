@@ -26,7 +26,7 @@ public class OutlinerPanel : IDisposable
         ImGui.Begin("Outliner");
         DrawOutlinerContextMenu();
 
-        foreach (var go in _editor.SceneManager.GameObjects.Where(g => g.Transform.Parent == null).ToList())
+        foreach (var go in _editor.SceneManager.GameObjects.Where(g => g.Transform.Parent is null).ToList())
         {
             DrawGameObjectNode(go);
         }
@@ -49,7 +49,7 @@ public class OutlinerPanel : IDisposable
                 Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
                 var draggedId = new Guid(data);
                 var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
-                if (draggedObject != null)
+                if (draggedObject is not null)
                 {
                     draggedObject.Transform.Parent = null; // Unparent
                 }

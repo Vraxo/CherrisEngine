@@ -49,7 +49,7 @@ public class ContentBrowserPanel : IDisposable
                 var goId = new Guid(data);
                 var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
 
-                if (go != null)
+                if (go is not null)
                 {
                     string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
                     _editor.CreatePrefabFromGameObject(go, prefabPath);
@@ -121,7 +121,7 @@ public class ContentBrowserPanel : IDisposable
         if (EditorTextureManager.ImageExtensions.Contains(extension)) payloadType = "ASSET_PATH_TEXTURE";
         else if (EditorTextureManager.PrefabExtensions.Contains(extension)) payloadType = "ASSET_PATH_PREFAB";
 
-        if (payloadType != null && ImGui.BeginDragDropSource())
+        if (payloadType is not null && ImGui.BeginDragDropSource())
         {
             // Allocate memory and hold onto the pointer until the next frame.
             _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);

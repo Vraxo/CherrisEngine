@@ -37,7 +37,7 @@ public static class ModelLoader
                 foreach (var primitive in gltfMesh.Primitives)
                 {
                     var positionsAccessor = primitive.GetVertexAccessor("POSITION");
-                    if (positionsAccessor == null) continue;
+                    if (positionsAccessor is null) continue;
                     var positions = positionsAccessor.AsVector3Array();
                     if (positions.Count == 0) continue;
 
@@ -45,7 +45,7 @@ public static class ModelLoader
                     var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
                     var indicesAccessor = primitive.IndexAccessor;
 
-                    if (indicesAccessor == null) continue;
+                    if (indicesAccessor is null) continue;
                     var indices = indicesAccessor.AsIndicesArray();
 
                     IList<Vector3> normals = normalsAccessor?.AsVector3Array();
@@ -57,9 +57,9 @@ public static class ModelLoader
                     {
                         allVertices.Add(new Vertex(
                             positions[v],
-                            normals != null ? normals[v] : Vector3.UnitY,
+                            normals is not null ? normals[v] : Vector3.UnitY,
                             RgbaFloat.White,
-                            texCoords != null ? texCoords[v] : Vector2.Zero
+                            texCoords is not null ? texCoords[v] : Vector2.Zero
                         ));
                     }
 

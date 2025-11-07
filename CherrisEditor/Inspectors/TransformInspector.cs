@@ -116,7 +116,7 @@ public class TransformInspector
     private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
-        if (property == null) return;
+        if (property is null) return;
 
         if (activated)
         {
@@ -126,7 +126,7 @@ public class TransformInspector
         if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
             {
                 property.SetValue(target, _undoInitialValue);
                 _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
