@@ -32,6 +32,7 @@ public class RigidBody : Script
     public Jitter.Dynamics.RigidBody JitterBody { get; private set; }
 
     private PhysicsSystem _physicsSystem;
+    private Vector3 _lastScale;
 
     // Called by the Scene to provide the PhysicsSystem instance.
     internal void Initialize(PhysicsSystem physicsSystem)
@@ -46,6 +47,15 @@ public class RigidBody : Script
             return;
         }
         CreateAndRegisterJitterBody();
+    }
+
+    public override void Update(float deltaTime)
+    {
+        // If the object's scale has changed, recreate the physics body to match.
+        if (GameObject is not null && GameObject.Transform.Scale != _lastScale)
+        {
+            RecreatePhysicsBody();
+        }
     }
 
     private void RecreatePhysicsBody()
@@ -68,7 +78,8 @@ public class RigidBody : Script
         }
 
         BoundingBox aabb = meshRenderer.Mesh.AABB;
-        Vector3 size = (aabb.Max - aabb.Min) * GameObject.Transform.Scale;
+        _lastScale = GameObject.Transform.Scale; // Store the scale used for creation
+        Vector3 size = (aabb.Max - aabb.Min) * _lastScale;
 
         Jitter.Collision.Shapes.Shape shape;
         switch (Shape)

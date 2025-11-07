@@ -206,7 +206,9 @@ public class Editor : Engine
 
         foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            script.Enabled = false;
+            // RigidBody needs to be "enabled" in the editor to listen for transform changes.
+            // All other gameplay scripts should be disabled.
+            script.Enabled = script is RigidBody;
         }
 
         GameObject? cameraGo = scene.MainCamera?.GameObject;
@@ -342,10 +344,11 @@ public class Editor : Engine
         if (editorController is null)
         {
             editorController = cameraGo.AddComponent(new EditorController(this));
-            // The crucial fix: Call Start() to initialize the controller's state
-            // from the transform that was just loaded from the scene file.
-            editorController.Start();
         }
+        // The crucial fix: Call Start() to initialize the controller's state
+        // from the transform that was just loaded from the scene file. This prevents
+        // the camera from snapping to a default rotation on first mouse move.
+        editorController.Start();
         editorController.Enabled = true;
     }
 
