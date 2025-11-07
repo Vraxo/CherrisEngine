@@ -28,6 +28,7 @@ public class Toolbar
     private static bool BeginToolbar()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+
         float toolbarHeight = ImGui.GetFrameHeightWithSpacing();
 
         bool isVisible = ImGui.BeginChild(
@@ -48,7 +49,7 @@ public class Toolbar
 
         const float buttonVerticalMargin = 4.0f;
         float iconSize = availableHeight - (style.FramePadding.Y * 2) - buttonVerticalMargin;
-        Vector2 buttonIconSize = new Vector2(x: iconSize, iconSize);
+        Vector2 buttonIconSize = new(x: iconSize, iconSize);
 
         PositionButtonsInCenter(iconSize, style);
 
@@ -59,7 +60,7 @@ public class Toolbar
         DrawRestartButton(buttonIconSize, style);
     }
 
-    private void PositionButtonsInCenter(float iconSize, ImGuiStylePtr style)
+    private static void PositionButtonsInCenter(float iconSize, ImGuiStylePtr style)
     {
         const int buttonCount = 3;
         float buttonsTotalWidth = (iconSize * buttonCount) + (style.ItemSpacing.X * (buttonCount - 1));
@@ -75,7 +76,10 @@ public class Toolbar
     private void DrawPlayPauseButton(Vector2 buttonIconSize)
     {
         bool isPlaying = _editor.State == EditorState.Playing;
-        IntPtr playPauseIcon = isPlaying ? _textureManager.GetTexture("Pause") : _textureManager.GetTexture("Play");
+
+        IntPtr playPauseIcon = isPlaying 
+            ? _textureManager.GetTexture("Pause") 
+            : _textureManager.GetTexture("Play");
 
         if (!ImGui.ImageButton("PlayPause", playPauseIcon, buttonIconSize))
         {
@@ -126,7 +130,7 @@ public class Toolbar
             ImGui.BeginDisabled();
         }
 
-        if (ImGui.ImageButton("Restart", _textureManager.GetTexture("Restart"), buttonIconSize))
+        if (ImGui.ImageButton("Reset", _textureManager.GetTexture("Reset"), buttonIconSize))
         {
             _editor.RestartPlayMode();
         }
