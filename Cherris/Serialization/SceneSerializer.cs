@@ -102,122 +102,29 @@ public class SceneSerializer
 
         foreach (Component component in gameObject.Components)
         {
+            // The editor controller should not be serialized.
             if (component.GetType().Name == "EditorController")
             {
                 continue;
             }
 
-            switch (component)
+            // MeshRenderer requires special handling for its nested Material object.
+            if (component is MeshRenderer mr)
             {
-                case MeshRenderer mr:
-                    Dictionary<string, object> meshRendererData = new()
-                    { 
-                        ["Mesh"] = mr.MeshName 
-                    };
+                Dictionary<string, object> meshRendererData = new() { ["Mesh"] = mr.MeshName };
+                Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
 
-                    Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
-                    
-                    if (mr.Material.TextureTiling != Vector2.One)
-                    {
-                        materialData["TextureTiling"] = mr.Material.TextureTiling;
-                    }
+                if (mr.Material.TextureTiling != Vector2.One) materialData["TextureTiling"] = mr.Material.TextureTiling;
+                if (mr.Material.EmissiveColor != Vector3.Zero) materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f) materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f) materialData["Shininess"] = mr.Material.Shininess;
 
-                    if (mr.Material.EmissiveColor != Vector3.Zero)
-                    {
-                        materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                    }
-
-                    if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
-                    {
-                        materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                    }
-
-                    if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
-                    {
-                        materialData["Shininess"] = mr.Material.Shininess;
-                    }
-
-                    meshRendererData["Material"] = materialData;
-                    componentsData["MeshRenderer"] = meshRendererData;
-
-                    break;
-
-                case Camera:
-                    componentsData["Camera"] = new Dictionary<string, object>();
-                    break;
-
-                case Skybox skybox:
-                    componentsData["Skybox"] = new Dictionary<string, object> { ["CubeMap"] = skybox.CubeMapName };
-                    break;
-
-                case Light light:
-                    Dictionary<string, object> lightData = new()
-                    {
-                        ["Type"] = light.Type.ToString(),
-                        ["Color"] = light.Color,
-                        ["Intensity"] = light.Intensity
-                    };
-
-                    if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f)
-                    {
-                        lightData["AmbientStrength"] = light.AmbientStrength;
-                    }
-
-                    if (light.Type is LightType.Point or LightType.Spot)
-                    {
-                        if (Math.Abs(light.Range - 50.0f) > 0.001f) lightData["Range"] = light.Range;
-                    }
-
-                    if (light.Type == LightType.Spot)
-                    {
-                        if (float.Abs(light.InnerConeAngle - 12.5f) > 0.001f)
-                        {
-                            lightData["InnerConeAngle"] = light.InnerConeAngle;
-                        }
-
-                        if (float.Abs(light.OuterConeAngle - 17.5f) > 0.001f)
-                        {
-                            lightData["OuterConeAngle"] = light.OuterConeAngle;
-                        }
-                    }
-
-                    componentsData["Light"] = lightData;
-
-                    break;
-
-                case RigidBody rb:
-                    Dictionary<string, object> rigidBodyData = new() 
-                    { 
-                        ["IsStatic"] = rb.IsStatic 
-                    };
-                    
-                    if (rb.Shape != ColliderType.Box)
-                    {
-                        rigidBodyData["Shape"] = rb.Shape.ToString();
-                    }
-
-                    if (!rb.IsStatic)
-                    {
-                        rigidBodyData["Mass"] = rb.Mass;
-                    }
-
-                    if (rb.Friction != 0.5f)
-                    {
-                        rigidBodyData["Friction"] = rb.Friction;
-                    }
-
-                    if (rb.Bounciness != 0.5f)
-                    {
-                        rigidBodyData["Bounciness"] = rb.Bounciness;
-                    }
-
-                    componentsData["RigidBody"] = rigidBodyData;
-
-                    break;
-
-                case Script script:
-                    componentsData[script.GetType().Name] = SerializeScriptProperties(script);
-                    break;
+                meshRendererData["Material"] = materialData;
+                componentsData["MeshRenderer"] = meshRendererData;
+            }
+            else // All other components can be serialized generically using reflection.
+            {
+                componentsData[component.GetType().Name] = SerializeComponentProperties(component);
             }
         }
         return componentsData;
@@ -233,15 +140,39 @@ public class SceneSerializer
         }
     }
 
-    private static Dictionary<string, object> SerializeScriptProperties(Script script)
+    private static Dictionary<string, object> SerializeComponentProperties(Component component)
     {
         Dictionary<string, object> propertiesData = [];
-        IEnumerable<PropertyInfo> properties = script.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        var properties = component.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.CanWrite && p.GetCustomAttribute<HideInInspectorAttribute>() is null);
+
+        // This handles components like Camera that have no public properties to serialize.
+        if (!properties.Any())
+        {
+            return new Dictionary<string, object>();
+        }
 
         foreach (PropertyInfo prop in properties)
         {
-            propertiesData[prop.Name] = prop.GetValue(script);
+            // Skip default values for cleaner YAML output.
+            // This is an optional step but preserves the behavior of the old serializer.
+            // A new component instance is created to get default values.
+            try
+            {
+                var defaultComponent = Activator.CreateInstance(component.GetType());
+                object defaultValue = prop.GetValue(defaultComponent);
+                object currentValue = prop.GetValue(component);
+
+                if (currentValue is not null && !currentValue.Equals(defaultValue))
+                {
+                    propertiesData[prop.Name] = currentValue;
+                }
+            }
+            catch
+            {
+                // If a component doesn't have a parameterless constructor, just serialize all properties.
+                propertiesData[prop.Name] = prop.GetValue(component);
+            }
         }
 
         return propertiesData;

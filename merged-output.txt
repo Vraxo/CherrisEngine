@@ -279,8 +279,26 @@ using System.Numerics;
 
 namespace Cherris.Components;
 
+public enum ColliderType
+{
+    Box,
+    Sphere
+}
+
 public class RigidBody : Script
 {
+    private ColliderType _shape = ColliderType.Box;
+    public ColliderType Shape
+    {
+        get => _shape;
+        set
+        {
+            if (_shape == value) return;
+            _shape = value;
+            RecreatePhysicsBody();
+        }
+    }
+
     public float Mass { get; set; } = 1.0f;
     public bool IsStatic { get; set; } = false;
     public float Friction { get; set; } = 0.5f;
@@ -303,10 +321,23 @@ public class RigidBody : Script
         {
             return;
         }
+        CreateAndRegisterJitterBody();
+    }
 
+    private void RecreatePhysicsBody()
+    {
+        if (JitterBody is null || _physicsSystem is null) return;
+
+        _physicsSystem.RemoveBody(JitterBody);
+        JitterBody = null;
+        CreateAndRegisterJitterBody();
+    }
+
+    private void CreateAndRegisterJitterBody()
+    {
         var meshRenderer = GameObject.GetComponent<MeshRenderer>();
 
-        if (meshRenderer == null)
+        if (meshRenderer is null)
         {
             Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
             return;
@@ -314,7 +345,22 @@ public class RigidBody : Script
 
         BoundingBox aabb = meshRenderer.Mesh.AABB;
         Vector3 size = (aabb.Max - aabb.Min) * GameObject.Transform.Scale;
-        Jitter.Collision.Shapes.BoxShape shape = new(size.ToJitter());
+
+        Jitter.Collision.Shapes.Shape shape;
+        switch (Shape)
+        {
+            case ColliderType.Box:
+                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
+                break;
+            case ColliderType.Sphere:
+                float radius = (size.X + size.Y + size.Z) / 6.0f; // Average radius
+                shape = new Jitter.Collision.Shapes.SphereShape(radius);
+                break;
+            default:
+                Console.WriteLine($"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'. Defaulting to Box.");
+                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
+                break;
+        }
 
         JitterBody = new(shape)
         {
@@ -1562,7 +1608,7 @@ public static class ModelLoader
                 foreach (var primitive in gltfMesh.Primitives)
                 {
                     var positionsAccessor = primitive.GetVertexAccessor("POSITION");
-                    if (positionsAccessor == null) continue;
+                    if (positionsAccessor is null) continue;
                     var positions = positionsAccessor.AsVector3Array();
                     if (positions.Count == 0) continue;
 
@@ -1570,7 +1616,7 @@ public static class ModelLoader
                     var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
                     var indicesAccessor = primitive.IndexAccessor;
 
-                    if (indicesAccessor == null) continue;
+                    if (indicesAccessor is null) continue;
                     var indices = indicesAccessor.AsIndicesArray();
 
                     IList<Vector3> normals = normalsAccessor?.AsVector3Array();
@@ -1582,9 +1628,9 @@ public static class ModelLoader
                     {
                         allVertices.Add(new Vertex(
                             positions[v],
-                            normals != null ? normals[v] : Vector3.UnitY,
+                            normals is not null ? normals[v] : Vector3.UnitY,
                             RgbaFloat.White,
-                            texCoords != null ? texCoords[v] : Vector2.Zero
+                            texCoords is not null ? texCoords[v] : Vector2.Zero
                         ));
                     }
 
@@ -1661,7 +1707,7 @@ public class PhysicsSystem
 
     public void RemoveBody(Jitter.Dynamics.RigidBody jitterBody)
     {
-        if (jitterBody == null || !_bodyMap.ContainsKey(jitterBody))
+        if (jitterBody is null || !_bodyMap.ContainsKey(jitterBody))
         {
             return;
         }
@@ -2713,7 +2759,7 @@ public class SceneManager
         if (_activeScene is null) return;
 
         var rb = go.GetComponent<RigidBody>();
-        if (rb?.JitterBody != null)
+        if (rb?.JitterBody is not null)
         {
             PhysicsSystem.RemoveBody(rb.JitterBody);
         }
@@ -2733,7 +2779,7 @@ public class SceneManager
 
     public void CloseScene(Scene scene)
     {
-        if (scene == null) return;
+        if (scene is null) return;
 
         int sceneIndex = _openScenes.IndexOf(scene);
         if (sceneIndex == -1) return;
@@ -2758,7 +2804,7 @@ public class SceneManager
 
     public void SetActiveScene(Scene scene)
     {
-        if (scene != null && _openScenes.Contains(scene) && _activeScene != scene)
+        if (scene is not null && _openScenes.Contains(scene) && _activeScene != scene)
         {
             _activeScene = scene;
             OnActiveSceneChanged?.Invoke(_activeScene);
@@ -2767,7 +2813,7 @@ public class SceneManager
 
     public void SetMainCamera(Camera camera)
     {
-        if (_activeScene != null)
+        if (_activeScene is not null)
         {
             _activeScene.MainCamera = camera;
         }
@@ -3969,6 +4015,11 @@ public static class ComponentDeserializer
             var rb = new RigidBody();
             if (properties is not Dictionary<object, object> propsDict) return rb;
 
+            if (propsDict.TryGetValue("Shape", out var shapeObj) && Enum.TryParse<ColliderType>(shapeObj as string, out var shape))
+            {
+                rb.Shape = shape;
+            }
+
             if (propsDict.TryGetValue("IsStatic", out var isStaticObj)) rb.IsStatic = Convert.ToBoolean(isStaticObj);
             if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic) rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
             if (propsDict.TryGetValue("Friction", out var frictionObj)) rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);
@@ -4083,7 +4134,7 @@ public class SceneLoader
             }
         }
 
-        return createdGameObjects.Where(go => go.Transform.Parent == null).ToList();
+        return createdGameObjects.Where(go => go.Transform.Parent is null).ToList();
     }
 
 
@@ -4193,7 +4244,7 @@ public class SceneLoader
             if (propKvp.Key is not string propName) continue;
 
             PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo == null || !propertyInfo.CanWrite) continue;
+            if (propertyInfo is null || !propertyInfo.CanWrite) continue;
 
             try
             {
@@ -4223,7 +4274,7 @@ using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class SceneSerializer
 {
@@ -4240,99 +4291,124 @@ public class SceneSerializer
 
     public void SavePrefab(GameObject rootGo, string filePath)
     {
-        var hierarchy = new List<GameObject>();
+        List<GameObject> hierarchy = [];
         GetHierarchy(rootGo, hierarchy);
 
-        var gameObjectsData = new List<Dictionary<string, object>>();
+        List<Dictionary<string, object>> gameObjectsData = [];
 
-        foreach (var go in hierarchy)
+        foreach (GameObject gameObject in hierarchy)
         {
-            var goData = new Dictionary<string, object>
+            Dictionary<string, object> goData = new Dictionary<string, object>
             {
-                ["Id"] = go.Id.ToString(),
-                ["Name"] = go.Name
+                ["Id"] = gameObject.Id.ToString(),
+                ["Name"] = gameObject.Name
             };
 
             // Only save parent if it's part of the prefab hierarchy
-            if (go.Transform.Parent != null && hierarchy.Contains(go.Transform.Parent.GameObject))
+            if (gameObject.Transform.Parent is not null && hierarchy.Contains(gameObject.Transform.Parent.GameObject))
             {
-                goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
+                goData["Parent"] = gameObject.Transform.Parent.GameObject.Id.ToString();
             }
 
-            var componentsData = SerializeGameObjectComponents(go);
+            Dictionary<string, object> componentsData = SerializeGameObjectComponents(gameObject);
             goData["Components"] = componentsData;
             gameObjectsData.Add(goData);
         }
 
-        var root = new Dictionary<string, object>
+        Dictionary<string, object> root = new()
         {
-            { "GameObjects", gameObjectsData }
+            ["GameObjects"] = gameObjectsData
         };
 
-        var yaml = _serializer.Serialize(root);
+        string yaml = _serializer.Serialize(root);
         File.WriteAllText(filePath, yaml);
     }
 
     public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
     {
-        var gameObjectsData = new List<Dictionary<string, object>>();
+        List<Dictionary<string, object>> gameObjectsData = [];
 
-        foreach (var go in gameObjects)
+        foreach (GameObject gameObject in gameObjects)
         {
-            var goData = new Dictionary<string, object>
+            Dictionary<string, object> goData = new()
             {
-                ["Id"] = go.Id.ToString(),
-                ["Name"] = go.Name
+                ["Id"] = gameObject.Id.ToString(),
+                ["Name"] = gameObject.Name
             };
 
-            if (go.Transform.Parent is not null)
+            if (gameObject.Transform.Parent is not null)
             {
-                goData["Parent"] = go.Transform.Parent.GameObject.Id.ToString();
+                goData["Parent"] = gameObject.Transform.Parent.GameObject.Id.ToString();
             }
 
-            var componentsData = SerializeGameObjectComponents(go);
+            Dictionary<string, object> componentsData = SerializeGameObjectComponents(gameObject);
             goData["Components"] = componentsData;
             gameObjectsData.Add(goData);
         }
 
-        var root = new Dictionary<string, object>
+        Dictionary<string, object> root = new()
         {
-            { "GameObjects", gameObjectsData }
+            ["GameObjects"] = gameObjectsData
         };
 
-        var yaml = _serializer.Serialize(root);
+        string yaml = _serializer.Serialize(root);
         File.WriteAllText(filePath, yaml);
     }
 
-    private Dictionary<string, object> SerializeGameObjectComponents(GameObject go)
+    private static Dictionary<string, object> SerializeGameObjectComponents(GameObject gameObject)
     {
-        var componentsData = new Dictionary<string, object>();
+        Dictionary<string, object> componentsData = [];
 
-        var transformData = new Dictionary<string, object>
+        Dictionary<string, object> transformData = new()
         {
-            ["Position"] = go.Transform.Position
+            ["Position"] = gameObject.Transform.Position
         };
 
-        var eulerDegrees = EngineMath.ToEulerAngles(go.Transform.Rotation) * (180.0f / MathF.PI);
+        Vector3 eulerDegrees = EngineMath.ToEulerAngles(gameObject.Transform.Rotation) * (180.0f / MathF.PI);
         transformData["Rotation"] = eulerDegrees;
-        transformData["Scale"] = go.Transform.Scale;
+        transformData["Scale"] = gameObject.Transform.Scale;
         componentsData["Transform"] = transformData;
 
-        foreach (var component in go.Components)
+        foreach (Component component in gameObject.Components)
         {
-            if (component.GetType().Name == "EditorController") continue;
+            if (component.GetType().Name == "EditorController")
+            {
+                continue;
+            }
 
             switch (component)
             {
                 case MeshRenderer mr:
-                    var mrData = new Dictionary<string, object> { ["Mesh"] = mr.MeshName };
-                    var materialData = new Dictionary<string, object> { ["Texture"] = mr.Material.TextureName };
-                    if (mr.Material.TextureTiling != Vector2.One) materialData["TextureTiling"] = mr.Material.TextureTiling;
-                    if (mr.Material.EmissiveColor != Vector3.Zero) materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                    if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f) materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                    if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f) materialData["Shininess"] = mr.Material.Shininess;
-                    mrData["Material"] = materialData;
-                    componentsData["MeshRenderer"] = mrData;
+                    Dictionary<string, object> meshRendererData = new()
+                    { 
+                        ["Mesh"] = mr.MeshName 
+                    };
+
+                    Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
+                    
+                    if (mr.Material.TextureTiling != Vector2.One)
+                    {
+                        materialData["TextureTiling"] = mr.Material.TextureTiling;
+                    }
+
+                    if (mr.Material.EmissiveColor != Vector3.Zero)
+                    {
+                        materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                    }
+
+                    if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+                    {
+                        materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                    }
+
+                    if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+                    {
+                        materialData["Shininess"] = mr.Material.Shininess;
+                    }
+
+                    meshRendererData["Material"] = materialData;
+                    componentsData["MeshRenderer"] = meshRendererData;
+
                     break;
 
                 case Camera:
@@ -4344,31 +4420,68 @@ public class SceneSerializer
                     break;
 
                 case Light light:
-                    var lightData = new Dictionary<string, object>
+                    Dictionary<string, object> lightData = new()
                     {
                         ["Type"] = light.Type.ToString(),
                         ["Color"] = light.Color,
                         ["Intensity"] = light.Intensity
                     };
-                    if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f) lightData["AmbientStrength"] = light.AmbientStrength;
+
+                    if (Math.Abs(light.AmbientStrength - 0.3f) > 0.001f)
+                    {
+                        lightData["AmbientStrength"] = light.AmbientStrength;
+                    }
+
                     if (light.Type is LightType.Point or LightType.Spot)
                     {
                         if (Math.Abs(light.Range - 50.0f) > 0.001f) lightData["Range"] = light.Range;
                     }
+
                     if (light.Type == LightType.Spot)
                     {
-                        if (Math.Abs(light.InnerConeAngle - 12.5f) > 0.001f) lightData["InnerConeAngle"] = light.InnerConeAngle;
-                        if (Math.Abs(light.OuterConeAngle - 17.5f) > 0.001f) lightData["OuterConeAngle"] = light.OuterConeAngle;
+                        if (float.Abs(light.InnerConeAngle - 12.5f) > 0.001f)
+                        {
+                            lightData["InnerConeAngle"] = light.InnerConeAngle;
+                        }
+
+                        if (float.Abs(light.OuterConeAngle - 17.5f) > 0.001f)
+                        {
+                            lightData["OuterConeAngle"] = light.OuterConeAngle;
+                        }
                     }
+
                     componentsData["Light"] = lightData;
+
                     break;
 
                 case RigidBody rb:
-                    var rbData = new Dictionary<string, object> { ["IsStatic"] = rb.IsStatic };
-                    if (!rb.IsStatic) rbData["Mass"] = rb.Mass;
-                    if (rb.Friction != 0.5f) rbData["Friction"] = rb.Friction;
-                    if (rb.Bounciness != 0.5f) rbData["Bounciness"] = rb.Bounciness;
-                    componentsData["RigidBody"] = rbData;
+                    Dictionary<string, object> rigidBodyData = new() 
+                    { 
+                        ["IsStatic"] = rb.IsStatic 
+                    };
+                    
+                    if (rb.Shape != ColliderType.Box)
+                    {
+                        rigidBodyData["Shape"] = rb.Shape.ToString();
+                    }
+
+                    if (!rb.IsStatic)
+                    {
+                        rigidBodyData["Mass"] = rb.Mass;
+                    }
+
+                    if (rb.Friction != 0.5f)
+                    {
+                        rigidBodyData["Friction"] = rb.Friction;
+                    }
+
+                    if (rb.Bounciness != 0.5f)
+                    {
+                        rigidBodyData["Bounciness"] = rb.Bounciness;
+                    }
+
+                    componentsData["RigidBody"] = rigidBodyData;
+
                     break;
 
                 case Script script:
@@ -4382,7 +4495,8 @@ public class SceneSerializer
     private static void GetHierarchy(GameObject go, List<GameObject> list)
     {
         list.Add(go);
-        foreach (var child in go.Transform.Children)
+
+        foreach (Transform child in go.Transform.Children)
         {
             GetHierarchy(child.GameObject, list);
         }
@@ -4390,11 +4504,11 @@ public class SceneSerializer
 
     private static Dictionary<string, object> SerializeScriptProperties(Script script)
     {
-        var propertiesData = new Dictionary<string, object>();
-        var properties = script.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead && p.CanWrite && p.GetCustomAttribute<HideInInspectorAttribute>() == null);
+        Dictionary<string, object> propertiesData = [];
+        IEnumerable<PropertyInfo> properties = script.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.CanWrite && p.GetCustomAttribute<HideInInspectorAttribute>() is null);
 
-        foreach (var prop in properties)
+        foreach (PropertyInfo prop in properties)
         {
             propertiesData[prop.Name] = prop.GetValue(script);
         }
@@ -4508,7 +4622,7 @@ public static class AssetFinder
         string currentPath = AppContext.BaseDirectory;
         DirectoryInfo? directoryInfo = new(currentPath);
 
-        while (directoryInfo != null)
+        while (directoryInfo is not null)
         {
             // Normalize path separators for a consistent check
             string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
@@ -5111,6 +5225,82 @@ void main()
         _vertices.Add(new DebugVertex { Position = ToOpenTKVector(end), Color = ToOpenTKVector(color) });
     }
 
+    public void AddBox(System.Numerics.Vector3 center, System.Numerics.Quaternion orientation, System.Numerics.Vector3 size, System.Numerics.Vector3 color)
+    {
+        Vector3 halfSize = ToOpenTKVector(size * 0.5f);
+        Vector3[] corners = {
+            new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),
+            new Vector3( halfSize.X, -halfSize.Y, -halfSize.Z),
+            new Vector3( halfSize.X,  halfSize.Y, -halfSize.Z),
+            new Vector3(-halfSize.X,  halfSize.Y, -halfSize.Z),
+            new Vector3(-halfSize.X, -halfSize.Y,  halfSize.Z),
+            new Vector3( halfSize.X, -halfSize.Y,  halfSize.Z),
+            new Vector3( halfSize.X,  halfSize.Y,  halfSize.Z),
+            new Vector3(-halfSize.X,  halfSize.Y,  halfSize.Z)
+        };
+
+        var otkOrientation = new Quaternion(orientation.X, orientation.Y, orientation.Z, orientation.W);
+        var otkCenter = ToOpenTKVector(center);
+
+        for (int i = 0; i < 8; i++)
+        {
+            corners[i] = Vector3.Transform(corners[i], otkOrientation) + otkCenter;
+        }
+
+        // Connect the corners
+        int[] indices = {
+            0, 1, 1, 2, 2, 3, 3, 0, // Bottom face
+            4, 5, 5, 6, 6, 7, 7, 4, // Top face
+            0, 4, 1, 5, 2, 6, 3, 7  // Connecting lines
+        };
+
+        var tkColor = ToOpenTKVector(color);
+        for (int i = 0; i < indices.Length; i += 2)
+        {
+            _vertices.Add(new DebugVertex { Position = corners[indices[i]], Color = tkColor });
+            _vertices.Add(new DebugVertex { Position = corners[indices[i + 1]], Color = tkColor });
+        }
+    }
+
+    public void AddSphere(System.Numerics.Vector3 center, float radius, System.Numerics.Vector3 color)
+    {
+        const int segments = 16;
+        var tkColor = ToOpenTKVector(color);
+        var tkCenter = ToOpenTKVector(center);
+
+        // Draw three circles on XY, XZ, YZ planes
+        for (int axis = 0; axis < 3; axis++)
+        {
+            for (int i = 0; i < segments; i++)
+            {
+                float angle1 = (i / (float)segments) * 2.0f * MathF.PI;
+                float angle2 = ((i + 1) / (float)segments) * 2.0f * MathF.PI;
+
+                Vector3 p1 = Vector3.Zero;
+                Vector3 p2 = Vector3.Zero;
+
+                if (axis == 0) // XY plane
+                {
+                    p1 = new Vector3(MathF.Cos(angle1) * radius, MathF.Sin(angle1) * radius, 0);
+                    p2 = new Vector3(MathF.Cos(angle2) * radius, MathF.Sin(angle2) * radius, 0);
+                }
+                else if (axis == 1) // XZ plane
+                {
+                    p1 = new Vector3(MathF.Cos(angle1) * radius, 0, MathF.Sin(angle1) * radius);
+                    p2 = new Vector3(MathF.Cos(angle2) * radius, 0, MathF.Sin(angle2) * radius);
+                }
+                else // YZ plane
+                {
+                    p1 = new Vector3(0, MathF.Cos(angle1) * radius, MathF.Sin(angle1) * radius);
+                    p2 = new Vector3(0, MathF.Cos(angle2) * radius, MathF.Sin(angle2) * radius);
+                }
+
+                _vertices.Add(new DebugVertex { Position = p1 + tkCenter, Color = tkColor });
+                _vertices.Add(new DebugVertex { Position = p2 + tkCenter, Color = tkColor });
+            }
+        }
+    }
+
     public void Clear()
     {
         _vertices.Clear();
@@ -5705,7 +5895,7 @@ internal class OpenGLSceneRenderer : IDisposable
         var pointLights = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
         var spotLights = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
 
-        if (directionalLight != null)
+        if (directionalLight is not null)
         {
             GL.Uniform1(_hasDirLightLocation, 1);
             var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
@@ -6370,6 +6560,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
                 }
             }
 
+            foreach (var go in gameObjects)
+            {
+                DrawRigidBodyGizmo(go);
+            }
+
             if (skybox?.CubeMapTexture is not null)
             {
                 _skyboxRenderer.Render(skybox, view, projection);
@@ -6465,6 +6660,26 @@ public class OpenTKRenderer : IRenderer, IDisposable
             var p1 = circleCenter + (right * MathF.Cos(angle1) + up * MathF.Sin(angle1)) * outerRadius;
             var p2 = circleCenter + (right * MathF.Cos(angle2) + up * MathF.Sin(angle2)) * outerRadius;
             _debugRenderer.AddLine(p1, p2, color);
+        }
+    }
+
+    private void DrawRigidBodyGizmo(GameObject go)
+    {
+        var rb = go.GetComponent<RigidBody>();
+        if (rb?.JitterBody is null) return;
+
+        var color = rb.JitterBody.IsStatic ? new System.Numerics.Vector3(0.2f, 0.8f, 0.2f) : new System.Numerics.Vector3(0.8f, 0.2f, 0.8f); // Green for static, purple for dynamic
+
+        var position = rb.JitterBody.Position.ToNumerics();
+        var orientation = rb.JitterBody.Orientation.ToNumerics();
+
+        if (rb.JitterBody.Shape is Jitter.Collision.Shapes.BoxShape box)
+        {
+            _debugRenderer.AddBox(position, orientation, box.Size.ToNumerics(), color);
+        }
+        else if (rb.JitterBody.Shape is Jitter.Collision.Shapes.SphereShape sphere)
+        {
+            _debugRenderer.AddSphere(position, sphere.Radius, color);
         }
     }
 
@@ -6964,7 +7179,7 @@ public class ContentBrowserPanel : IDisposable
                 var goId = new Guid(data);
                 var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
 
-                if (go != null)
+                if (go is not null)
                 {
                     string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
                     _editor.CreatePrefabFromGameObject(go, prefabPath);
@@ -7036,7 +7251,7 @@ public class ContentBrowserPanel : IDisposable
         if (EditorTextureManager.ImageExtensions.Contains(extension)) payloadType = "ASSET_PATH_TEXTURE";
         else if (EditorTextureManager.PrefabExtensions.Contains(extension)) payloadType = "ASSET_PATH_PREFAB";
 
-        if (payloadType != null && ImGui.BeginDragDropSource())
+        if (payloadType is not null && ImGui.BeginDragDropSource())
         {
             // Allocate memory and hold onto the pointer until the next frame.
             _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
@@ -7104,6 +7319,7 @@ using Cherris;
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.OpenTK;
+using Cherris.Serialization;
 using CherrisEditor.Undo;
 using System.Numerics;
 using System.Reflection;
@@ -7134,7 +7350,7 @@ public class Editor : Engine
 
     public void CreatePrefabFromGameObject(GameObject go, string path)
     {
-        if (go == null || string.IsNullOrEmpty(path)) return;
+        if (go is null || string.IsNullOrEmpty(path)) return;
         Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
         _sceneSerializer.SavePrefab(go, path);
     }
@@ -7169,9 +7385,9 @@ public class Editor : Engine
             // Find any camera in the scene that is NOT the editor's camera.
             var gameCamera = SceneManager.GameObjects
                 .Select(g => g.GetComponent<Camera>())
-                .FirstOrDefault(c => c != null && c != _editorCamera);
+                .FirstOrDefault(c => c is not null && c != _editorCamera);
 
-            if (gameCamera != null)
+            if (gameCamera is not null)
             {
                 SceneManager.SetMainCamera(gameCamera);
             }
@@ -7249,12 +7465,13 @@ public class Editor : Engine
     protected override void LoadContent()
     {
         ResourceManager.LoadInitialAssets();
+        RegisterBuiltInComponents();
         CompileAndRegisterGameScripts();
         LoadSceneFromFile("Assets/Scene.yaml");
 
         History.OnHistoryChanged += () =>
         {
-            if (SceneManager.ActiveScene != null)
+            if (SceneManager.ActiveScene is not null)
             {
                 SceneManager.ActiveScene.IsDirty = true;
             }
@@ -7314,7 +7531,7 @@ public class Editor : Engine
         // Fallback if the main camera was deleted or doesn't exist.
         if (cameraGo is null)
         {
-            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c != null)?.GameObject;
+            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
         }
 
         if (cameraGo is not null)
@@ -7334,7 +7551,7 @@ public class Editor : Engine
     public void LoadSceneFromFile(string scenePath)
     {
         var existingScene = SceneManager.OpenScenes.FirstOrDefault(s => s.FilePath == scenePath);
-        if (existingScene != null)
+        if (existingScene is not null)
         {
             SceneManager.SetActiveScene(existingScene);
             return;
@@ -7351,17 +7568,40 @@ public class Editor : Engine
         SceneManager.OpenScene(newScene);
     }
 
+    private void RegisterBuiltInComponents()
+    {
+        AvailableScriptTypes.Clear();
+
+        Assembly coreAssembly = typeof(Script).Assembly;
+        var scriptTypes = coreAssembly.GetTypes()
+            .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(Script) && t != typeof(EditorController));
+
+        foreach (var type in scriptTypes)
+        {
+            RegisterScriptComponent(type);
+        }
+    }
+
     private void CompileAndRegisterGameScripts()
     {
-        // Unload the previous context if it exists
+        // Unload the previous context if it exists and remove its types from our list
         if (_gameAssemblyContext.Assemblies.Any())
         {
+            var typesToRemove = AvailableScriptTypes
+                .Where(t => AssemblyLoadContext.GetLoadContext(t.Assembly) == _gameAssemblyContext)
+                .ToList();
+
+            foreach (var type in typesToRemove)
+            {
+                AvailableScriptTypes.Remove(type);
+            }
+
             _gameAssemblyContext.Unload();
             Console.WriteLine("[Editor] Unloaded old game assembly.");
         }
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
-        AvailableScriptTypes.Clear();
+        // Compile and add the new types from the user's scripts
         Assembly? gameAssembly = ScriptCompiler.Compile("Assets", _gameAssemblyContext);
 
         if (gameAssembly is null)
@@ -7375,11 +7615,13 @@ public class Editor : Engine
             IEnumerable<Type> scriptTypes = gameAssembly.GetTypes()
                 .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
 
+            int count = 0;
             foreach (Type type in scriptTypes)
             {
                 RegisterScriptComponent(type);
+                count++;
             }
-            Console.WriteLine($"[Editor] Loaded {AvailableScriptTypes.Count} custom components from runtime-compiled assembly.");
+            Console.WriteLine($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
         }
         catch (Exception ex)
         {
@@ -7392,7 +7634,7 @@ public class Editor : Engine
         AvailableScriptTypes.Add(scriptType);
         Component Factory(object _) => (Component)Activator.CreateInstance(scriptType)!;
         SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Console.WriteLine($"[Editor] Registered custom component: {scriptType.Name}");
+        Console.WriteLine($"[Editor] Registered component: {scriptType.Name}");
     }
 
     private void SetScriptsEnabledForPlayMode()
@@ -7414,7 +7656,7 @@ public class Editor : Engine
     private void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
         EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        if (editorController == null)
+        if (editorController is null)
         {
             editorController = cameraGo.AddComponent(new EditorController(this));
             // The crucial fix: Call Start() to initialize the controller's state
@@ -7464,6 +7706,7 @@ public class Editor : Engine
 
 ```csharp
 using Cherris;
+using Cherris.Serialization;
 using CherrisEditor.UI;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -8067,18 +8310,18 @@ internal class InspectorPanel
                 var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
                 var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
 
-                if (ctorWithAll != null)
+                if (ctorWithAll is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
-                else if (ctorWithEditor != null)
+                else if (ctorWithEditor is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
-                else if (ctorWithHistory != null)
+                else if (ctorWithHistory is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
-                else if (ctorSimple != null)
+                else if (ctorSimple is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
-                else if (ctorParameterless != null)
+                else if (ctorParameterless is not null)
                     instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
 
-                if (instance != null)
+                if (instance is not null)
                 {
                     _customInspectors[attribute.InspectedType] = instance;
                     Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
@@ -8225,7 +8468,7 @@ internal class InspectorPanel
             bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
 
             // Built-in components
-            if (go.GetComponent<Camera>() == null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
             {
                 if (ImGui.MenuItem("Camera"))
                 {
@@ -8235,7 +8478,7 @@ internal class InspectorPanel
                 }
             }
 
-            if (go.GetComponent<Light>() == null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            if (go.GetComponent<Light>() is null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
             {
                 if (ImGui.MenuItem("Light"))
                 {
@@ -8524,7 +8767,7 @@ public class DefaultInspector : IComponentInspector
             if (deactivated)
             {
                 object valueAfterEdit = prop.GetValue(component);
-                if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+                if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
                 {
                     prop.SetValue(component, _undoInitialValue);
                     _history.Execute(new ChangePropertyCommand(component, prop, _undoInitialValue, valueAfterEdit));
@@ -8538,7 +8781,7 @@ public class DefaultInspector : IComponentInspector
             if (ImGui.ImageButton($"Reset##{prop.Name}", resetIcon, new Vector2(buttonSize, buttonSize)))
             {
                 object defaultValue = GetDefaultValue(componentType, prop.Name);
-                if (defaultValue != null)
+                if (defaultValue is not null)
                 {
                     prop.SetValue(component, defaultValue);
                     dirty = true;
@@ -8787,7 +9030,7 @@ public class DefaultInspector : IComponentInspector
         {
             try
             {
-                if (componentType.GetConstructor(Type.EmptyTypes) != null)
+                if (componentType.GetConstructor(Type.EmptyTypes) is not null)
                 {
                     defaultInstance = Activator.CreateInstance(componentType);
                     _defaultComponentCache[componentType] = defaultInstance;
@@ -8796,7 +9039,7 @@ public class DefaultInspector : IComponentInspector
             catch { return null; }
         }
 
-        if (defaultInstance != null)
+        if (defaultInstance is not null)
         {
             return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
         }
@@ -9076,7 +9319,7 @@ public class LightInspector : IComponentInspector
     private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
-        if (property == null) return;
+        if (property is null) return;
 
         if (activated)
         {
@@ -9086,7 +9329,7 @@ public class LightInspector : IComponentInspector
         if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
             {
                 // Revert the change so the command can apply it
                 property.SetValue(target, _undoInitialValue);
@@ -9169,7 +9412,7 @@ public class MeshRendererInspector : IComponentInspector
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
-            if (payload.NativePtr != null)
+            if (payload.NativePtr is not null)
             {
                 string path = Marshal.PtrToStringAnsi(payload.Data);
                 if (!string.IsNullOrEmpty(path) && File.Exists(path))
@@ -9252,7 +9495,7 @@ public class MeshRendererInspector : IComponentInspector
     private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
-        if (property == null) return;
+        if (property is null) return;
 
         if (activated)
         {
@@ -9262,7 +9505,7 @@ public class MeshRendererInspector : IComponentInspector
         if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
             {
                 property.SetValue(target, _undoInitialValue);
                 _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
@@ -9427,7 +9670,7 @@ public class TransformInspector
     private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
     {
         var property = target.GetType().GetProperty(propertyName);
-        if (property == null) return;
+        if (property is null) return;
 
         if (activated)
         {
@@ -9437,7 +9680,7 @@ public class TransformInspector
         if (deactivated)
         {
             object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue != null && !_undoInitialValue.Equals(valueAfterEdit))
+            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
             {
                 property.SetValue(target, _undoInitialValue);
                 _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
@@ -9473,7 +9716,7 @@ public static class ConsolePanel
 ### `CherrisEditor\UI\MenuBar.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Serialization;
 using CherrisEditor.Undo;
 using ImGuiNET;
 
@@ -9564,7 +9807,7 @@ public class OutlinerPanel : IDisposable
         ImGui.Begin("Outliner");
         DrawOutlinerContextMenu();
 
-        foreach (var go in _editor.SceneManager.GameObjects.Where(g => g.Transform.Parent == null).ToList())
+        foreach (var go in _editor.SceneManager.GameObjects.Where(g => g.Transform.Parent is null).ToList())
         {
             DrawGameObjectNode(go);
         }
@@ -9587,7 +9830,7 @@ public class OutlinerPanel : IDisposable
                 Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
                 var draggedId = new Guid(data);
                 var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
-                if (draggedObject != null)
+                if (draggedObject is not null)
                 {
                     draggedObject.Transform.Parent = null; // Unparent
                 }
@@ -10287,8 +10530,8 @@ GameObjects:
   Name: Player
   Components:
     Transform:
-      Position: [1.2218183, 2.7862098, 4.7504783]
-      Rotation: [-30.93975, -12.805729, 2.1888778E-07]
+      Position: [2.867231, 1.1734351, 1.3127898]
+      Rotation: [-32.83052, 6.6175385, -1.074375E-07]
       Scale: [1, 1, 1]
     PlayerController:
       Speed: 3
@@ -10300,7 +10543,7 @@ GameObjects:
   Components:
     Transform:
       Position: [-0.5148658, 4.625517, -0.7980118]
-      Rotation: [-84.91005, -44.99985, -2.4148303E-06]
+      Rotation: [-84.91004, -44.999847, -2.4148299E-06]
       Scale: [1, 1.0000011, 1.0000005]
     Light:
       Type: Directional
@@ -10334,6 +10577,9 @@ GameObjects:
         Texture: crate
         SpecularIntensity: 0.3
         Shininess: 16
+    RigidBody:
+      IsStatic: false
+      Mass: 1
 - Id: fa6c7e61-829e-4f4e-8ad6-e370835d1b46
   Name: GroundPlane
   Components:
