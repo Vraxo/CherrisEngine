@@ -92,7 +92,8 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
             if (ShowGrid)
             {
-                _gridRenderer.Render(view, projection);
+                var cameraPos = view.Inverted().Row3.Xyz;
+                _gridRenderer.Render(view, projection, cameraPos);
             }
 
             _sceneRenderer.Render(gameObjects, lights, view, projection);
