@@ -5,7 +5,8 @@ namespace Cherris.Components;
 public enum ColliderType
 {
     Box,
-    Sphere
+    Sphere,
+    Capsule
 }
 
 public class RigidBody : Script
@@ -78,6 +79,11 @@ public class RigidBody : Script
             case ColliderType.Sphere:
                 float radius = (size.X + size.Y + size.Z) / 6.0f; // Average radius
                 shape = new Jitter.Collision.Shapes.SphereShape(radius);
+                break;
+            case ColliderType.Capsule:
+                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
+                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius)); // Ensure length is not negative
+                shape = new Jitter.Collision.Shapes.CapsuleShape(capsuleLength, capsuleRadius);
                 break;
             default:
                 Console.WriteLine($"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'. Defaulting to Box.");

@@ -206,6 +206,10 @@ public class OpenTKRenderer : IRenderer, IDisposable
         {
             _debugRenderer.AddSphere(position, sphere.Radius, color);
         }
+        else if (rb.JitterBody.Shape is Jitter.Collision.Shapes.CapsuleShape capsule)
+        {
+            _debugRenderer.AddCapsule(position, orientation, capsule.Length, capsule.Radius, color);
+        }
     }
 
 

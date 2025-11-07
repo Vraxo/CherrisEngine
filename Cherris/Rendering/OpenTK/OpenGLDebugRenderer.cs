@@ -145,6 +145,28 @@ void main()
         }
     }
 
+    public void AddCapsule(System.Numerics.Vector3 center, System.Numerics.Quaternion orientation, float length, float radius, System.Numerics.Vector3 color)
+    {
+        var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, orientation);
+        var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, orientation);
+        var forward = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, orientation);
+
+        var halfLengthVector = up * (length * 0.5f);
+
+        var topSphereCenter = center + halfLengthVector;
+        var bottomSphereCenter = center - halfLengthVector;
+
+        // Draw the two hemispheres
+        AddSphere(topSphereCenter, radius, color);
+        AddSphere(bottomSphereCenter, radius, color);
+
+        // Draw connecting lines
+        AddLine(topSphereCenter + right * radius, bottomSphereCenter + right * radius, color);
+        AddLine(topSphereCenter - right * radius, bottomSphereCenter - right * radius, color);
+        AddLine(topSphereCenter + forward * radius, bottomSphereCenter + forward * radius, color);
+        AddLine(topSphereCenter - forward * radius, bottomSphereCenter - forward * radius, color);
+    }
+
     public void Clear()
     {
         _vertices.Clear();
