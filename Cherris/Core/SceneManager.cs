@@ -13,6 +13,7 @@ public class SceneManager
     public Scene ActiveScene => _activeScene;
     public IReadOnlyList<Scene> OpenScenes => _openScenes;
     public PhysicsSystem PhysicsSystem { get; }
+    public AudioSystem AudioSystem { get; }
 
     public Camera MainCamera => _activeScene?.MainCamera;
     public Skybox Skybox => _activeScene?.Skybox;
@@ -22,6 +23,8 @@ public class SceneManager
     public SceneManager()
     {
         PhysicsSystem = new PhysicsSystem();
+        AudioSystem = new AudioSystem();
+        AudioSystem.Initialize();
     }
 
     public void AddGameObject(GameObject go)
@@ -108,6 +111,9 @@ public class SceneManager
             PhysicsSystem.Update(deltaTime);
         }
 
+        // Update audio system
+        AudioSystem.Update(_activeScene);
+
         // Then update game logic
         _activeScene?.Update(deltaTime);
     }
@@ -121,5 +127,6 @@ public class SceneManager
             scene.Dispose();
         }
         _openScenes.Clear();
+        AudioSystem.Dispose();
     }
 }

@@ -50,6 +50,7 @@ public class EditorAppLogic : IDisposable
         _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
         _textureManager.LoadTexture("Component_Script", "Assets/Icons/Components/script.png");
         _textureManager.LoadTexture("Component_Light", "Assets/Icons/Components/light.png");
+        _textureManager.LoadTexture("Component_AudioSource", "Assets/Icons/Components/audio_source.png");
 
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());

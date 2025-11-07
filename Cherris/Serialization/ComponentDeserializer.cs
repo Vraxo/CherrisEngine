@@ -15,6 +15,8 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+        sceneLoader.RegisterComponentFactory("AudioSource", CreateAndPopulateComponent<AudioSource>);
+        sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
     }
 
     private static MeshRenderer CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
@@ -164,7 +166,7 @@ public static class ComponentDeserializer
             return defaultValue;
         }
 
-        try 
+        try
         {
             return ToSingle(value);
         }

@@ -282,7 +282,8 @@ namespace Cherris.Components;
 public enum ColliderType
 {
     Box,
-    Sphere
+    Sphere,
+    Capsule
 }
 
 public class RigidBody : Script
@@ -308,6 +309,7 @@ public class RigidBody : Script
     public Jitter.Dynamics.RigidBody JitterBody { get; private set; }
 
     private PhysicsSystem _physicsSystem;
+    private Vector3 _lastScale;
 
     // Called by the Scene to provide the PhysicsSystem instance.
     internal void Initialize(PhysicsSystem physicsSystem)
@@ -322,6 +324,15 @@ public class RigidBody : Script
             return;
         }
         CreateAndRegisterJitterBody();
+    }
+
+    public override void Update(float deltaTime)
+    {
+        // If the object's scale has changed, recreate the physics body to match.
+        if (GameObject is not null && GameObject.Transform.Scale != _lastScale)
+        {
+            RecreatePhysicsBody();
+        }
     }
 
     private void RecreatePhysicsBody()
@@ -344,7 +355,8 @@ public class RigidBody : Script
         }
 
         BoundingBox aabb = meshRenderer.Mesh.AABB;
-        Vector3 size = (aabb.Max - aabb.Min) * GameObject.Transform.Scale;
+        _lastScale = GameObject.Transform.Scale; // Store the scale used for creation
+        Vector3 size = (aabb.Max - aabb.Min) * _lastScale;
 
         Jitter.Collision.Shapes.Shape shape;
         switch (Shape)
@@ -355,6 +367,11 @@ public class RigidBody : Script
             case ColliderType.Sphere:
                 float radius = (size.X + size.Y + size.Z) / 6.0f; // Average radius
                 shape = new Jitter.Collision.Shapes.SphereShape(radius);
+                break;
+            case ColliderType.Capsule:
+                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
+                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius)); // Ensure length is not negative
+                shape = new Jitter.Collision.Shapes.CapsuleShape(capsuleLength, capsuleRadius);
                 break;
             default:
                 Console.WriteLine($"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'. Defaulting to Box.");
@@ -873,6 +890,199 @@ public abstract class Engine
     {
         SceneManager.Dispose();
         _backend.Dispose();
+    }
+}
+```
+
+---
+
+### `Cherris\Core\FinalPassRenderer.cs`
+
+```csharp
+using System.Numerics;
+using Veldrid;
+using Veldrid.SPIRV;
+
+namespace Cherris;
+
+public partial class VeldridRenderer
+{
+    /// <summary>
+    /// Renders a fullscreen texture, applying exposure and tonemapping.
+    /// Also handles additive blending for bloom.
+    /// </summary>
+    private class FinalPassRenderer : IDisposable
+    {
+        private readonly DeviceBuffer _vertexBuffer;
+        private Pipeline _pipeline;
+        private Pipeline _bloomPipeline;
+        private readonly ResourceLayout _textureLayout;
+        private readonly ResourceLayout _paramsLayout;
+        private readonly DeviceBuffer _paramsBuffer;
+        private readonly GraphicsDevice _graphicsDevice;
+        private readonly Shader _vertexShader;
+        private readonly Shader _fragmentShader;
+        private readonly Sampler _clampSampler;
+
+        public FinalPassRenderer(GraphicsDevice gd)
+        {
+            _graphicsDevice = gd;
+            ResourceFactory factory = gd.ResourceFactory;
+
+            Vector3[] quadVertices =
+            {
+                new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
+                new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
+            };
+            _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
+            gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
+
+            _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            _paramsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("Params", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+            _paramsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
+
+            _clampSampler = factory.CreateSampler(new SamplerDescription
+            {
+                AddressModeU = SamplerAddressMode.Clamp,
+                AddressModeV = SamplerAddressMode.Clamp,
+                AddressModeW = SamplerAddressMode.Clamp,
+                Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
+            });
+
+            (_vertexShader, _fragmentShader) = LoadShaders(factory);
+        }
+
+        public void SetFramebuffer(Framebuffer targetFramebuffer)
+        {
+            _pipeline?.Dispose();
+            _bloomPipeline?.Dispose();
+            ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+            var shaderSet = new ShaderSetDescription(
+                new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) },
+                new[] { _vertexShader, _fragmentShader });
+
+            // Standard pipeline for the main scene pass
+            _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleOverrideBlend,
+                DepthStencilState = DepthStencilStateDescription.Disabled,
+                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
+                ShaderSet = shaderSet,
+                Outputs = targetFramebuffer.OutputDescription
+            });
+
+            // Additive blend pipeline for the bloom pass
+            _bloomPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleAdditiveBlend,
+                DepthStencilState = DepthStencilStateDescription.Disabled,
+                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
+                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
+                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
+                ShaderSet = shaderSet,
+                Outputs = targetFramebuffer.OutputDescription
+            });
+        }
+
+        public void Render(CommandList cl, TextureView sourceView, float exposure)
+        {
+            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(exposure, 1, 0, 0)); // Use Y=1 to signal main pass
+
+            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _textureLayout, sourceView, _graphicsDevice.LinearSampler)); // Main scene can wrap
+            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _paramsLayout, _paramsBuffer));
+
+            cl.SetVertexBuffer(0, _vertexBuffer);
+            cl.SetPipeline(_pipeline);
+            cl.SetGraphicsResourceSet(0, textureSet);
+            cl.SetGraphicsResourceSet(1, paramsSet);
+            cl.Draw(4, 1, 0, 0);
+
+            textureSet.Dispose();
+            paramsSet.Dispose();
+        }
+
+        public void RenderBloom(CommandList cl, TextureView bloomView)
+        {
+            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(0, 0, 0, 0)); // Use Y=0 to signal bloom pass
+
+            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _textureLayout, bloomView, _clampSampler)); // Bloom must clamp
+            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _paramsLayout, _paramsBuffer));
+
+            cl.SetVertexBuffer(0, _vertexBuffer);
+            cl.SetPipeline(_bloomPipeline);
+            cl.SetGraphicsResourceSet(0, textureSet);
+            cl.SetGraphicsResourceSet(1, paramsSet);
+            cl.Draw(4, 1, 0, 0);
+
+            textureSet.Dispose();
+            paramsSet.Dispose();
+        }
+
+        private (Shader, Shader) LoadShaders(ResourceFactory factory)
+        {
+            const string vertexCode = @"
+                #version 450
+                layout(location = 0) in vec3 Position;
+                layout(location = 0) out vec2 fsin_TexCoord;
+                void main() {
+                    gl_Position = vec4(Position.xy, 0, 1);
+                    vec2 uv = (Position.xy + vec2(1.0, 1.0)) / 2.0;
+                    uv.y = 1.0 - uv.y; // Flip Y-coordinate
+                    fsin_TexCoord = uv;
+                }";
+            const string fragmentCode = @"
+                #version 450
+                layout(location = 0) in vec2 fsin_TexCoord;
+                layout(location = 0) out vec4 fsout_Color;
+                layout(set = 0, binding = 0) uniform texture2D SourceTexture;
+                layout(set = 0, binding = 1) uniform sampler SourceSampler;
+                layout(set = 1, binding = 0) uniform Params { float Exposure; float IsMainPass; }; // IsMainPass is 1.0 or 0.0
+
+                vec3 tonemap_reinhard(vec3 color) {
+                    return color / (color + vec3(1.0));
+                }
+
+                void main() {
+                    vec3 color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb;
+                    
+                    if (IsMainPass > 0.5) {
+                        color *= Exposure;
+                        color = tonemap_reinhard(color);
+                    }
+
+                    fsout_Color = vec4(color, 1.0);
+                }";
+
+            Shader[] shaders = factory.CreateFromSpirv(
+                new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main"),
+                new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main"));
+            return (shaders[0], shaders[1]);
+        }
+
+        public void Dispose()
+        {
+            _pipeline?.Dispose();
+            _bloomPipeline?.Dispose();
+            _vertexShader.Dispose();
+            _fragmentShader.Dispose();
+            _textureLayout.Dispose();
+            _paramsLayout.Dispose();
+            _paramsBuffer.Dispose();
+            _vertexBuffer.Dispose();
+            _clampSampler.Dispose();
+        }
     }
 }
 ```
@@ -1784,394 +1994,6 @@ public struct Ray
         // if tmax < 0, ray is intersecting AABB, but the whole AABB is behind us
         // if tmin > tmax, ray doesn't intersect AABB
         return tmax >= Math.Max(tmin, 0.0f);
-    }
-}
-```
-
----
-
-### `Cherris\Core\Renderer.cs`
-
-```csharp
-using Cherris.Components;
-using Cherris.Core;
-using Cherris.Rendering;
-using System.Numerics;
-using Veldrid;
-using Veldrid.SPIRV;
-
-namespace Cherris;
-
-// This class now acts as the Veldrid implementation of IRenderer
-public class Renderer : IRenderer
-{
-    private readonly VeldridGraphicsManager _graphicsManager;
-    private readonly GraphicsDevice _graphicsDevice;
-    private SceneRenderer _sceneRenderer;
-    private SkyboxRenderer _skyboxRenderer;
-    private ResolveRenderer _resolveRenderer;
-    private FinalPassRenderer _finalPassRenderer;
-    private BloomRenderer _bloomRenderer;
-    private Sampler _sampler;
-    private Snapshotter _snapshotter;
-    private bool _snapshotRequested;
-    private string _snapshotPath;
-    public bool ShowGrid { get; set; }
-
-    // Veldrid-specific data associated with a MeshRenderer component
-    internal class VeldridMeshRendererData : IDisposable
-    {
-        public readonly DeviceBuffer VertexBuffer;
-        public readonly DeviceBuffer IndexBuffer;
-        public readonly uint IndexCount;
-        public readonly ResourceSet TextureResourceSet;
-        public readonly DeviceBuffer MaterialPropertiesBuffer;
-        public readonly ResourceSet MaterialResourceSet;
-
-        public VeldridMeshRendererData(GraphicsDevice gd, MeshRenderer meshRenderer, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
-        {
-            var material = meshRenderer.Material;
-            var texture = (Texture)material.Texture.GetBackendHandle();
-            ResourceFactory factory = gd.ResourceFactory;
-
-            VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
-            gd.UpdateBuffer(VertexBuffer, 0, meshRenderer.Mesh.Vertices);
-
-            IndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * meshRenderer.Mesh.Indices.Length), BufferUsage.IndexBuffer));
-            gd.UpdateBuffer(IndexBuffer, 0, meshRenderer.Mesh.Indices);
-            IndexCount = (uint)meshRenderer.Mesh.Indices.Length;
-
-            TextureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(textureLayout, texture.VeldridTextureView, sampler));
-
-            MaterialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
-            var materialData = new Vector4[2];
-            materialData[0] = new Vector4(material.TextureTiling.X, material.TextureTiling.Y, 0, 0);
-            materialData[1] = new Vector4(material.EmissiveColor, 1.0f);
-            gd.UpdateBuffer(MaterialPropertiesBuffer, 0, materialData);
-
-            MaterialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(materialLayout, MaterialPropertiesBuffer));
-        }
-
-        public void Dispose()
-        {
-            VertexBuffer.Dispose();
-            IndexBuffer.Dispose();
-            TextureResourceSet.Dispose();
-            MaterialPropertiesBuffer.Dispose();
-            MaterialResourceSet.Dispose();
-        }
-    }
-
-    public Renderer(VeldridGraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
-    {
-        _graphicsManager = graphicsManager;
-        _graphicsDevice = graphicsDevice;
-        _snapshotter = new Snapshotter(_graphicsDevice);
-        CreateResources();
-    }
-
-    public void RequestSnapshot(string path)
-    {
-        _snapshotRequested = true;
-        _snapshotPath = path;
-    }
-
-    public void ProcessSnapshot()
-    {
-        _snapshotter?.SaveCopiedData(_snapshotPath);
-    }
-
-    private void CreateResources()
-    {
-        ResourceFactory factory = _graphicsDevice.ResourceFactory;
-
-        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
-            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
-            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
-            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
-
-        _sampler = factory.CreateSampler(new SamplerDescription
-        {
-            AddressModeU = SamplerAddressMode.Wrap,
-            AddressModeV = SamplerAddressMode.Wrap,
-            AddressModeW = SamplerAddressMode.Wrap,
-            Filter = SamplerFilter.Anisotropic,
-            MaximumAnisotropy = 16,
-            LodBias = 0,
-            MinimumLod = 0,
-            MaximumLod = uint.MaxValue
-        });
-
-        _sceneRenderer = new SceneRenderer(_graphicsDevice, vertexLayout);
-        _skyboxRenderer = new SkyboxRenderer(_graphicsDevice, _sampler, vertexLayout);
-        _resolveRenderer = new ResolveRenderer(_graphicsDevice);
-        _finalPassRenderer = new FinalPassRenderer(_graphicsDevice);
-        _bloomRenderer = new BloomRenderer(_graphicsDevice);
-
-        OnWindowResized();
-    }
-
-    private VeldridMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
-    {
-        if (mr.BackendData is VeldridMeshRendererData data)
-        {
-            return data;
-        }
-        var newData = new VeldridMeshRendererData(_graphicsDevice, mr, _sceneRenderer.TextureLayout, _sceneRenderer.MaterialLayout, _sampler);
-        mr.BackendData = newData;
-        return newData;
-    }
-
-    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
-    {
-        if (mainCamera is null) return;
-
-        Matrix4x4 view = mainCamera.GetViewMatrix();
-        Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
-        CommandList cl = _graphicsManager.CommandList;
-
-        cl.Begin();
-
-        // Pass 1: Render scene to MSAA framebuffer
-        cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
-        cl.ClearColorTarget(0, RgbaFloat.Black);
-        cl.ClearDepthStencil(1f, 0);
-
-        if (skybox is not null) _skyboxRenderer.Render(cl, skybox, view, projection);
-
-        _sceneRenderer.Render(cl, view, projection, gameObjects, GetOrCreateBackendData);
-        if (selectedObject?.GetComponent<MeshRenderer>() is not null)
-        {
-            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
-        }
-
-        // Pass 2: Resolve MSAA
-        cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
-        _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
-
-        // Pass 3: Bloom
-        var bloomViewport = new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1);
-        cl.SetViewport(0, bloomViewport);
-        cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
-        _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
-        _bloomRenderer.RenderBlur(cl, _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
-
-        // Pass 4: Composite and draw to screen
-        cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
-        _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
-        _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
-
-        if (_snapshotRequested && _snapshotter is not null)
-        {
-            _snapshotter.RecordCopyCommand(cl, _graphicsManager.FinalColorTarget);
-            _snapshotRequested = false;
-        }
-
-        cl.End();
-        _graphicsDevice.SubmitCommands(cl);
-    }
-
-    public void OnWindowResized()
-    {
-        _graphicsManager.Resize((int)_graphicsManager.SwapchainFramebuffer.Width, (int)_graphicsManager.SwapchainFramebuffer.Height);
-        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
-        _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
-        _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
-        _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
-        _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempFramebuffer);
-    }
-
-    public void Dispose()
-    {
-        _sceneRenderer.Dispose();
-        _skyboxRenderer.Dispose();
-        _resolveRenderer.Dispose();
-        _finalPassRenderer.Dispose();
-        _bloomRenderer.Dispose();
-        _sampler.Dispose();
-        _snapshotter.Dispose();
-        _graphicsManager.Dispose();
-    }
-
-    /// <summary>
-    /// Renders a fullscreen texture, applying exposure and tonemapping.
-    /// Also handles additive blending for bloom.
-    /// </summary>
-    private class FinalPassRenderer : IDisposable
-    {
-        private readonly DeviceBuffer _vertexBuffer;
-        private Pipeline _pipeline;
-        private Pipeline _bloomPipeline;
-        private readonly ResourceLayout _textureLayout;
-        private readonly ResourceLayout _paramsLayout;
-        private readonly DeviceBuffer _paramsBuffer;
-        private readonly GraphicsDevice _graphicsDevice;
-        private readonly Shader _vertexShader;
-        private readonly Shader _fragmentShader;
-        private readonly Sampler _clampSampler;
-
-        public FinalPassRenderer(GraphicsDevice gd)
-        {
-            _graphicsDevice = gd;
-            ResourceFactory factory = gd.ResourceFactory;
-
-            Vector3[] quadVertices =
-            {
-                new Vector3(-1.0f, -1.0f, 0.0f), new Vector3(1.0f, -1.0f, 0.0f),
-                new Vector3(-1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f)
-            };
-            _vertexBuffer = factory.CreateBuffer(new Veldrid.BufferDescription((uint)(sizeof(float) * 3 * quadVertices.Length), BufferUsage.VertexBuffer));
-            gd.UpdateBuffer(_vertexBuffer, 0, quadVertices);
-
-            _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
-
-            _paramsLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("Params", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
-
-            _paramsBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
-
-            _clampSampler = factory.CreateSampler(new SamplerDescription
-            {
-                AddressModeU = SamplerAddressMode.Clamp,
-                AddressModeV = SamplerAddressMode.Clamp,
-                AddressModeW = SamplerAddressMode.Clamp,
-                Filter = SamplerFilter.MinLinear_MagLinear_MipPoint
-            });
-
-            (_vertexShader, _fragmentShader) = LoadShaders(factory);
-        }
-
-        public void SetFramebuffer(Framebuffer targetFramebuffer)
-        {
-            _pipeline?.Dispose();
-            _bloomPipeline?.Dispose();
-            ResourceFactory factory = _graphicsDevice.ResourceFactory;
-
-            var shaderSet = new ShaderSetDescription(
-                new[] { new VertexLayoutDescription(new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)) },
-                new[] { _vertexShader, _fragmentShader });
-
-            // Standard pipeline for the main scene pass
-            _pipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
-            {
-                BlendState = BlendStateDescription.SingleOverrideBlend,
-                DepthStencilState = DepthStencilStateDescription.Disabled,
-                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
-                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
-                ShaderSet = shaderSet,
-                Outputs = targetFramebuffer.OutputDescription
-            });
-
-            // Additive blend pipeline for the bloom pass
-            _bloomPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
-            {
-                BlendState = BlendStateDescription.SingleAdditiveBlend,
-                DepthStencilState = DepthStencilStateDescription.Disabled,
-                RasterizerState = new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, false, false),
-                PrimitiveTopology = PrimitiveTopology.TriangleStrip,
-                ResourceLayouts = new[] { _textureLayout, _paramsLayout },
-                ShaderSet = shaderSet,
-                Outputs = targetFramebuffer.OutputDescription
-            });
-        }
-
-        public void Render(CommandList cl, TextureView sourceView, float exposure)
-        {
-            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(exposure, 1, 0, 0)); // Use Y=1 to signal main pass
-
-            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _textureLayout, sourceView, _graphicsDevice.LinearSampler)); // Main scene can wrap
-            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _paramsLayout, _paramsBuffer));
-
-            cl.SetVertexBuffer(0, _vertexBuffer);
-            cl.SetPipeline(_pipeline);
-            cl.SetGraphicsResourceSet(0, textureSet);
-            cl.SetGraphicsResourceSet(1, paramsSet);
-            cl.Draw(4, 1, 0, 0);
-
-            textureSet.Dispose();
-            paramsSet.Dispose();
-        }
-
-        public void RenderBloom(CommandList cl, TextureView bloomView)
-        {
-            cl.UpdateBuffer(_paramsBuffer, 0, new Vector4(0, 0, 0, 0)); // Use Y=0 to signal bloom pass
-
-            ResourceSet textureSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _textureLayout, bloomView, _clampSampler)); // Bloom must clamp
-            ResourceSet paramsSet = _graphicsDevice.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                _paramsLayout, _paramsBuffer));
-
-            cl.SetVertexBuffer(0, _vertexBuffer);
-            cl.SetPipeline(_bloomPipeline);
-            cl.SetGraphicsResourceSet(0, textureSet);
-            cl.SetGraphicsResourceSet(1, paramsSet);
-            cl.Draw(4, 1, 0, 0);
-
-            textureSet.Dispose();
-            paramsSet.Dispose();
-        }
-
-        private (Shader, Shader) LoadShaders(ResourceFactory factory)
-        {
-            const string vertexCode = @"
-                #version 450
-                layout(location = 0) in vec3 Position;
-                layout(location = 0) out vec2 fsin_TexCoord;
-                void main() {
-                    gl_Position = vec4(Position.xy, 0, 1);
-                    vec2 uv = (Position.xy + vec2(1.0, 1.0)) / 2.0;
-                    uv.y = 1.0 - uv.y; // Flip Y-coordinate
-                    fsin_TexCoord = uv;
-                }";
-            const string fragmentCode = @"
-                #version 450
-                layout(location = 0) in vec2 fsin_TexCoord;
-                layout(location = 0) out vec4 fsout_Color;
-                layout(set = 0, binding = 0) uniform texture2D SourceTexture;
-                layout(set = 0, binding = 1) uniform sampler SourceSampler;
-                layout(set = 1, binding = 0) uniform Params { float Exposure; float IsMainPass; }; // IsMainPass is 1.0 or 0.0
-
-                vec3 tonemap_reinhard(vec3 color) {
-                    return color / (color + vec3(1.0));
-                }
-
-                void main() {
-                    vec3 color = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord).rgb;
-                    
-                    if (IsMainPass > 0.5) {
-                        color *= Exposure;
-                        color = tonemap_reinhard(color);
-                    }
-
-                    fsout_Color = vec4(color, 1.0);
-                }";
-
-            Shader[] shaders = factory.CreateFromSpirv(
-                new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertexCode), "main"),
-                new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragmentCode), "main"));
-            return (shaders[0], shaders[1]);
-        }
-
-        public void Dispose()
-        {
-            _pipeline?.Dispose();
-            _bloomPipeline?.Dispose();
-            _vertexShader.Dispose();
-            _fragmentShader.Dispose();
-            _textureLayout.Dispose();
-            _paramsLayout.Dispose();
-            _paramsBuffer.Dispose();
-            _vertexBuffer.Dispose();
-            _clampSampler.Dispose();
-        }
     }
 }
 ```
@@ -3707,7 +3529,7 @@ public class VeldridBackend : RenderingInterface
 
         GameWindow = window;
         ResourceManager = new ResourceManager(_graphicsDevice);
-        Renderer = new Renderer(_graphicsManager, _graphicsDevice);
+        Renderer = new VeldridRenderer(_graphicsManager, _graphicsDevice);
     }
 
     public void Dispose()
@@ -3716,6 +3538,231 @@ public class VeldridBackend : RenderingInterface
         ResourceManager?.Dispose();
         _graphicsDevice?.Dispose();
         GameWindow?.Dispose();
+    }
+}
+```
+
+---
+
+### `Cherris\Core\VeldridMeshRendererData.cs`
+
+```csharp
+using Cherris.Components;
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+public partial class VeldridRenderer
+{
+    // Veldrid-specific data associated with a MeshRenderer component
+    internal class VeldridMeshRendererData : IDisposable
+    {
+        public readonly DeviceBuffer VertexBuffer;
+        public readonly DeviceBuffer IndexBuffer;
+        public readonly uint IndexCount;
+        public readonly ResourceSet TextureResourceSet;
+        public readonly DeviceBuffer MaterialPropertiesBuffer;
+        public readonly ResourceSet MaterialResourceSet;
+
+        public VeldridMeshRendererData(GraphicsDevice gd, MeshRenderer meshRenderer, ResourceLayout textureLayout, ResourceLayout materialLayout, Sampler sampler)
+        {
+            var material = meshRenderer.Material;
+            var texture = (Texture)material.Texture.GetBackendHandle();
+            ResourceFactory factory = gd.ResourceFactory;
+
+            VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
+            gd.UpdateBuffer(VertexBuffer, 0, meshRenderer.Mesh.Vertices);
+
+            IndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * meshRenderer.Mesh.Indices.Length), BufferUsage.IndexBuffer));
+            gd.UpdateBuffer(IndexBuffer, 0, meshRenderer.Mesh.Indices);
+            IndexCount = (uint)meshRenderer.Mesh.Indices.Length;
+
+            TextureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(textureLayout, texture.VeldridTextureView, sampler));
+
+            MaterialPropertiesBuffer = factory.CreateBuffer(new BufferDescription(32, BufferUsage.UniformBuffer));
+            var materialData = new Vector4[2];
+            materialData[0] = new Vector4(material.TextureTiling.X, material.TextureTiling.Y, 0, 0);
+            materialData[1] = new Vector4(material.EmissiveColor, 1.0f);
+            gd.UpdateBuffer(MaterialPropertiesBuffer, 0, materialData);
+
+            MaterialResourceSet = factory.CreateResourceSet(new ResourceSetDescription(materialLayout, MaterialPropertiesBuffer));
+        }
+
+        public void Dispose()
+        {
+            VertexBuffer.Dispose();
+            IndexBuffer.Dispose();
+            TextureResourceSet.Dispose();
+            MaterialPropertiesBuffer.Dispose();
+            MaterialResourceSet.Dispose();
+        }
+    }
+}
+```
+
+---
+
+### `Cherris\Core\VeldridRenderer.cs`
+
+```csharp
+using Cherris.Components;
+using Cherris.Core;
+using Cherris.Rendering;
+using System.Numerics;
+using Veldrid;
+
+namespace Cherris;
+
+// This class now acts as the Veldrid implementation of IRenderer
+public partial class VeldridRenderer : IRenderer
+{
+    private readonly VeldridGraphicsManager _graphicsManager;
+    private readonly GraphicsDevice _graphicsDevice;
+    private SceneRenderer _sceneRenderer;
+    private SkyboxRenderer _skyboxRenderer;
+    private ResolveRenderer _resolveRenderer;
+    private FinalPassRenderer _finalPassRenderer;
+    private BloomRenderer _bloomRenderer;
+    private Sampler _sampler;
+    private Snapshotter _snapshotter;
+    private bool _snapshotRequested;
+    private string _snapshotPath;
+    public bool ShowGrid { get; set; }
+    public bool ShowPhysicsColliders { get; set; }
+
+    public VeldridRenderer(VeldridGraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
+    {
+        _graphicsManager = graphicsManager;
+        _graphicsDevice = graphicsDevice;
+        _snapshotter = new Snapshotter(_graphicsDevice);
+        CreateResources();
+    }
+
+    public void RequestSnapshot(string path)
+    {
+        _snapshotRequested = true;
+        _snapshotPath = path;
+    }
+
+    public void ProcessSnapshot()
+    {
+        _snapshotter?.SaveCopiedData(_snapshotPath);
+    }
+
+    private void CreateResources()
+    {
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+        VertexLayoutDescription vertexLayout = new VertexLayoutDescription(
+            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
+            new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
+            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
+
+        _sampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Wrap,
+            AddressModeV = SamplerAddressMode.Wrap,
+            AddressModeW = SamplerAddressMode.Wrap,
+            Filter = SamplerFilter.Anisotropic,
+            MaximumAnisotropy = 16,
+            LodBias = 0,
+            MinimumLod = 0,
+            MaximumLod = uint.MaxValue
+        });
+
+        _sceneRenderer = new SceneRenderer(_graphicsDevice, vertexLayout);
+        _skyboxRenderer = new SkyboxRenderer(_graphicsDevice, _sampler, vertexLayout);
+        _resolveRenderer = new ResolveRenderer(_graphicsDevice);
+        _finalPassRenderer = new FinalPassRenderer(_graphicsDevice);
+        _bloomRenderer = new BloomRenderer(_graphicsDevice);
+
+        OnWindowResized();
+    }
+
+    private VeldridMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
+    {
+        if (mr.BackendData is VeldridMeshRendererData data)
+        {
+            return data;
+        }
+        var newData = new VeldridMeshRendererData(_graphicsDevice, mr, _sceneRenderer.TextureLayout, _sceneRenderer.MaterialLayout, _sampler);
+        mr.BackendData = newData;
+        return newData;
+    }
+
+    public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
+    {
+        if (mainCamera is null) return;
+
+        Matrix4x4 view = mainCamera.GetViewMatrix();
+        Matrix4x4 projection = mainCamera.GetProjectionMatrix(windowWidth / windowHeight);
+        CommandList cl = _graphicsManager.CommandList;
+
+        cl.Begin();
+
+        // Pass 1: Render scene to MSAA framebuffer
+        cl.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        cl.ClearColorTarget(0, RgbaFloat.Black);
+        cl.ClearDepthStencil(1f, 0);
+
+        if (skybox is not null) _skyboxRenderer.Render(cl, skybox, view, projection);
+
+        _sceneRenderer.Render(cl, view, projection, gameObjects, GetOrCreateBackendData);
+        if (selectedObject?.GetComponent<MeshRenderer>() is not null)
+        {
+            _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
+        }
+
+        // Pass 2: Resolve MSAA
+        cl.SetFramebuffer(_graphicsManager.FinalFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        _resolveRenderer.Render(cl, _graphicsManager.MsaaColorView);
+
+        // Pass 3: Bloom
+        var bloomViewport = new Viewport(0, 0, _graphicsManager.BloomColorTarget.Width, _graphicsManager.BloomColorTarget.Height, 0, 1);
+        cl.SetViewport(0, bloomViewport);
+        cl.SetFramebuffer(_graphicsManager.BloomFramebuffer);
+        _bloomRenderer.RenderBrightPass(cl, _graphicsManager.FinalColorView);
+        _bloomRenderer.RenderBlur(cl, _graphicsManager.BloomColorView, _graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempColorView, _graphicsManager.BloomTempFramebuffer);
+
+        // Pass 4: Composite and draw to screen
+        cl.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+        _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
+        _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
+
+        if (_snapshotRequested && _snapshotter is not null)
+        {
+            _snapshotter.RecordCopyCommand(cl, _graphicsManager.FinalColorTarget);
+            _snapshotRequested = false;
+        }
+
+        cl.End();
+        _graphicsDevice.SubmitCommands(cl);
+    }
+
+    public void OnWindowResized()
+    {
+        _graphicsManager.Resize((int)_graphicsManager.SwapchainFramebuffer.Width, (int)_graphicsManager.SwapchainFramebuffer.Height);
+        _sceneRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
+        _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
+        _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempFramebuffer);
+    }
+
+    public void Dispose()
+    {
+        _sceneRenderer.Dispose();
+        _skyboxRenderer.Dispose();
+        _resolveRenderer.Dispose();
+        _finalPassRenderer.Dispose();
+        _bloomRenderer.Dispose();
+        _sampler.Dispose();
+        _snapshotter.Dispose();
+        _graphicsManager.Dispose();
     }
 }
 ```
@@ -3807,6 +3854,7 @@ namespace Cherris.Rendering;
 public interface IRenderer : IDisposable
 {
     bool ShowGrid { get; set; }
+    bool ShowPhysicsColliders { get; set; }
     void OnWindowResized();
     void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure);
     void RequestSnapshot(string path);
@@ -3886,147 +3934,185 @@ using Cherris.Components;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
+using System.Reflection;
 
 namespace Cherris;
 
-/// <summary>
-/// Handles the registration of component factories used by the SceneLoader.
-/// </summary>
 public static class ComponentDeserializer
 {
     public static void RegisterFactories(SceneLoader sceneLoader, IResourceManager resourceManager)
     {
-        sceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
+        sceneLoader.RegisterComponentFactory("MeshRenderer", props => CreateMeshRendererComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("Camera", CreateAndPopulateComponent<Camera>);
+        sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
+        sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+    }
+
+    private static MeshRenderer CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
+    {
+        if (properties is not Dictionary<object, object> propsDict) return null;
+
+        propsDict.TryGetValue("Mesh", out var meshNameObj);
+        var meshName = meshNameObj as string;
+
+        var mesh = resourceManager.GetMesh(meshName);
+        if (mesh is null) return null;
+
+        var material = CreateMaterialFromProperties(propsDict, resourceManager);
+
+        return new MeshRenderer(mesh, material, meshName);
+    }
+
+    private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)
+    {
+        componentProps.TryGetValue("Material", out var materialObj);
+        var matProps = materialObj as Dictionary<object, object> ?? (Dictionary<object, object>)componentProps;
+
+        matProps.TryGetValue("Texture", out var textureNameObj);
+        var textureName = textureNameObj as string ?? "White";
+        var texture = resourceManager.GetTexture(textureName);
+
+        var material = new Material(texture, textureName)
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            TextureTiling = GetVector2(matProps, "TextureTiling", Vector2.One),
+            EmissiveColor = GetVector3(matProps, "EmissiveColor", Vector3.Zero),
+            SpecularIntensity = GetFloat(matProps, "SpecularIntensity", 0.5f),
+            Shininess = GetFloat(matProps, "Shininess", 32.0f)
+        };
 
-            // Get Mesh
-            if (!propsDict.TryGetValue("Mesh", out var meshNameObj) || meshNameObj is not string meshName) return null;
-            Mesh? mesh = resourceManager.GetMesh(meshName);
-            if (mesh is null) return null;
+        return material;
+    }
 
-            // Get Material properties from a nested dictionary
-            if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
-            {
-                // For backward compatibility, check for top-level properties.
-                matProps = propsDict;
-            }
-
-            // Inside Material dictionary
-            string textureName = "White"; // Default value
-            if (matProps.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
-            {
-                textureName = parsedTextureName;
-            }
-            ITexture texture = resourceManager.GetTexture(textureName);
-            var material = new Material(texture, textureName);
-
-            if (matProps.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
-            {
-                try
-                {
-                    material.TextureTiling = new Vector2(
-                        Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Deserializer] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (matProps.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
-            {
-                try
-                {
-                    material.EmissiveColor = new(
-                        Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Deserializer] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (matProps.TryGetValue("SpecularIntensity", out var specIntObj))
-            {
-                material.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
-            }
-
-            if (matProps.TryGetValue("Shininess", out var shininessObj))
-            {
-                material.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
-            }
-
-            return new MeshRenderer(mesh, material, meshName);
-        });
-
-        sceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
-
-        sceneLoader.RegisterComponentFactory("Skybox", (properties) =>
+    private static Skybox CreateSkyboxComponent(object properties, IResourceManager resourceManager)
+    {
+        if (properties is Dictionary<object, object> propsDict &&
+            propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
+            cubemapNameObj is string cubemapName)
         {
-            if (properties is Dictionary<object, object> propsDict &&
-                propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
-                cubemapNameObj is string cubemapName)
-            {
-                return resourceManager.GetSkybox(cubemapName);
-            }
-            return null;
-        });
+            return resourceManager.GetSkybox(cubemapName);
+        }
+        return null;
+    }
 
-        sceneLoader.RegisterComponentFactory("Light", (properties) =>
+    private static T CreateAndPopulateComponent<T>(object properties) where T : Component, new()
+    {
+        var component = new T();
+        PopulateComponentProperties(component, properties as Dictionary<object, object>);
+        return component;
+    }
+
+    private static void PopulateComponentProperties(Component component, IReadOnlyDictionary<object, object> propsDict)
+    {
+        if (propsDict is null) return;
+
+        var componentType = component.GetType();
+        foreach (var (key, value) in propsDict)
         {
-            var light = new Light();
-            if (properties is not Dictionary<object, object> propsDict) return light;
+            if (key is not string propName) continue;
 
-            if (propsDict.TryGetValue("Type", out var typeObj) && Enum.TryParse<LightType>(typeObj as string, out var type))
+            var propertyInfo = componentType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo)) continue;
+
+            if (TryConvertValue(value, propertyInfo.PropertyType, out object convertedValue))
             {
-                light.Type = type;
+                propertyInfo.SetValue(component, convertedValue);
             }
-
-            if (propsDict.TryGetValue("Color", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
+            else
             {
-                try
-                {
-                    light.Color = new Vector3(
-                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Deserializer] Warning: Could not parse Light Color values. Using default. Error: {e.Message}");
-                }
+                LogPropertyValueConversionWarning(propName, componentType.Name);
             }
+        }
+    }
 
-            if (propsDict.TryGetValue("Intensity", out var intensityObj)) light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("AmbientStrength", out var ambientObj)) light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("Range", out var rangeObj)) light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("InnerConeAngle", out var innerAngleObj)) light.InnerConeAngle = Convert.ToSingle(innerAngleObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("OuterConeAngle", out var outerAngleObj)) light.OuterConeAngle = Convert.ToSingle(outerAngleObj, CultureInfo.InvariantCulture);
+    private static bool IsPropertyDeserializable(PropertyInfo propertyInfo)
+    {
+        return propertyInfo.CanWrite && !propertyInfo.IsDefined(typeof(HideInInspectorAttribute), false);
+    }
 
-            return light;
-        });
-
-        sceneLoader.RegisterComponentFactory("RigidBody", (properties) =>
+    private static bool TryConvertValue(object yamlValue, Type targetType, out object convertedValue)
+    {
+        convertedValue = null;
+        try
         {
-            var rb = new RigidBody();
-            if (properties is not Dictionary<object, object> propsDict) return rb;
-
-            if (propsDict.TryGetValue("Shape", out var shapeObj) && Enum.TryParse<ColliderType>(shapeObj as string, out var shape))
+            if (yamlValue is List<object> list)
             {
-                rb.Shape = shape;
+                return TryConvertFromList(list, targetType, out convertedValue);
             }
+            if (targetType.IsEnum)
+            {
+                convertedValue = Enum.Parse(targetType, (string)yamlValue, true);
+                return true;
+            }
+            convertedValue = Convert.ChangeType(yamlValue, targetType, CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
-            if (propsDict.TryGetValue("IsStatic", out var isStaticObj)) rb.IsStatic = Convert.ToBoolean(isStaticObj);
-            if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic) rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("Friction", out var frictionObj)) rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("Bounciness", out var bouncinessObj)) rb.Bounciness = Convert.ToSingle(bouncinessObj, CultureInfo.InvariantCulture);
+    private static bool TryConvertFromList(IReadOnlyList<object> list, Type targetType, out object convertedValue)
+    {
+        convertedValue = null;
+        if (targetType == typeof(Vector2) && list.Count == 2)
+        {
+            convertedValue = new Vector2(ToSingle(list[0]), ToSingle(list[1]));
+            return true;
+        }
+        if (targetType == typeof(Vector3) && list.Count == 3)
+        {
+            convertedValue = new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2]));
+            return true;
+        }
+        return false;
+    }
 
-            return rb;
-        });
+    private static Vector2 GetVector2(IReadOnlyDictionary<object, object> props, string key, Vector2 defaultValue)
+    {
+        if (props.TryGetValue(key, out var value) && value is List<object> list && list.Count == 2)
+        {
+            try { return new Vector2(ToSingle(list[0]), ToSingle(list[1])); }
+            catch { }
+        }
+        return defaultValue;
+    }
+
+    private static Vector3 GetVector3(IReadOnlyDictionary<object, object> props, string key, Vector3 defaultValue)
+    {
+        if (props.TryGetValue(key, out var value) && value is List<object> list && list.Count == 3)
+        {
+            try { return new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2])); }
+            catch { }
+        }
+        return defaultValue;
+    }
+
+    private static float GetFloat(IReadOnlyDictionary<object, object> props, string key, float defaultValue)
+    {
+        if (!props.TryGetValue(key, out var value))
+        {
+            return defaultValue;
+        }
+
+        try 
+        {
+            return ToSingle(value);
+        }
+
+        catch { }
+        return defaultValue;
+    }
+
+    private static float ToSingle(object value)
+    {
+        return Convert.ToSingle(value, CultureInfo.InvariantCulture);
+    }
+
+    private static void LogPropertyValueConversionWarning(string propertyName, string componentName)
+    {
+        Console.WriteLine($"[Deserializer] Warning: Could not set property '{propertyName}' on component '{componentName}'.");
     }
 }
 ```
@@ -5230,6 +5316,28 @@ void main()
                 _vertices.Add(new DebugVertex { Position = p2 + tkCenter, Color = tkColor });
             }
         }
+    }
+
+    public void AddCapsule(System.Numerics.Vector3 center, System.Numerics.Quaternion orientation, float length, float radius, System.Numerics.Vector3 color)
+    {
+        var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, orientation);
+        var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, orientation);
+        var forward = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, orientation);
+
+        var halfLengthVector = up * (length * 0.5f);
+
+        var topSphereCenter = center + halfLengthVector;
+        var bottomSphereCenter = center - halfLengthVector;
+
+        // Draw the two hemispheres
+        AddSphere(topSphereCenter, radius, color);
+        AddSphere(bottomSphereCenter, radius, color);
+
+        // Draw connecting lines
+        AddLine(topSphereCenter + right * radius, bottomSphereCenter + right * radius, color);
+        AddLine(topSphereCenter - right * radius, bottomSphereCenter - right * radius, color);
+        AddLine(topSphereCenter + forward * radius, bottomSphereCenter + forward * radius, color);
+        AddLine(topSphereCenter - forward * radius, bottomSphereCenter - forward * radius, color);
     }
 
     public void Clear()
@@ -6469,6 +6577,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private Vector2i _viewportSize = new(1, 1);
     private Vector2i _windowSize;
     public bool ShowGrid { get; set; } = true;
+    public bool ShowPhysicsColliders { get; set; } = true;
 
     public OpenTKRenderer(ImGuiController imGuiController)
     {
@@ -6529,9 +6638,12 @@ public class OpenTKRenderer : IRenderer, IDisposable
                 }
             }
 
-            foreach (var go in gameObjects)
+            if (ShowPhysicsColliders)
             {
-                DrawRigidBodyGizmo(go);
+                foreach (var go in gameObjects)
+                {
+                    DrawRigidBodyGizmo(go);
+                }
             }
 
             if (skybox?.CubeMapTexture is not null)
@@ -6650,6 +6762,10 @@ public class OpenTKRenderer : IRenderer, IDisposable
         else if (rb.JitterBody.Shape is Jitter.Collision.Shapes.SphereShape sphere)
         {
             _debugRenderer.AddSphere(position, sphere.Radius, color);
+        }
+        else if (rb.JitterBody.Shape is Jitter.Collision.Shapes.CapsuleShape capsule)
+        {
+            _debugRenderer.AddCapsule(position, orientation, capsule.Length, capsule.Radius, color);
         }
     }
 
@@ -7493,7 +7609,9 @@ public class Editor : Engine
 
         foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            script.Enabled = false;
+            // RigidBody needs to be "enabled" in the editor to listen for transform changes.
+            // All other gameplay scripts should be disabled.
+            script.Enabled = script is RigidBody;
         }
 
         GameObject? cameraGo = scene.MainCamera?.GameObject;
@@ -7629,10 +7747,11 @@ public class Editor : Engine
         if (editorController is null)
         {
             editorController = cameraGo.AddComponent(new EditorController(this));
-            // The crucial fix: Call Start() to initialize the controller's state
-            // from the transform that was just loaded from the scene file.
-            editorController.Start();
         }
+        // The crucial fix: Call Start() to initialize the controller's state
+        // from the transform that was just loaded from the scene file. This prevents
+        // the camera from snapping to a default rotation on first mouse move.
+        editorController.Start();
         editorController.Enabled = true;
     }
 
@@ -7750,6 +7869,11 @@ public class EditorAppLogic : IDisposable
     public void UpdateEditorLogic(float deltaTime)
     {
         _viewportPanel.Update();
+
+        if (_editor.Renderer is not null)
+        {
+            _editor.Renderer.ShowPhysicsColliders = _editor.State == EditorState.Editing;
+        }
 
         bool ctrl = Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight);
 
@@ -10595,8 +10719,8 @@ GameObjects:
   Name: Player
   Components:
     Transform:
-      Position: [2.867231, 1.1734351, 1.3127898]
-      Rotation: [-32.83052, 6.6175385, -1.074375E-07]
+      Position: [0, 3, 8]
+      Rotation: [-15, 0, 0]
       Scale: [1, 1, 1]
     PlayerController:
       Speed: 3
@@ -10630,12 +10754,12 @@ GameObjects:
     Spinner:
       Enabled: false
 - Id: 46f63d25-5bcb-4aa4-9e7c-20ec47bc3087
-  Name: StaticCube
+  Name: FallingBox
   Components:
     Transform:
-      Position: [2.5, 0.5, 0]
-      Rotation: [0, 45.000004, 0]
-      Scale: [0.75, 0.75, 0.75]
+      Position: [2, 4, 0.5]
+      Rotation: [10, 20, 30]
+      Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Cube
       Material:
@@ -10643,8 +10767,30 @@ GameObjects:
         SpecularIntensity: 0.3
         Shininess: 16
     RigidBody:
+      Shape: Box
+      IsStatic: false
+      Mass: 2
+      Friction: 0.6
+      Bounciness: 0.4
+- Id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+  Name: FallingSphere
+  Components:
+    Transform:
+      Position: [-2, 4, -0.5]
+      Rotation: [0, 0, 0]
+      Scale: [0.75, 0.75, 0.75]
+    MeshRenderer:
+      Mesh: Cube
+      Material:
+        Texture: Asphalt
+        SpecularIntensity: 0.8
+        Shininess: 128
+    RigidBody:
+      Shape: Sphere
       IsStatic: false
       Mass: 1
+      Friction: 0.4
+      Bounciness: 0.8
 - Id: fa6c7e61-829e-4f4e-8ad6-e370835d1b46
   Name: GroundPlane
   Components:
@@ -10659,6 +10805,11 @@ GameObjects:
         TextureTiling: [5, 5]
         SpecularIntensity: 0.1
         Shininess: 8
+    RigidBody:
+      Shape: Box
+      IsStatic: true
+      Friction: 0.5
+      Bounciness: 0.2
 - Id: c4b1d2e3-f6a5-4b8c-9a1d-2e3f4a5b6c7d
   Name: PointLightObject
   Components:
