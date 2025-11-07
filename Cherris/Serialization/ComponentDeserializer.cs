@@ -2,146 +2,184 @@
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
+using System.Reflection;
 
 namespace Cherris;
 
-/// <summary>
-/// Handles the registration of component factories used by the SceneLoader.
-/// </summary>
 public static class ComponentDeserializer
 {
     public static void RegisterFactories(SceneLoader sceneLoader, IResourceManager resourceManager)
     {
-        sceneLoader.RegisterComponentFactory("MeshRenderer", (properties) =>
+        sceneLoader.RegisterComponentFactory("MeshRenderer", props => CreateMeshRendererComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("Camera", CreateAndPopulateComponent<Camera>);
+        sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
+        sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+    }
+
+    private static MeshRenderer CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
+    {
+        if (properties is not Dictionary<object, object> propsDict) return null;
+
+        propsDict.TryGetValue("Mesh", out var meshNameObj);
+        var meshName = meshNameObj as string;
+
+        var mesh = resourceManager.GetMesh(meshName);
+        if (mesh is null) return null;
+
+        var material = CreateMaterialFromProperties(propsDict, resourceManager);
+
+        return new MeshRenderer(mesh, material, meshName);
+    }
+
+    private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)
+    {
+        componentProps.TryGetValue("Material", out var materialObj);
+        var matProps = materialObj as Dictionary<object, object> ?? (Dictionary<object, object>)componentProps;
+
+        matProps.TryGetValue("Texture", out var textureNameObj);
+        var textureName = textureNameObj as string ?? "White";
+        var texture = resourceManager.GetTexture(textureName);
+
+        var material = new Material(texture, textureName)
         {
-            if (properties is not Dictionary<object, object> propsDict) return null;
+            TextureTiling = GetVector2(matProps, "TextureTiling", Vector2.One),
+            EmissiveColor = GetVector3(matProps, "EmissiveColor", Vector3.Zero),
+            SpecularIntensity = GetFloat(matProps, "SpecularIntensity", 0.5f),
+            Shininess = GetFloat(matProps, "Shininess", 32.0f)
+        };
 
-            // Get Mesh
-            if (!propsDict.TryGetValue("Mesh", out var meshNameObj) || meshNameObj is not string meshName) return null;
-            Mesh? mesh = resourceManager.GetMesh(meshName);
-            if (mesh is null) return null;
+        return material;
+    }
 
-            // Get Material properties from a nested dictionary
-            if (!propsDict.TryGetValue("Material", out var materialObj) || materialObj is not Dictionary<object, object> matProps)
-            {
-                // For backward compatibility, check for top-level properties.
-                matProps = propsDict;
-            }
-
-            // Inside Material dictionary
-            string textureName = "White"; // Default value
-            if (matProps.TryGetValue("Texture", out var textureNameObj) && textureNameObj is string parsedTextureName)
-            {
-                textureName = parsedTextureName;
-            }
-            ITexture texture = resourceManager.GetTexture(textureName);
-            var material = new Material(texture, textureName);
-
-            if (matProps.TryGetValue("TextureTiling", out var tilingObj) && tilingObj is List<object> tilingList && tilingList.Count == 2)
-            {
-                try
-                {
-                    material.TextureTiling = new Vector2(
-                        Convert.ToSingle(tilingList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(tilingList[1], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Deserializer] Warning: Could not parse TextureTiling values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (matProps.TryGetValue("EmissiveColor", out var emissiveObj) && emissiveObj is List<object> emissiveList && emissiveList.Count == 3)
-            {
-                try
-                {
-                    material.EmissiveColor = new(
-                        Convert.ToSingle(emissiveList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(emissiveList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(emissiveList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Deserializer] Warning: Could not parse EmissiveColor values. Using default. Error: {e.Message}");
-                }
-            }
-
-            if (matProps.TryGetValue("SpecularIntensity", out var specIntObj))
-            {
-                material.SpecularIntensity = Convert.ToSingle(specIntObj, CultureInfo.InvariantCulture);
-            }
-
-            if (matProps.TryGetValue("Shininess", out var shininessObj))
-            {
-                material.Shininess = Convert.ToSingle(shininessObj, CultureInfo.InvariantCulture);
-            }
-
-            return new MeshRenderer(mesh, material, meshName);
-        });
-
-        sceneLoader.RegisterComponentFactory("Camera", (properties) => new Camera());
-
-        sceneLoader.RegisterComponentFactory("Skybox", (properties) =>
+    private static Skybox CreateSkyboxComponent(object properties, IResourceManager resourceManager)
+    {
+        if (properties is Dictionary<object, object> propsDict &&
+            propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
+            cubemapNameObj is string cubemapName)
         {
-            if (properties is Dictionary<object, object> propsDict &&
-                propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
-                cubemapNameObj is string cubemapName)
-            {
-                return resourceManager.GetSkybox(cubemapName);
-            }
-            return null;
-        });
+            return resourceManager.GetSkybox(cubemapName);
+        }
+        return null;
+    }
 
-        sceneLoader.RegisterComponentFactory("Light", (properties) =>
+    private static T CreateAndPopulateComponent<T>(object properties) where T : Component, new()
+    {
+        var component = new T();
+        PopulateComponentProperties(component, properties as Dictionary<object, object>);
+        return component;
+    }
+
+    private static void PopulateComponentProperties(Component component, IReadOnlyDictionary<object, object> propsDict)
+    {
+        if (propsDict is null) return;
+
+        var componentType = component.GetType();
+        foreach (var (key, value) in propsDict)
         {
-            var light = new Light();
-            if (properties is not Dictionary<object, object> propsDict) return light;
+            if (key is not string propName) continue;
 
-            if (propsDict.TryGetValue("Type", out var typeObj) && Enum.TryParse<LightType>(typeObj as string, out var type))
+            var propertyInfo = componentType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo)) continue;
+
+            if (TryConvertValue(value, propertyInfo.PropertyType, out object convertedValue))
             {
-                light.Type = type;
+                propertyInfo.SetValue(component, convertedValue);
             }
-
-            if (propsDict.TryGetValue("Color", out var colorObj) && colorObj is List<object> colorList && colorList.Count == 3)
+            else
             {
-                try
-                {
-                    light.Color = new Vector3(
-                        Convert.ToSingle(colorList[0], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[1], CultureInfo.InvariantCulture),
-                        Convert.ToSingle(colorList[2], CultureInfo.InvariantCulture));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Deserializer] Warning: Could not parse Light Color values. Using default. Error: {e.Message}");
-                }
+                LogPropertyValueConversionWarning(propName, componentType.Name);
             }
+        }
+    }
 
-            if (propsDict.TryGetValue("Intensity", out var intensityObj)) light.Intensity = Convert.ToSingle(intensityObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("AmbientStrength", out var ambientObj)) light.AmbientStrength = Convert.ToSingle(ambientObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("Range", out var rangeObj)) light.Range = Convert.ToSingle(rangeObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("InnerConeAngle", out var innerAngleObj)) light.InnerConeAngle = Convert.ToSingle(innerAngleObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("OuterConeAngle", out var outerAngleObj)) light.OuterConeAngle = Convert.ToSingle(outerAngleObj, CultureInfo.InvariantCulture);
+    private static bool IsPropertyDeserializable(PropertyInfo propertyInfo)
+    {
+        return propertyInfo.CanWrite && !propertyInfo.IsDefined(typeof(HideInInspectorAttribute), false);
+    }
 
-            return light;
-        });
-
-        sceneLoader.RegisterComponentFactory("RigidBody", (properties) =>
+    private static bool TryConvertValue(object yamlValue, Type targetType, out object convertedValue)
+    {
+        convertedValue = null;
+        try
         {
-            var rb = new RigidBody();
-            if (properties is not Dictionary<object, object> propsDict) return rb;
-
-            if (propsDict.TryGetValue("Shape", out var shapeObj) && Enum.TryParse<ColliderType>(shapeObj as string, out var shape))
+            if (yamlValue is List<object> list)
             {
-                rb.Shape = shape;
+                return TryConvertFromList(list, targetType, out convertedValue);
             }
+            if (targetType.IsEnum)
+            {
+                convertedValue = Enum.Parse(targetType, (string)yamlValue, true);
+                return true;
+            }
+            convertedValue = Convert.ChangeType(yamlValue, targetType, CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
-            if (propsDict.TryGetValue("IsStatic", out var isStaticObj)) rb.IsStatic = Convert.ToBoolean(isStaticObj);
-            if (propsDict.TryGetValue("Mass", out var massObj) && !rb.IsStatic) rb.Mass = Convert.ToSingle(massObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("Friction", out var frictionObj)) rb.Friction = Convert.ToSingle(frictionObj, CultureInfo.InvariantCulture);
-            if (propsDict.TryGetValue("Bounciness", out var bouncinessObj)) rb.Bounciness = Convert.ToSingle(bouncinessObj, CultureInfo.InvariantCulture);
+    private static bool TryConvertFromList(IReadOnlyList<object> list, Type targetType, out object convertedValue)
+    {
+        convertedValue = null;
+        if (targetType == typeof(Vector2) && list.Count == 2)
+        {
+            convertedValue = new Vector2(ToSingle(list[0]), ToSingle(list[1]));
+            return true;
+        }
+        if (targetType == typeof(Vector3) && list.Count == 3)
+        {
+            convertedValue = new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2]));
+            return true;
+        }
+        return false;
+    }
 
-            return rb;
-        });
+    private static Vector2 GetVector2(IReadOnlyDictionary<object, object> props, string key, Vector2 defaultValue)
+    {
+        if (props.TryGetValue(key, out var value) && value is List<object> list && list.Count == 2)
+        {
+            try { return new Vector2(ToSingle(list[0]), ToSingle(list[1])); }
+            catch { }
+        }
+        return defaultValue;
+    }
+
+    private static Vector3 GetVector3(IReadOnlyDictionary<object, object> props, string key, Vector3 defaultValue)
+    {
+        if (props.TryGetValue(key, out var value) && value is List<object> list && list.Count == 3)
+        {
+            try { return new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2])); }
+            catch { }
+        }
+        return defaultValue;
+    }
+
+    private static float GetFloat(IReadOnlyDictionary<object, object> props, string key, float defaultValue)
+    {
+        if (!props.TryGetValue(key, out var value))
+        {
+            return defaultValue;
+        }
+
+        try 
+        {
+            return ToSingle(value);
+        }
+
+        catch { }
+        return defaultValue;
+    }
+
+    private static float ToSingle(object value)
+    {
+        return Convert.ToSingle(value, CultureInfo.InvariantCulture);
+    }
+
+    private static void LogPropertyValueConversionWarning(string propertyName, string componentName)
+    {
+        Console.WriteLine($"[Deserializer] Warning: Could not set property '{propertyName}' on component '{componentName}'.");
     }
 }
