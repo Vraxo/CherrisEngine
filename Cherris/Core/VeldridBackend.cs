@@ -33,7 +33,7 @@ public class VeldridBackend : RenderingInterface
 
         GameWindow = window;
         ResourceManager = new ResourceManager(_graphicsDevice);
-        Renderer = new Renderer(_graphicsManager, _graphicsDevice);
+        Renderer = new VeldridRenderer(_graphicsManager, _graphicsDevice);
     }
 
     public void Dispose()

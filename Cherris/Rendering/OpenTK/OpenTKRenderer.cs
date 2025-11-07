@@ -20,6 +20,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private Vector2i _viewportSize = new(1, 1);
     private Vector2i _windowSize;
     public bool ShowGrid { get; set; } = true;
+    public bool ShowPhysicsColliders { get; set; } = true;
 
     public OpenTKRenderer(ImGuiController imGuiController)
     {
@@ -80,9 +81,12 @@ public class OpenTKRenderer : IRenderer, IDisposable
                 }
             }
 
-            foreach (var go in gameObjects)
+            if (ShowPhysicsColliders)
             {
-                DrawRigidBodyGizmo(go);
+                foreach (var go in gameObjects)
+                {
+                    DrawRigidBodyGizmo(go);
+                }
             }
 
             if (skybox?.CubeMapTexture is not null)

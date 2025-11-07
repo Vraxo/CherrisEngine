@@ -74,6 +74,11 @@ public class EditorAppLogic : IDisposable
     {
         _viewportPanel.Update();
 
+        if (_editor.Renderer is not null)
+        {
+            _editor.Renderer.ShowPhysicsColliders = _editor.State == EditorState.Editing;
+        }
+
         bool ctrl = Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight);
 
         // Save
