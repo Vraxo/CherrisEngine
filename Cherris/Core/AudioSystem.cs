@@ -1,10 +1,4 @@
-﻿// --- REQUIRED NUGET PACKAGE ---
-// This file requires the 'OpenTK' package.
-// Add it to your project:
-// dotnet add package OpenTK
-
-using Cherris.Components;
-using Cherris.Core;
+﻿using Cherris.Components;
 using OpenTK.Audio.OpenAL;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -25,8 +19,8 @@ public class AudioSystem : IDisposable
     public AudioSystem()
     {
         _alSources = new int[MaxAudioSources];
-        _availableSources = new ConcurrentQueue<int>();
-        _activeSources = new ConcurrentDictionary<AudioSource, int>();
+        _availableSources = new();
+        _activeSources = new();
     }
 
     public void Initialize()
@@ -34,13 +28,15 @@ public class AudioSystem : IDisposable
         try
         {
             _device = ALC.OpenDevice(null);
-            _context = ALC.CreateContext(_device, (int[])null);
+            _context = ALC.CreateContext(_device, null as int[]);
+            
             ALC.MakeContextCurrent(_context);
             CheckAlError("Initialize - MakeContextCurrent");
 
             AL.GenSources(_alSources);
             CheckAlError("Initialize - GenSources");
-            foreach (var source in _alSources)
+
+            foreach (int source in _alSources)
             {
                 _availableSources.Enqueue(source);
             }
@@ -55,7 +51,10 @@ public class AudioSystem : IDisposable
 
     public void Update(Scene scene)
     {
-        if (_device.Handle == IntPtr.Zero) return;
+        if (_device.Handle == IntPtr.Zero)
+        {
+            return;
+        }
 
         if (scene?.MainCamera?.GameObject.GetComponent<AudioListener>() is not null)
         {
@@ -65,30 +64,33 @@ public class AudioSystem : IDisposable
             Vector3 upNumerics = Vector3.Transform(Vector3.UnitY, listenerTransform.Rotation);
 
             // Convert to OpenTK vectors for the AL call
-            var forwardOtk = new global::OpenTK.Mathematics.Vector3(forwardNumerics.X, forwardNumerics.Y, forwardNumerics.Z);
-            var upOtk = new global::OpenTK.Mathematics.Vector3(upNumerics.X, upNumerics.Y, upNumerics.Z);
+            global::OpenTK.Mathematics.Vector3 forwardOtk = new(forwardNumerics.X, forwardNumerics.Y, forwardNumerics.Z);
+            global::OpenTK.Mathematics.Vector3 upOtk = new(upNumerics.X, upNumerics.Y, upNumerics.Z);
 
             AL.Listener(ALListener3f.Position, pos.X, pos.Y, pos.Z);
             AL.Listener(ALListenerfv.Orientation, ref forwardOtk, ref upOtk);
         }
 
         // Check for sources that have finished playing
-        foreach (var (audioSource, alSource) in _activeSources)
+        foreach ((AudioSource audioSource, int alSource) in _activeSources)
         {
             AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-            if (state == (int)ALSourceState.Stopped)
+            
+            if (state != (int)ALSourceState.Stopped || !_activeSources.TryRemove(audioSource, out int removedAlSource))
             {
-                if (_activeSources.TryRemove(audioSource, out int removedAlSource))
-                {
-                    _availableSources.Enqueue(removedAlSource);
-                }
+                continue;
             }
+
+            _availableSources.Enqueue(removedAlSource);
         }
     }
 
     public void Play(AudioSource audioSource)
     {
-        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null) return;
+        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null)
+        {
+            return;
+        }
 
         if (audioSource.Clip.AlBufferHandle == 0)
         {
@@ -96,57 +98,69 @@ public class AudioSystem : IDisposable
             return;
         }
 
-        if (_activeSources.ContainsKey(audioSource)) Stop(audioSource);
-
-        if (_availableSources.TryDequeue(out int alSource))
+        if (_activeSources.ContainsKey(audioSource))
         {
-            Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
-            _activeSources[audioSource] = alSource;
-
-            AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
-            AL.Source(alSource, ALSourcef.Gain, audioSource.Volume);
-            AL.Source(alSource, ALSourcef.Pitch, audioSource.Pitch);
-            AL.Source(alSource, ALSourceb.Looping, audioSource.Loop);
-
-            // Restore 3D positioning
-            AL.Source(alSource, ALSourceb.SourceRelative, false);
-            Vector3 pos = audioSource.GameObject.Transform.Position;
-            AL.Source(alSource, ALSource3f.Position, pos.X, pos.Y, pos.Z);
-
-            CheckAlError($"Setup Source #{alSource}");
-
-            AL.SourcePlay(alSource);
-            CheckAlError($"Play Source #{alSource}");
-
-            // Log the state immediately after the play command
-            AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-            Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
+            Stop(audioSource);
         }
-        else
+
+        if (!_availableSources.TryDequeue(out int alSource))
         {
             Console.WriteLine("[AudioSystem] Warning: No available audio sources to play clip.");
+            return;
         }
+
+        Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
+        _activeSources[audioSource] = alSource;
+
+        AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
+        AL.Source(alSource, ALSourcef.Gain, audioSource.Volume);
+        AL.Source(alSource, ALSourcef.Pitch, audioSource.Pitch);
+        AL.Source(alSource, ALSourceb.Looping, audioSource.Loop);
+
+        // Restore 3D positioning
+        AL.Source(alSource, ALSourceb.SourceRelative, false);
+        Vector3 pos = audioSource.GameObject.Transform.Position;
+        AL.Source(alSource, ALSource3f.Position, pos.X, pos.Y, pos.Z);
+
+        CheckAlError($"Setup Source #{alSource}");
+
+        AL.SourcePlay(alSource);
+        CheckAlError($"Play Source #{alSource}");
+
+        // Log the state immediately after the play command
+        AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
+        Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
     }
 
     public void Stop(AudioSource audioSource)
     {
-        if (_device.Handle == IntPtr.Zero) return;
-        if (_activeSources.TryRemove(audioSource, out int alSource))
+        if (_device.Handle == IntPtr.Zero)
         {
-            AL.SourceStop(alSource);
-            _availableSources.Enqueue(alSource);
+            return;
         }
+
+        if (!_activeSources.TryRemove(audioSource, out int alSource))
+        {
+            return;
+        }
+
+        AL.SourceStop(alSource);
+        _availableSources.Enqueue(alSource);
     }
 
 
     public void Dispose()
     {
-        if (_device.Handle == IntPtr.Zero) return;
+        if (_device.Handle == IntPtr.Zero)
+        {
+            return;
+        }
 
         AL.DeleteSources(_alSources);
         ALC.MakeContextCurrent(ALContext.Null);
         ALC.DestroyContext(_context);
         ALC.CloseDevice(_device);
+
         Console.WriteLine("[AudioSystem] Disposed.");
     }
 
@@ -154,9 +168,12 @@ public class AudioSystem : IDisposable
     private static void CheckAlError(string context)
     {
         ALError error = AL.GetError();
-        if (error != ALError.NoError)
+
+        if (error == ALError.NoError)
         {
-            Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+            return;
         }
+
+        Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
     }
 }

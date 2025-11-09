@@ -1,3 +1,80 @@
+### `Cherris\Components\AudioListener.cs`
+
+```csharp
+namespace Cherris.Components;
+
+/// <summary>
+/// Represents the position and orientation of the listener in the scene for 3D audio.
+/// There should typically only be one active AudioListener in a scene, usually attached to the main camera.
+/// </summary>
+public class AudioListener : Component
+{
+    // In a real implementation, this class would be used by the AudioSystem
+    // to update the listener's position in the audio backend (e.g., OpenAL).
+}
+```
+
+---
+
+### `Cherris\Components\AudioSource.cs`
+
+```csharp
+using Cherris.Core;
+
+namespace Cherris.Components;
+
+/// <summary>
+/// Plays back an AudioClip in the scene.
+/// </summary>
+public class AudioSource : Component
+{
+    public string ClipName { get; set; } = string.Empty;
+
+    [HideInInspector]
+    public AudioClip Clip { get; internal set; }
+
+    public float Volume { get; set; } = 1.0f;
+    public float Pitch { get; set; } = 1.0f;
+    public bool Loop { get; set; } = false;
+    public bool PlayOnAwake { get; set; } = true;
+
+    private AudioSystem _audioSystem;
+
+    // Called by the Scene to provide the AudioSystem instance.
+    internal void Initialize(AudioSystem audioSystem)
+    {
+        _audioSystem = audioSystem;
+    }
+
+    internal void Start()
+    {
+        if (PlayOnAwake)
+        {
+            Play();
+        }
+    }
+
+    public void Play()
+    {
+        if (Clip is null)
+        {
+            Console.WriteLine($"[AudioSource] Warning: No AudioClip assigned to '{GameObject.Name}'.");
+            return;
+        }
+
+        Console.WriteLine($"[AudioSource] Requesting playback for '{ClipName}' on '{GameObject.Name}'.");
+        _audioSystem?.Play(this);
+    }
+
+    public void Stop()
+    {
+        _audioSystem?.Stop(this);
+    }
+}
+```
+
+---
+
 ### `Cherris\Components\BoundingBox.cs`
 
 ```csharp
@@ -500,6 +577,285 @@ public class Transform
         }
 
         return localMatrix;
+    }
+}
+```
+
+---
+
+### `Cherris\Core\AudioClip.cs`
+
+```csharp
+using OpenTK.Audio.OpenAL;
+
+namespace Cherris.Core;
+
+public class AudioClip : IDisposable
+{
+    public int AlBufferHandle { get; }
+    private bool _disposed;
+
+    public AudioClip(int alBufferHandle)
+    {
+        AlBufferHandle = alBufferHandle;
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            AL.DeleteBuffer(AlBufferHandle);
+            _disposed = true;
+        }
+    }
+}
+```
+
+---
+
+### `Cherris\Core\AudioLoader.cs`
+
+```csharp
+using OpenTK.Audio.OpenAL;
+using System.Text;
+
+namespace Cherris.Core;
+
+public static class AudioLoader
+{
+    public static AudioClip LoadFromFile(string path)
+    {
+        try
+        {
+            using var fileStream = File.OpenRead(path);
+            using var reader = new BinaryReader(fileStream);
+
+            // -- RIFF Header --
+            string signature = new string(reader.ReadChars(4));
+            if (signature != "RIFF") throw new NotSupportedException("Specified stream is not a wave file.");
+
+            reader.ReadInt32(); // Riff Chunk Size
+
+            string format = new string(reader.ReadChars(4));
+            if (format != "WAVE") throw new NotSupportedException("Specified stream is not a wave file.");
+
+            // -- FORMAT Chunk --
+            string formatSignature = new string(reader.ReadChars(4));
+            if (formatSignature != "fmt ") throw new NotSupportedException("Specified wave file is not supported.");
+
+            reader.ReadInt32(); // Format chunk size
+            reader.ReadInt16(); // Audio Format
+            short channels = reader.ReadInt16();
+            int sampleRate = reader.ReadInt32();
+            reader.ReadInt32(); // Byte Rate
+            reader.ReadInt16(); // Block Align
+            short bitsPerSample = reader.ReadInt16();
+
+            // -- DATA Chunk --
+            string dataSignature = new string(reader.ReadChars(4));
+            // Handle cases where a 'JUNK' or other chunk is between 'fmt ' and 'data'
+            while (dataSignature != "data")
+            {
+                int chunkSize = reader.ReadInt32();
+                reader.BaseStream.Seek(chunkSize, SeekOrigin.Current);
+                dataSignature = new string(reader.ReadChars(4));
+            }
+
+            int dataChunkSize = reader.ReadInt32();
+            byte[] audioData = reader.ReadBytes(dataChunkSize);
+
+            // -- OpenAL Buffer --
+            ALFormat formatEnum = GetSoundFormat(channels, bitsPerSample);
+            int alBuffer = AL.GenBuffer();
+            AL.BufferData(alBuffer, formatEnum, audioData, sampleRate);
+
+            Console.WriteLine($"[AudioLoader] Loaded '{Path.GetFileName(path)}' ({channels} ch, {bitsPerSample}-bit, {sampleRate} Hz)");
+            return new AudioClip(alBuffer);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AudioLoader] Error loading '{path}': {ex.Message}");
+            return null;
+        }
+    }
+
+    private static ALFormat GetSoundFormat(int channels, int bits)
+    {
+        return channels switch
+        {
+            1 => bits == 8 ? ALFormat.Mono8 : ALFormat.Mono16,
+            2 => bits == 8 ? ALFormat.Stereo8 : ALFormat.Stereo16,
+            _ => throw new NotSupportedException("The specified sound format is not supported.")
+        };
+    }
+}
+```
+
+---
+
+### `Cherris\Core\AudioSystem.cs`
+
+```csharp
+// --- REQUIRED NUGET PACKAGE ---
+// This file requires the 'OpenTK' package.
+// Add it to your project:
+// dotnet add package OpenTK
+
+using Cherris.Components;
+using Cherris.Core;
+using OpenTK.Audio.OpenAL;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Numerics;
+
+namespace Cherris.Core;
+
+public class AudioSystem : IDisposable
+{
+    private ALDevice _device;
+    private ALContext _context;
+
+    private const int MaxAudioSources = 32;
+    private readonly int[] _alSources;
+    private readonly ConcurrentQueue<int> _availableSources;
+    private readonly ConcurrentDictionary<AudioSource, int> _activeSources;
+
+    public AudioSystem()
+    {
+        _alSources = new int[MaxAudioSources];
+        _availableSources = new ConcurrentQueue<int>();
+        _activeSources = new ConcurrentDictionary<AudioSource, int>();
+    }
+
+    public void Initialize()
+    {
+        try
+        {
+            _device = ALC.OpenDevice(null);
+            _context = ALC.CreateContext(_device, (int[])null);
+            ALC.MakeContextCurrent(_context);
+            CheckAlError("Initialize - MakeContextCurrent");
+
+            AL.GenSources(_alSources);
+            CheckAlError("Initialize - GenSources");
+            foreach (var source in _alSources)
+            {
+                _availableSources.Enqueue(source);
+            }
+
+            Console.WriteLine($"[AudioSystem] Initialized with OpenAL '{AL.Get(ALGetString.Version)}' on '{AL.Get(ALGetString.Renderer)}'");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AudioSystem] FATAL: Could not initialize OpenAL. Audio will be disabled. Reason: {ex.Message}");
+        }
+    }
+
+    public void Update(Scene scene)
+    {
+        if (_device.Handle == IntPtr.Zero) return;
+
+        if (scene?.MainCamera?.GameObject.GetComponent<AudioListener>() is not null)
+        {
+            Transform listenerTransform = scene.MainCamera.GameObject.Transform;
+            Vector3 pos = listenerTransform.Position;
+            Vector3 forwardNumerics = listenerTransform.Forward;
+            Vector3 upNumerics = Vector3.Transform(Vector3.UnitY, listenerTransform.Rotation);
+
+            // Convert to OpenTK vectors for the AL call
+            var forwardOtk = new global::OpenTK.Mathematics.Vector3(forwardNumerics.X, forwardNumerics.Y, forwardNumerics.Z);
+            var upOtk = new global::OpenTK.Mathematics.Vector3(upNumerics.X, upNumerics.Y, upNumerics.Z);
+
+            AL.Listener(ALListener3f.Position, pos.X, pos.Y, pos.Z);
+            AL.Listener(ALListenerfv.Orientation, ref forwardOtk, ref upOtk);
+        }
+
+        // Check for sources that have finished playing
+        foreach (var (audioSource, alSource) in _activeSources)
+        {
+            AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
+            if (state == (int)ALSourceState.Stopped)
+            {
+                if (_activeSources.TryRemove(audioSource, out int removedAlSource))
+                {
+                    _availableSources.Enqueue(removedAlSource);
+                }
+            }
+        }
+    }
+
+    public void Play(AudioSource audioSource)
+    {
+        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null) return;
+
+        if (audioSource.Clip.AlBufferHandle == 0)
+        {
+            Console.WriteLine($"[AudioSystem] Error: AudioSource on '{audioSource.GameObject.Name}' has an invalid AudioClip handle. Was it loaded before OpenAL was initialized?");
+            return;
+        }
+
+        if (_activeSources.ContainsKey(audioSource)) Stop(audioSource);
+
+        if (_availableSources.TryDequeue(out int alSource))
+        {
+            Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
+            _activeSources[audioSource] = alSource;
+
+            AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
+            AL.Source(alSource, ALSourcef.Gain, audioSource.Volume);
+            AL.Source(alSource, ALSourcef.Pitch, audioSource.Pitch);
+            AL.Source(alSource, ALSourceb.Looping, audioSource.Loop);
+
+            // Restore 3D positioning
+            AL.Source(alSource, ALSourceb.SourceRelative, false);
+            Vector3 pos = audioSource.GameObject.Transform.Position;
+            AL.Source(alSource, ALSource3f.Position, pos.X, pos.Y, pos.Z);
+
+            CheckAlError($"Setup Source #{alSource}");
+
+            AL.SourcePlay(alSource);
+            CheckAlError($"Play Source #{alSource}");
+
+            // Log the state immediately after the play command
+            AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
+            Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
+        }
+        else
+        {
+            Console.WriteLine("[AudioSystem] Warning: No available audio sources to play clip.");
+        }
+    }
+
+    public void Stop(AudioSource audioSource)
+    {
+        if (_device.Handle == IntPtr.Zero) return;
+        if (_activeSources.TryRemove(audioSource, out int alSource))
+        {
+            AL.SourceStop(alSource);
+            _availableSources.Enqueue(alSource);
+        }
+    }
+
+
+    public void Dispose()
+    {
+        if (_device.Handle == IntPtr.Zero) return;
+
+        AL.DeleteSources(_alSources);
+        ALC.MakeContextCurrent(ALContext.Null);
+        ALC.DestroyContext(_context);
+        ALC.CloseDevice(_device);
+        Console.WriteLine("[AudioSystem] Disposed.");
+    }
+
+    [Conditional("DEBUG")]
+    private static void CheckAlError(string context)
+    {
+        ALError error = AL.GetError();
+        if (error != ALError.NoError)
+        {
+            Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+        }
     }
 }
 ```
@@ -2134,6 +2490,7 @@ void main()
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using Veldrid;
 
@@ -2272,6 +2629,12 @@ public class ResourceManager : IResourceManager
         return null;
     }
 
+    public AudioClip GetAudioClip(string name)
+    {
+        Console.WriteLine("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
+        return null;
+    }
+
     private Texture CreateWhiteTexture(string name)
     {
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
@@ -2306,6 +2669,7 @@ public class ResourceManager : IResourceManager
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 
 namespace Cherris;
@@ -2382,6 +2746,7 @@ public abstract class ResourceManagerBase : IResourceManager
     public abstract void LoadInitialAssets();
     public abstract ITexture GetTexture(string name);
     public abstract Skybox GetSkybox(string name);
+    public abstract AudioClip GetAudioClip(string name);
     public abstract void Dispose();
 }
 ```
@@ -2411,8 +2776,8 @@ public class Scene : IDisposable
     {
         FilePath = filePath;
 
-        Name = string.IsNullOrEmpty(filePath) 
-            ? "Untitled Scene" 
+        Name = string.IsNullOrEmpty(filePath)
+            ? "Untitled Scene"
             : Path.GetFileName(filePath);
 
         GameObjects.AddRange(gameObjects);
@@ -2423,7 +2788,7 @@ public class Scene : IDisposable
     {
         GameObjects.Add(go);
         var light = go.GetComponent<Light>();
-        
+
         if (light is not null)
         {
             Lights.Add(light);
@@ -2448,7 +2813,7 @@ public class Scene : IDisposable
 
         // Remove light from cached list
         var light = go.GetComponent<Light>();
-        
+
         if (light is not null)
         {
             Lights.Remove(light);
@@ -2459,11 +2824,11 @@ public class Scene : IDisposable
         IsDirty = true;
     }
 
-    public void Start(PhysicsSystem physicsSystem)
+    public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
         FindMainComponents();
 
-        // Initialize scripts
+        // Initialize scripts and components
         foreach (GameObject gameObject in GameObjects)
         {
             foreach (var script in gameObject.GetComponents<Script>())
@@ -2474,6 +2839,12 @@ public class Scene : IDisposable
                 }
 
                 script.Start();
+            }
+
+            foreach (var audioSource in gameObject.GetComponents<AudioSource>())
+            {
+                audioSource.Initialize(audioSystem);
+                audioSource.Start();
             }
         }
 
@@ -2560,6 +2931,7 @@ public class SceneManager
     public Scene ActiveScene => _activeScene;
     public IReadOnlyList<Scene> OpenScenes => _openScenes;
     public PhysicsSystem PhysicsSystem { get; }
+    public AudioSystem AudioSystem { get; }
 
     public Camera MainCamera => _activeScene?.MainCamera;
     public Skybox Skybox => _activeScene?.Skybox;
@@ -2569,6 +2941,8 @@ public class SceneManager
     public SceneManager()
     {
         PhysicsSystem = new PhysicsSystem();
+        AudioSystem = new AudioSystem();
+        AudioSystem.Initialize();
     }
 
     public void AddGameObject(GameObject go)
@@ -2644,7 +3018,10 @@ public class SceneManager
     public void Start()
     {
         // Start only the active scene when entering play mode.
-        _activeScene?.Start(PhysicsSystem);
+        if (_activeScene is not null)
+        {
+            _activeScene.Start(PhysicsSystem, AudioSystem);
+        }
     }
 
     public void Update(float deltaTime, bool stepPhysics = true)
@@ -2654,6 +3031,9 @@ public class SceneManager
         {
             PhysicsSystem.Update(deltaTime);
         }
+
+        // Update audio system
+        AudioSystem.Update(_activeScene);
 
         // Then update game logic
         _activeScene?.Update(deltaTime);
@@ -2668,6 +3048,7 @@ public class SceneManager
             scene.Dispose();
         }
         _openScenes.Clear();
+        AudioSystem.Dispose();
     }
 }
 ```
@@ -3868,6 +4249,7 @@ public interface IRenderer : IDisposable
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 
 namespace Cherris.Rendering;
 
@@ -3877,6 +4259,7 @@ public interface IResourceManager : IDisposable
     Mesh GetMesh(string name);
     ITexture GetTexture(string name);
     Skybox GetSkybox(string name);
+    AudioClip GetAudioClip(string name);
 }
 ```
 
@@ -3931,6 +4314,7 @@ public interface RenderingInterface : IDisposable
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -3947,6 +4331,8 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+        sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
     }
 
     private static MeshRenderer CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
@@ -3962,6 +4348,21 @@ public static class ComponentDeserializer
         var material = CreateMaterialFromProperties(propsDict, resourceManager);
 
         return new MeshRenderer(mesh, material, meshName);
+    }
+
+    private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
+    {
+        var audioSource = new AudioSource();
+        if (properties is not Dictionary<object, object> propsDict) return audioSource;
+
+        PopulateComponentProperties(audioSource, propsDict);
+
+        if (propsDict.TryGetValue("ClipName", out var clipNameObj) && clipNameObj is string clipName && !string.IsNullOrEmpty(clipName))
+        {
+            audioSource.Clip = resourceManager.GetAudioClip(clipName);
+        }
+
+        return audioSource;
     }
 
     private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)
@@ -4096,7 +4497,7 @@ public static class ComponentDeserializer
             return defaultValue;
         }
 
-        try 
+        try
         {
             return ToSingle(value);
         }
@@ -4334,9 +4735,18 @@ public class SceneLoader
 
             try
             {
-                // YamlDotNet may deserialize numbers as different types (e.g., double, long).
-                // We must convert the value to the actual type of the property.
-                var convertedValue = Convert.ChangeType(propKvp.Value, propertyInfo.PropertyType, CultureInfo.InvariantCulture);
+                object convertedValue;
+                var propType = propertyInfo.PropertyType;
+                var yamlValue = propKvp.Value;
+
+                if (propType.IsEnum && yamlValue is string stringValue)
+                {
+                    convertedValue = Enum.Parse(propType, stringValue, true);
+                }
+                else
+                {
+                    convertedValue = Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
+                }
                 propertyInfo.SetValue(script, convertedValue);
             }
             catch (Exception ex)
@@ -6823,6 +7233,7 @@ public class OpenTKResourceManager : ResourceManagerBase
 {
     private readonly Dictionary<string, ITexture> _textures = new();
     private readonly Dictionary<string, Skybox> _skyboxes = new();
+    private readonly Dictionary<string, AudioClip> _audioClips = new();
 
     public override void LoadInitialAssets()
     {
@@ -6931,6 +7342,30 @@ public class OpenTKResourceManager : ResourceManagerBase
         return newSkybox;
     }
 
+    public override AudioClip GetAudioClip(string name)
+    {
+        if (_audioClips.TryGetValue(name, out var clip))
+        {
+            return clip;
+        }
+
+        string path = AssetFinder.FindAssetPath(name);
+        if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find audio clip '{name}'. Only .wav is supported.");
+            return null;
+        }
+
+        var newClip = AudioLoader.LoadFromFile(path);
+        if (newClip is not null)
+        {
+            _audioClips.Add(name, newClip);
+            return newClip;
+        }
+
+        return null;
+    }
+
     public override void Dispose()
     {
         foreach (var texture in _textures.Values)
@@ -6940,6 +7375,10 @@ public class OpenTKResourceManager : ResourceManagerBase
         foreach (var skybox in _skyboxes.Values)
         {
             skybox.Dispose();
+        }
+        foreach (var clip in _audioClips.Values)
+        {
+            clip.Dispose();
         }
     }
 }
@@ -7846,6 +8285,7 @@ public class EditorAppLogic : IDisposable
         _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
         _textureManager.LoadTexture("Component_Script", "Assets/Icons/Components/script.png");
         _textureManager.LoadTexture("Component_Light", "Assets/Icons/Components/light.png");
+        _textureManager.LoadTexture("Component_AudioSource", "Assets/Icons/Components/audio_source.png");
 
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
@@ -8350,300 +8790,6 @@ public static class EditorTheme
 
 ---
 
-### `CherrisEditor\InspectorPanel.cs`
-
-```csharp
-using Cherris.Components;
-using Cherris.Core;
-using CherrisEditor.Inspectors;
-using CherrisEditor.Undo;
-using ImGuiNET;
-using System.Numerics;
-using System.Reflection;
-using System.Text.RegularExpressions;
-using static SDL3.Mixer;
-
-namespace CherrisEditor;
-
-internal class InspectorPanel
-{
-    private readonly Editor _editor;
-    private readonly EditorTextureManager _textureManager;
-    private readonly HistoryManager _history;
-    private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
-    private readonly DefaultInspector _defaultInspector;
-    private readonly TransformInspector _transformInspector;
-    private string _newScriptName = "";
-    private string _componentSearchText = "";
-
-    public InspectorPanel(Editor editor, EditorTextureManager textureManager, HistoryManager history)
-    {
-        _editor = editor;
-        _textureManager = textureManager;
-        _history = history;
-        _defaultInspector = new DefaultInspector(textureManager, history);
-        _transformInspector = new TransformInspector(textureManager, history);
-        RegisterCustomInspectors(editor, textureManager, history);
-    }
-
-    private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager, HistoryManager history)
-    {
-        var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
-            .Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
-
-        foreach (var inspectorType in inspectorTypes)
-        {
-            var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
-            try
-            {
-                IComponentInspector instance = null;
-
-                var ctorWithAll = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager), typeof(HistoryManager) });
-                var ctorWithEditor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
-                var ctorWithHistory = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager), typeof(HistoryManager) });
-                var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
-                var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
-
-                if (ctorWithAll is not null)
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
-                else if (ctorWithEditor is not null)
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
-                else if (ctorWithHistory is not null)
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
-                else if (ctorSimple is not null)
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
-                else if (ctorParameterless is not null)
-                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
-
-                if (instance is not null)
-                {
-                    _customInspectors[attribute.InspectedType] = instance;
-                    Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
-                }
-                else
-                {
-                    Console.WriteLine($"[Inspector] Could not find a suitable constructor for '{inspectorType.Name}'.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Inspector] Failed to register custom inspector '{inspectorType.Name}': {ex.Message}");
-            }
-        }
-    }
-
-    public void DrawInspectorPanel()
-    {
-        ImGui.Begin("Details");
-        GameObject? selectedObject = _editor.GetSelectedGameObject();
-        if (selectedObject is not null)
-        {
-            DrawGameObjectProperties(selectedObject);
-        }
-        else
-        {
-            ImGui.Text("No object selected.");
-        }
-        ImGui.End();
-    }
-
-    private void DrawGameObjectProperties(GameObject go)
-    {
-        string name = go.Name;
-        if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
-        {
-            go.Name = name;
-            _editor.SceneManager.ActiveScene.IsDirty = true;
-        }
-        ImGui.Separator();
-
-        // --- Transform Component ---
-        ImGui.PushID("TransformComponent");
-        IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
-        if (DrawComponentHeader("Transform", transformIcon, out bool transformHeaderOpen))
-        {
-            _transformInspector.Draw(go.Transform);
-        }
-        ImGui.PopID();
-
-        // --- Other Components ---
-        foreach (var component in go.Components.ToList())
-        {
-            ImGui.Separator();
-            ImGui.PushID(component.GetHashCode());
-
-            string componentName = SplitPascalCase(component.GetType().Name);
-            string textureKey = $"Component_{component.GetType().Name}";
-            if (component is Light) textureKey = "Component_Light";
-
-            IntPtr icon = _textureManager.GetTexture(textureKey);
-            if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
-            {
-                icon = _textureManager.GetTexture("Component_Script");
-            }
-
-            if (DrawComponentHeader(componentName, icon, out bool headerOpen))
-            {
-                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
-                {
-                    if (customInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
-                }
-                else
-                {
-                    if (_defaultInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
-                }
-            }
-
-            if (ImGui.BeginPopupContextItem("ComponentContextMenu"))
-            {
-                if (ImGui.MenuItem("Remove Component"))
-                {
-                    go.RemoveComponent(component);
-                    _editor.SceneManager.ActiveScene.IsDirty = true;
-                    ImGui.CloseCurrentPopup();
-                    ImGui.PopID();
-                    ImGui.EndPopup();
-                    return; // Exit loop as collection was modified
-                }
-                ImGui.EndPopup();
-            }
-
-            ImGui.PopID();
-        }
-
-        DrawAddComponentButton(go);
-    }
-
-    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
-    {
-        var style = ImGui.GetStyle();
-        float iconSize = 20.0f;
-        float frameHeight = ImGui.GetFrameHeight();
-        float yPadding = (frameHeight - iconSize) * 0.5f;
-
-        ImGui.BeginGroup();
-
-        var startPos = ImGui.GetCursorPos();
-        ImGui.SetCursorPosY(startPos.Y + yPadding);
-        ImGui.Image(icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File"), new Vector2(iconSize, iconSize));
-
-        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
-        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
-        isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
-
-        ImGui.EndGroup();
-        return isOpen;
-    }
-
-    private void DrawAddComponentButton(GameObject go)
-    {
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-        float availableWidth = ImGui.GetContentRegionAvail().X;
-        float buttonWidth = 120.0f;
-        float buttonPosX = (availableWidth - buttonWidth) * 0.5f;
-        if (buttonPosX > 0) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + buttonPosX);
-
-        if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
-        {
-            _componentSearchText = ""; // Reset search when opening the popup
-            ImGui.OpenPopup("AddComponentPopup");
-        }
-
-        if (ImGui.BeginPopup("AddComponentPopup"))
-        {
-            ImGui.PushItemWidth(-1);
-            ImGui.InputTextWithHint("##ComponentSearch", "Search...", ref _componentSearchText, 100);
-            ImGui.PopItemWidth();
-            ImGui.Separator();
-
-            bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
-
-            // Built-in components
-            if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
-            {
-                if (ImGui.MenuItem("Camera"))
-                {
-                    go.AddComponent(new Camera());
-                    _editor.SceneManager.ActiveScene.IsDirty = true;
-                    ImGui.CloseCurrentPopup();
-                }
-            }
-
-            if (go.GetComponent<Light>() is null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
-            {
-                if (ImGui.MenuItem("Light"))
-                {
-                    go.AddComponent(new Light());
-                    _editor.SceneManager.ActiveScene.IsDirty = true;
-                    ImGui.CloseCurrentPopup();
-                }
-            }
-
-            ImGui.Separator();
-
-            // Scripts
-            var filteredTypes = searchIsActive
-                ? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
-                : _editor.AvailableScriptTypes;
-
-            foreach (var scriptType in filteredTypes)
-            {
-                if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
-                {
-                    var newComponent = (Script)Activator.CreateInstance(scriptType);
-                    go.AddComponent(newComponent);
-                    _editor.SceneManager.ActiveScene.IsDirty = true;
-
-                    if (_editor.State != EditorState.Playing)
-                    {
-                        newComponent.Enabled = false;
-                    }
-
-                    ImGui.CloseCurrentPopup();
-                }
-            }
-
-            ImGui.Separator();
-            ImGui.Text("New Script");
-            ImGui.PushItemWidth(-1.0f);
-            if (ImGui.InputText("##NewScriptName", ref _newScriptName, 100, ImGuiInputTextFlags.EnterReturnsTrue))
-            {
-                if (!string.IsNullOrWhiteSpace(_newScriptName))
-                {
-                    string scriptName = _newScriptName;
-                    _editor.CreateAndCompileScript(scriptName);
-
-                    Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
-                    if (newScriptType is not null)
-                    {
-                        var newComponent = (Script)Activator.CreateInstance(newScriptType);
-                        go.AddComponent(newComponent);
-                        _editor.SceneManager.ActiveScene.IsDirty = true;
-                        if (_editor.State != EditorState.Playing)
-                        {
-                            newComponent.Enabled = false;
-                        }
-                    }
-
-                    _newScriptName = "";
-                    ImGui.CloseCurrentPopup();
-                }
-            }
-            ImGui.PopItemWidth();
-
-            ImGui.EndPopup();
-        }
-    }
-
-    private static string SplitPascalCase(string input) => Regex.Replace(input, "(?<!^)([A-Z])", " $1");
-}
-```
-
----
-
 ### `CherrisEditor\Program.cs`
 
 ```csharp
@@ -8792,6 +8938,159 @@ public class CustomInspectorAttribute : Attribute
     public CustomInspectorAttribute(Type inspectedType)
     {
         InspectedType = inspectedType;
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Inspectors\AudioListenerInspector.cs`
+
+```csharp
+using Cherris.Components;
+using CherrisEditor.Inspectors;
+using ImGuiNET;
+
+namespace CherrisEditor;
+
+[CustomInspector(typeof(AudioListener))]
+public class AudioListenerInspector : IComponentInspector
+{
+    public bool Draw(Component component)
+    {
+        ImGui.TextWrapped("Acts as the 'ears' in the 3D world for positional audio.");
+        ImGui.Separator();
+        ImGui.TextWrapped("There should only be one Audio Listener in a scene, typically attached to the main camera.");
+        return false;
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Inspectors\AudioSourceInspector.cs`
+
+```csharp
+using Cherris.Components;
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
+using ImGuiNET;
+
+namespace CherrisEditor.Inspectors;
+
+[CustomInspector(typeof(AudioSource))]
+public class AudioSourceInspector : IComponentInspector
+{
+    private readonly HistoryManager _history;
+    private object _undoInitialValue;
+
+    public AudioSourceInspector(HistoryManager history)
+    {
+        _history = history;
+    }
+
+    public bool Draw(Component component)
+    {
+        var audioSource = (AudioSource)component;
+        bool dirty = false;
+
+        if (!ImGui.BeginTable("AudioSourceTable", 2)) return false;
+        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+
+        // Clip Name
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0); ImGui.Text("Audio Clip");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        string clipName = audioSource.ClipName ?? "";
+        if (ImGui.InputText("##ClipName", ref clipName, 256))
+        {
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.ClipName)), audioSource.ClipName, clipName));
+            }
+            dirty = true;
+        }
+        ImGui.PopItemWidth();
+
+        // Volume
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0); ImGui.Text("Volume");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        var volumeBeforeEdit = audioSource.Volume;
+        var volume = volumeBeforeEdit;
+        if (ImGui.DragFloat("##Volume", ref volume, 0.01f, 0.0f, 1.0f))
+        {
+            audioSource.Volume = volume; dirty = true;
+        }
+        HandleUndo(audioSource, nameof(AudioSource.Volume), volumeBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
+        ImGui.PopItemWidth();
+
+        // Pitch
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0); ImGui.Text("Pitch");
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1.0f);
+        var pitchBeforeEdit = audioSource.Pitch;
+        var pitch = pitchBeforeEdit;
+        if (ImGui.DragFloat("##Pitch", ref pitch, 0.01f, 0.1f, 3.0f))
+        {
+            audioSource.Pitch = pitch; dirty = true;
+        }
+        HandleUndo(audioSource, nameof(AudioSource.Pitch), pitchBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
+        ImGui.PopItemWidth();
+
+        // Loop
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0); ImGui.Text("Loop");
+        ImGui.TableSetColumnIndex(1);
+        var loopBeforeEdit = audioSource.Loop;
+        var loop = loopBeforeEdit;
+        if (ImGui.Checkbox("##Loop", ref loop))
+        {
+            _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.Loop)), loopBeforeEdit, loop));
+            dirty = true;
+        }
+
+        // Play On Awake
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0); ImGui.Text("Play On Awake");
+        ImGui.TableSetColumnIndex(1);
+        var playOnAwakeBeforeEdit = audioSource.PlayOnAwake;
+        var playOnAwake = playOnAwakeBeforeEdit;
+        if (ImGui.Checkbox("##PlayOnAwake", ref playOnAwake))
+        {
+            _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.PlayOnAwake)), playOnAwakeBeforeEdit, playOnAwake));
+            dirty = true;
+        }
+
+        ImGui.EndTable();
+        return dirty;
+    }
+
+    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
+    {
+        var property = target.GetType().GetProperty(propertyName);
+        if (property is null) return;
+
+        if (activated)
+        {
+            _undoInitialValue = valueBeforeEdit;
+        }
+
+        if (deactivated)
+        {
+            object valueAfterEdit = property.GetValue(target);
+            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
+            {
+                // Revert the change so the command can apply it
+                property.SetValue(target, _undoInitialValue);
+                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
+            }
+            _undoInitialValue = null;
+        }
     }
 }
 ```
@@ -9807,6 +10106,323 @@ public static class ConsolePanel
 
 ---
 
+### `CherrisEditor\UI\InspectorPanel.cs`
+
+```csharp
+using Cherris.Components;
+using Cherris.Core;
+using CherrisEditor.Inspectors;
+using CherrisEditor.Undo;
+using ImGuiNET;
+using System.Numerics;
+using System.Reflection;
+using System.Text.RegularExpressions;
+
+namespace CherrisEditor;
+
+internal class InspectorPanel
+{
+	private readonly Editor _editor;
+	private readonly EditorTextureManager _textureManager;
+	private readonly HistoryManager _history;
+	private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
+	private readonly DefaultInspector _defaultInspector;
+	private readonly TransformInspector _transformInspector;
+	private string _newScriptName = "";
+	private string _componentSearchText = "";
+
+	public InspectorPanel(Editor editor, EditorTextureManager textureManager, HistoryManager history)
+	{
+		_editor = editor;
+		_textureManager = textureManager;
+		_history = history;
+		_defaultInspector = new DefaultInspector(textureManager, history);
+		_transformInspector = new TransformInspector(textureManager, history);
+		RegisterCustomInspectors(editor, textureManager, history);
+	}
+
+	private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager, HistoryManager history)
+	{
+		var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
+			.Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
+
+		foreach (var inspectorType in inspectorTypes)
+		{
+			var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
+			try
+			{
+				IComponentInspector instance = null;
+
+				var ctorWithAll = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager), typeof(HistoryManager) });
+				var ctorWithEditor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
+				var ctorWithHistory = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager), typeof(HistoryManager) });
+				var ctorWithHistoryOnly = inspectorType.GetConstructor(new[] { typeof(HistoryManager) });
+				var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
+				var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
+
+				if (ctorWithAll is not null)
+					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
+				else if (ctorWithEditor is not null)
+					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
+				else if (ctorWithHistory is not null)
+					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
+				else if (ctorWithHistoryOnly is not null)
+					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, history);
+				else if (ctorSimple is not null)
+					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
+				else if (ctorParameterless is not null)
+					instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
+
+				if (instance is not null)
+				{
+					_customInspectors[attribute.InspectedType] = instance;
+					Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
+				}
+				else
+				{
+					Console.WriteLine($"[Inspector] Could not find a suitable constructor for '{inspectorType.Name}'.");
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[Inspector] Failed to register custom inspector '{inspectorType.Name}': {ex.Message}");
+			}
+		}
+	}
+
+	public void DrawInspectorPanel()
+	{
+		ImGui.Begin("Details");
+		GameObject? selectedObject = _editor.GetSelectedGameObject();
+		if (selectedObject is not null)
+		{
+			DrawGameObjectProperties(selectedObject);
+		}
+		else
+		{
+			ImGui.Text("No object selected.");
+		}
+		ImGui.End();
+	}
+
+	private void DrawGameObjectProperties(GameObject go)
+	{
+		string name = go.Name;
+		if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
+		{
+			go.Name = name;
+			_editor.SceneManager.ActiveScene.IsDirty = true;
+		}
+		ImGui.Separator();
+
+		// --- Transform Component ---
+		ImGui.PushID("TransformComponent");
+		IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
+		if (DrawComponentHeader("Transform", transformIcon, out bool transformHeaderOpen))
+		{
+			_transformInspector.Draw(go.Transform);
+		}
+		ImGui.PopID();
+
+		// --- Other Components ---
+		foreach (var component in go.Components.ToList())
+		{
+			ImGui.Separator();
+			ImGui.PushID(component.GetHashCode());
+
+			string componentName = SplitPascalCase(component.GetType().Name);
+			string textureKey = $"Component_{component.GetType().Name}";
+			if (component is Light) textureKey = "Component_Light";
+			if (component is AudioSource || component is AudioListener) textureKey = "Component_AudioSource";
+
+			IntPtr icon = _textureManager.GetTexture(textureKey);
+			if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
+			{
+				icon = _textureManager.GetTexture("Component_Script");
+			}
+
+			if (DrawComponentHeader(componentName, icon, out bool headerOpen))
+			{
+				if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
+				{
+					if (customInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
+				}
+				else
+				{
+					if (_defaultInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
+				}
+			}
+
+			if (ImGui.BeginPopupContextItem("ComponentContextMenu"))
+			{
+				if (ImGui.MenuItem("Remove Component"))
+				{
+					go.RemoveComponent(component);
+					_editor.SceneManager.ActiveScene.IsDirty = true;
+					ImGui.CloseCurrentPopup();
+					ImGui.PopID();
+					ImGui.EndPopup();
+					return; // Exit loop as collection was modified
+				}
+				ImGui.EndPopup();
+			}
+
+			ImGui.PopID();
+		}
+
+		DrawAddComponentButton(go);
+	}
+
+	private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
+	{
+		var style = ImGui.GetStyle();
+		float iconSize = 20.0f;
+		float frameHeight = ImGui.GetFrameHeight();
+		float yPadding = (frameHeight - iconSize) * 0.5f;
+
+		ImGui.BeginGroup();
+
+		var startPos = ImGui.GetCursorPos();
+		ImGui.SetCursorPosY(startPos.Y + yPadding);
+		ImGui.Image(icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File"), new Vector2(iconSize, iconSize));
+
+		float headerX = startPos.X + iconSize + style.ItemSpacing.X;
+		ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+		ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+		isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
+
+		ImGui.EndGroup();
+		return isOpen;
+	}
+
+	private void DrawAddComponentButton(GameObject go)
+	{
+		ImGui.Spacing();
+		ImGui.Separator();
+		ImGui.Spacing();
+		float availableWidth = ImGui.GetContentRegionAvail().X;
+		float buttonWidth = 120.0f;
+		float buttonPosX = (availableWidth - buttonWidth) * 0.5f;
+		if (buttonPosX > 0) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + buttonPosX);
+
+		if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
+		{
+			_componentSearchText = ""; // Reset search when opening the popup
+			ImGui.OpenPopup("AddComponentPopup");
+		}
+
+		if (ImGui.BeginPopup("AddComponentPopup"))
+		{
+			ImGui.PushItemWidth(-1);
+			ImGui.InputTextWithHint("##ComponentSearch", "Search...", ref _componentSearchText, 100);
+			ImGui.PopItemWidth();
+			ImGui.Separator();
+
+			bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
+
+			// Built-in components
+			if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+			{
+				if (ImGui.MenuItem("Camera"))
+				{
+					go.AddComponent(new Camera());
+					_editor.SceneManager.ActiveScene.IsDirty = true;
+					ImGui.CloseCurrentPopup();
+				}
+			}
+
+			if (go.GetComponent<Light>() is null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+			{
+				if (ImGui.MenuItem("Light"))
+				{
+					go.AddComponent(new Light());
+					_editor.SceneManager.ActiveScene.IsDirty = true;
+					ImGui.CloseCurrentPopup();
+				}
+			}
+
+			if (go.GetComponent<AudioSource>() is null && (!searchIsActive || "Audio Source".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+			{
+				if (ImGui.MenuItem("Audio Source"))
+				{
+					go.AddComponent(new AudioSource());
+					_editor.SceneManager.ActiveScene.IsDirty = true;
+					ImGui.CloseCurrentPopup();
+				}
+			}
+
+			if (go.GetComponent<AudioListener>() is null && (!searchIsActive || "Audio Listener".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+			{
+				if (ImGui.MenuItem("Audio Listener"))
+				{
+					go.AddComponent(new AudioListener());
+					_editor.SceneManager.ActiveScene.IsDirty = true;
+					ImGui.CloseCurrentPopup();
+				}
+			}
+
+			ImGui.Separator();
+
+			// Scripts
+			var filteredTypes = searchIsActive
+				? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
+				: _editor.AvailableScriptTypes;
+
+			foreach (var scriptType in filteredTypes)
+			{
+				if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
+				{
+					var newComponent = (Script)Activator.CreateInstance(scriptType);
+					go.AddComponent(newComponent);
+					_editor.SceneManager.ActiveScene.IsDirty = true;
+
+					if (_editor.State != EditorState.Playing)
+					{
+						newComponent.Enabled = false;
+					}
+
+					ImGui.CloseCurrentPopup();
+				}
+			}
+
+			ImGui.Separator();
+			ImGui.Text("New Script");
+			ImGui.PushItemWidth(-1.0f);
+			if (ImGui.InputText("##NewScriptName", ref _newScriptName, 100, ImGuiInputTextFlags.EnterReturnsTrue))
+			{
+				if (!string.IsNullOrWhiteSpace(_newScriptName))
+				{
+					string scriptName = _newScriptName;
+					_editor.CreateAndCompileScript(scriptName);
+
+					Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
+					if (newScriptType is not null)
+					{
+						var newComponent = (Script)Activator.CreateInstance(newScriptType);
+						go.AddComponent(newComponent);
+						_editor.SceneManager.ActiveScene.IsDirty = true;
+						if (_editor.State != EditorState.Playing)
+						{
+							newComponent.Enabled = false;
+						}
+					}
+
+					_newScriptName = "";
+					ImGui.CloseCurrentPopup();
+				}
+			}
+			ImGui.PopItemWidth();
+
+			ImGui.EndPopup();
+		}
+	}
+
+	private static string SplitPascalCase(string input) => Regex.Replace(input, "(?<!^)([A-Z])", " $1");
+}
+```
+
+---
+
 ### `CherrisEditor\UI\MenuBar.cs`
 
 ```csharp
@@ -10727,6 +11343,7 @@ GameObjects:
       MouseSensitivity: 0.0015
       Enabled: false
     Camera: {}
+    AudioListener: {}
 - Id: 8103ca18-dedc-49b6-8870-6982cafa7587
   Name: DirectionalLight
   Components:
@@ -10772,6 +11389,11 @@ GameObjects:
       Mass: 2
       Friction: 0.6
       Bounciness: 0.4
+    AudioSource:
+      ClipName: Audio/impact.wav
+      PlayOnAwake: true
+      Loop: false
+      Volume: 0.8
 - Id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
   Name: FallingSphere
   Components:
