@@ -696,13 +696,7 @@ public static class AudioLoader
 ### `Cherris\Core\AudioSystem.cs`
 
 ```csharp
-// --- REQUIRED NUGET PACKAGE ---
-// This file requires the 'OpenTK' package.
-// Add it to your project:
-// dotnet add package OpenTK
-
 using Cherris.Components;
-using Cherris.Core;
 using OpenTK.Audio.OpenAL;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -723,8 +717,8 @@ public class AudioSystem : IDisposable
     public AudioSystem()
     {
         _alSources = new int[MaxAudioSources];
-        _availableSources = new ConcurrentQueue<int>();
-        _activeSources = new ConcurrentDictionary<AudioSource, int>();
+        _availableSources = new();
+        _activeSources = new();
     }
 
     public void Initialize()
@@ -732,13 +726,15 @@ public class AudioSystem : IDisposable
         try
         {
             _device = ALC.OpenDevice(null);
-            _context = ALC.CreateContext(_device, (int[])null);
+            _context = ALC.CreateContext(_device, null as int[]);
+            
             ALC.MakeContextCurrent(_context);
             CheckAlError("Initialize - MakeContextCurrent");
 
             AL.GenSources(_alSources);
             CheckAlError("Initialize - GenSources");
-            foreach (var source in _alSources)
+
+            foreach (int source in _alSources)
             {
                 _availableSources.Enqueue(source);
             }
@@ -753,7 +749,10 @@ public class AudioSystem : IDisposable
 
     public void Update(Scene scene)
     {
-        if (_device.Handle == IntPtr.Zero) return;
+        if (_device.Handle == IntPtr.Zero)
+        {
+            return;
+        }
 
         if (scene?.MainCamera?.GameObject.GetComponent<AudioListener>() is not null)
         {
@@ -763,30 +762,33 @@ public class AudioSystem : IDisposable
             Vector3 upNumerics = Vector3.Transform(Vector3.UnitY, listenerTransform.Rotation);
 
             // Convert to OpenTK vectors for the AL call
-            var forwardOtk = new global::OpenTK.Mathematics.Vector3(forwardNumerics.X, forwardNumerics.Y, forwardNumerics.Z);
-            var upOtk = new global::OpenTK.Mathematics.Vector3(upNumerics.X, upNumerics.Y, upNumerics.Z);
+            global::OpenTK.Mathematics.Vector3 forwardOtk = new(forwardNumerics.X, forwardNumerics.Y, forwardNumerics.Z);
+            global::OpenTK.Mathematics.Vector3 upOtk = new(upNumerics.X, upNumerics.Y, upNumerics.Z);
 
             AL.Listener(ALListener3f.Position, pos.X, pos.Y, pos.Z);
             AL.Listener(ALListenerfv.Orientation, ref forwardOtk, ref upOtk);
         }
 
         // Check for sources that have finished playing
-        foreach (var (audioSource, alSource) in _activeSources)
+        foreach ((AudioSource audioSource, int alSource) in _activeSources)
         {
             AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-            if (state == (int)ALSourceState.Stopped)
+            
+            if (state != (int)ALSourceState.Stopped || !_activeSources.TryRemove(audioSource, out int removedAlSource))
             {
-                if (_activeSources.TryRemove(audioSource, out int removedAlSource))
-                {
-                    _availableSources.Enqueue(removedAlSource);
-                }
+                continue;
             }
+
+            _availableSources.Enqueue(removedAlSource);
         }
     }
 
     public void Play(AudioSource audioSource)
     {
-        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null) return;
+        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null)
+        {
+            return;
+        }
 
         if (audioSource.Clip.AlBufferHandle == 0)
         {
@@ -794,57 +796,69 @@ public class AudioSystem : IDisposable
             return;
         }
 
-        if (_activeSources.ContainsKey(audioSource)) Stop(audioSource);
-
-        if (_availableSources.TryDequeue(out int alSource))
+        if (_activeSources.ContainsKey(audioSource))
         {
-            Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
-            _activeSources[audioSource] = alSource;
-
-            AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
-            AL.Source(alSource, ALSourcef.Gain, audioSource.Volume);
-            AL.Source(alSource, ALSourcef.Pitch, audioSource.Pitch);
-            AL.Source(alSource, ALSourceb.Looping, audioSource.Loop);
-
-            // Restore 3D positioning
-            AL.Source(alSource, ALSourceb.SourceRelative, false);
-            Vector3 pos = audioSource.GameObject.Transform.Position;
-            AL.Source(alSource, ALSource3f.Position, pos.X, pos.Y, pos.Z);
-
-            CheckAlError($"Setup Source #{alSource}");
-
-            AL.SourcePlay(alSource);
-            CheckAlError($"Play Source #{alSource}");
-
-            // Log the state immediately after the play command
-            AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-            Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
+            Stop(audioSource);
         }
-        else
+
+        if (!_availableSources.TryDequeue(out int alSource))
         {
             Console.WriteLine("[AudioSystem] Warning: No available audio sources to play clip.");
+            return;
         }
+
+        Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
+        _activeSources[audioSource] = alSource;
+
+        AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
+        AL.Source(alSource, ALSourcef.Gain, audioSource.Volume);
+        AL.Source(alSource, ALSourcef.Pitch, audioSource.Pitch);
+        AL.Source(alSource, ALSourceb.Looping, audioSource.Loop);
+
+        // Restore 3D positioning
+        AL.Source(alSource, ALSourceb.SourceRelative, false);
+        Vector3 pos = audioSource.GameObject.Transform.Position;
+        AL.Source(alSource, ALSource3f.Position, pos.X, pos.Y, pos.Z);
+
+        CheckAlError($"Setup Source #{alSource}");
+
+        AL.SourcePlay(alSource);
+        CheckAlError($"Play Source #{alSource}");
+
+        // Log the state immediately after the play command
+        AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
+        Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
     }
 
     public void Stop(AudioSource audioSource)
     {
-        if (_device.Handle == IntPtr.Zero) return;
-        if (_activeSources.TryRemove(audioSource, out int alSource))
+        if (_device.Handle == IntPtr.Zero)
         {
-            AL.SourceStop(alSource);
-            _availableSources.Enqueue(alSource);
+            return;
         }
+
+        if (!_activeSources.TryRemove(audioSource, out int alSource))
+        {
+            return;
+        }
+
+        AL.SourceStop(alSource);
+        _availableSources.Enqueue(alSource);
     }
 
 
     public void Dispose()
     {
-        if (_device.Handle == IntPtr.Zero) return;
+        if (_device.Handle == IntPtr.Zero)
+        {
+            return;
+        }
 
         AL.DeleteSources(_alSources);
         ALC.MakeContextCurrent(ALContext.Null);
         ALC.DestroyContext(_context);
         ALC.CloseDevice(_device);
+
         Console.WriteLine("[AudioSystem] Disposed.");
     }
 
@@ -852,10 +866,13 @@ public class AudioSystem : IDisposable
     private static void CheckAlError(string context)
     {
         ALError error = AL.GetError();
-        if (error != ALError.NoError)
+
+        if (error == ALError.NoError)
         {
-            Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+            return;
         }
+
+        Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
     }
 }
 ```
@@ -5038,96 +5055,98 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
 ### `Cherris\Utils\AssetFinder.cs`
 
 ```csharp
+using Cherris.Core;
+
 namespace Cherris;
 
 public static class AssetFinder
 {
-    private static readonly string? _assetRootPath = FindAssetRootPath();
+	private static readonly string? _assetRootPath = FindAssetRootPath();
 
-    private static string? FindAssetRootPath()
-    {
-        string currentPath = AppContext.BaseDirectory;
-        DirectoryInfo? directoryInfo = new(currentPath);
+	private static string? FindAssetRootPath()
+	{
+		string currentPath = AppContext.BaseDirectory;
+		DirectoryInfo? directoryInfo = new(currentPath);
 
-        while (directoryInfo is not null)
-        {
-            // Normalize path separators for a consistent check
-            string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
+		while (directoryInfo is not null)
+		{
+			// Normalize path separators for a consistent check
+			string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
 
-            // This is the robust check. We ensure we are not in a build artifact folder.
-            if (!normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/"))
-            {
-                string potentialPath = Path.Combine(directoryInfo.FullName, "Assets");
-                if (Directory.Exists(potentialPath))
-                {
-                    Console.WriteLine($"[AssetFinder] Found asset root at: {potentialPath}");
-                    return potentialPath;
-                }
-            }
+			// This is the robust check. We ensure we are not in a build artifact folder.
+			if (!normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/"))
+			{
+				string potentialPath = Path.Combine(directoryInfo.FullName, "Assets");
+				if (Directory.Exists(potentialPath))
+				{
+					Logger.Info($"[AssetFinder] Found asset root at: {potentialPath}");
+					return potentialPath;
+				}
+			}
 
-            directoryInfo = directoryInfo.Parent;
-        }
+			directoryInfo = directoryInfo.Parent;
+		}
 
-        Console.WriteLine("[AssetFinder] FATAL: Could not find the 'Assets' directory in any parent path.");
-        return null;
-    }
+		Logger.Error("[AssetFinder] FATAL: Could not find the 'Assets' directory in any parent path.");
+		return null;
+	}
 
-    public static string? FindAssetPath(string assetName)
-    {
-        if (string.IsNullOrWhiteSpace(assetName) || _assetRootPath is null)
-        {
-            Console.WriteLine($"[AssetFinder] Warning: Asset root not found or asset name '{assetName}' is null/empty.");
-            return null;
-        }
+	public static string? FindAssetPath(string assetName)
+	{
+		if (string.IsNullOrWhiteSpace(assetName) || _assetRootPath is null)
+		{
+			Logger.Warning($"[AssetFinder] Asset root not found or asset name '{assetName}' is null/empty.");
+			return null;
+		}
 
-        // Sanitize path to use correct OS separators
-        string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-        string fullPath = Path.Combine(_assetRootPath, sanitizedName);
+		// Sanitize path to use correct OS separators
+		string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+		string fullPath = Path.Combine(_assetRootPath, sanitizedName);
 
-        // Case 1: The provided name is an exact relative path (with extension).
-        if (File.Exists(fullPath))
-        {
-            return fullPath;
-        }
+		// Case 1: The provided name is an exact relative path (with extension).
+		if (File.Exists(fullPath))
+		{
+			return fullPath;
+		}
 
-        // Case 2: The provided name is a relative path but is missing an extension.
-        if (!Path.HasExtension(fullPath))
-        {
-            string? directory = Path.GetDirectoryName(fullPath);
-            string fileName = Path.GetFileName(fullPath);
-            if (directory is not null && Directory.Exists(directory))
-            {
-                // Find first file that matches the name, regardless of extension.
-                var files = Directory.GetFiles(directory, $"{fileName}.*");
-                if (files.Any())
-                {
-                    return files[0];
-                }
-            }
-        }
+		// Case 2: The provided name is a relative path but is missing an extension.
+		if (!Path.HasExtension(fullPath))
+		{
+			string? directory = Path.GetDirectoryName(fullPath);
+			string fileName = Path.GetFileName(fullPath);
+			if (directory is not null && Directory.Exists(directory))
+			{
+				// Find first file that matches the name, regardless of extension.
+				var files = Directory.GetFiles(directory, $"{fileName}.*");
+				if (files.Any())
+				{
+					return files[0];
+				}
+			}
+		}
 
-        // Case 3: The provided name is just a filename, search for it everywhere.
-        // This is the fallback, which can be slow, but useful.
-        try
-        {
-            string fileNameOnly = Path.GetFileName(sanitizedName);
-            var files = Directory.GetFiles(_assetRootPath, fileNameOnly, SearchOption.AllDirectories);
-            if (files.Any()) return files[0];
+		// Case 3: The provided name is just a filename, search for it everywhere.
+		// This is the fallback, which can be slow, but useful.
+		try
+		{
+			string fileNameOnly = Path.GetFileName(sanitizedName);
+			var files = Directory.GetFiles(_assetRootPath, fileNameOnly, SearchOption.AllDirectories);
+			if (files.Any()) return files[0];
 
-            // If still not found, try searching with wildcard extension.
-            if (!Path.HasExtension(fileNameOnly))
-            {
-                var filesWithWildcard = Directory.GetFiles(_assetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
-                if (filesWithWildcard.Any()) return filesWithWildcard[0];
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[AssetFinder] Error while searching for asset '{assetName}': {e.Message}");
-        }
+			// If still not found, try searching with wildcard extension.
+			if (!Path.HasExtension(fileNameOnly))
+			{
+				var filesWithWildcard = Directory.GetFiles(_assetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
+				if (filesWithWildcard.Any()) return filesWithWildcard[0];
+			}
+		}
+		catch (Exception e)
+		{
+			Logger.Error($"[AssetFinder] Error while searching for asset '{assetName}': {e.Message}");
+		}
 
-        return null; // Not found
-    }
+		return null; // Not found
+	}
 }
 ```
 
@@ -5193,6 +5212,84 @@ namespace Cherris;
 [AttributeUsage(AttributeTargets.Property)]
 public class HideInInspectorAttribute : Attribute
 {
+}
+```
+
+---
+
+### `Cherris\Core\Logging\Logger.cs`
+
+```csharp
+using System.Collections.Concurrent;
+
+namespace Cherris.Core;
+
+public static class Logger
+{
+    private static readonly ConcurrentQueue<LogMessage> _messages = new();
+    public static event Action<LogMessage> OnMessageLogged;
+
+    public static IReadOnlyCollection<LogMessage> Messages => _messages;
+
+    public static void Info(string message) => Log(LogLevel.Info, message);
+    public static void Warning(string message) => Log(LogLevel.Warning, message);
+    public static void Error(string message) => Log(LogLevel.Error, message);
+
+    private static void Log(LogLevel level, string message)
+    {
+        var logMessage = new LogMessage(level, message);
+        _messages.Enqueue(logMessage);
+
+        // Also write to the system console for debugging outside the editor
+        var originalColor = Console.ForegroundColor;
+        Console.ForegroundColor = level switch
+        {
+            LogLevel.Warning => ConsoleColor.Yellow,
+            LogLevel.Error => ConsoleColor.Red,
+            _ => originalColor
+        };
+        Console.WriteLine($"[{logMessage.Timestamp:HH:mm:ss}] [{level}] {message}");
+        Console.ForegroundColor = originalColor;
+
+        OnMessageLogged?.Invoke(logMessage);
+    }
+}
+```
+
+---
+
+### `Cherris\Core\Logging\LogLevel.cs`
+
+```csharp
+namespace Cherris.Core;
+
+public enum LogLevel
+{
+    Info,
+    Warning,
+    Error
+}
+```
+
+---
+
+### `Cherris\Core\Logging\LogMessage.cs`
+
+```csharp
+namespace Cherris.Core;
+
+public struct LogMessage
+{
+    public DateTime Timestamp { get; }
+    public LogLevel Level { get; }
+    public string Message { get; }
+
+    public LogMessage(LogLevel level, string message)
+    {
+        Timestamp = DateTime.Now;
+        Level = level;
+        Message = message;
+    }
 }
 ```
 
@@ -6582,93 +6679,6 @@ void main()
     {
         _skyboxShaderProgram?.Dispose();
         _skyboxCubeData?.Dispose();
-    }
-}
-```
-
----
-
-### `Cherris\Rendering\OpenTK\OpenGLUIRenderer.cs`
-
-```csharp
-using DirectUI;
-using DirectUI.Backends.SkiaSharp;
-using DirectUI.Core;
-using OpenTK.Graphics.OpenGL4;
-using SkiaSharp;
-using System.Numerics;
-
-namespace Cherris;
-
-internal class OpenGLUIRenderer : IDisposable
-{
-    private readonly AppEngine _appEngine;
-    private readonly GRContext _grContext;
-    private SKSurface _skSurface;
-    private GRBackendRenderTarget _skRenderTarget;
-    private readonly SilkNetRenderer _uiRenderer; // Reusing SilkNetRenderer as it's Skia-based
-    private readonly SilkNetTextService _uiTextService;
-
-    public IRenderer UiRenderer => _uiRenderer;
-    public ITextService UiTextService => _uiTextService;
-
-    public OpenGLUIRenderer(AppEngine appEngine)
-    {
-        _appEngine = appEngine;
-
-        var glInterface = GRGlInterface.Create();
-        _grContext = GRContext.CreateGl(glInterface);
-        _uiTextService = new SilkNetTextService();
-        _uiRenderer = new SilkNetRenderer(_uiTextService);
-    }
-
-    public void OnResize(int width, int height)
-    {
-        _skRenderTarget?.Dispose();
-        _skSurface?.Dispose();
-
-        GL.GetInteger(GetPName.Samples, out int samples);
-        GL.GetFramebufferAttachmentParameter(FramebufferTarget.Framebuffer, FramebufferAttachment.Stencil, FramebufferParameterName.FramebufferAttachmentStencilSize, out int stencil);
-
-        var framebufferInfo = new GRGlFramebufferInfo(0, (uint)PixelInternalFormat.Rgba8);
-        _skRenderTarget = new GRBackendRenderTarget(width, height, samples, stencil, framebufferInfo);
-        _skSurface = SKSurface.Create(_grContext, _skRenderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
-        _uiTextService?.Cleanup();
-    }
-
-    public void Render()
-    {
-        if (_appEngine is not null && _skSurface is not null)
-        {
-            // Reset Skia's internal state tracking because raw OpenGL calls
-            // in the scene renderer/post-processor might have changed it.
-            _grContext.ResetContext();
-
-            // GL state for 2D UI
-            GL.Disable(EnableCap.DepthTest);
-            GL.Disable(EnableCap.CullFace);
-            GL.Enable(EnableCap.Blend);
-            // Use the correct blend function for premultiplied alpha, which Skia prefers.
-            GL.BlendFunc(BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
-
-            // This is the crucial step. We must clear the canvas to transparent before
-            // drawing the UI for the current frame. Otherwise, opaque pixels from
-            // previous frames will accumulate and obscure the 3D scene.
-            _skSurface.Canvas.Clear(SKColors.Transparent);
-
-            _uiRenderer.SetCanvas(_skSurface.Canvas, new Vector2(_skRenderTarget.Width, _skRenderTarget.Height));
-            _appEngine.UpdateAndRender(_uiRenderer, _uiTextService);
-            _skSurface.Canvas.Flush();
-        }
-    }
-
-    public void Dispose()
-    {
-        _skSurface?.Dispose();
-        _skRenderTarget?.Dispose();
-        _grContext?.Dispose();
-        _uiRenderer?.Cleanup();
-        _uiTextService?.Cleanup();
     }
 }
 ```
@@ -10089,17 +10099,77 @@ public class TransformInspector
 ### `CherrisEditor\UI\ConsolePanel.cs`
 
 ```csharp
+using Cherris.Core;
 using ImGuiNET;
+using System.Collections.Concurrent;
+using System.Numerics;
 
 namespace CherrisEditor.UI;
 
 public static class ConsolePanel
 {
+    private static readonly ConcurrentQueue<LogMessage> _logMessages = new();
+    private static bool _autoScroll = true;
+
+    static ConsolePanel()
+    {
+        Logger.OnMessageLogged += HandleLogMessage;
+    }
+
+    private static void HandleLogMessage(LogMessage message)
+    {
+        _logMessages.Enqueue(message);
+    }
+
     public static void Draw()
     {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
         ImGui.Begin("Console");
-        ImGui.Text("Log messages will appear here...");
+
+        DrawToolbar();
+        ImGui.Separator();
+        DrawLogMessages();
+
         ImGui.End();
+        ImGui.PopStyleVar();
+    }
+
+    private static void DrawToolbar()
+    {
+        if (ImGui.Button("Clear"))
+        {
+            _logMessages.Clear();
+        }
+        ImGui.SameLine();
+        ImGui.Checkbox("Auto-scroll", ref _autoScroll);
+    }
+
+    private static void DrawLogMessages()
+    {
+        ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
+
+        foreach (var msg in _logMessages)
+        {
+            var color = msg.Level switch
+            {
+                LogLevel.Warning => new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
+                LogLevel.Error => new Vector4(1.0f, 0.2f, 0.2f, 1.0f),
+                _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
+            };
+
+            ImGui.TextColored(color, $"[{msg.Timestamp:HH:mm:ss}]");
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"[{msg.Level}]");
+            ImGui.SameLine();
+            ImGui.TextWrapped(msg.Message);
+        }
+
+        if (_autoScroll && ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
+        {
+            ImGui.SetScrollHereY(1.0f);
+        }
+
+        ImGui.EndChild();
     }
 }
 ```
@@ -11127,98 +11197,6 @@ public class HistoryManager
 
 ---
 
-### `CherrisEditor\Assets\Scripts\PlayerController.cs`
-
-```csharp
-using Cherris;
-using Cherris.Components;
-using System;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class PlayerController : Script
-{
-    public float Speed { get; set; } = 3.0f;
-    public float MouseSensitivity { get; set; } = 0.0015f;
-
-    private float _yaw;
-    private float _pitch;
-
-    public override void Update(float deltaTime)
-    {
-        // --- Mouse Look ---
-        Vector2 mouseDelta = Input.MouseDelta;
-        _yaw -= mouseDelta.X * MouseSensitivity;
-        _pitch -= mouseDelta.Y * MouseSensitivity;
-
-        // Clamp the pitch to prevent the camera from flipping upside down
-        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-        // Update rotation from yaw and pitch using the standard engine function
-        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
-
-        // --- Keyboard Movement ---
-        Vector3 moveDirection = Vector3.Zero;
-
-        if (Input.IsKeyDown(Key.W))
-        {
-            moveDirection -= Vector3.UnitZ;
-        }
-        if (Input.IsKeyDown(Key.S))
-        {
-            moveDirection += Vector3.UnitZ;
-        }
-        if (Input.IsKeyDown(Key.A))
-        {
-            moveDirection -= Vector3.UnitX;
-        }
-        if (Input.IsKeyDown(Key.D))
-        {
-            moveDirection += Vector3.UnitX;
-        }
-
-        if (moveDirection != Vector3.Zero)
-        {
-            moveDirection = Vector3.Normalize(moveDirection);
-
-            // Create a rotation that only includes the horizontal (yaw) component.
-            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-            // Transform the local direction vector by the horizontal-only rotation.
-            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
-            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-        }
-    }
-}
-```
-
----
-
-### `CherrisEditor\Assets\Scripts\Spinner.cs`
-
-```csharp
-using Cherris;
-using Cherris.Components;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class Spinner : Script
-{
-    private float _totalTime;
-
-    public override void Update(float deltaTime)
-    {
-        _totalTime += deltaTime;
-        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
-    }
-}
-```
-
----
-
 ### `CherrisEditor\Undo\Commands\ChangePropertyCommand.cs`
 
 ```csharp
@@ -11330,17 +11308,15 @@ GameObjects:
       Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     Skybox:
-      CubeMap: sky/day
+      CubeMap: Skybox
 - Id: 175a83f7-5417-46c9-bbea-9aaa4f6641a4
   Name: Player
   Components:
     Transform:
-      Position: [0, 3, 8]
-      Rotation: [-15, 0, 0]
+      Position: [-0.6566564, 2.552599, 8.91369]
+      Rotation: [-0.21731396, 20.798098, 0]
       Scale: [1, 1, 1]
     PlayerController:
-      Speed: 3
-      MouseSensitivity: 0.0015
       Enabled: false
     Camera: {}
     AudioListener: {}
@@ -11351,10 +11327,7 @@ GameObjects:
       Position: [-0.5148658, 4.625517, -0.7980118]
       Rotation: [-84.91004, -44.999847, -2.4148299E-06]
       Scale: [1, 1.0000011, 1.0000005]
-    Light:
-      Type: Directional
-      Color: [1, 1, 1]
-      Intensity: 1
+    Light: {}
 - Id: e036456a-17e9-4b36-aa03-c86985afe187
   Name: SpinningHelmet
   Components:
@@ -11375,7 +11348,7 @@ GameObjects:
   Components:
     Transform:
       Position: [2, 4, 0.5]
-      Rotation: [10, 20, 30]
+      Rotation: [22.21426, 1.5977327, 28.546068]
       Scale: [1, 1, 1]
     MeshRenderer:
       Mesh: Cube
@@ -11384,15 +11357,11 @@ GameObjects:
         SpecularIntensity: 0.3
         Shininess: 16
     RigidBody:
-      Shape: Box
-      IsStatic: false
       Mass: 2
       Friction: 0.6
       Bounciness: 0.4
     AudioSource:
       ClipName: Audio/impact.wav
-      PlayOnAwake: true
-      Loop: false
       Volume: 0.8
 - Id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
   Name: FallingSphere
@@ -11409,8 +11378,6 @@ GameObjects:
         Shininess: 128
     RigidBody:
       Shape: Sphere
-      IsStatic: false
-      Mass: 1
       Friction: 0.4
       Bounciness: 0.8
 - Id: fa6c7e61-829e-4f4e-8ad6-e370835d1b46
@@ -11428,9 +11395,7 @@ GameObjects:
         SpecularIntensity: 0.1
         Shininess: 8
     RigidBody:
-      Shape: Box
       IsStatic: true
-      Friction: 0.5
       Bounciness: 0.2
 - Id: c4b1d2e3-f6a5-4b8c-9a1d-2e3f4a5b6c7d
   Name: PointLightObject
@@ -11470,98 +11435,6 @@ GameObjects:
       Range: 20
       InnerConeAngle: 20
       OuterConeAngle: 25
-```
-
----
-
-### `CherrisEditor\bin\Debug\net9.0\Assets\Scripts\PlayerController.cs`
-
-```csharp
-using Cherris;
-using Cherris.Components;
-using System;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class PlayerController : Script
-{
-    public float Speed { get; set; } = 3.0f;
-    public float MouseSensitivity { get; set; } = 0.0015f;
-
-    private float _yaw;
-    private float _pitch;
-
-    public override void Update(float deltaTime)
-    {
-        // --- Mouse Look ---
-        Vector2 mouseDelta = Input.MouseDelta;
-        _yaw -= mouseDelta.X * MouseSensitivity;
-        _pitch -= mouseDelta.Y * MouseSensitivity;
-
-        // Clamp the pitch to prevent the camera from flipping upside down
-        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-        // Update rotation from yaw and pitch using the standard engine function
-        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
-
-        // --- Keyboard Movement ---
-        Vector3 moveDirection = Vector3.Zero;
-
-        if (Input.IsKeyDown(Key.W))
-        {
-            moveDirection -= Vector3.UnitZ;
-        }
-        if (Input.IsKeyDown(Key.S))
-        {
-            moveDirection += Vector3.UnitZ;
-        }
-        if (Input.IsKeyDown(Key.A))
-        {
-            moveDirection -= Vector3.UnitX;
-        }
-        if (Input.IsKeyDown(Key.D))
-        {
-            moveDirection += Vector3.UnitX;
-        }
-
-        if (moveDirection != Vector3.Zero)
-        {
-            moveDirection = Vector3.Normalize(moveDirection);
-
-            // Create a rotation that only includes the horizontal (yaw) component.
-            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-            // Transform the local direction vector by the horizontal-only rotation.
-            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
-            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-        }
-    }
-}
-```
-
----
-
-### `CherrisEditor\bin\Debug\net9.0\Assets\Scripts\Spinner.cs`
-
-```csharp
-using Cherris;
-using Cherris.Components;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class Spinner : Script
-{
-    private float _totalTime;
-
-    public override void Update(float deltaTime)
-    {
-        _totalTime += deltaTime;
-        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
-    }
-}
 ```
 
 ---

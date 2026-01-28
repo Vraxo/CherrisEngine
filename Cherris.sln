@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.12.35527.113
+# Visual Studio Version 18
+VisualStudioVersion = 18.1.11312.151 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cherris", "Cherris\Cherris.csproj", "{95E0860B-EAC4-4F56-867A-CA65FE9A3371}"
 EndProject
@@ -9,8 +9,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
 	EndProjectSection
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DirectUI", "..\DirectUI\DirectUI\DirectUI.csproj", "{70D27F8A-9E3F-D732-9CB9-71A440A221A9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CherrisEditor", "CherrisEditor\CherrisEditor.csproj", "{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}"
 EndProject
@@ -36,18 +34,6 @@ Global
 		{95E0860B-EAC4-4F56-867A-CA65FE9A3371}.Release|x64.Build.0 = Release|Any CPU
 		{95E0860B-EAC4-4F56-867A-CA65FE9A3371}.Release|x86.ActiveCfg = Release|Any CPU
 		{95E0860B-EAC4-4F56-867A-CA65FE9A3371}.Release|x86.Build.0 = Release|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Debug|x64.Build.0 = Debug|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Debug|x86.Build.0 = Debug|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x64.ActiveCfg = Release|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x64.Build.0 = Release|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x86.ActiveCfg = Release|Any CPU
-		{70D27F8A-9E3F-D732-9CB9-71A440A221A9}.Release|x86.Build.0 = Release|Any CPU
 		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{06F51DA5-E82F-405F-8ECC-CF0B4ED10E10}.Debug|x64.ActiveCfg = Debug|Any CPU
