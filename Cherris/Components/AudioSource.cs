@@ -2,24 +2,20 @@
 
 namespace Cherris.Components;
 
-/// <summary>
-/// Plays back an AudioClip in the scene.
-/// </summary>
 public class AudioSource : Component
 {
     public string ClipName { get; set; } = string.Empty;
 
     [HideInInspector]
-    public AudioClip Clip { get; internal set; }
+    public AudioClip? Clip { get; internal set; }
 
     public float Volume { get; set; } = 1.0f;
     public float Pitch { get; set; } = 1.0f;
     public bool Loop { get; set; } = false;
     public bool PlayOnAwake { get; set; } = true;
 
-    private AudioSystem _audioSystem;
+    private AudioSystem? _audioSystem;
 
-    // Called by the Scene to provide the AudioSystem instance.
     internal void Initialize(AudioSystem audioSystem)
     {
         _audioSystem = audioSystem;
@@ -27,10 +23,12 @@ public class AudioSource : Component
 
     internal void Start()
     {
-        if (PlayOnAwake)
+        if (!PlayOnAwake)
         {
-            Play();
+            return;
         }
+
+        Play();
     }
 
     public void Play()

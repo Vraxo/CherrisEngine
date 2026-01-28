@@ -1,4 +1,5 @@
 ﻿using Cherris.Core;
+using Cherris.Core.Logging;
 using ImGuiNET;
 using System.Collections.Concurrent;
 using System.Numerics;

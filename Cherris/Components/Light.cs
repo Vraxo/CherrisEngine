@@ -2,13 +2,6 @@
 
 namespace Cherris.Components;
 
-public enum LightType
-{
-    Directional,
-    Point,
-    Spot
-}
-
 public class Light : Component
 {
     public LightType Type { get; set; } = LightType.Directional;

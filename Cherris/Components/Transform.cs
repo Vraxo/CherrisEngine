@@ -5,22 +5,26 @@ namespace Cherris.Components;
 
 public class Transform
 {
-    public Vector3 Position { get; set; }
-    public Quaternion Rotation { get; set; }
-    public Vector3 Scale { get; set; }
-    public GameObject GameObject { get; }
+    public Vector3 Position { get; set; } = Vector3.Zero;
+    public Quaternion Rotation { get; set; } = Quaternion.Identity;
+    public Vector3 Scale { get; set; } = Vector3.One;
+    public GameObject? GameObject { get; } = null;
 
-    private Transform _parent;
     public Transform Parent
     {
-        get => _parent;
-        set
-        {
-            if (_parent == value) return;
+        get;
 
-            _parent?.Children.Remove(this);
-            _parent = value;
-            _parent?.Children.Add(this);
+        set
+
+        {
+            if (field == value)
+            {
+                return;
+            }
+
+            field.Children.Remove(this);
+            field = value;
+            field.Children.Add(this);
         }
     }
 
@@ -31,9 +35,6 @@ public class Transform
     public Transform(GameObject gameObject)
     {
         GameObject = gameObject;
-        Position = Vector3.Zero;
-        Rotation = Quaternion.Identity;
-        Scale = Vector3.One;
     }
 
     public Matrix4x4 GetModelMatrix()
