@@ -1,93 +1,65 @@
-﻿using Cherris.Core;
-
-namespace Cherris;
+﻿namespace Cherris.Utils;
 
 public static class AssetFinder
 {
-	private static readonly string? _assetRootPath = FindAssetRootPath();
+    public static string? ProjectRoot { get; set; }
 
-	private static string? FindAssetRootPath()
-	{
-		string currentPath = AppContext.BaseDirectory;
-		DirectoryInfo? directoryInfo = new(currentPath);
+    public static string? FindAssetPath(string assetName)
+    {
+        if (string.IsNullOrWhiteSpace(assetName))
+        {
+            return null;
+        }
 
-		while (directoryInfo is not null)
-		{
-			// Normalize path separators for a consistent check
-			string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
+        // Try ProjectRoot first if set
+        if (!string.IsNullOrWhiteSpace(ProjectRoot))
+        {
+            string projectPath = Path.Combine(ProjectRoot, "Assets", assetName);
+            if (File.Exists(projectPath))
+            {
+                return projectPath;
+            }
 
-			// This is the robust check. We ensure we are not in a build artifact folder.
-			if (!normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/"))
-			{
-				string potentialPath = Path.Combine(directoryInfo.FullName, "Assets");
-				if (Directory.Exists(potentialPath))
-				{
-					Logger.Info($"[AssetFinder] Found asset root at: {potentialPath}");
-					return potentialPath;
-				}
-			}
+            if (!Path.HasExtension(projectPath))
+            {
+                string? directory = Path.GetDirectoryName(projectPath);
+                string fileName = Path.GetFileName(projectPath);
 
-			directoryInfo = directoryInfo.Parent;
-		}
+                if (directory is not null && Directory.Exists(directory))
+                {
+                    var files = Directory.GetFiles(directory, $"{fileName}.*");
+                    if (files.Any())
+                    {
+                        return files[0];
+                    }
+                }
+            }
+        }
 
-		Logger.Error("[AssetFinder] FATAL: Could not find the 'Assets' directory in any parent path.");
-		return null;
-	}
+        // Fallback to executable directory (for engine assets when no project loaded)
+        string exeDir = AppContext.BaseDirectory;
+        string fallbackPath = Path.Combine(exeDir, "Assets", assetName);
 
-	public static string? FindAssetPath(string assetName)
-	{
-		if (string.IsNullOrWhiteSpace(assetName) || _assetRootPath is null)
-		{
-			Logger.Warning($"[AssetFinder] Asset root not found or asset name '{assetName}' is null/empty.");
-			return null;
-		}
+        if (File.Exists(fallbackPath))
+        {
+            return fallbackPath;
+        }
 
-		// Sanitize path to use correct OS separators
-		string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-		string fullPath = Path.Combine(_assetRootPath, sanitizedName);
+        if (!Path.HasExtension(fallbackPath))
+        {
+            string? directory = Path.GetDirectoryName(fallbackPath);
+            string fileName = Path.GetFileName(fallbackPath);
 
-		// Case 1: The provided name is an exact relative path (with extension).
-		if (File.Exists(fullPath))
-		{
-			return fullPath;
-		}
+            if (directory is not null && Directory.Exists(directory))
+            {
+                var files = Directory.GetFiles(directory, $"{fileName}.*");
+                if (files.Any())
+                {
+                    return files[0];
+                }
+            }
+        }
 
-		// Case 2: The provided name is a relative path but is missing an extension.
-		if (!Path.HasExtension(fullPath))
-		{
-			string? directory = Path.GetDirectoryName(fullPath);
-			string fileName = Path.GetFileName(fullPath);
-			if (directory is not null && Directory.Exists(directory))
-			{
-				// Find first file that matches the name, regardless of extension.
-				var files = Directory.GetFiles(directory, $"{fileName}.*");
-				if (files.Any())
-				{
-					return files[0];
-				}
-			}
-		}
-
-		// Case 3: The provided name is just a filename, search for it everywhere.
-		// This is the fallback, which can be slow, but useful.
-		try
-		{
-			string fileNameOnly = Path.GetFileName(sanitizedName);
-			var files = Directory.GetFiles(_assetRootPath, fileNameOnly, SearchOption.AllDirectories);
-			if (files.Any()) return files[0];
-
-			// If still not found, try searching with wildcard extension.
-			if (!Path.HasExtension(fileNameOnly))
-			{
-				var filesWithWildcard = Directory.GetFiles(_assetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
-				if (filesWithWildcard.Any()) return filesWithWildcard[0];
-			}
-		}
-		catch (Exception e)
-		{
-			Logger.Error($"[AssetFinder] Error while searching for asset '{assetName}': {e.Message}");
-		}
-
-		return null; // Not found
-	}
+        return null;
+    }
 }

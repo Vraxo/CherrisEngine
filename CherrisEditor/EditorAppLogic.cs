@@ -13,6 +13,7 @@ public class EditorAppLogic : IDisposable
     private readonly Editor _editor;
     private readonly SceneSerializer _sceneSerializer;
     private readonly HistoryManager _history;
+    private readonly ProjectSelector _projectSelector;
 
     private readonly MenuBar _menuBar;
     private readonly Toolbar _toolbar;
@@ -28,6 +29,9 @@ public class EditorAppLogic : IDisposable
         _history = editor.History;
         _textureManager = new EditorTextureManager();
         _sceneSerializer = sceneSerializer;
+        _projectSelector = new ProjectSelector();
+
+        _projectSelector.OnProjectSelected += OnProjectSelected;
 
         _menuBar = new MenuBar(editor, _sceneSerializer, _history);
         _toolbar = new Toolbar(editor, _textureManager);
@@ -44,7 +48,6 @@ public class EditorAppLogic : IDisposable
         _textureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
         _textureManager.LoadTexture("Reset", "Assets/Icons/reset.png");
 
-        // Load component icons
         _textureManager.LoadTexture("Component_Transform", "Assets/Icons/Components/transform.png");
         _textureManager.LoadTexture("Component_Camera", "Assets/Icons/Components/camera.png");
         _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
@@ -60,6 +63,12 @@ public class EditorAppLogic : IDisposable
     {
         return (deltaTime) =>
         {
+            if (_editor.CurrentProject is null)
+            {
+                _projectSelector.Draw();
+                return;
+            }
+
             SetupDockspace();
             ImGuizmo.BeginFrame();
 
@@ -71,8 +80,18 @@ public class EditorAppLogic : IDisposable
         };
     }
 
+    private void OnProjectSelected(string projectRoot)
+    {
+        _editor.LoadProject(projectRoot);
+    }
+
     public void UpdateEditorLogic(float deltaTime)
     {
+        if (_editor.CurrentProject is null)
+        {
+            return;
+        }
+
         _viewportPanel.Update();
 
         if (_editor.Renderer is not null)
@@ -82,7 +101,6 @@ public class EditorAppLogic : IDisposable
 
         bool ctrl = Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight);
 
-        // Save
         if (ctrl && Input.WasKeyPressed(Key.S))
         {
             var activeScene = _editor.SceneManager.ActiveScene;
@@ -94,13 +112,12 @@ public class EditorAppLogic : IDisposable
             }
         }
 
-        // Undo/Redo
         if (ctrl && Input.WasKeyPressed(Key.Z))
         {
             _history.Undo();
         }
 
-        if (ctrl && (Input.WasKeyPressed(Key.Y)))
+        if (ctrl && Input.WasKeyPressed(Key.Y))
         {
             _history.Redo();
         }
@@ -119,7 +136,7 @@ public class EditorAppLogic : IDisposable
 
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus | ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoBackground;
 
-        ImGui.Begin("MainDockspace", windowFlags);
+        _ = ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);
 
         _menuBar.Draw();
@@ -129,7 +146,7 @@ public class EditorAppLogic : IDisposable
         ImGui.PopStyleVar();
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
-        ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
+        _ = ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
 
         ImGui.End();
     }

@@ -14,6 +14,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-2.final" />
+    <PackageReference Include="NativeFileDialogNET" Version="2.0.2" />
     <PackageReference Include="SharpGLTF.Core" Version="1.0.5" />
     <PackageReference Include="Twizzle.ImGui.NET" Version="1.89.4" />
     <PackageReference Include="Twizzle.ImGuizmo.NET" Version="1.89.4.1" />
@@ -21,6 +22,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Cherris\Cherris.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@ using Cherris.Components;
 using Cherris.Core;
 using Cherris.OpenTK;
 using Cherris.Serialization;
+using Cherris.Utils;
 using CherrisEditor.Undo;
 using System.Numerics;
 using System.Reflection;
@@ -14,10 +15,11 @@ namespace CherrisEditor;
 public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
-    public List<Type> AvailableScriptTypes { get; } = new();
+    public List<Type> AvailableScriptTypes { get; } = [];
     public EditorState State { get; private set; } = EditorState.Editing;
     public bool IsViewportHovered { get; set; }
     public readonly HistoryManager History = new();
+    public Project? CurrentProject { get; private set; }
 
     private Camera? _editorCamera;
     private AssemblyLoadContext _gameAssemblyContext;
@@ -31,9 +33,28 @@ public class Editor : Engine
         _sceneSerializer = new SceneSerializer();
     }
 
+    public void LoadProject(string projectRoot)
+    {
+        if (!Directory.Exists(projectRoot))
+        {
+            Console.WriteLine($"[Editor] Project directory not found: {projectRoot}");
+            return;
+        }
+
+        CurrentProject = Project.Load(projectRoot);
+        AssetFinder.ProjectRoot = projectRoot;
+        ProjectPersistence.SetLastProject(projectRoot);
+
+        Console.WriteLine($"[Editor] Loaded project: {CurrentProject.Name}");
+    }
+
     public void CreatePrefabFromGameObject(GameObject go, string path)
     {
-        if (go is null || string.IsNullOrEmpty(path)) return;
+        if (go is null || string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
         Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
         _sceneSerializer.SavePrefab(go, path);
     }
@@ -61,11 +82,13 @@ public class Editor : Engine
 
     public void EnterPlayMode()
     {
-        if (State == EditorState.Playing) return;
+        if (State == EditorState.Playing)
+        {
+            return;
+        }
 
         if (State == EditorState.Editing)
         {
-            // Find any camera in the scene that is NOT the editor's camera.
             var gameCamera = SceneManager.GameObjects
                 .Select(g => g.GetComponent<Camera>())
                 .FirstOrDefault(c => c is not null && c != _editorCamera);
@@ -79,7 +102,6 @@ public class Editor : Engine
                 Console.WriteLine("[Editor] Warning: No game camera found to switch to for play mode. Using the editor camera.");
             }
 
-            // TODO: Snapshot scene state for restoration on Stop.
             SceneManager.Start();
         }
 
@@ -90,7 +112,10 @@ public class Editor : Engine
 
     public void EnterPauseMode()
     {
-        if (State != EditorState.Playing) return;
+        if (State != EditorState.Playing)
+        {
+            return;
+        }
 
         State = EditorState.Paused;
         SetScriptsEnabledForPauseMode();
@@ -104,7 +129,10 @@ public class Editor : Engine
 
     public void RestartPlayMode()
     {
-        if (State == EditorState.Editing) return;
+        if (State == EditorState.Editing)
+        {
+            return;
+        }
 
         EnterEditMode();
         EnterPlayMode();
@@ -118,8 +146,14 @@ public class Editor : Engine
             return;
         }
 
-        string scriptsPath = Path.Combine("Assets", "Scripts");
-        Directory.CreateDirectory(scriptsPath);
+        if (CurrentProject is null)
+        {
+            Console.WriteLine("[Editor] Error: No project loaded.");
+            return;
+        }
+
+        string scriptsPath = Path.Combine(CurrentProject.RootPath, "Assets", "Scripts");
+        _ = Directory.CreateDirectory(scriptsPath);
         string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
 
         if (File.Exists(filePath))
@@ -137,12 +171,7 @@ public class Editor : Engine
 
     private static bool IsValidCSharpIdentifier(string identifier)
     {
-        if (string.IsNullOrWhiteSpace(identifier) || !Regex.IsMatch(identifier, @"^[_a-zA-Z][_a-zA-Z0-9]*$"))
-        {
-            return false;
-        }
-        // A more robust check would involve comparing against all C# keywords.
-        return true;
+        return !string.IsNullOrWhiteSpace(identifier) && Regex.IsMatch(identifier, @"^[_a-zA-Z][_a-zA-Z0-9]*$");
     }
 
     protected override void LoadContent()
@@ -150,7 +179,6 @@ public class Editor : Engine
         ResourceManager.LoadInitialAssets();
         RegisterBuiltInComponents();
         CompileAndRegisterGameScripts();
-        LoadSceneFromFile("Assets/Scene.yaml");
 
         History.OnHistoryChanged += () =>
         {
@@ -166,11 +194,24 @@ public class Editor : Engine
         _editorAppLogic = new(this, _sceneSerializer);
         OnDrawUI = _editorAppLogic.DrawUI();
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
-        InitializeEditingState();
+
+        // Load initial scene if we have a project
+        if (CurrentProject is not null)
+        {
+            string startScenePath = Path.Combine(CurrentProject.RootPath, "Assets", CurrentProject.StartScene);
+            if (File.Exists(startScenePath))
+            {
+                LoadSceneFromFile(startScenePath);
+            }
+            else
+            {
+                Console.WriteLine($"[Editor] Start scene not found: {startScenePath}");
+            }
+        }
 
         if (_backend.GameWindow is OpenTKGameWindow otkWindow)
         {
-            otkWindow.ShouldIgnoreImGuiCapture = () => this.IsViewportHovered;
+            otkWindow.ShouldIgnoreImGuiCapture = () => IsViewportHovered;
         }
     }
 
@@ -181,43 +222,36 @@ public class Editor : Engine
         SceneManager.Update(deltaTime, State == EditorState.Playing);
     }
 
-    private void InitializeEditingState()
-    {
-        SetupSceneForEditing(SceneManager.ActiveScene);
-    }
-
     private void ReloadSceneForEditing()
     {
         var activeScene = SceneManager.ActiveScene;
-        if (activeScene is null) return;
+        if (activeScene is null)
+        {
+            return;
+        }
 
         string path = activeScene.FilePath;
         SceneManager.CloseScene(activeScene);
         LoadSceneFromFile(path);
-
-        // The OnActiveSceneChanged event will handle calling SetupSceneForEditing automatically.
     }
 
     private void SetupSceneForEditing(Scene scene)
     {
-        if (scene is null) return;
+        if (scene is null)
+        {
+            return;
+        }
 
         History.Clear();
 
         foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            // RigidBody needs to be "enabled" in the editor to listen for transform changes.
-            // All other gameplay scripts should be disabled.
             script.Enabled = script is RigidBody;
         }
 
         GameObject? cameraGo = scene.MainCamera?.GameObject;
 
-        // Fallback if the main camera was deleted or doesn't exist.
-        if (cameraGo is null)
-        {
-            cameraGo = scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
-        }
+        cameraGo ??= scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
 
         if (cameraGo is not null)
         {
@@ -269,7 +303,6 @@ public class Editor : Engine
 
     private void CompileAndRegisterGameScripts()
     {
-        // Unload the previous context if it exists and remove its types from our list
         if (_gameAssemblyContext.Assemblies.Any())
         {
             var typesToRemove = AvailableScriptTypes
@@ -278,7 +311,7 @@ public class Editor : Engine
 
             foreach (var type in typesToRemove)
             {
-                AvailableScriptTypes.Remove(type);
+                _ = AvailableScriptTypes.Remove(type);
             }
 
             _gameAssemblyContext.Unload();
@@ -286,8 +319,11 @@ public class Editor : Engine
         }
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
-        // Compile and add the new types from the user's scripts
-        Assembly? gameAssembly = ScriptCompiler.Compile("Assets", _gameAssemblyContext);
+        string scriptsPath = CurrentProject is not null
+            ? Path.Combine(CurrentProject.RootPath, "Assets")
+            : "Assets";
+
+        Assembly? gameAssembly = ScriptCompiler.Compile(scriptsPath, _gameAssemblyContext);
 
         if (gameAssembly is null)
         {
@@ -317,7 +353,11 @@ public class Editor : Engine
     private void RegisterScriptComponent(Type scriptType)
     {
         AvailableScriptTypes.Add(scriptType);
-        Component Factory(object _) => (Component)Activator.CreateInstance(scriptType)!;
+        Component Factory(object _)
+        {
+            return (Component)Activator.CreateInstance(scriptType)!;
+        }
+
         SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
         Console.WriteLine($"[Editor] Registered component: {scriptType.Name}");
     }
@@ -341,13 +381,7 @@ public class Editor : Engine
     private void EnsureEditorControllerEnabled(GameObject cameraGo)
     {
         EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        if (editorController is null)
-        {
-            editorController = cameraGo.AddComponent(new EditorController(this));
-        }
-        // The crucial fix: Call Start() to initialize the controller's state
-        // from the transform that was just loaded from the scene file. This prevents
-        // the camera from snapping to a default rotation on first mouse move.
+        editorController ??= cameraGo.AddComponent(new EditorController(this));
         editorController.Start();
         editorController.Enabled = true;
     }
@@ -355,7 +389,10 @@ public class Editor : Engine
     public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
         Camera? camera = SceneManager.MainCamera;
-        if (camera is null) return new Ray();
+        if (camera is null)
+        {
+            return new Ray();
+        }
 
         Vector2 relativeMouse = mousePos - viewportPos;
         if (relativeMouse.X < 0 || relativeMouse.Y < 0 || relativeMouse.X > viewportSize.X || relativeMouse.Y > viewportSize.Y)
@@ -363,16 +400,16 @@ public class Editor : Engine
             return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
         }
 
-        float x = (2.0f * relativeMouse.X) / viewportSize.X - 1.0f;
-        float y = 1.0f - (2.0f * relativeMouse.Y) / viewportSize.Y;
+        float x = (2.0f * relativeMouse.X / viewportSize.X) - 1.0f;
+        float y = 1.0f - (2.0f * relativeMouse.Y / viewportSize.Y);
         Vector4 ndc = new(x, y, 1.0f, 1.0f);
 
-        Matrix4x4.Invert(camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y), out var invProjection);
+        _ = Matrix4x4.Invert(camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y), out var invProjection);
         Vector4 viewRay = Vector4.Transform(ndc, invProjection);
         viewRay.Z = -1.0f;
         viewRay.W = 0.0f;
 
-        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        _ = Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
         Vector4 worldRay = Vector4.Transform(viewRay, invView);
 
         Vector3 rayDir = Vector3.Normalize(new Vector3(worldRay.X, worldRay.Y, worldRay.Z));
@@ -381,6 +418,13 @@ public class Editor : Engine
         return new Ray(rayOrigin, rayDir);
     }
 
-    public void SetSelectedGameObject(GameObject? go) => SelectedGameObject = go;
-    public GameObject? GetSelectedGameObject() => SelectedGameObject;
+    public void SetSelectedGameObject(GameObject? go)
+    {
+        SelectedGameObject = go;
+    }
+
+    public GameObject? GetSelectedGameObject()
+    {
+        return SelectedGameObject;
+    }
 }

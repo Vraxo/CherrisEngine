@@ -4,7 +4,7 @@ using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
 
-namespace Cherris;
+namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLSceneRenderer : IDisposable
 {
@@ -148,7 +148,11 @@ internal class OpenGLSceneRenderer : IDisposable
         foreach (var go in gameObjects)
         {
             var mr = go.GetComponent<MeshRenderer>();
-            if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null) continue;
+            if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null)
+            {
+                continue;
+            }
+
             var data = GetOrCreateBackendData(mr);
             DrawObject(go, mr, data);
         }
@@ -183,7 +187,11 @@ internal class OpenGLSceneRenderer : IDisposable
 
     private OpenGLMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
     {
-        if (mr.BackendData is OpenGLMeshRendererData d) return d;
+        if (mr.BackendData is OpenGLMeshRendererData d)
+        {
+            return d;
+        }
+
         var nd = new OpenGLMeshRendererData(mr.Mesh);
         mr.BackendData = nd;
         return nd;
