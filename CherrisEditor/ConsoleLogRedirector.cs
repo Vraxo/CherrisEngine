@@ -127,20 +127,20 @@ public class ConsoleLogRedirector : TextWriter
                 Console.ForegroundColor = ConsoleColor.Red;
             }
 
-            // If not already formatted by Logger, prepend the level tag
+            // If not already formatted by Logger, prepend the level tag for the console
             string outputLine = isLoggerFormatted ? line : $"[{level}] {line}";
 
             _originalOut.WriteLine(outputLine);
             _originalOut.Flush();
 
-            // Extract just the message for the editor panel (without our prepended tag if we added it)
-            string messageForLogger = isLoggerFormatted
-                ? line[match.Value.Length..]
-                : line;
-
-            _isCapturingForLogger = true;
-            Logger.LogRaw(level, messageForLogger);
-            _isCapturingForLogger = false;
+            // Only enqueue to Logger if this line did NOT originate from Logger.
+            // Logger-formatted lines are already in the queue from the original Logger call.
+            if (!isLoggerFormatted)
+            {
+                _isCapturingForLogger = true;
+                Logger.LogRaw(level, line);
+                _isCapturingForLogger = false;
+            }
         }
         finally
         {
