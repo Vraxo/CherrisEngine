@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using Cherris.Core;
+using System.Numerics;
 using Veldrid;
 
 namespace Cherris.Components;
@@ -46,7 +47,7 @@ public class Mesh
     public static Mesh CreateCube()
     {
         Vertex[] vertices =
-        {
+        [
             // Top (+Y)
             new(new(-0.5f, +0.5f, -0.5f), new(0, 1, 0), RgbaFloat.White, new(0, 0)),
             new(new(+0.5f, +0.5f, -0.5f), new(0, 1, 0), RgbaFloat.White, new(1, 0)),
@@ -77,7 +78,7 @@ public class Mesh
             new(new(-0.5f, +0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(1, 0)),
             new(new(-0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(1, 1)),
             new(new(+0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(0, 1)),
-        };
+        ];
 
         ushort[] indices =
         {
@@ -95,21 +96,22 @@ public class Mesh
     public static Mesh CreatePlane(float size)
     {
         float halfSize = size * 0.5f;
-        var normal = new Vector3(0, 1, 0);
+        Vector3 normal = new(0, 1, 0);
+
         Vertex[] vertices =
-        {
+        [
             new(new(-halfSize, 0, +halfSize), normal, RgbaFloat.White, new(0, 0)), // 0 (top-left)
             new(new(+halfSize, 0, +halfSize), normal, RgbaFloat.White, new(1, 0)), // 1 (top-right)
             new(new(+halfSize, 0, -halfSize), normal, RgbaFloat.White, new(1, 1)), // 2 (bottom-right)
             new(new(-halfSize, 0, -halfSize), normal, RgbaFloat.White, new(0, 1))  // 3 (bottom-left)
-        };
+        ];
 
         // Reversed winding order to be visible with existing pipeline state.
         // The original order (0,1,2) was being culled.
         ushort[] indices =
-        {
+        [
             0,2,1, 0,3,2
-        };
+        ];
 
         return new(vertices, indices);
     }

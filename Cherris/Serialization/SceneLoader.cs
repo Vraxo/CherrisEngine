@@ -7,12 +7,12 @@ using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class SceneLoader
 {
     private readonly IResourceManager _resourceManager;
-    private readonly Dictionary<string, Func<object, Component>> _componentFactories = new();
+    private readonly Dictionary<string, Func<object, Component>> _componentFactories = [];
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;
 
@@ -36,18 +36,18 @@ public class SceneLoader
 
     public List<GameObject> LoadPrefab(string filePath)
     {
-        var input = new StringReader(File.ReadAllText(filePath));
+        StringReader input = new StringReader(File.ReadAllText(filePath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return new List<GameObject>();
+            return [];
         }
 
-        var createdGameObjects = new List<GameObject>();
-        var oldToNewIdMap = new Dictionary<Guid, Guid>();
-        var newIdToGameObjectMap = new Dictionary<Guid, GameObject>();
-        var childToParentMap = new Dictionary<Guid, Guid>(); // <new_child_id, old_parent_id>
+        List<GameObject> createdGameObjects = [];
+        Dictionary<Guid, Guid> oldToNewIdMap = [];
+        Dictionary<Guid, GameObject> newIdToGameObjectMap = [];
+        Dictionary<Guid, Guid> childToParentMap = []; // <new_child_id, old_parent_id>
 
         // Pass 1: Create all GameObjects with new GUIDs and deserialize their components
         foreach (var goData in gameObjectDatas)
@@ -102,7 +102,7 @@ public class SceneLoader
 
     public List<GameObject> LoadScene(string filePath)
     {
-        var input = new StringReader(File.ReadAllText(filePath));
+        StringReader input = new(File.ReadAllText(filePath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
@@ -114,7 +114,7 @@ public class SceneLoader
         var parentMap = new Dictionary<Guid, Guid>();
 
         // Pass 1: Create all GameObjects and components, storing parent relationships
-        foreach (var goData in gameObjectDatas)
+        foreach (Dictionary<string, object> goData in gameObjectDatas)
         {
             string name = "GameObject";
             if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
@@ -123,12 +123,13 @@ public class SceneLoader
             }
 
             Guid id = Guid.NewGuid();
+            
             if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
             {
                 id = parsedId;
             }
 
-            var go = new GameObject(name, id);
+            GameObject go = new(name, id);
             createdGameObjects[id] = go;
 
             if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
@@ -145,14 +146,18 @@ public class SceneLoader
 
                 foreach (var componentKvp in componentsDict)
                 {
-                    if (componentKvp.Key as string == "Transform") continue;
+                    if (componentKvp.Key as string == "Transform")
+                    {
+                        continue;
+                    }
+
                     AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
         }
 
         // Pass 2: Hook up parent-child relationships
-        foreach (var (childId, parentId) in parentMap)
+        foreach ((Guid childId, Guid parentId) in parentMap)
         {
             if (createdGameObjects.TryGetValue(childId, out var child) && createdGameObjects.TryGetValue(parentId, out var parent))
             {
@@ -165,21 +170,32 @@ public class SceneLoader
 
     private void ApplyTransformProperties(Transform transform, object properties)
     {
-        var yaml = _serializer.Serialize(properties);
+        string yaml = _serializer.Serialize(properties);
         var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
 
-        if (props.TryGetValue("Position", out var pos)) transform.Position = pos;
-        if (props.TryGetValue("Scale", out var scale)) transform.Scale = scale;
+        if (props.TryGetValue("Position", out var pos))
+        {
+            transform.Position = pos;
+        }
+
+        if (props.TryGetValue("Scale", out var scale))
+        {
+            transform.Scale = scale;
+        }
+
         if (props.TryGetValue("Rotation", out var rotDegrees))
         {
-            var rotRadians = rotDegrees * (MathF.PI / 180.0f);
+            Vector3 rotRadians = rotDegrees * (MathF.PI / 180.0f);
             transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
         }
     }
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
-        if (string.IsNullOrEmpty(componentType)) return;
+        if (string.IsNullOrEmpty(componentType))
+        {
+            return;
+        }
 
         if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
@@ -187,8 +203,12 @@ public class SceneLoader
             return;
         }
 
-        var component = factory(properties);
-        if (component is null) return;
+        Component? component = factory(properties);
+        
+        if (component is null)
+        {
+            return;
+        }
 
         go.AddComponent(component);
 
@@ -200,19 +220,27 @@ public class SceneLoader
 
     private static void ApplyScriptProperties(Script script, Dictionary<object, object> propsDict)
     {
-        var scriptType = script.GetType();
+        Type scriptType = script.GetType();
+        
         foreach (var propKvp in propsDict)
         {
-            if (propKvp.Key is not string propName) continue;
+            if (propKvp.Key is not string propName)
+            {
+                continue;
+            }
 
             PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !propertyInfo.CanWrite) continue;
+            
+            if (propertyInfo is null || !propertyInfo.CanWrite)
+            {
+                continue;
+            }
 
             try
             {
                 object convertedValue;
-                var propType = propertyInfo.PropertyType;
-                var yamlValue = propKvp.Value;
+                Type propType = propertyInfo.PropertyType;
+                object yamlValue = propKvp.Value;
 
                 if (propType.IsEnum && yamlValue is string stringValue)
                 {

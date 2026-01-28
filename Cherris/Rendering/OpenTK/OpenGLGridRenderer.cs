@@ -1,8 +1,7 @@
 ﻿using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
-using System;
 
-namespace Cherris.OpenTK;
+namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLGridRenderer : IDisposable
 {
@@ -118,7 +117,10 @@ void main()
 
     public void Render(Matrix4 view, Matrix4 projection, Vector3 cameraPos)
     {
-        if (_vertexCount == 0) return;
+        if (_vertexCount == 0)
+        {
+            return;
+        }
 
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
@@ -141,12 +143,16 @@ void main()
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            _shader?.Dispose();
-            GL.DeleteVertexArray(_vao);
-            GL.DeleteBuffer(_vbo);
-            _disposed = true;
+            return;
         }
+
+        _shader?.Dispose();
+
+        GL.DeleteVertexArray(_vao);
+        GL.DeleteBuffer(_vbo);
+
+        _disposed = true;
     }
 }

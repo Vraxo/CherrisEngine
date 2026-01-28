@@ -1,4 +1,4 @@
-﻿namespace Cherris.Core;
+﻿namespace Cherris.Core.Logging;
 
 public enum LogLevel
 {

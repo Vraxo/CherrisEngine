@@ -1,6 +1,7 @@
 ﻿using Cherris.Components;
 using Cherris.Core;
 using Cherris.Rendering;
+using Cherris.Serialization;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;

@@ -2,26 +2,23 @@
 
 namespace Cherris.Components;
 
-public enum ColliderType
-{
-    Box,
-    Sphere,
-    Capsule
-}
-
 public class RigidBody : Script
 {
-    private ColliderType _shape = ColliderType.Box;
     public ColliderType Shape
     {
-        get => _shape;
+        get;
+
         set
         {
-            if (_shape == value) return;
-            _shape = value;
+            if (field == value)
+            {
+                return;
+            }
+
+            field = value;
             RecreatePhysicsBody();
         }
-    }
+    } = ColliderType.Box;
 
     public float Mass { get; set; } = 1.0f;
     public bool IsStatic { get; set; } = false;
@@ -29,9 +26,9 @@ public class RigidBody : Script
     public float Bounciness { get; set; } = 0.5f;
 
     [HideInInspector]
-    public Jitter.Dynamics.RigidBody JitterBody { get; private set; }
+    public Jitter.Dynamics.RigidBody? JitterBody { get; private set; }
 
-    private PhysicsSystem _physicsSystem;
+    private PhysicsSystem? _physicsSystem;
     private Vector3 _lastScale;
 
     // Called by the Scene to provide the PhysicsSystem instance.
@@ -46,21 +43,27 @@ public class RigidBody : Script
         {
             return;
         }
+
         CreateAndRegisterJitterBody();
     }
 
     public override void Update(float deltaTime)
     {
         // If the object's scale has changed, recreate the physics body to match.
-        if (GameObject is not null && GameObject.Transform.Scale != _lastScale)
+        if (GameObject is null || GameObject.Transform.Scale == _lastScale)
         {
-            RecreatePhysicsBody();
+            return;
         }
+
+        RecreatePhysicsBody();
     }
 
     private void RecreatePhysicsBody()
     {
-        if (JitterBody is null || _physicsSystem is null) return;
+        if (JitterBody is null || _physicsSystem is null)
+        {
+            return;
+        }
 
         _physicsSystem.RemoveBody(JitterBody);
         JitterBody = null;
@@ -73,7 +76,10 @@ public class RigidBody : Script
 
         if (meshRenderer is null)
         {
-            Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
+            Console.WriteLine($"" +
+                $"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'." +
+                $"Cannot create physics shape.");
+
             return;
         }
 
@@ -82,25 +88,8 @@ public class RigidBody : Script
         Vector3 size = (aabb.Max - aabb.Min) * _lastScale;
 
         Jitter.Collision.Shapes.Shape shape;
-        switch (Shape)
-        {
-            case ColliderType.Box:
-                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
-                break;
-            case ColliderType.Sphere:
-                float radius = (size.X + size.Y + size.Z) / 6.0f; // Average radius
-                shape = new Jitter.Collision.Shapes.SphereShape(radius);
-                break;
-            case ColliderType.Capsule:
-                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
-                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius)); // Ensure length is not negative
-                shape = new Jitter.Collision.Shapes.CapsuleShape(capsuleLength, capsuleRadius);
-                break;
-            default:
-                Console.WriteLine($"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'. Defaulting to Box.");
-                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
-                break;
-        }
+
+        shape = GetShape(size);
 
         JitterBody = new(shape)
         {
@@ -122,5 +111,33 @@ public class RigidBody : Script
         JitterBody.Material.Restitution = Bounciness;
 
         _physicsSystem.AddBody(this, JitterBody);
+    }
+
+    private Jitter.Collision.Shapes.Shape GetShape(Vector3 size)
+    {
+        return Shape switch
+        {
+            ColliderType.Box => new Jitter.Collision.Shapes.BoxShape(size.ToJitter()),
+
+            ColliderType.Sphere => new Jitter.Collision.Shapes.SphereShape(
+                (size.X + size.Y + size.Z) / 6.0f // Average radius
+            ),
+
+            ColliderType.Capsule => new Jitter.Collision.Shapes.CapsuleShape(
+                float.Max(0, size.Y - (2 * float.Max(size.X, size.Z) / 2.0f)), // Capsule length
+                float.Max(size.X, size.Z) / 2.0f // Capsule radius
+            ),
+
+            _ => LogAndReturnDefault(size)
+        };
+    }
+
+    private Jitter.Collision.Shapes.Shape LogAndReturnDefault(Vector3 size)
+    {
+        Console.WriteLine(
+            $"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'." +
+            $"Defaulting to Box.");
+
+        return new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
     }
 }
