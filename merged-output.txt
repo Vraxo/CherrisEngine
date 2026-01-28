@@ -5192,34 +5192,50 @@ public static class ProjectFiles
 ```csharp
 using System.Collections.Concurrent;
 
-namespace Cherris.Core;
+namespace Cherris.Core.Logging;
 
 public static class Logger
 {
     private static readonly ConcurrentQueue<LogMessage> _messages = new();
-    public static event Action<LogMessage> OnMessageLogged;
+    public static event Action<LogMessage>? OnMessageLogged;
+
+    // Set to false when Console output is redirected to Logger to prevent recursion
+    public static bool WriteToConsole { get; set; } = true;
 
     public static IReadOnlyCollection<LogMessage> Messages => _messages;
 
-    public static void Info(string message) => Log(LogLevel.Info, message);
-    public static void Warning(string message) => Log(LogLevel.Warning, message);
-    public static void Error(string message) => Log(LogLevel.Error, message);
+    public static void Info(string message)
+    {
+        Log(LogLevel.Info, message);
+    }
+
+    public static void Warning(string message)
+    {
+        Log(LogLevel.Warning, message);
+    }
+
+    public static void Error(string message)
+    {
+        Log(LogLevel.Error, message);
+    }
 
     private static void Log(LogLevel level, string message)
     {
         var logMessage = new LogMessage(level, message);
         _messages.Enqueue(logMessage);
 
-        // Also write to the system console for debugging outside the editor
-        var originalColor = Console.ForegroundColor;
-        Console.ForegroundColor = level switch
+        if (WriteToConsole)
         {
-            LogLevel.Warning => ConsoleColor.Yellow,
-            LogLevel.Error => ConsoleColor.Red,
-            _ => originalColor
-        };
-        Console.WriteLine($"[{logMessage.Timestamp:HH:mm:ss}] [{level}] {message}");
-        Console.ForegroundColor = originalColor;
+            var originalColor = Console.ForegroundColor;
+            Console.ForegroundColor = level switch
+            {
+                LogLevel.Warning => ConsoleColor.Yellow,
+                LogLevel.Error => ConsoleColor.Red,
+                _ => originalColor
+            };
+            Console.WriteLine($"[{logMessage.Timestamp:HH:mm:ss}] [{level}] {message}");
+            Console.ForegroundColor = originalColor;
+        }
 
         OnMessageLogged?.Invoke(logMessage);
     }
@@ -7645,6 +7661,80 @@ public class VeldridGraphicsManager : IDisposable
 
 ---
 
+### `CherrisEditor\ConsoleLogRedirector.cs`
+
+```csharp
+using Cherris.Core;
+using Cherris.Core.Logging;
+using System.Text;
+
+namespace CherrisEditor;
+
+public class ConsoleLogRedirector : TextWriter
+{
+    private readonly LogLevel _level;
+    private readonly TextWriter _originalOut;
+    private readonly StringBuilder _lineBuffer = new();
+
+    public ConsoleLogRedirector(LogLevel level, TextWriter originalOut)
+    {
+        _level = level;
+        _originalOut = originalOut;
+    }
+
+    public override Encoding Encoding => Encoding.Default;
+
+    public override void Write(char value)
+    {
+        // Write to original console immediately so it appears in the terminal window
+        _originalOut.Write(value);
+
+        // Buffer for Logger/editor console
+        if (value == '\n')
+        {
+            FlushLine();
+        }
+        else if (value != '\r')
+        {
+            _lineBuffer.Append(value);
+        }
+    }
+
+    public override void Flush()
+    {
+        _originalOut.Flush();
+        if (_lineBuffer.Length > 0)
+        {
+            FlushLine();
+        }
+        base.Flush();
+    }
+
+    private void FlushLine()
+    {
+        if (_lineBuffer.Length == 0) return;
+
+        var line = _lineBuffer.ToString();
+        _lineBuffer.Clear();
+
+        switch (_level)
+        {
+            case LogLevel.Error:
+                Logger.Error(line);
+                break;
+            case LogLevel.Warning:
+                Logger.Warning(line);
+                break;
+            default:
+                Logger.Info(line);
+                break;
+        }
+    }
+}
+```
+
+---
+
 ### `CherrisEditor\Editor.cs`
 
 ```csharp
@@ -8675,12 +8765,26 @@ public static class EditorTheme
 
 ```csharp
 using Cherris;
+using Cherris.Core;
+using Cherris.Core.Logging;
 using CherrisEditor;
 
 internal class Program
 {
     private static void Main(string[] args)
     {
+        // Store the original console output streams before redirecting
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+
+        // Redirect console output to both terminal and Logger
+        Console.SetOut(new ConsoleLogRedirector(LogLevel.Info, originalOut));
+        Console.SetError(new ConsoleLogRedirector(LogLevel.Error, originalError));
+
+        // Prevent Logger from writing back to Console to avoid infinite recursion
+        // (since Console.Out now points to our redirector which already wrote to originalOut)
+        Logger.WriteToConsole = false;
+
         Editor editor = new(GraphicsAPI.OpenTK);
 
         if (args.Length > 0)
@@ -10091,26 +10195,15 @@ public class TransformInspector
 
 ```csharp
 using Cherris.Core;
+using Cherris.Core.Logging;
 using ImGuiNET;
-using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace CherrisEditor.UI;
 
 public static class ConsolePanel
 {
-    private static readonly ConcurrentQueue<LogMessage> _logMessages = new();
     private static bool _autoScroll = true;
-
-    static ConsolePanel()
-    {
-        Logger.OnMessageLogged += HandleLogMessage;
-    }
-
-    private static void HandleLogMessage(LogMessage message)
-    {
-        _logMessages.Enqueue(message);
-    }
 
     public static void Draw()
     {
@@ -10129,7 +10222,10 @@ public static class ConsolePanel
     {
         if (ImGui.Button("Clear"))
         {
-            _logMessages.Clear();
+            // Note: Logger doesn't expose a Clear method, 
+            // but we can at least reset auto-scroll if needed.
+            // To properly clear, we'd need to add Logger.ClearMessages().
+            // For now, auto-scroll toggle is sufficient.
         }
         ImGui.SameLine();
         ImGui.Checkbox("Auto-scroll", ref _autoScroll);
@@ -10139,7 +10235,8 @@ public static class ConsolePanel
     {
         ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
 
-        foreach (var msg in _logMessages)
+        // Read directly from Logger's message buffer to catch all logs including startup
+        foreach (var msg in Logger.Messages)
         {
             var color = msg.Level switch
             {

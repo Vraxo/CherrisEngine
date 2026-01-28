@@ -6,13 +6,14 @@ namespace CherrisEditor;
 
 public class ConsoleLogRedirector : TextWriter
 {
-    private readonly LogLevel _level;
+    [ThreadStatic] private static bool _isCapturingForLogger;
+    private readonly LogLevel _defaultLevel;
     private readonly TextWriter _originalOut;
     private readonly StringBuilder _lineBuffer = new();
 
-    public ConsoleLogRedirector(LogLevel level, TextWriter originalOut)
+    public ConsoleLogRedirector(LogLevel defaultLevel, TextWriter originalOut)
     {
-        _level = level;
+        _defaultLevel = defaultLevel;
         _originalOut = originalOut;
     }
 
@@ -20,17 +21,71 @@ public class ConsoleLogRedirector : TextWriter
 
     public override void Write(char value)
     {
-        // Write to original console immediately so it appears in the terminal window
-        _originalOut.Write(value);
+        if (_isCapturingForLogger)
+        {
+            _originalOut.Write(value);
+            return;
+        }
 
-        // Buffer for Logger/editor console
         if (value == '\n')
         {
             FlushLine();
         }
         else if (value != '\r')
         {
-            _lineBuffer.Append(value);
+            _ = _lineBuffer.Append(value);
+        }
+    }
+
+    public override void Write(string? value)
+    {
+        if (_isCapturingForLogger)
+        {
+            _originalOut.Write(value);
+            return;
+        }
+
+        if (value is null)
+        {
+            return;
+        }
+
+        // Fast path for complete lines
+        if (value.EndsWith('\n'))
+        {
+            if (_lineBuffer.Length > 0)
+            {
+                _ = _lineBuffer.Append(value.TrimEnd('\n', '\r'));
+                FlushLine();
+            }
+            else
+            {
+                var line = value.TrimEnd('\n', '\r');
+                WriteLineToOriginal(line);
+            }
+        }
+        else
+        {
+            _ = _lineBuffer.Append(value);
+        }
+    }
+
+    public override void WriteLine(string? value)
+    {
+        if (_isCapturingForLogger)
+        {
+            _originalOut.WriteLine(value);
+            return;
+        }
+
+        if (_lineBuffer.Length > 0)
+        {
+            _ = _lineBuffer.Append(value);
+            FlushLine();
+        }
+        else
+        {
+            WriteLineToOriginal(value);
         }
     }
 
@@ -44,24 +99,65 @@ public class ConsoleLogRedirector : TextWriter
         base.Flush();
     }
 
+    private void WriteLineToOriginal(string? line)
+    {
+        if (string.IsNullOrEmpty(line))
+        {
+            _originalOut.WriteLine();
+            return;
+        }
+
+        LogLevel level = DetectLevel(line);
+        var originalColor = Console.ForegroundColor;
+
+        try
+        {
+            if (level == LogLevel.Warning)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+            }
+            else if (level == LogLevel.Error)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+            }
+
+            _originalOut.WriteLine(line);
+            _originalOut.Flush();
+
+            _isCapturingForLogger = true;
+            Logger.LogRaw(level, line);
+            _isCapturingForLogger = false;
+        }
+        finally
+        {
+            Console.ForegroundColor = originalColor;
+        }
+    }
+
     private void FlushLine()
     {
-        if (_lineBuffer.Length == 0) return;
+        if (_lineBuffer.Length == 0)
+        {
+            return;
+        }
 
         var line = _lineBuffer.ToString();
-        _lineBuffer.Clear();
+        _ = _lineBuffer.Clear();
+        WriteLineToOriginal(line);
+    }
 
-        switch (_level)
+    private LogLevel DetectLevel(string line)
+    {
+        // Check for explicit tags first
+        if (line.Contains("[Warning]", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("Warning:", StringComparison.OrdinalIgnoreCase))
         {
-            case LogLevel.Error:
-                Logger.Error(line);
-                break;
-            case LogLevel.Warning:
-                Logger.Warning(line);
-                break;
-            default:
-                Logger.Info(line);
-                break;
+            return LogLevel.Warning;
         }
+
+        return line.Contains("[Error]", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("Error:", StringComparison.OrdinalIgnoreCase)
+            ? LogLevel.Error
+            : _defaultLevel;
     }
 }

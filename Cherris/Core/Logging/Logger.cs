@@ -1,4 +1,7 @@
 ﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("CherrisEditor")]
 
 namespace Cherris.Core.Logging;
 
@@ -25,6 +28,14 @@ public static class Logger
     public static void Error(string message)
     {
         Log(LogLevel.Error, message);
+    }
+
+    // Internal method for ConsoleLogRedirector to enqueue messages without triggering console output
+    internal static void LogRaw(LogLevel level, string message)
+    {
+        var logMessage = new LogMessage(level, message);
+        _messages.Enqueue(logMessage);
+        OnMessageLogged?.Invoke(logMessage);
     }
 
     private static void Log(LogLevel level, string message)

@@ -204,7 +204,7 @@ public class Editor : Engine
             }
             else
             {
-                Console.WriteLine($"[Editor] Start scene not found: {startScenePath}");
+                Console.Error.WriteLine($"[Editor] Start scene not found: {startScenePath}");
             }
         }
 
