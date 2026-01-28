@@ -1,7 +1,6 @@
-﻿using Cherris.Core;
-using Cherris.Utils;
+﻿using Cherris.Utils;
 
-namespace Cherris.Rendering;
+namespace Cherris.Core;
 
 public static class GenericCubemapLoader
 {
@@ -12,7 +11,7 @@ public static class GenericCubemapLoader
         var images = new ImageData[6];
         for (int i = 0; i < FaceSuffixes.Length; i++)
         {
-            string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
+            string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
             if (path is null)
             {
                 Console.WriteLine($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
@@ -22,7 +21,7 @@ public static class GenericCubemapLoader
             var imageData = ImageLoader.LoadFromFile(path, flipVertical: false);
             if (imageData is null)
             {
-                return null; // Error already logged by ImageLoader
+                return null;
             }
             images[i] = imageData.Value;
         }

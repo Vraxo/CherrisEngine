@@ -1,4 +1,5 @@
 ﻿using Cherris.Rendering;
+using Cherris.Rendering.OpenTK;
 
 namespace Cherris.OpenTK
 {

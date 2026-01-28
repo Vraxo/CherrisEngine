@@ -2,15 +2,14 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace CherrisEditor;
+namespace CherrisEditor.UI;
 
 public class ContentBrowserPanel : IDisposable
 {
     private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
-    private readonly string _assetRootPath;
     private string _currentAssetPath;
-    private static IntPtr _payloadStringPtr = IntPtr.Zero; // For string payloads
+    private static IntPtr _payloadStringPtr = IntPtr.Zero;
 
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
@@ -19,26 +18,23 @@ public class ContentBrowserPanel : IDisposable
         _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
         _textureManager.LoadTexture("File", "Assets/Icons/file.png");
         _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
-        _textureManager.LoadTexture("Prefab", "Assets/Icons/prefab.png"); // Added for prefabs
+        _textureManager.LoadTexture("Prefab", "Assets/Icons/prefab.png");
 
-        _assetRootPath = Path.GetFullPath("Assets");
-        _currentAssetPath = _assetRootPath;
+        _currentAssetPath = _editor.CurrentProject!.RootPath;
     }
 
     public void Draw()
     {
-        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
         if (_payloadStringPtr != IntPtr.Zero)
         {
             Marshal.FreeHGlobal(_payloadStringPtr);
             _payloadStringPtr = IntPtr.Zero;
         }
 
-        ImGui.Begin("Content Browser");
+        _ = ImGui.Begin("Content Browser");
         DrawHeader();
         DrawGrid();
 
-        // Make the entire panel a drop target for creating prefabs
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
@@ -63,15 +59,20 @@ public class ContentBrowserPanel : IDisposable
 
     private void DrawHeader()
     {
-        if (_currentAssetPath != _assetRootPath)
+        if (_currentAssetPath != _editor.CurrentProject!.RootPath)
         {
             if (ImGui.Button("<- Back"))
             {
-                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
+                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _editor.CurrentProject.RootPath;
             }
             ImGui.SameLine();
         }
-        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
+
+        string displayPath = _currentAssetPath == _editor.CurrentProject.RootPath
+            ? _editor.CurrentProject.Name
+            : _currentAssetPath.Replace(_editor.CurrentProject.RootPath, _editor.CurrentProject.Name);
+
+        ImGui.Text($"Path: {displayPath}");
         ImGui.Separator();
     }
 
@@ -93,7 +94,7 @@ public class ContentBrowserPanel : IDisposable
 
         foreach (var path in directories.Concat(files))
         {
-            ImGui.TableNextColumn();
+            _ = ImGui.TableNextColumn();
             DrawItem(path, thumbnailSize);
         }
 
@@ -111,21 +112,24 @@ public class ContentBrowserPanel : IDisposable
         CenterAlignItem(thumbnailSize);
         if (ImGui.ImageButton(itemName, textureHandle, new Vector2(thumbnailSize, thumbnailSize)))
         {
-            // Handle single-click
         }
 
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        // --- Drag Source for Textures and Prefabs (string path payload) ---
-        string payloadType = null;
-        if (EditorTextureManager.ImageExtensions.Contains(extension)) payloadType = "ASSET_PATH_TEXTURE";
-        else if (EditorTextureManager.PrefabExtensions.Contains(extension)) payloadType = "ASSET_PATH_PREFAB";
+        string? payloadType = null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            payloadType = "ASSET_PATH_TEXTURE";
+        }
+        else if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        {
+            payloadType = "ASSET_PATH_PREFAB";
+        }
 
         if (payloadType is not null && ImGui.BeginDragDropSource())
         {
-            // Allocate memory and hold onto the pointer until the next frame.
             _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
-            ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
+            _ = ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
 
             ImGui.Image(textureHandle, new Vector2(50, 50));
             ImGui.SameLine();
@@ -170,7 +174,6 @@ public class ContentBrowserPanel : IDisposable
 
     public void Dispose()
     {
-        // Ensure we free the handle on shutdown if it's still allocated
         if (_payloadStringPtr != IntPtr.Zero)
         {
             Marshal.FreeHGlobal(_payloadStringPtr);

@@ -31,8 +31,8 @@ public class ShaderProgram : IDisposable
 
     public static ShaderProgram? FromFiles(string vertexPath, string fragmentPath)
     {
-        var vertSourcePath = AssetFinder.FindAssetPath(vertexPath);
-        var fragSourcePath = AssetFinder.FindAssetPath(fragmentPath);
+        var vertSourcePath = EditorResources.Find(vertexPath);
+        var fragSourcePath = EditorResources.Find(fragmentPath);
 
         if (vertSourcePath is null || fragSourcePath is null)
         {
@@ -69,8 +69,15 @@ public class ShaderProgram : IDisposable
         return shader;
     }
 
-    public void Use() => GL.UseProgram(Handle);
-    public int GetUniformLocation(string name) => GL.GetUniformLocation(Handle, name);
+    public void Use()
+    {
+        GL.UseProgram(Handle);
+    }
+
+    public int GetUniformLocation(string name)
+    {
+        return GL.GetUniformLocation(Handle, name);
+    }
 
     public void Dispose()
     {

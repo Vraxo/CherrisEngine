@@ -2,7 +2,7 @@
 using Veldrid;
 using Veldrid.StartupUtilities;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 // Concrete Veldrid backend implementation, nested here to avoid creating new files.
 public class VeldridBackend : RenderingInterface
@@ -20,7 +20,7 @@ public class VeldridBackend : RenderingInterface
     {
         var window = new GameWindow(windowTitle, width, height, startWithMouseLocked);
 
-        GraphicsDeviceOptions options = new GraphicsDeviceOptions
+        GraphicsDeviceOptions options = new()
         {
             PreferStandardClipSpaceYDirection = true,
             PreferDepthRangeZeroToOne = true,

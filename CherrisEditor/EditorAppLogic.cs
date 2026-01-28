@@ -1,5 +1,6 @@
 ﻿using Cherris;
 using Cherris.Serialization;
+using Cherris.Utils;
 using CherrisEditor.UI;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -42,21 +43,33 @@ public class EditorAppLogic : IDisposable
 
         EditorTheme.ApplyUnrealEngineStyle();
 
-        _textureManager.LoadTexture("Play", "Assets/Icons/play.png");
-        _textureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
-        _textureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
-        _textureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
-        _textureManager.LoadTexture("Reset", "Assets/Icons/reset.png");
+        LoadIcon("Play", "Icons/play.png");
+        LoadIcon("Pause", "Icons/pause.png");
+        LoadIcon("Stop", "Icons/stop.png");
+        LoadIcon("Restart", "Icons/restart.png");
+        LoadIcon("Reset", "Icons/reset.png");
 
-        _textureManager.LoadTexture("Component_Transform", "Assets/Icons/Components/transform.png");
-        _textureManager.LoadTexture("Component_Camera", "Assets/Icons/Components/camera.png");
-        _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
-        _textureManager.LoadTexture("Component_Script", "Assets/Icons/Components/script.png");
-        _textureManager.LoadTexture("Component_Light", "Assets/Icons/Components/light.png");
-        _textureManager.LoadTexture("Component_AudioSource", "Assets/Icons/Components/audio_source.png");
-
+        LoadIcon("Component_Transform", "Icons/Components/transform.png");
+        LoadIcon("Component_Camera", "Icons/Components/camera.png");
+        LoadIcon("Component_MeshRenderer", "Icons/Components/mesh_renderer.png");
+        LoadIcon("Component_Script", "Icons/Components/script.png");
+        LoadIcon("Component_Light", "Icons/Components/light.png");
+        LoadIcon("Component_AudioSource", "Icons/Components/audio_source.png");
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
+    }
+
+    private void LoadIcon(string key, string relativePath)
+    {
+        string? path = EditorResources.Find(relativePath);
+        if (path is not null)
+        {
+            _textureManager.LoadTexture(key, path);
+        }
+        else
+        {
+            Console.WriteLine($"[Editor] Warning: Could not find editor icon '{relativePath}'");
+        }
     }
 
     public Action<float> DrawUI()

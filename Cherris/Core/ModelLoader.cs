@@ -1,15 +1,9 @@
-﻿// --- REQUIRED NUGET PACKAGE ---
-// This file requires the 'SharpGLTF.Core' package.
-// Add it to your project:
-// dotnet add package SharpGLTF.Core
-
-using Cherris.Components;
-using SharpGLTF.Schema2;
+﻿using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
 using Mesh = Cherris.Components.Mesh;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public static class ModelLoader
 {
@@ -37,19 +31,30 @@ public static class ModelLoader
                 foreach (var primitive in gltfMesh.Primitives)
                 {
                     var positionsAccessor = primitive.GetVertexAccessor("POSITION");
-                    if (positionsAccessor is null) continue;
+                    if (positionsAccessor is null)
+                    {
+                        continue;
+                    }
+
                     var positions = positionsAccessor.AsVector3Array();
-                    if (positions.Count == 0) continue;
+                    if (positions.Count == 0)
+                    {
+                        continue;
+                    }
 
                     var normalsAccessor = primitive.GetVertexAccessor("NORMAL");
                     var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
                     var indicesAccessor = primitive.IndexAccessor;
 
-                    if (indicesAccessor is null) continue;
+                    if (indicesAccessor is null)
+                    {
+                        continue;
+                    }
+
                     var indices = indicesAccessor.AsIndicesArray();
 
-                    IList<Vector3> normals = normalsAccessor?.AsVector3Array();
-                    IList<Vector2> texCoords = texCoordsAccessor?.AsVector2Array();
+                    IList<Vector3>? normals = normalsAccessor?.AsVector3Array();
+                    IList<Vector2>? texCoords = texCoordsAccessor?.AsVector2Array();
 
                     ushort baseVertex = (ushort)allVertices.Count;
 
@@ -63,9 +68,6 @@ public static class ModelLoader
                         ));
                     }
 
-                    // *** THE FIX IS HERE ***
-                    // glTF uses Counter-Clockwise winding, but our renderer expects Clockwise.
-                    // We must reverse the winding order of each triangle.
                     for (int tri = 0; tri < indices.Count; tri += 3)
                     {
                         uint i0 = indices[tri];
@@ -73,7 +75,7 @@ public static class ModelLoader
                         uint i2 = indices[tri + 2];
 
                         allIndices.Add((ushort)(baseVertex + i0));
-                        allIndices.Add((ushort)(baseVertex + i2)); // Swapped i1 and i2
+                        allIndices.Add((ushort)(baseVertex + i2));
                         allIndices.Add((ushort)(baseVertex + i1));
                     }
                 }

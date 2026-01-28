@@ -136,7 +136,6 @@ public class ProjectSelector
         {
             string projectDir = Path.Combine(_projectPathInput, _newProjectName);
             _ = Directory.CreateDirectory(projectDir);
-            _ = Directory.CreateDirectory(Path.Combine(projectDir, "Assets"));
 
             var project = new Project
             {

@@ -42,7 +42,7 @@ public class Editor : Engine
         }
 
         CurrentProject = Project.Load(projectRoot);
-        AssetFinder.ProjectRoot = projectRoot;
+        ProjectFiles.ProjectRoot = projectRoot;
         ProjectPersistence.SetLastProject(projectRoot);
 
         Console.WriteLine($"[Editor] Loaded project: {CurrentProject.Name}");
@@ -152,7 +152,7 @@ public class Editor : Engine
             return;
         }
 
-        string scriptsPath = Path.Combine(CurrentProject.RootPath, "Assets", "Scripts");
+        string scriptsPath = Path.Combine(CurrentProject.RootPath, "Scripts");
         _ = Directory.CreateDirectory(scriptsPath);
         string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
 
@@ -195,10 +195,9 @@ public class Editor : Engine
         OnDrawUI = _editorAppLogic.DrawUI();
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
 
-        // Load initial scene if we have a project
         if (CurrentProject is not null)
         {
-            string startScenePath = Path.Combine(CurrentProject.RootPath, "Assets", CurrentProject.StartScene);
+            string startScenePath = Path.Combine(CurrentProject.RootPath, CurrentProject.StartScene);
             if (File.Exists(startScenePath))
             {
                 LoadSceneFromFile(startScenePath);
@@ -320,8 +319,8 @@ public class Editor : Engine
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
         string scriptsPath = CurrentProject is not null
-            ? Path.Combine(CurrentProject.RootPath, "Assets")
-            : "Assets";
+            ? Path.Combine(CurrentProject.RootPath, "Scripts")
+            : "Scripts";
 
         Assembly? gameAssembly = ScriptCompiler.Compile(scriptsPath, _gameAssemblyContext);
 

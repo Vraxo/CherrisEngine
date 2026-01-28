@@ -3,7 +3,7 @@ using Cherris.Utils;
 using StbImageSharp;
 using Veldrid;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public static class SkyboxLoader
 {
@@ -36,7 +36,7 @@ public static class SkyboxLoader
 
         for (int i = 0; i < FaceSuffixes.Length; i++)
         {
-            string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
+            string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
 
             if (path is null)
             {

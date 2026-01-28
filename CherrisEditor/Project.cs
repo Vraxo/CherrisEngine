@@ -6,7 +6,7 @@ namespace CherrisEditor;
 public class Project
 {
     public string Name { get; set; } = "MyGame";
-    public string StartScene { get; set; } = "Scene.yaml";
+    public string StartScene { get; set; } = "Main.yaml";
 
     [YamlIgnore]
     public string RootPath { get; set; } = string.Empty;
@@ -45,7 +45,7 @@ public class Project
 
     public void CreateSceneIfNeeded()
     {
-        string scenePath = Path.Combine(RootPath, "Assets", StartScene);
+        string scenePath = Path.Combine(RootPath, StartScene);
         if (!File.Exists(scenePath))
         {
             _ = Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);

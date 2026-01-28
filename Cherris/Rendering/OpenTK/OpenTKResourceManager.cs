@@ -1,16 +1,15 @@
 ﻿using Cherris.Components;
 using Cherris.Core;
-using Cherris.Rendering;
 using Cherris.Utils;
 using OpenTK.Graphics.OpenGL4;
 
-namespace Cherris;
+namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKResourceManager : ResourceManagerBase
 {
-    private readonly Dictionary<string, ITexture> _textures = new();
-    private readonly Dictionary<string, Skybox> _skyboxes = new();
-    private readonly Dictionary<string, AudioClip> _audioClips = new();
+    private readonly Dictionary<string, ITexture> _textures = [];
+    private readonly Dictionary<string, Skybox> _skyboxes = [];
+    private readonly Dictionary<string, AudioClip> _audioClips = [];
 
     public override void LoadInitialAssets()
     {
@@ -18,7 +17,6 @@ public class OpenTKResourceManager : ResourceManagerBase
         _meshes.Add("Cube", Mesh.CreateCube());
         _meshes.Add("Plane", Mesh.CreatePlane(20f));
 
-        // Create a default white texture
         _textures.Add("White", CreateWhiteTexture());
     }
 
@@ -41,7 +39,7 @@ public class OpenTKResourceManager : ResourceManagerBase
             return texture;
         }
 
-        string path = AssetFinder.FindAssetPath(name);
+        string? path = ProjectFiles.Find(name);
         if (path is null)
         {
             Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find texture '{name}'.");
@@ -87,7 +85,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         }
     }
 
-    public override Skybox GetSkybox(string name)
+    public override Skybox? GetSkybox(string name)
     {
         if (_skyboxes.TryGetValue(name, out var skybox))
         {
@@ -119,14 +117,14 @@ public class OpenTKResourceManager : ResourceManagerBase
         return newSkybox;
     }
 
-    public override AudioClip GetAudioClip(string name)
+    public override AudioClip? GetAudioClip(string name)
     {
         if (_audioClips.TryGetValue(name, out var clip))
         {
             return clip;
         }
 
-        string path = AssetFinder.FindAssetPath(name);
+        string? path = ProjectFiles.Find(name);
         if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find audio clip '{name}'. Only .wav is supported.");

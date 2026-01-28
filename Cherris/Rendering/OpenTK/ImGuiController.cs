@@ -1,12 +1,11 @@
-﻿using Cherris.Rendering;
-using Cherris.Utils;
+﻿using Cherris.Utils;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Runtime.CompilerServices;
 
-namespace Cherris.OpenTK
+namespace Cherris.Rendering.OpenTK
 {
     public class ImGuiController : IUIController
     {
@@ -37,25 +36,20 @@ namespace Cherris.OpenTK
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
 
-            // --- FONT LOADING LOGIC (SIMPLE AND ROBUST) ---
-            // After a full dependency clean, this is the correct and simplest approach.
-            // If the font isn't found, ImGui will fall back to its default.
-            // The crash was not due to file loading, but a native library mismatch.
             const float baseFontSize = 18.0f;
-            string? fontPath = AssetFinder.FindAssetPath("Fonts/RobotoMono-Regular.ttf");
+            string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
 
             if (fontPath is not null && File.Exists(fontPath))
             {
-                io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+                _ = io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
             }
             else
             {
                 Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
-                io.Fonts.AddFontDefault();
+                _ = io.Fonts.AddFontDefault();
             }
 
             io.FontGlobalScale = 1.0f;
-            // --- END FONT LOADING ---
 
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
@@ -143,7 +137,7 @@ void main()
         public void RecreateFontDeviceTexture()
         {
             ImGuiIOPtr io = ImGui.GetIO();
-            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
+            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
 
             _fontTexture = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _fontTexture);
@@ -153,7 +147,7 @@ void main()
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
             GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
 
-            io.Fonts.SetTexID((IntPtr)_fontTexture);
+            io.Fonts.SetTexID(_fontTexture);
             io.Fonts.ClearTexData();
         }
 
@@ -225,7 +219,10 @@ void main()
 
         private unsafe void RenderImDrawData(ImDrawDataPtr draw_data)
         {
-            if (draw_data.CmdListsCount == 0) return;
+            if (draw_data.CmdListsCount == 0)
+            {
+                return;
+            }
 
             GL.GetInteger(GetPName.ActiveTexture, out int lastActiveTexture);
             GL.ActiveTexture(TextureUnit.Texture0);

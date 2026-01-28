@@ -1,40 +1,33 @@
 ﻿using Cherris.Components;
-using Cherris.Core;
 using Cherris.Rendering;
 using Cherris.Utils;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public abstract class ResourceManagerBase : IResourceManager
 {
-    protected readonly Dictionary<string, Mesh> _meshes = new();
+    protected readonly Dictionary<string, Mesh> _meshes = [];
 
-    public Mesh GetMesh(string name)
+    public Mesh? GetMesh(string name)
     {
-        // Case 1: Mesh is already cached (primitive or from a previously loaded model).
         if (_meshes.TryGetValue(name, out var mesh))
         {
             return mesh;
         }
 
-        // Case 2: Mesh name looks like a model file that needs to be loaded.
         string[] parts = name.Split('#');
         string filePathPart = parts[0];
 
         if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
             filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
-            // Check if we've already processed this file by looking for any of its meshes in the cache.
-            // If we find one, it means all meshes from that file are already cached, but the specific
-            // one requested (`name`) was not found. So we can return null early.
             if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
             {
                 Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
                 return null;
             }
 
-            // It's a new model file, let's load it.
-            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            string? fullPath = ProjectFiles.Find(filePathPart);
             if (fullPath is null)
             {
                 Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
@@ -48,7 +41,6 @@ public abstract class ResourceManagerBase : IResourceManager
                 return null;
             }
 
-            // Cache all meshes from the file.
             foreach (var (meshName, loadedMesh) in loadedMeshes)
             {
                 string cacheKey = $"{filePathPart}#{meshName}";
@@ -56,21 +48,17 @@ public abstract class ResourceManagerBase : IResourceManager
             }
             Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
 
-
-            // Now that the file is loaded and meshes are cached, try to retrieve the requested mesh again.
             if (_meshes.TryGetValue(name, out var finalMesh))
             {
                 return finalMesh;
             }
 
-            // If the user didn't specify a mesh name (e.g., "model.gltf"), return the first one.
             if (parts.Length == 1)
             {
                 return loadedMeshes.Values.First();
             }
         }
 
-        // If it's not cached and not a model file path, it doesn't exist.
         return null;
     }
 
