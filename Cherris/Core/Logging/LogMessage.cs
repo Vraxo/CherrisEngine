@@ -1,6 +1,4 @@
-﻿using Cherris.Core.Logging;
-
-namespace Cherris.Core;
+﻿namespace Cherris.Core;
 
 public struct LogMessage
 {

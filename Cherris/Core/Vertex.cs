@@ -1,7 +1,7 @@
 ﻿using System.Numerics;
 using Veldrid;
 
-namespace Cherris.Core;
+namespace Cherris;
 
 public struct Vertex
 {

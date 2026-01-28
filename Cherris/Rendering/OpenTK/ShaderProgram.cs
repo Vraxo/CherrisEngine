@@ -1,4 +1,4 @@
-﻿using Cherris.Utils;
+﻿using Cherris;
 using OpenTK.Graphics.OpenGL;
 
 public class ShaderProgram : IDisposable
