@@ -1,4 +1,5 @@
-﻿using Cherris.Utils;
+﻿using Cherris.Core.Logging;
+using Cherris.Utils;
 using ImGuiNET;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -34,7 +35,7 @@ public class ContentBrowserPanel : IDisposable
         }
         else
         {
-            Console.WriteLine($"[ContentBrowser] Warning: Could not find icon '{relativePath}'");
+            Logger.Warning($"[ContentBrowser] Could not find icon '{relativePath}'");
         }
     }
 

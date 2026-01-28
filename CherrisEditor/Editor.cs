@@ -1,6 +1,7 @@
 ﻿using Cherris;
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Serialization;
 using Cherris.Utils;
@@ -37,7 +38,7 @@ public class Editor : Engine
     {
         if (!Directory.Exists(projectRoot))
         {
-            Console.WriteLine($"[Editor] Project directory not found: {projectRoot}");
+            Logger.Error($"[Editor] Project directory not found: {projectRoot}");
             return;
         }
 
@@ -45,7 +46,7 @@ public class Editor : Engine
         ProjectFiles.ProjectRoot = projectRoot;
         ProjectPersistence.SetLastProject(projectRoot);
 
-        Console.WriteLine($"[Editor] Loaded project: {CurrentProject.Name}");
+        Logger.Info($"[Editor] Loaded project: {CurrentProject.Name}");
     }
 
     public void CreatePrefabFromGameObject(GameObject go, string path)
@@ -55,7 +56,7 @@ public class Editor : Engine
             return;
         }
 
-        Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
+        Logger.Info($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
         _sceneSerializer.SavePrefab(go, path);
     }
 
@@ -63,7 +64,7 @@ public class Editor : Engine
     {
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[Editor] Prefab file not found: {path}");
+            Logger.Error($"[Editor] Prefab file not found: {path}");
             return;
         }
 
@@ -99,7 +100,7 @@ public class Editor : Engine
             }
             else
             {
-                Console.WriteLine("[Editor] Warning: No game camera found to switch to for play mode. Using the editor camera.");
+                Logger.Warning("[Editor] No game camera found to switch to for play mode. Using the editor camera.");
             }
 
             SceneManager.Start();
@@ -142,13 +143,13 @@ public class Editor : Engine
     {
         if (!IsValidCSharpIdentifier(scriptName))
         {
-            Console.WriteLine($"[Editor] Error: '{scriptName}' is not a valid C# class name.");
+            Logger.Error($"[Editor] '{scriptName}' is not a valid C# class name.");
             return;
         }
 
         if (CurrentProject is null)
         {
-            Console.WriteLine("[Editor] Error: No project loaded.");
+            Logger.Error("[Editor] No project loaded.");
             return;
         }
 
@@ -158,13 +159,13 @@ public class Editor : Engine
 
         if (File.Exists(filePath))
         {
-            Console.WriteLine($"[Editor] Error: A script named '{scriptName}.cs' already exists.");
+            Logger.Error($"[Editor] A script named '{scriptName}.cs' already exists.");
             return;
         }
 
         string content = ScriptTemplate.GetContent(scriptName);
         File.WriteAllText(filePath, content);
-        Console.WriteLine($"[Editor] Created new script at '{filePath}'");
+        Logger.Info($"[Editor] Created new script at '{filePath}'");
 
         CompileAndRegisterGameScripts();
     }
@@ -204,7 +205,7 @@ public class Editor : Engine
             }
             else
             {
-                Console.Error.WriteLine($"[Editor] Start scene not found: {startScenePath}");
+                Logger.Error($"[Editor] Start scene not found: {startScenePath}");
             }
         }
 
@@ -261,7 +262,7 @@ public class Editor : Engine
         else
         {
             _editorCamera = null;
-            Console.WriteLine("[Editor] FATAL: No camera found in scene to attach editor controls to.");
+            Logger.Error("[Editor] FATAL: No camera found in scene to attach editor controls to.");
         }
     }
 
@@ -277,7 +278,7 @@ public class Editor : Engine
 
         if (!File.Exists(scenePath))
         {
-            Console.WriteLine($"[Editor] Scene file not found: {scenePath}");
+            Logger.Error($"[Editor] Scene file not found: {scenePath}");
             return;
         }
 
@@ -314,7 +315,7 @@ public class Editor : Engine
             }
 
             _gameAssemblyContext.Unload();
-            Console.WriteLine("[Editor] Unloaded old game assembly.");
+            Logger.Info("[Editor] Unloaded old game assembly.");
         }
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
@@ -326,7 +327,7 @@ public class Editor : Engine
 
         if (gameAssembly is null)
         {
-            Console.WriteLine("[Editor] Game script compilation failed. No custom components will be loaded.");
+            Logger.Warning("[Editor] Game script compilation failed. No custom components will be loaded.");
             return;
         }
 
@@ -341,11 +342,11 @@ public class Editor : Engine
                 RegisterScriptComponent(type);
                 count++;
             }
-            Console.WriteLine($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
+            Logger.Info($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
+            Logger.Error($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
         }
     }
 
@@ -358,7 +359,7 @@ public class Editor : Engine
         }
 
         SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Console.WriteLine($"[Editor] Registered component: {scriptType.Name}");
+        Logger.Info($"[Editor] Registered component: {scriptType.Name}");
     }
 
     private void SetScriptsEnabledForPlayMode()

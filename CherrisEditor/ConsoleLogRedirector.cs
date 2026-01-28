@@ -1,6 +1,7 @@
 ﻿using Cherris.Core;
 using Cherris.Core.Logging;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace CherrisEditor;
 
@@ -10,6 +11,7 @@ public class ConsoleLogRedirector : TextWriter
     private readonly LogLevel _defaultLevel;
     private readonly TextWriter _originalOut;
     private readonly StringBuilder _lineBuffer = new();
+    private static readonly Regex LoggerFormatRegex = new(@"^\[\d{2}:\d{2}:\d{2}\] \[(Info|Warning|Error)\] ", RegexOptions.Compiled);
 
     public ConsoleLogRedirector(LogLevel defaultLevel, TextWriter originalOut)
     {
@@ -50,7 +52,6 @@ public class ConsoleLogRedirector : TextWriter
             return;
         }
 
-        // Fast path for complete lines
         if (value.EndsWith('\n'))
         {
             if (_lineBuffer.Length > 0)
@@ -60,8 +61,7 @@ public class ConsoleLogRedirector : TextWriter
             }
             else
             {
-                var line = value.TrimEnd('\n', '\r');
-                WriteLineToOriginal(line);
+                WriteLineToOriginal(value.TrimEnd('\n', '\r'));
             }
         }
         else
@@ -107,7 +107,13 @@ public class ConsoleLogRedirector : TextWriter
             return;
         }
 
-        LogLevel level = DetectLevel(line);
+        // Check if this line is already formatted by Logger (contains timestamp and level)
+        var match = LoggerFormatRegex.Match(line);
+        bool isLoggerFormatted = match.Success;
+        LogLevel level = isLoggerFormatted
+            ? Enum.Parse<LogLevel>(match.Groups[1].Value)
+            : _defaultLevel;
+
         var originalColor = Console.ForegroundColor;
 
         try
@@ -121,11 +127,19 @@ public class ConsoleLogRedirector : TextWriter
                 Console.ForegroundColor = ConsoleColor.Red;
             }
 
-            _originalOut.WriteLine(line);
+            // If not already formatted by Logger, prepend the level tag
+            string outputLine = isLoggerFormatted ? line : $"[{level}] {line}";
+
+            _originalOut.WriteLine(outputLine);
             _originalOut.Flush();
 
+            // Extract just the message for the editor panel (without our prepended tag if we added it)
+            string messageForLogger = isLoggerFormatted
+                ? line[match.Value.Length..]
+                : line;
+
             _isCapturingForLogger = true;
-            Logger.LogRaw(level, line);
+            Logger.LogRaw(level, messageForLogger);
             _isCapturingForLogger = false;
         }
         finally
@@ -144,20 +158,5 @@ public class ConsoleLogRedirector : TextWriter
         var line = _lineBuffer.ToString();
         _ = _lineBuffer.Clear();
         WriteLineToOriginal(line);
-    }
-
-    private LogLevel DetectLevel(string line)
-    {
-        // Check for explicit tags first
-        if (line.Contains("[Warning]", StringComparison.OrdinalIgnoreCase) ||
-            line.Contains("Warning:", StringComparison.OrdinalIgnoreCase))
-        {
-            return LogLevel.Warning;
-        }
-
-        return line.Contains("[Error]", StringComparison.OrdinalIgnoreCase) ||
-            line.Contains("Error:", StringComparison.OrdinalIgnoreCase)
-            ? LogLevel.Error
-            : _defaultLevel;
     }
 }

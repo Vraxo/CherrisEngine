@@ -12,7 +12,7 @@ public static class ConsolePanel
     public static void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
-        ImGui.Begin("Console");
+        _ = ImGui.Begin("Console");
 
         DrawToolbar();
         ImGui.Separator();
@@ -32,14 +32,13 @@ public static class ConsolePanel
             // For now, auto-scroll toggle is sufficient.
         }
         ImGui.SameLine();
-        ImGui.Checkbox("Auto-scroll", ref _autoScroll);
+        _ = ImGui.Checkbox("Auto-scroll", ref _autoScroll);
     }
 
     private static void DrawLogMessages()
     {
-        ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
+        _ = ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
 
-        // Read directly from Logger's message buffer to catch all logs including startup
         foreach (var msg in Logger.Messages)
         {
             var color = msg.Level switch
@@ -49,11 +48,16 @@ public static class ConsolePanel
                 _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
             };
 
-            ImGui.TextColored(color, $"[{msg.Timestamp:HH:mm:ss}]");
+            // Apply color to the entire line for consistency with literal console
+            ImGui.PushStyleColor(ImGuiCol.Text, color);
+
+            ImGui.TextUnformatted($"[{msg.Timestamp:HH:mm:ss}]");
             ImGui.SameLine();
             ImGui.TextUnformatted($"[{msg.Level}]");
             ImGui.SameLine();
             ImGui.TextWrapped(msg.Message);
+
+            ImGui.PopStyleColor();
         }
 
         if (_autoScroll && ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
