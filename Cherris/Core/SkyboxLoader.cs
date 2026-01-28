@@ -1,5 +1,4 @@
 ﻿using Cherris.Components;
-using Cherris.Utils;
 using StbImageSharp;
 using Veldrid;
 

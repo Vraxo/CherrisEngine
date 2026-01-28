@@ -1,113 +1,93 @@
-﻿using Cherris.Core.Logging;
+﻿using Cherris.Core;
 
-namespace Cherris.Utils;
+namespace Cherris;
 
 public static class AssetFinder
 {
-	private static readonly string? _assetRootPath = LocateAssetRootDirectory();
+	private static readonly string? _assetRootPath = FindAssetRootPath();
 
-	public static string? FindAssetPath(string assetName)
+	private static string? FindAssetRootPath()
 	{
-		if (!IsSearchPossible(assetName, out string sanitizedName))
+		string currentPath = AppContext.BaseDirectory;
+		DirectoryInfo? directoryInfo = new(currentPath);
+
+		while (directoryInfo is not null)
 		{
-			return null;
-		}
+			// Normalize path separators for a consistent check
+			string normalizedPath = directoryInfo.FullName.Replace('\\', '/');
 
-		return TryFindExactPath(sanitizedName)
-			   ?? TryFindPathWithAnyExtension(sanitizedName)
-			   ?? TryFindPathByRecursiveSearch(sanitizedName, assetName);
-	}
-
-	private static string? LocateAssetRootDirectory()
-	{
-		DirectoryInfo? currentDirectory = new(AppContext.BaseDirectory);
-
-		while (currentDirectory is not null)
-		{
-			if (IsPotentialProjectRoot(currentDirectory))
+			// This is the robust check. We ensure we are not in a build artifact folder.
+			if (!normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/"))
 			{
-				string potentialAssetsPath = Path.Combine(currentDirectory.FullName, "Assets");
-				
-				if (Directory.Exists(potentialAssetsPath))
+				string potentialPath = Path.Combine(directoryInfo.FullName, "Assets");
+				if (Directory.Exists(potentialPath))
 				{
-					Logger.Info($"[AssetFinder] Found asset root at: {potentialAssetsPath}");
-					return potentialAssetsPath;
+					Logger.Info($"[AssetFinder] Found asset root at: {potentialPath}");
+					return potentialPath;
 				}
 			}
 
-			currentDirectory = currentDirectory.Parent;
+			directoryInfo = directoryInfo.Parent;
 		}
 
 		Logger.Error("[AssetFinder] FATAL: Could not find the 'Assets' directory in any parent path.");
-		
 		return null;
 	}
 
-	private static bool IsPotentialProjectRoot(DirectoryInfo directory)
+	public static string? FindAssetPath(string assetName)
 	{
-		string normalizedPath = directory.FullName.Replace('\\', '/');
-		return !normalizedPath.Contains("/bin/") && !normalizedPath.Contains("/obj/");
-	}
-
-	private static bool IsSearchPossible(string assetName, out string sanitizedName)
-	{
-		sanitizedName = string.Empty;
-
 		if (string.IsNullOrWhiteSpace(assetName) || _assetRootPath is null)
 		{
 			Logger.Warning($"[AssetFinder] Asset root not found or asset name '{assetName}' is null/empty.");
-			return false;
-		}
-
-		sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-		return true;
-	}
-
-	private static string? TryFindExactPath(string sanitizedName)
-	{
-		string fullPath = Path.Combine(_assetRootPath!, sanitizedName);
-		return File.Exists(fullPath) ? fullPath : null;
-	}
-
-	private static string? TryFindPathWithAnyExtension(string sanitizedName)
-	{
-		string fullPath = Path.Combine(_assetRootPath!, sanitizedName);
-
-		if (Path.HasExtension(fullPath))
-		{
 			return null;
 		}
 
-		string? directory = Path.GetDirectoryName(fullPath);
-		string fileNameWithoutExtension = Path.GetFileName(fullPath);
+		// Sanitize path to use correct OS separators
+		string sanitizedName = assetName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+		string fullPath = Path.Combine(_assetRootPath, sanitizedName);
 
-		if (directory is null || !Directory.Exists(directory))
+		// Case 1: The provided name is an exact relative path (with extension).
+		if (File.Exists(fullPath))
 		{
-			return null;
+			return fullPath;
 		}
 
-		return Directory.GetFiles(directory, $"{fileNameWithoutExtension}.*").FirstOrDefault();
-	}
+		// Case 2: The provided name is a relative path but is missing an extension.
+		if (!Path.HasExtension(fullPath))
+		{
+			string? directory = Path.GetDirectoryName(fullPath);
+			string fileName = Path.GetFileName(fullPath);
+			if (directory is not null && Directory.Exists(directory))
+			{
+				// Find first file that matches the name, regardless of extension.
+				var files = Directory.GetFiles(directory, $"{fileName}.*");
+				if (files.Any())
+				{
+					return files[0];
+				}
+			}
+		}
 
-	private static string? TryFindPathByRecursiveSearch(string sanitizedName, string originalAssetName)
-	{
+		// Case 3: The provided name is just a filename, search for it everywhere.
+		// This is the fallback, which can be slow, but useful.
 		try
 		{
-			string fileName = Path.GetFileName(sanitizedName);
-			string? foundFile = Directory.GetFiles(_assetRootPath!, fileName, SearchOption.AllDirectories).FirstOrDefault();
+			string fileNameOnly = Path.GetFileName(sanitizedName);
+			var files = Directory.GetFiles(_assetRootPath, fileNameOnly, SearchOption.AllDirectories);
+			if (files.Any()) return files[0];
 
-			if (foundFile is not null) return foundFile;
-
-			if (!Path.HasExtension(fileName))
+			// If still not found, try searching with wildcard extension.
+			if (!Path.HasExtension(fileNameOnly))
 			{
-				return Directory.GetFiles(_assetRootPath!, $"{fileName}.*", SearchOption.AllDirectories).FirstOrDefault();
+				var filesWithWildcard = Directory.GetFiles(_assetRootPath, $"{fileNameOnly}.*", SearchOption.AllDirectories);
+				if (filesWithWildcard.Any()) return filesWithWildcard[0];
 			}
 		}
 		catch (Exception e)
 		{
-			Logger.Error($"[AssetFinder] Error while searching for asset '{originalAssetName}': {e.Message}");
+			Logger.Error($"[AssetFinder] Error while searching for asset '{assetName}': {e.Message}");
 		}
 
-		return null;
+		return null; // Not found
 	}
 }

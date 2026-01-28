@@ -4,7 +4,6 @@
 // dotnet add package SharpGLTF.Core
 
 using Cherris.Components;
-using Cherris.Core;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
