@@ -55,17 +55,20 @@ public class ContentBrowserPanel : IDisposable
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
 
-            if (payload.Data != IntPtr.Zero)
+            unsafe
             {
-                byte[] data = new byte[payload.DataSize];
-                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                var goId = new Guid(data);
-                var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
-
-                if (go is not null)
+                if (payload.NativePtr != null)
                 {
-                    string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
-                    _editor.CreatePrefabFromGameObject(go, prefabPath);
+                    byte[] data = new byte[payload.DataSize];
+                    Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                    var goId = new Guid(data);
+                    var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
+
+                    if (go is not null)
+                    {
+                        string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
+                        _editor.CreatePrefabFromGameObject(go, prefabPath);
+                    }
                 }
             }
 

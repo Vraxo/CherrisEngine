@@ -36,22 +36,28 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr prefabPayload = ImGui.AcceptDragDropPayload("ASSET_PATH_PREFAB");
-            if (prefabPayload.Data != IntPtr.Zero)
+            unsafe
             {
-                string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
-                _editor.InstantiatePrefab(path);
+                if (prefabPayload.NativePtr != null)
+                {
+                    string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
+                    _editor.InstantiatePrefab(path);
+                }
             }
 
             ImGuiPayloadPtr goPayload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (goPayload.Data != IntPtr.Zero)
+            unsafe
             {
-                byte[] data = new byte[goPayload.DataSize];
-                Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
-                var draggedId = new Guid(data);
-                var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
-                if (draggedObject is not null)
+                if (goPayload.NativePtr != null)
                 {
-                    draggedObject.Transform.Parent = null; // Unparent
+                    byte[] data = new byte[goPayload.DataSize];
+                    Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
+                    var draggedId = new Guid(data);
+                    var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
+                    if (draggedObject is not null)
+                    {
+                        draggedObject.Transform.Parent = null; // Unparent
+                    }
                 }
             }
 
@@ -86,13 +92,16 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (payload.Data != IntPtr.Zero)
+            unsafe
             {
-                byte[] data = new byte[payload.DataSize];
-                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                var draggedId = new Guid(data);
-                GameObject draggedObject = _editor.SceneManager.GameObjects.First(g => g.Id == draggedId);
-                draggedObject.Transform.Parent = go.Transform;
+                if (payload.NativePtr != null)
+                {
+                    byte[] data = new byte[payload.DataSize];
+                    Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                    var draggedId = new Guid(data);
+                    GameObject draggedObject = _editor.SceneManager.GameObjects.First(g => g.Id == draggedId);
+                    draggedObject.Transform.Parent = go.Transform;
+                }
             }
             ImGui.EndDragDropTarget();
         }
