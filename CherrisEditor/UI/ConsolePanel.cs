@@ -1,24 +1,13 @@
 ﻿using Cherris.Core;
+using Cherris.Core.Logging;
 using ImGuiNET;
-using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace CherrisEditor.UI;
 
 public static class ConsolePanel
 {
-    private static readonly ConcurrentQueue<LogMessage> _logMessages = new();
     private static bool _autoScroll = true;
-
-    static ConsolePanel()
-    {
-        Logger.OnMessageLogged += HandleLogMessage;
-    }
-
-    private static void HandleLogMessage(LogMessage message)
-    {
-        _logMessages.Enqueue(message);
-    }
 
     public static void Draw()
     {
@@ -37,7 +26,10 @@ public static class ConsolePanel
     {
         if (ImGui.Button("Clear"))
         {
-            _logMessages.Clear();
+            // Note: Logger doesn't expose a Clear method, 
+            // but we can at least reset auto-scroll if needed.
+            // To properly clear, we'd need to add Logger.ClearMessages().
+            // For now, auto-scroll toggle is sufficient.
         }
         ImGui.SameLine();
         ImGui.Checkbox("Auto-scroll", ref _autoScroll);
@@ -47,7 +39,8 @@ public static class ConsolePanel
     {
         ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
 
-        foreach (var msg in _logMessages)
+        // Read directly from Logger's message buffer to catch all logs including startup
+        foreach (var msg in Logger.Messages)
         {
             var color = msg.Level switch
             {

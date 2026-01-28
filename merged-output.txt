@@ -1810,10 +1810,9 @@ public static class VeldridKeyMapper
 ### `Cherris\Core\GenericCubemapLoader.cs`
 
 ```csharp
-using Cherris.Core;
 using Cherris.Utils;
 
-namespace Cherris.Rendering;
+namespace Cherris.Core;
 
 public static class GenericCubemapLoader
 {
@@ -1824,7 +1823,7 @@ public static class GenericCubemapLoader
         var images = new ImageData[6];
         for (int i = 0; i < FaceSuffixes.Length; i++)
         {
-            string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
+            string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
             if (path is null)
             {
                 Console.WriteLine($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
@@ -1834,7 +1833,7 @@ public static class GenericCubemapLoader
             var imageData = ImageLoader.LoadFromFile(path, flipVertical: false);
             if (imageData is null)
             {
-                return null; // Error already logged by ImageLoader
+                return null;
             }
             images[i] = imageData.Value;
         }
@@ -2153,18 +2152,12 @@ public class Material
 ### `Cherris\Core\ModelLoader.cs`
 
 ```csharp
-// --- REQUIRED NUGET PACKAGE ---
-// This file requires the 'SharpGLTF.Core' package.
-// Add it to your project:
-// dotnet add package SharpGLTF.Core
-
-using Cherris.Components;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
 using Mesh = Cherris.Components.Mesh;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public static class ModelLoader
 {
@@ -2192,19 +2185,30 @@ public static class ModelLoader
                 foreach (var primitive in gltfMesh.Primitives)
                 {
                     var positionsAccessor = primitive.GetVertexAccessor("POSITION");
-                    if (positionsAccessor is null) continue;
+                    if (positionsAccessor is null)
+                    {
+                        continue;
+                    }
+
                     var positions = positionsAccessor.AsVector3Array();
-                    if (positions.Count == 0) continue;
+                    if (positions.Count == 0)
+                    {
+                        continue;
+                    }
 
                     var normalsAccessor = primitive.GetVertexAccessor("NORMAL");
                     var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
                     var indicesAccessor = primitive.IndexAccessor;
 
-                    if (indicesAccessor is null) continue;
+                    if (indicesAccessor is null)
+                    {
+                        continue;
+                    }
+
                     var indices = indicesAccessor.AsIndicesArray();
 
-                    IList<Vector3> normals = normalsAccessor?.AsVector3Array();
-                    IList<Vector2> texCoords = texCoordsAccessor?.AsVector2Array();
+                    IList<Vector3>? normals = normalsAccessor?.AsVector3Array();
+                    IList<Vector2>? texCoords = texCoordsAccessor?.AsVector2Array();
 
                     ushort baseVertex = (ushort)allVertices.Count;
 
@@ -2218,9 +2222,6 @@ public static class ModelLoader
                         ));
                     }
 
-                    // *** THE FIX IS HERE ***
-                    // glTF uses Counter-Clockwise winding, but our renderer expects Clockwise.
-                    // We must reverse the winding order of each triangle.
                     for (int tri = 0; tri < indices.Count; tri += 3)
                     {
                         uint i0 = indices[tri];
@@ -2228,7 +2229,7 @@ public static class ModelLoader
                         uint i2 = indices[tri + 2];
 
                         allIndices.Add((ushort)(baseVertex + i0));
-                        allIndices.Add((ushort)(baseVertex + i2)); // Swapped i1 and i2
+                        allIndices.Add((ushort)(baseVertex + i2));
                         allIndices.Add((ushort)(baseVertex + i1));
                     }
                 }
@@ -2508,18 +2509,17 @@ void main()
 
 ```csharp
 using Cherris.Components;
-using Cherris.Core;
 using Cherris.Rendering;
 using Cherris.Utils;
 using Veldrid;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class ResourceManager : IResourceManager
 {
-    private readonly Dictionary<string, Mesh> _meshes = new();
-    private readonly Dictionary<string, ITexture> _textures = new();
-    private readonly Dictionary<string, Skybox> _skyboxes = new();
+    private readonly Dictionary<string, Mesh> _meshes = [];
+    private readonly Dictionary<string, ITexture> _textures = [];
+    private readonly Dictionary<string, Skybox> _skyboxes = [];
     private readonly GraphicsDevice _graphicsDevice;
 
     public ResourceManager(GraphicsDevice gd)
@@ -2529,44 +2529,36 @@ public class ResourceManager : IResourceManager
 
     public void LoadInitialAssets()
     {
-        // Meshes
         var cubeMesh = Mesh.CreateCube();
         _meshes.Add("Cube", cubeMesh);
 
         var planeMesh = Mesh.CreatePlane(20f);
         _meshes.Add("Plane", planeMesh);
 
-        // Textures
         var white = CreateWhiteTexture("White");
         _textures.Add("White", white);
     }
 
-    public Mesh GetMesh(string name)
+    public Mesh? GetMesh(string name)
     {
-        // Case 1: Mesh is already cached (primitive or from a previously loaded model).
         if (_meshes.TryGetValue(name, out var mesh))
         {
             return mesh;
         }
 
-        // Case 2: Mesh name looks like a model file that needs to be loaded.
         string[] parts = name.Split('#');
         string filePathPart = parts[0];
 
         if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
             filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
-            // Check if we've already processed this file by looking for any of its meshes in the cache.
-            // If we find one, it means all meshes from that file are already cached, but the specific
-            // one requested (`name`) was not found. So we can return null early.
             if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
             {
                 Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
                 return null;
             }
 
-            // It's a new model file, let's load it.
-            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            string? fullPath = ProjectFiles.Find(filePathPart);
             if (fullPath is null)
             {
                 Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
@@ -2580,7 +2572,6 @@ public class ResourceManager : IResourceManager
                 return null;
             }
 
-            // Cache all meshes from the file.
             foreach (var (meshName, loadedMesh) in loadedMeshes)
             {
                 string cacheKey = $"{filePathPart}#{meshName}";
@@ -2588,21 +2579,17 @@ public class ResourceManager : IResourceManager
             }
             Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
 
-
-            // Now that the file is loaded and meshes are cached, try to retrieve the requested mesh again.
             if (_meshes.TryGetValue(name, out var finalMesh))
             {
                 return finalMesh;
             }
 
-            // If the user didn't specify a mesh name (e.g., "model.gltf"), return the first one.
             if (parts.Length == 1)
             {
                 return loadedMeshes.Values.First();
             }
         }
 
-        // If it's not cached and not a model file path, it doesn't exist.
         return null;
     }
 
@@ -2614,7 +2601,7 @@ public class ResourceManager : IResourceManager
             return texture;
         }
 
-        string? filePath = AssetFinder.FindAssetPath(name);
+        string? filePath = ProjectFiles.Find(name);
 
         if (filePath is not null)
         {
@@ -2630,7 +2617,7 @@ public class ResourceManager : IResourceManager
         return _textures["White"];
     }
 
-    public Skybox GetSkybox(string name)
+    public Skybox? GetSkybox(string name)
     {
         if (_skyboxes.TryGetValue(name, out var skybox))
         {
@@ -2648,7 +2635,7 @@ public class ResourceManager : IResourceManager
         return null;
     }
 
-    public AudioClip GetAudioClip(string name)
+    public AudioClip? GetAudioClip(string name)
     {
         Console.WriteLine("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
         return null;
@@ -2688,42 +2675,35 @@ public class ResourceManager : IResourceManager
 
 ```csharp
 using Cherris.Components;
-using Cherris.Core;
 using Cherris.Rendering;
 using Cherris.Utils;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public abstract class ResourceManagerBase : IResourceManager
 {
-    protected readonly Dictionary<string, Mesh> _meshes = new();
+    protected readonly Dictionary<string, Mesh> _meshes = [];
 
-    public Mesh GetMesh(string name)
+    public Mesh? GetMesh(string name)
     {
-        // Case 1: Mesh is already cached (primitive or from a previously loaded model).
         if (_meshes.TryGetValue(name, out var mesh))
         {
             return mesh;
         }
 
-        // Case 2: Mesh name looks like a model file that needs to be loaded.
         string[] parts = name.Split('#');
         string filePathPart = parts[0];
 
         if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
             filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
-            // Check if we've already processed this file by looking for any of its meshes in the cache.
-            // If we find one, it means all meshes from that file are already cached, but the specific
-            // one requested (`name`) was not found. So we can return null early.
             if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
             {
                 Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
                 return null;
             }
 
-            // It's a new model file, let's load it.
-            string? fullPath = AssetFinder.FindAssetPath(filePathPart);
+            string? fullPath = ProjectFiles.Find(filePathPart);
             if (fullPath is null)
             {
                 Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
@@ -2737,7 +2717,6 @@ public abstract class ResourceManagerBase : IResourceManager
                 return null;
             }
 
-            // Cache all meshes from the file.
             foreach (var (meshName, loadedMesh) in loadedMeshes)
             {
                 string cacheKey = $"{filePathPart}#{meshName}";
@@ -2745,21 +2724,17 @@ public abstract class ResourceManagerBase : IResourceManager
             }
             Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
 
-
-            // Now that the file is loaded and meshes are cached, try to retrieve the requested mesh again.
             if (_meshes.TryGetValue(name, out var finalMesh))
             {
                 return finalMesh;
             }
 
-            // If the user didn't specify a mesh name (e.g., "model.gltf"), return the first one.
             if (parts.Length == 1)
             {
                 return loadedMeshes.Values.First();
             }
         }
 
-        // If it's not cached and not a model file path, it doesn't exist.
         return null;
     }
 
@@ -3350,7 +3325,7 @@ using Cherris.Utils;
 using StbImageSharp;
 using Veldrid;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public static class SkyboxLoader
 {
@@ -3383,7 +3358,7 @@ public static class SkyboxLoader
 
         for (int i = 0; i < FaceSuffixes.Length; i++)
         {
-            string? path = AssetFinder.FindAssetPath(baseName + FaceSuffixes[i]);
+            string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
 
             if (path is null)
             {
@@ -3900,7 +3875,7 @@ using Cherris.Rendering;
 using Veldrid;
 using Veldrid.StartupUtilities;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 // Concrete Veldrid backend implementation, nested here to avoid creating new files.
 public class VeldridBackend : RenderingInterface
@@ -3918,7 +3893,7 @@ public class VeldridBackend : RenderingInterface
     {
         var window = new GameWindow(windowTitle, width, height, startWithMouseLocked);
 
-        GraphicsDeviceOptions options = new GraphicsDeviceOptions
+        GraphicsDeviceOptions options = new()
         {
             PreferStandardClipSpaceYDirection = true,
             PreferDepthRangeZeroToOne = true,
@@ -5056,72 +5031,46 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
 
 ---
 
-### `Cherris\Utils\AssetFinder.cs`
+### `Cherris\Utils\EditorResources.cs`
 
 ```csharp
 namespace Cherris.Utils;
 
-public static class AssetFinder
+public static class EditorResources
 {
-    public static string? ProjectRoot { get; set; }
-
-    public static string? FindAssetPath(string assetName)
+    public static string? Find(string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(assetName))
+        if (string.IsNullOrWhiteSpace(relativePath))
         {
             return null;
         }
 
-        // Try ProjectRoot first if set
-        if (!string.IsNullOrWhiteSpace(ProjectRoot))
-        {
-            string projectPath = Path.Combine(ProjectRoot, "Assets", assetName);
-            if (File.Exists(projectPath))
-            {
-                return projectPath;
-            }
-
-            if (!Path.HasExtension(projectPath))
-            {
-                string? directory = Path.GetDirectoryName(projectPath);
-                string fileName = Path.GetFileName(projectPath);
-
-                if (directory is not null && Directory.Exists(directory))
-                {
-                    var files = Directory.GetFiles(directory, $"{fileName}.*");
-                    if (files.Any())
-                    {
-                        return files[0];
-                    }
-                }
-            }
-        }
-
-        // Fallback to executable directory (for engine assets when no project loaded)
         string exeDir = AppContext.BaseDirectory;
-        string fallbackPath = Path.Combine(exeDir, "Assets", assetName);
+        string fullPath = Path.Combine(exeDir, "Resources", relativePath);
 
-        if (File.Exists(fallbackPath))
+        if (File.Exists(fullPath))
         {
-            return fallbackPath;
+            return fullPath;
         }
 
-        if (!Path.HasExtension(fallbackPath))
+        if (Path.HasExtension(fullPath))
         {
-            string? directory = Path.GetDirectoryName(fallbackPath);
-            string fileName = Path.GetFileName(fallbackPath);
-
-            if (directory is not null && Directory.Exists(directory))
-            {
-                var files = Directory.GetFiles(directory, $"{fileName}.*");
-                if (files.Any())
-                {
-                    return files[0];
-                }
-            }
+            return null;
         }
 
-        return null;
+        string? directory = Path.GetDirectoryName(fullPath);
+        string fileName = Path.GetFileName(fullPath);
+
+        if (directory is null || !Directory.Exists(directory))
+        {
+            return null;
+        }
+
+        string[] files = Directory.GetFiles(directory, $"{fileName}.*");
+
+        return files.Length == 0
+            ? null
+            : files[0];
     }
 }
 ```
@@ -5188,6 +5137,51 @@ namespace Cherris;
 [AttributeUsage(AttributeTargets.Property)]
 public class HideInInspectorAttribute : Attribute
 {
+}
+```
+
+---
+
+### `Cherris\Utils\ProjectFiles.cs`
+
+```csharp
+namespace Cherris.Utils;
+
+public static class ProjectFiles
+{
+    public static string? ProjectRoot { get; set; }
+
+    public static string? Find(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath) || string.IsNullOrWhiteSpace(ProjectRoot))
+        {
+            return null;
+        }
+
+        string fullPath = Path.Combine(ProjectRoot, relativePath);
+
+        if (File.Exists(fullPath))
+        {
+            return fullPath;
+        }
+
+        if (!Path.HasExtension(fullPath))
+        {
+            string? directory = Path.GetDirectoryName(fullPath);
+            string fileName = Path.GetFileName(fullPath);
+
+            if (directory is not null && Directory.Exists(directory))
+            {
+                var files = Directory.GetFiles(directory, $"{fileName}.*");
+                if (files.Any())
+                {
+                    return files[0];
+                }
+            }
+        }
+
+        return null;
+    }
 }
 ```
 
@@ -5274,7 +5268,6 @@ public struct LogMessage
 ### `Cherris\Rendering\OpenTK\ImGuiController.cs`
 
 ```csharp
-using Cherris.Rendering;
 using Cherris.Utils;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
@@ -5282,7 +5275,7 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Runtime.CompilerServices;
 
-namespace Cherris.OpenTK
+namespace Cherris.Rendering.OpenTK
 {
     public class ImGuiController : IUIController
     {
@@ -5313,25 +5306,20 @@ namespace Cherris.OpenTK
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
 
-            // --- FONT LOADING LOGIC (SIMPLE AND ROBUST) ---
-            // After a full dependency clean, this is the correct and simplest approach.
-            // If the font isn't found, ImGui will fall back to its default.
-            // The crash was not due to file loading, but a native library mismatch.
             const float baseFontSize = 18.0f;
-            string? fontPath = AssetFinder.FindAssetPath("Fonts/RobotoMono-Regular.ttf");
+            string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
 
             if (fontPath is not null && File.Exists(fontPath))
             {
-                io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+                _ = io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
             }
             else
             {
                 Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
-                io.Fonts.AddFontDefault();
+                _ = io.Fonts.AddFontDefault();
             }
 
             io.FontGlobalScale = 1.0f;
-            // --- END FONT LOADING ---
 
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
@@ -5419,7 +5407,7 @@ void main()
         public void RecreateFontDeviceTexture()
         {
             ImGuiIOPtr io = ImGui.GetIO();
-            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
+            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
 
             _fontTexture = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _fontTexture);
@@ -5429,7 +5417,7 @@ void main()
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
             GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
 
-            io.Fonts.SetTexID((IntPtr)_fontTexture);
+            io.Fonts.SetTexID(_fontTexture);
             io.Fonts.ClearTexData();
         }
 
@@ -5501,7 +5489,10 @@ void main()
 
         private unsafe void RenderImDrawData(ImDrawDataPtr draw_data)
         {
-            if (draw_data.CmdListsCount == 0) return;
+            if (draw_data.CmdListsCount == 0)
+            {
+                return;
+            }
 
             GL.GetInteger(GetPName.ActiveTexture, out int lastActiveTexture);
             GL.ActiveTexture(TextureUnit.Texture0);
@@ -6674,6 +6665,7 @@ void main()
 
 ```csharp
 using Cherris.Rendering;
+using Cherris.Rendering.OpenTK;
 
 namespace Cherris.OpenTK
 {
@@ -6716,6 +6708,7 @@ namespace Cherris.OpenTK
 
 ```csharp
 using Cherris.Rendering;
+using Cherris.Rendering.OpenTK;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -7220,17 +7213,16 @@ public class OpenTKRenderer : IRenderer, IDisposable
 ```csharp
 using Cherris.Components;
 using Cherris.Core;
-using Cherris.Rendering;
 using Cherris.Utils;
 using OpenTK.Graphics.OpenGL4;
 
-namespace Cherris;
+namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKResourceManager : ResourceManagerBase
 {
-    private readonly Dictionary<string, ITexture> _textures = new();
-    private readonly Dictionary<string, Skybox> _skyboxes = new();
-    private readonly Dictionary<string, AudioClip> _audioClips = new();
+    private readonly Dictionary<string, ITexture> _textures = [];
+    private readonly Dictionary<string, Skybox> _skyboxes = [];
+    private readonly Dictionary<string, AudioClip> _audioClips = [];
 
     public override void LoadInitialAssets()
     {
@@ -7238,7 +7230,6 @@ public class OpenTKResourceManager : ResourceManagerBase
         _meshes.Add("Cube", Mesh.CreateCube());
         _meshes.Add("Plane", Mesh.CreatePlane(20f));
 
-        // Create a default white texture
         _textures.Add("White", CreateWhiteTexture());
     }
 
@@ -7261,7 +7252,7 @@ public class OpenTKResourceManager : ResourceManagerBase
             return texture;
         }
 
-        string path = AssetFinder.FindAssetPath(name);
+        string? path = ProjectFiles.Find(name);
         if (path is null)
         {
             Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find texture '{name}'.");
@@ -7307,7 +7298,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         }
     }
 
-    public override Skybox GetSkybox(string name)
+    public override Skybox? GetSkybox(string name)
     {
         if (_skyboxes.TryGetValue(name, out var skybox))
         {
@@ -7339,14 +7330,14 @@ public class OpenTKResourceManager : ResourceManagerBase
         return newSkybox;
     }
 
-    public override AudioClip GetAudioClip(string name)
+    public override AudioClip? GetAudioClip(string name)
     {
         if (_audioClips.TryGetValue(name, out var clip))
         {
             return clip;
         }
 
-        string path = AssetFinder.FindAssetPath(name);
+        string? path = ProjectFiles.Find(name);
         if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find audio clip '{name}'. Only .wav is supported.");
@@ -7455,8 +7446,8 @@ public class ShaderProgram : IDisposable
 
     public static ShaderProgram? FromFiles(string vertexPath, string fragmentPath)
     {
-        var vertSourcePath = AssetFinder.FindAssetPath(vertexPath);
-        var fragSourcePath = AssetFinder.FindAssetPath(fragmentPath);
+        var vertSourcePath = EditorResources.Find(vertexPath);
+        var fragSourcePath = EditorResources.Find(fragmentPath);
 
         if (vertSourcePath is null || fragSourcePath is null)
         {
@@ -7493,8 +7484,15 @@ public class ShaderProgram : IDisposable
         return shader;
     }
 
-    public void Use() => GL.UseProgram(Handle);
-    public int GetUniformLocation(string name) => GL.GetUniformLocation(Handle, name);
+    public void Use()
+    {
+        GL.UseProgram(Handle);
+    }
+
+    public int GetUniformLocation(string name)
+    {
+        return GL.GetUniformLocation(Handle, name);
+    }
 
     public void Dispose()
     {
@@ -7647,193 +7645,6 @@ public class VeldridGraphicsManager : IDisposable
 
 ---
 
-### `CherrisEditor\ContentBrowserPanel.cs`
-
-```csharp
-using ImGuiNET;
-using System.Numerics;
-using System.Runtime.InteropServices;
-
-namespace CherrisEditor;
-
-public class ContentBrowserPanel : IDisposable
-{
-    private readonly Editor _editor;
-    private readonly EditorTextureManager _textureManager;
-    private readonly string _assetRootPath;
-    private string _currentAssetPath;
-    private static IntPtr _payloadStringPtr = IntPtr.Zero; // For string payloads
-
-    public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
-    {
-        _editor = editor;
-        _textureManager = textureManager;
-        _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
-        _textureManager.LoadTexture("File", "Assets/Icons/file.png");
-        _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
-        _textureManager.LoadTexture("Prefab", "Assets/Icons/prefab.png"); // Added for prefabs
-
-        _assetRootPath = Path.GetFullPath("Assets");
-        _currentAssetPath = _assetRootPath;
-    }
-
-    public void Draw()
-    {
-        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
-        if (_payloadStringPtr != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_payloadStringPtr);
-            _payloadStringPtr = IntPtr.Zero;
-        }
-
-        ImGui.Begin("Content Browser");
-        DrawHeader();
-        DrawGrid();
-
-        // Make the entire panel a drop target for creating prefabs
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (payload.Data != IntPtr.Zero)
-            {
-                byte[] data = new byte[payload.DataSize];
-                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                var goId = new Guid(data);
-                var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
-
-                if (go is not null)
-                {
-                    string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
-                    _editor.CreatePrefabFromGameObject(go, prefabPath);
-                }
-            }
-            ImGui.EndDragDropTarget();
-        }
-
-        ImGui.End();
-    }
-
-    private void DrawHeader()
-    {
-        if (_currentAssetPath != _assetRootPath)
-        {
-            if (ImGui.Button("<- Back"))
-            {
-                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _assetRootPath;
-            }
-            ImGui.SameLine();
-        }
-        ImGui.Text($"Path: {_currentAssetPath.Replace(_assetRootPath, "Assets")}");
-        ImGui.Separator();
-    }
-
-    private void DrawGrid()
-    {
-        float thumbnailSize = 80.0f;
-        float padding = 16.0f;
-        float cellSize = thumbnailSize + padding;
-        float panelWidth = ImGui.GetContentRegionAvail().X;
-        int columnCount = Math.Max(1, (int)(panelWidth / cellSize));
-
-        if (!ImGui.BeginTable("ContentGrid", columnCount))
-        {
-            return;
-        }
-
-        var directories = Directory.GetDirectories(_currentAssetPath);
-        var files = Directory.GetFiles(_currentAssetPath);
-
-        foreach (var path in directories.Concat(files))
-        {
-            ImGui.TableNextColumn();
-            DrawItem(path, thumbnailSize);
-        }
-
-        ImGui.EndTable();
-    }
-
-    private void DrawItem(string path, float thumbnailSize)
-    {
-        ImGui.PushID(path);
-        ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
-
-        IntPtr textureHandle = _textureManager.GetTextureForPath(path);
-        string itemName = Path.GetFileName(path);
-
-        CenterAlignItem(thumbnailSize);
-        if (ImGui.ImageButton(itemName, textureHandle, new Vector2(thumbnailSize, thumbnailSize)))
-        {
-            // Handle single-click
-        }
-
-        string extension = Path.GetExtension(path).ToLowerInvariant();
-
-        // --- Drag Source for Textures and Prefabs (string path payload) ---
-        string payloadType = null;
-        if (EditorTextureManager.ImageExtensions.Contains(extension)) payloadType = "ASSET_PATH_TEXTURE";
-        else if (EditorTextureManager.PrefabExtensions.Contains(extension)) payloadType = "ASSET_PATH_PREFAB";
-
-        if (payloadType is not null && ImGui.BeginDragDropSource())
-        {
-            // Allocate memory and hold onto the pointer until the next frame.
-            _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
-            ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
-
-            ImGui.Image(textureHandle, new Vector2(50, 50));
-            ImGui.SameLine();
-            ImGui.Text(itemName);
-            ImGui.EndDragDropSource();
-        }
-
-
-        if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-        {
-            if (Directory.Exists(path))
-            {
-                _currentAssetPath = path;
-            }
-            else if (Path.GetExtension(path).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
-            {
-                _editor.LoadSceneFromFile(path);
-            }
-        }
-
-        CenterAlignText(itemName);
-        ImGui.Text(itemName);
-
-        ImGui.PopStyleColor();
-        ImGui.PopID();
-    }
-
-    private void CenterAlignItem(float itemWidth)
-    {
-        float columnWidth = ImGui.GetColumnWidth();
-        float offsetX = (columnWidth - itemWidth) * 0.5f;
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-    }
-
-    private void CenterAlignText(string text)
-    {
-        float columnWidth = ImGui.GetColumnWidth();
-        float textWidth = ImGui.CalcTextSize(text).X;
-        float textOffsetX = (columnWidth - textWidth) * 0.5f;
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
-    }
-
-    public void Dispose()
-    {
-        // Ensure we free the handle on shutdown if it's still allocated
-        if (_payloadStringPtr != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_payloadStringPtr);
-            _payloadStringPtr = IntPtr.Zero;
-        }
-    }
-}
-```
-
----
-
 ### `CherrisEditor\Editor.cs`
 
 ```csharp
@@ -7881,7 +7692,7 @@ public class Editor : Engine
         }
 
         CurrentProject = Project.Load(projectRoot);
-        AssetFinder.ProjectRoot = projectRoot;
+        ProjectFiles.ProjectRoot = projectRoot;
         ProjectPersistence.SetLastProject(projectRoot);
 
         Console.WriteLine($"[Editor] Loaded project: {CurrentProject.Name}");
@@ -7991,7 +7802,7 @@ public class Editor : Engine
             return;
         }
 
-        string scriptsPath = Path.Combine(CurrentProject.RootPath, "Assets", "Scripts");
+        string scriptsPath = Path.Combine(CurrentProject.RootPath, "Scripts");
         _ = Directory.CreateDirectory(scriptsPath);
         string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
 
@@ -8034,10 +7845,9 @@ public class Editor : Engine
         OnDrawUI = _editorAppLogic.DrawUI();
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
 
-        // Load initial scene if we have a project
         if (CurrentProject is not null)
         {
-            string startScenePath = Path.Combine(CurrentProject.RootPath, "Assets", CurrentProject.StartScene);
+            string startScenePath = Path.Combine(CurrentProject.RootPath, CurrentProject.StartScene);
             if (File.Exists(startScenePath))
             {
                 LoadSceneFromFile(startScenePath);
@@ -8159,8 +7969,8 @@ public class Editor : Engine
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
         string scriptsPath = CurrentProject is not null
-            ? Path.Combine(CurrentProject.RootPath, "Assets")
-            : "Assets";
+            ? Path.Combine(CurrentProject.RootPath, "Scripts")
+            : "Scripts";
 
         Assembly? gameAssembly = ScriptCompiler.Compile(scriptsPath, _gameAssemblyContext);
 
@@ -8276,6 +8086,7 @@ public class Editor : Engine
 ```csharp
 using Cherris;
 using Cherris.Serialization;
+using Cherris.Utils;
 using CherrisEditor.UI;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -8318,21 +8129,33 @@ public class EditorAppLogic : IDisposable
 
         EditorTheme.ApplyUnrealEngineStyle();
 
-        _textureManager.LoadTexture("Play", "Assets/Icons/play.png");
-        _textureManager.LoadTexture("Pause", "Assets/Icons/pause.png");
-        _textureManager.LoadTexture("Stop", "Assets/Icons/stop.png");
-        _textureManager.LoadTexture("Restart", "Assets/Icons/restart.png");
-        _textureManager.LoadTexture("Reset", "Assets/Icons/reset.png");
+        LoadIcon("Play", "Icons/play.png");
+        LoadIcon("Pause", "Icons/pause.png");
+        LoadIcon("Stop", "Icons/stop.png");
+        LoadIcon("Restart", "Icons/restart.png");
+        LoadIcon("Reset", "Icons/reset.png");
 
-        _textureManager.LoadTexture("Component_Transform", "Assets/Icons/Components/transform.png");
-        _textureManager.LoadTexture("Component_Camera", "Assets/Icons/Components/camera.png");
-        _textureManager.LoadTexture("Component_MeshRenderer", "Assets/Icons/Components/mesh_renderer.png");
-        _textureManager.LoadTexture("Component_Script", "Assets/Icons/Components/script.png");
-        _textureManager.LoadTexture("Component_Light", "Assets/Icons/Components/light.png");
-        _textureManager.LoadTexture("Component_AudioSource", "Assets/Icons/Components/audio_source.png");
-
+        LoadIcon("Component_Transform", "Icons/Components/transform.png");
+        LoadIcon("Component_Camera", "Icons/Components/camera.png");
+        LoadIcon("Component_MeshRenderer", "Icons/Components/mesh_renderer.png");
+        LoadIcon("Component_Script", "Icons/Components/script.png");
+        LoadIcon("Component_Light", "Icons/Components/light.png");
+        LoadIcon("Component_AudioSource", "Icons/Components/audio_source.png");
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
+    }
+
+    private void LoadIcon(string key, string relativePath)
+    {
+        string? path = EditorResources.Find(relativePath);
+        if (path is not null)
+        {
+            _textureManager.LoadTexture(key, path);
+        }
+        else
+        {
+            Console.WriteLine($"[Editor] Warning: Could not find editor icon '{relativePath}'");
+        }
     }
 
     public Action<float> DrawUI()
@@ -8891,7 +8714,7 @@ namespace CherrisEditor;
 public class Project
 {
     public string Name { get; set; } = "MyGame";
-    public string StartScene { get; set; } = "Scene.yaml";
+    public string StartScene { get; set; } = "Main.yaml";
 
     [YamlIgnore]
     public string RootPath { get; set; } = string.Empty;
@@ -8930,7 +8753,7 @@ public class Project
 
     public void CreateSceneIfNeeded()
     {
-        string scenePath = Path.Combine(RootPath, "Assets", StartScene);
+        string scenePath = Path.Combine(RootPath, StartScene);
         if (!File.Exists(scenePath))
         {
             _ = Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
@@ -10344,6 +10167,226 @@ public static class ConsolePanel
 
 ---
 
+### `CherrisEditor\UI\ContentBrowserPanel.cs`
+
+```csharp
+using Cherris.Utils;
+using ImGuiNET;
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace CherrisEditor.UI;
+
+public class ContentBrowserPanel : IDisposable
+{
+    private readonly Editor _editor;
+    private readonly EditorTextureManager _textureManager;
+    private string _currentAssetPath;
+    private static IntPtr _payloadStringPtr = IntPtr.Zero;
+
+    public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
+    {
+        _editor = editor;
+        _textureManager = textureManager;
+
+        LoadIcon("Folder", "Icons/folder.png");
+        LoadIcon("File", "Icons/file.png");
+        LoadIcon("Script", "Icons/script.png");
+        LoadIcon("Prefab", "Icons/prefab.png");
+
+        _currentAssetPath = _editor.CurrentProject!.RootPath;
+    }
+
+    private void LoadIcon(string key, string relativePath)
+    {
+        string? path = EditorResources.Find(relativePath);
+        if (path is not null)
+        {
+            _textureManager.LoadTexture(key, path);
+        }
+        else
+        {
+            Console.WriteLine($"[ContentBrowser] Warning: Could not find icon '{relativePath}'");
+        }
+    }
+
+    public void Draw()
+    {
+        if (_payloadStringPtr != IntPtr.Zero)
+        {
+            Marshal.FreeHGlobal(_payloadStringPtr);
+            _payloadStringPtr = IntPtr.Zero;
+        }
+
+        _ = ImGui.Begin("Content Browser");
+        DrawHeader();
+        DrawGrid();
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+
+            if (payload.Data != IntPtr.Zero)
+            {
+                byte[] data = new byte[payload.DataSize];
+                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                var goId = new Guid(data);
+                var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
+
+                if (go is not null)
+                {
+                    string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
+                    _editor.CreatePrefabFromGameObject(go, prefabPath);
+                }
+            }
+
+            ImGui.EndDragDropTarget();
+        }
+
+        ImGui.End();
+    }
+
+    private void DrawHeader()
+    {
+        if (_currentAssetPath != _editor.CurrentProject!.RootPath)
+        {
+            if (ImGui.Button("<- Back"))
+            {
+                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _editor.CurrentProject.RootPath;
+            }
+
+            ImGui.SameLine();
+        }
+
+        string displayPath = _currentAssetPath == _editor.CurrentProject.RootPath
+            ? _editor.CurrentProject.Name
+            : _currentAssetPath.Replace(_editor.CurrentProject.RootPath, _editor.CurrentProject.Name);
+
+        ImGui.Text($"Path: {displayPath}");
+        ImGui.Separator();
+    }
+
+    private void DrawGrid()
+    {
+        float thumbnailSize = 80.0f;
+        float padding = 16.0f;
+        float cellSize = thumbnailSize + padding;
+        float panelWidth = ImGui.GetContentRegionAvail().X;
+        int columnCount = Math.Max(1, (int)(panelWidth / cellSize));
+
+        if (!ImGui.BeginTable("ContentGrid", columnCount))
+        {
+            return;
+        }
+
+        var directories = Directory.GetDirectories(_currentAssetPath);
+        var files = Directory.GetFiles(_currentAssetPath)
+            .Where(f => !IsProjectMetadata(f))
+            .ToArray();
+
+        foreach (var path in directories.Concat(files))
+        {
+            _ = ImGui.TableNextColumn();
+            DrawItem(path, thumbnailSize);
+        }
+
+        ImGui.EndTable();
+    }
+
+    private static bool IsProjectMetadata(string path)
+    {
+        string fileName = Path.GetFileName(path).ToLowerInvariant();
+        return fileName is "project.yaml" or "project.yml";
+    }
+
+    private void DrawItem(string path, float thumbnailSize)
+    {
+        ImGui.PushID(path);
+        ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+
+        IntPtr textureHandle = _textureManager.GetTextureForPath(path);
+        string itemName = Path.GetFileName(path);
+
+        CenterAlignItem(thumbnailSize);
+        if (ImGui.ImageButton(itemName, textureHandle, new Vector2(thumbnailSize, thumbnailSize)))
+        {
+        }
+
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+
+        string? payloadType = null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            payloadType = "ASSET_PATH_TEXTURE";
+        }
+        else if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        {
+            payloadType = "ASSET_PATH_PREFAB";
+        }
+
+        if (payloadType is not null && ImGui.BeginDragDropSource())
+        {
+            _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
+            _ = ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
+
+            ImGui.Image(textureHandle, new Vector2(50, 50));
+            ImGui.SameLine();
+            ImGui.Text(itemName);
+            ImGui.EndDragDropSource();
+        }
+
+
+        if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        {
+            if (Directory.Exists(path))
+            {
+                _currentAssetPath = path;
+            }
+            else if (Path.GetExtension(path).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
+            {
+                _editor.LoadSceneFromFile(path);
+            }
+        }
+
+        CenterAlignText(itemName);
+        ImGui.Text(itemName);
+
+        ImGui.PopStyleColor();
+        ImGui.PopID();
+    }
+
+    private void CenterAlignItem(float itemWidth)
+    {
+        float columnWidth = ImGui.GetColumnWidth();
+        float offsetX = (columnWidth - itemWidth) * 0.5f;
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+    }
+
+    private void CenterAlignText(string text)
+    {
+        float columnWidth = ImGui.GetColumnWidth();
+        float textWidth = ImGui.CalcTextSize(text).X;
+        float textOffsetX = (columnWidth - textWidth) * 0.5f;
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
+    }
+
+    public void Dispose()
+    {
+        if (_payloadStringPtr == IntPtr.Zero)
+        {
+            return;
+        }
+
+        Marshal.FreeHGlobal(_payloadStringPtr);
+        _payloadStringPtr = IntPtr.Zero;
+    }
+}
+```
+
+---
+
 ### `CherrisEditor\UI\InspectorPanel.cs`
 
 ```csharp
@@ -11014,7 +11057,6 @@ public class ProjectSelector
         {
             string projectDir = Path.Combine(_projectPathInput, _newProjectName);
             _ = Directory.CreateDirectory(projectDir);
-            _ = Directory.CreateDirectory(Path.Combine(projectDir, "Assets"));
 
             var project = new Project
             {
