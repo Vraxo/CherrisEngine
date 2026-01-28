@@ -1,4 +1,5 @@
-﻿using ImGuiNET;
+﻿using Cherris.Utils;
+using ImGuiNET;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -15,12 +16,26 @@ public class ContentBrowserPanel : IDisposable
     {
         _editor = editor;
         _textureManager = textureManager;
-        _textureManager.LoadTexture("Folder", "Assets/Icons/folder.png");
-        _textureManager.LoadTexture("File", "Assets/Icons/file.png");
-        _textureManager.LoadTexture("Script", "Assets/Icons/script.png");
-        _textureManager.LoadTexture("Prefab", "Assets/Icons/prefab.png");
+
+        LoadIcon("Folder", "Icons/folder.png");
+        LoadIcon("File", "Icons/file.png");
+        LoadIcon("Script", "Icons/script.png");
+        LoadIcon("Prefab", "Icons/prefab.png");
 
         _currentAssetPath = _editor.CurrentProject!.RootPath;
+    }
+
+    private void LoadIcon(string key, string relativePath)
+    {
+        string? path = EditorResources.Find(relativePath);
+        if (path is not null)
+        {
+            _textureManager.LoadTexture(key, path);
+        }
+        else
+        {
+            Console.WriteLine($"[ContentBrowser] Warning: Could not find icon '{relativePath}'");
+        }
     }
 
     public void Draw()
@@ -38,6 +53,7 @@ public class ContentBrowserPanel : IDisposable
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+
             if (payload.Data != IntPtr.Zero)
             {
                 byte[] data = new byte[payload.DataSize];
@@ -51,6 +67,7 @@ public class ContentBrowserPanel : IDisposable
                     _editor.CreatePrefabFromGameObject(go, prefabPath);
                 }
             }
+
             ImGui.EndDragDropTarget();
         }
 
@@ -65,6 +82,7 @@ public class ContentBrowserPanel : IDisposable
             {
                 _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _editor.CurrentProject.RootPath;
             }
+
             ImGui.SameLine();
         }
 
@@ -90,7 +108,9 @@ public class ContentBrowserPanel : IDisposable
         }
 
         var directories = Directory.GetDirectories(_currentAssetPath);
-        var files = Directory.GetFiles(_currentAssetPath);
+        var files = Directory.GetFiles(_currentAssetPath)
+            .Where(f => !IsProjectMetadata(f))
+            .ToArray();
 
         foreach (var path in directories.Concat(files))
         {
@@ -99,6 +119,12 @@ public class ContentBrowserPanel : IDisposable
         }
 
         ImGui.EndTable();
+    }
+
+    private static bool IsProjectMetadata(string path)
+    {
+        string fileName = Path.GetFileName(path).ToLowerInvariant();
+        return fileName is "project.yaml" or "project.yml";
     }
 
     private void DrawItem(string path, float thumbnailSize)
@@ -161,6 +187,7 @@ public class ContentBrowserPanel : IDisposable
     {
         float columnWidth = ImGui.GetColumnWidth();
         float offsetX = (columnWidth - itemWidth) * 0.5f;
+
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 
@@ -169,15 +196,18 @@ public class ContentBrowserPanel : IDisposable
         float columnWidth = ImGui.GetColumnWidth();
         float textWidth = ImGui.CalcTextSize(text).X;
         float textOffsetX = (columnWidth - textWidth) * 0.5f;
+
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
     }
 
     public void Dispose()
     {
-        if (_payloadStringPtr != IntPtr.Zero)
+        if (_payloadStringPtr == IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadStringPtr);
-            _payloadStringPtr = IntPtr.Zero;
+            return;
         }
+
+        Marshal.FreeHGlobal(_payloadStringPtr);
+        _payloadStringPtr = IntPtr.Zero;
     }
 }
