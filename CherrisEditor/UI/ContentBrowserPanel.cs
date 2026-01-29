@@ -26,7 +26,7 @@ public class ContentBrowserPanel : IDisposable
         _editor = editor;
         _textureManager = textureManager;
 
-        var projectRoot = editor.CurrentProject?.RootPath
+        var projectRoot = editor.ProjectManager.CurrentProject?.RootPath
             ?? throw new InvalidOperationException("ContentBrowserPanel requires an active project.");
 
         _currentDirectory = projectRoot;
@@ -67,7 +67,7 @@ public class ContentBrowserPanel : IDisposable
 
     private void DrawHeader()
     {
-        string projectRoot = _editor.CurrentProject?.RootPath ?? _currentDirectory;
+        string projectRoot = _editor.ProjectManager.CurrentProject?.RootPath ?? _currentDirectory;
 
         if (_currentDirectory != projectRoot)
         {
@@ -79,8 +79,8 @@ public class ContentBrowserPanel : IDisposable
         }
 
         string displayPath = _currentDirectory == projectRoot
-            ? _editor.CurrentProject?.Name ?? "Project"
-            : _currentDirectory.Replace(projectRoot, _editor.CurrentProject?.Name ?? "Project");
+            ? _editor.ProjectManager.CurrentProject?.Name ?? "Project"
+            : _currentDirectory.Replace(projectRoot, _editor.ProjectManager.CurrentProject?.Name ?? "Project");
 
         ImGui.Text($"Path: {displayPath}");
         ImGui.Separator();

@@ -5364,6 +5364,11 @@ public static class Logger
 
     public static IReadOnlyCollection<LogMessage> Messages => _messages;
 
+    public static void Clear()
+    {
+        while (_messages.TryDequeue(out _)) { }
+    }
+
     public static void Info(string message)
     {
         Log(LogLevel.Info, message);
@@ -5430,9 +5435,9 @@ public enum LogLevel
 ### `Cherris\Core\Logging\LogMessage.cs`
 
 ```csharp
-namespace Cherris.Core;
+namespace Cherris.Core.Logging;
 
-public struct LogMessage
+public readonly struct LogMessage
 {
     public DateTime Timestamp { get; }
     public LogLevel Level { get; }
@@ -8197,7 +8202,7 @@ public class Editor : Engine
     protected override void OnStart()
     {
         _editorAppLogic = new(this, _sceneSerializer);
-        OnDrawUI = _editorAppLogic.DrawUI();
+        OnDrawUI = _editorAppLogic.Draw;
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
 
         if (CurrentProject is not null)
@@ -8456,94 +8461,114 @@ public class EditorAppLogic : IDisposable
     private readonly Editor _editor;
     private readonly SceneSerializer _sceneSerializer;
     private readonly HistoryManager _history;
+    private readonly EditorTextureManager _textureManager;
     private readonly ProjectSelector _projectSelector;
 
-    private readonly MenuBar _menuBar;
-    private readonly Toolbar _toolbar;
-    private readonly ViewportPanel _viewportPanel;
-    private readonly OutlinerPanel _outlinerPanel;
-    private readonly InspectorPanel _inspectorPanel;
-    private readonly ContentBrowserPanel _contentBrowserPanel;
-    private readonly EditorTextureManager _textureManager;
+    private MenuBar _menuBar;
+    private Toolbar _toolbar;
+    private ViewportPanel _viewportPanel;
+    private OutlinerPanel _outlinerPanel;
+    private InspectorPanel _inspectorPanel;
+    private ContentBrowserPanel _contentBrowserPanel;
+    private ConsolePanel _consolePanel;
+
+    private bool _imGuizmoInitialized;
+
+    private static readonly (string Key, string Path)[] Icons =
+    {
+        ("Play", "Icons/Play.png"),
+        ("Pause", "Icons/Pause.png"),
+        ("Stop", "Icons/Stop.png"),
+        ("Reset", "Icons/Reset.png"),
+        ("Component_Transform", "Icons/Components/Transform.png"),
+        ("Component_Camera", "Icons/Components/Camera.png"),
+        ("Component_MeshRenderer", "Icons/Components/MeshRenderer.png"),
+        ("Component_Script", "Icons/Components/Script.png"),
+        ("Component_Light", "Icons/Components/Light.png"),
+        ("Component_AudioSource", "Icons/Components/AudioSource.png")
+    };
 
     public EditorAppLogic(Editor editor, SceneSerializer sceneSerializer)
     {
         _editor = editor;
         _history = editor.History;
-        _textureManager = new EditorTextureManager();
         _sceneSerializer = sceneSerializer;
+        _textureManager = new EditorTextureManager();
         _projectSelector = new ProjectSelector();
 
+        InitializePanels();
+        LoadIcons();
+
         _projectSelector.OnProjectSelected += OnProjectSelected;
-
-        _menuBar = new MenuBar(editor, _sceneSerializer, _history);
-        _toolbar = new Toolbar(editor, _textureManager);
-        _viewportPanel = new ViewportPanel(editor, _history);
-        _outlinerPanel = new OutlinerPanel(editor);
-        _inspectorPanel = new InspectorPanel(editor, _textureManager, _history);
-        _contentBrowserPanel = new ContentBrowserPanel(editor, _textureManager);
-
         EditorTheme.ApplyUnrealEngineStyle();
+    }
 
-        LoadIcon("Play", "Icons/Play.png");
-        LoadIcon("Pause", "Icons/Pause.png");
-        LoadIcon("Stop", "Icons/Stop.png");
-        LoadIcon("Reset", "Icons/Reset.png");
+    private void InitializePanels()
+    {
+        _menuBar = new MenuBar(_editor, _sceneSerializer, _history);
+        _toolbar = new Toolbar(_editor, _textureManager);
+        _viewportPanel = new ViewportPanel(_editor, _history);
+        _outlinerPanel = new OutlinerPanel(_editor);
+        _inspectorPanel = new InspectorPanel(_editor, _textureManager, _history);
+        _contentBrowserPanel = new ContentBrowserPanel(_editor, _textureManager);
+        _consolePanel = new ConsolePanel();
+    }
 
-        LoadIcon("Component_Transform", "Icons/Components/Transform.png");
-        LoadIcon("Component_Camera", "Icons/Components/Camera.png");
-        LoadIcon("Component_MeshRenderer", "Icons/Components/MeshRenderer.png");
-        LoadIcon("Component_Script", "Icons/Components/Script.png");
-        LoadIcon("Component_Light", "Icons/Components/Light.png");
-        LoadIcon("Component_AudioSource", "Icons/Components/AudioSource.png");
+    private void LoadIcons()
+    {
+        foreach (var (key, path) in Icons)
+        {
+            string? fullPath = EditorResources.Find(path);
+            if (fullPath is not null)
+            {
+                _textureManager.LoadTexture(key, fullPath);
+            }
+            else
+            {
+                Logger.Warning($"[Editor] Could not find editor icon '{path}'");
+            }
+        }
+    }
+
+    public void Draw(float deltaTime)
+    {
+        InitializeImGuizmoOnce();
+
+        if (IsWindowMinimized())
+        {
+            return;
+        }
+
+        if (_editor.CurrentProject is null)
+        {
+            _projectSelector.Draw();
+            return;
+        }
+
+        SetupDockspace();
+
+        _viewportPanel.Draw();
+        _outlinerPanel.Draw();
+        _consolePanel.Draw();
+        _contentBrowserPanel.Draw();
+        _inspectorPanel.DrawInspectorPanel();
+    }
+
+    private void InitializeImGuizmoOnce()
+    {
+        if (_imGuizmoInitialized)
+        {
+            return;
+        }
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
+        _imGuizmoInitialized = true;
     }
 
-    private void LoadIcon(string key, string relativePath)
+    private static bool IsWindowMinimized()
     {
-        string? path = EditorResources.Find(relativePath);
-        if (path is not null)
-        {
-            _textureManager.LoadTexture(key, path);
-        }
-        else
-        {
-            Logger.Warning($"[Editor] Could not find editor icon '{relativePath}'");
-        }
-    }
-
-    public Action<float> DrawUI()
-    {
-        return (deltaTime) =>
-        {
-            // Prevent ImGui docking layout corruption when window is minimized
-            var io = ImGui.GetIO();
-            if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
-            {
-                return;
-            }
-
-            if (_editor.CurrentProject is null)
-            {
-                _projectSelector.Draw();
-                return;
-            }
-
-            SetupDockspace();
-            ImGuizmo.BeginFrame();
-
-            _viewportPanel.Draw();
-            _outlinerPanel.Draw();
-            ConsolePanel.Draw();
-            _contentBrowserPanel.Draw();
-            _inspectorPanel.DrawInspectorPanel();
-        };
-    }
-
-    private void OnProjectSelected(string projectRoot)
-    {
-        _editor.LoadProject(projectRoot);
+        var io = ImGui.GetIO();
+        return io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0;
     }
 
     public void UpdateEditorLogic(float deltaTime)
@@ -8554,34 +8579,61 @@ public class EditorAppLogic : IDisposable
         }
 
         _viewportPanel.Update();
+        SyncDebugRenderingState();
+        HandleEditorInput();
+    }
 
-        if (_editor.Renderer is not null)
+    private void SyncDebugRenderingState()
+    {
+        if (_editor.Renderer is null)
         {
-            _editor.Renderer.ShowPhysicsColliders = _editor.State == EditorState.Editing;
+            return;
         }
 
+        _editor.Renderer.ShowPhysicsColliders = _editor.State == EditorState.Editing;
+    }
+
+    private void HandleEditorInput()
+    {
         bool ctrl = Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight);
 
-        if (ctrl && Input.WasKeyPressed(Key.S))
+        if (!ctrl)
         {
-            var activeScene = _editor.SceneManager.ActiveScene;
-            if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
-            {
-                _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
-                activeScene.IsDirty = false;
-                Logger.Info($"[Editor] Scene saved to '{activeScene.FilePath}'");
-            }
+            return;
         }
 
-        if (ctrl && Input.WasKeyPressed(Key.Z))
+        if (Input.WasKeyPressed(Key.S))
+        {
+            SaveScene();
+        }
+
+        if (Input.WasKeyPressed(Key.Z))
         {
             _history.Undo();
         }
 
-        if (ctrl && Input.WasKeyPressed(Key.Y))
+        if (Input.WasKeyPressed(Key.Y))
         {
             _history.Redo();
         }
+    }
+
+    private void SaveScene()
+    {
+        var activeScene = _editor.SceneManager.ActiveScene;
+        if (activeScene is null || string.IsNullOrEmpty(activeScene.FilePath))
+        {
+            return;
+        }
+
+        _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
+        activeScene.IsDirty = false;
+        Logger.Info($"[Editor] Scene saved to '{activeScene.FilePath}'");
+    }
+
+    private void OnProjectSelected(string projectRoot)
+    {
+        _editor.LoadProject(projectRoot);
     }
 
     private void SetupDockspace()
@@ -8591,13 +8643,21 @@ public class EditorAppLogic : IDisposable
         ImGui.SetNextWindowSize(viewport.Size);
         ImGui.SetNextWindowViewport(viewport.ID);
 
+        ImGuiWindowFlags windowFlags =
+            ImGuiWindowFlags.NoTitleBar |
+            ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoResize |
+            ImGuiWindowFlags.NoMove |
+            ImGuiWindowFlags.NoBringToFrontOnFocus |
+            ImGuiWindowFlags.NoNavFocus |
+            ImGuiWindowFlags.MenuBar |
+            ImGuiWindowFlags.NoBackground;
+
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
 
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus | ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoBackground;
-
-        _ = ImGui.Begin("MainDockspace", windowFlags);
+        ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);
 
         _menuBar.Draw();
@@ -8607,7 +8667,7 @@ public class EditorAppLogic : IDisposable
         ImGui.PopStyleVar();
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
-        _ = ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
+        ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
 
         ImGui.End();
     }
@@ -9097,19 +9157,20 @@ public class Project
             return new Project { RootPath = projectRoot };
         }
 
-        var deserializer = new DeserializerBuilder()
+        IDeserializer deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .Build();
 
-        var yaml = File.ReadAllText(configPath);
-        var project = deserializer.Deserialize<Project>(yaml);
+        string yaml = File.ReadAllText(configPath);
+        Project project = deserializer.Deserialize<Project>(yaml);
         project.RootPath = projectRoot;
+
         return project;
     }
 
     public void Save()
     {
-        var serializer = new SerializerBuilder()
+        ISerializer serializer = new SerializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .Build();
 
@@ -9120,11 +9181,14 @@ public class Project
     public void CreateSceneIfNeeded()
     {
         string scenePath = Path.Combine(RootPath, StartScene);
-        if (!File.Exists(scenePath))
+
+        if (File.Exists(scenePath))
         {
-            _ = Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
-            File.WriteAllText(scenePath, "GameObjects: []");
+            return;
         }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
+        File.WriteAllText(scenePath, "GameObjects: []");
     }
 }
 ```
@@ -10512,11 +10576,11 @@ using System.Numerics;
 
 namespace CherrisEditor.UI;
 
-public static class ConsolePanel
+public class ConsolePanel
 {
-    private static bool _autoScroll = true;
+    private bool _autoScroll = true;
 
-    public static void Draw()
+    public void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
         _ = ImGui.Begin("Console");
@@ -10529,20 +10593,17 @@ public static class ConsolePanel
         ImGui.PopStyleVar();
     }
 
-    private static void DrawToolbar()
+    private void DrawToolbar()
     {
         if (ImGui.Button("Clear"))
         {
-            // Note: Logger doesn't expose a Clear method, 
-            // but we can at least reset auto-scroll if needed.
-            // To properly clear, we'd need to add Logger.ClearMessages().
-            // For now, auto-scroll toggle is sufficient.
+            Logger.Clear();
         }
         ImGui.SameLine();
         _ = ImGui.Checkbox("Auto-scroll", ref _autoScroll);
     }
 
-    private static void DrawLogMessages()
+    private void DrawLogMessages()
     {
         _ = ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
 
@@ -10555,7 +10616,6 @@ public static class ConsolePanel
                 _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
             };
 
-            // Apply color to the entire line for consistency with literal console
             ImGui.PushStyleColor(ImGuiCol.Text, color);
 
             ImGui.TextUnformatted($"[{msg.Timestamp:HH:mm:ss}]");
@@ -10592,22 +10652,37 @@ namespace CherrisEditor.UI;
 
 public class ContentBrowserPanel : IDisposable
 {
+    private const string IconFolder = "Folder";
+    private const string IconFile = "File";
+    private const string IconScript = "Script";
+    private const string IconPrefab = "Prefab";
+
+    private const float ThumbnailSize = 80.0f;
+    private const float CellPadding = 16.0f;
+    private const float CellSize = ThumbnailSize + CellPadding;
+
     private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
-    private string _currentAssetPath;
-    private static IntPtr _payloadStringPtr = IntPtr.Zero;
+    private string _currentDirectory;
 
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
         _textureManager = textureManager;
 
-        LoadIcon("Folder", "Icons/Folder.png");
-        LoadIcon("File", "Icons/File.png");
-        LoadIcon("Script", "Icons/Components/Script.png");
-        LoadIcon("Prefab", "Icons/Prefab.png");
+        var projectRoot = editor.CurrentProject?.RootPath
+            ?? throw new InvalidOperationException("ContentBrowserPanel requires an active project.");
 
-        _currentAssetPath = _editor.CurrentProject!.RootPath;
+        _currentDirectory = projectRoot;
+        LoadIcons();
+    }
+
+    private void LoadIcons()
+    {
+        LoadIcon(IconFolder, "Icons/Folder.png");
+        LoadIcon(IconFile, "Icons/File.png");
+        LoadIcon(IconScript, "Icons/Components/Script.png");
+        LoadIcon(IconPrefab, "Icons/Prefab.png");
     }
 
     private void LoadIcon(string key, string relativePath)
@@ -10619,64 +10694,37 @@ public class ContentBrowserPanel : IDisposable
         }
         else
         {
-            Logger.Warning($"[ContentBrowser] Could not find icon '{relativePath}'");
+            Logger.Warning($"[ContentBrowser] Icon not found: '{relativePath}'");
         }
     }
 
     public void Draw()
     {
-        if (_payloadStringPtr != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_payloadStringPtr);
-            _payloadStringPtr = IntPtr.Zero;
-        }
-
         _ = ImGui.Begin("Content Browser");
+
         DrawHeader();
         DrawGrid();
-
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-
-            unsafe
-            {
-                if (payload.NativePtr != null)
-                {
-                    byte[] data = new byte[payload.DataSize];
-                    Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                    var goId = new Guid(data);
-                    var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
-
-                    if (go is not null)
-                    {
-                        string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
-                        _editor.CreatePrefabFromGameObject(go, prefabPath);
-                    }
-                }
-            }
-
-            ImGui.EndDragDropTarget();
-        }
+        DrawDropTarget();
 
         ImGui.End();
     }
 
     private void DrawHeader()
     {
-        if (_currentAssetPath != _editor.CurrentProject!.RootPath)
+        string projectRoot = _editor.CurrentProject?.RootPath ?? _currentDirectory;
+
+        if (_currentDirectory != projectRoot)
         {
             if (ImGui.Button("<- Back"))
             {
-                _currentAssetPath = Directory.GetParent(_currentAssetPath)?.FullName ?? _editor.CurrentProject.RootPath;
+                _currentDirectory = Directory.GetParent(_currentDirectory)?.FullName ?? projectRoot;
             }
-
             ImGui.SameLine();
         }
 
-        string displayPath = _currentAssetPath == _editor.CurrentProject.RootPath
-            ? _editor.CurrentProject.Name
-            : _currentAssetPath.Replace(_editor.CurrentProject.RootPath, _editor.CurrentProject.Name);
+        string displayPath = _currentDirectory == projectRoot
+            ? _editor.CurrentProject?.Name ?? "Project"
+            : _currentDirectory.Replace(projectRoot, _editor.CurrentProject?.Name ?? "Project");
 
         ImGui.Text($"Path: {displayPath}");
         ImGui.Separator();
@@ -10684,26 +10732,29 @@ public class ContentBrowserPanel : IDisposable
 
     private void DrawGrid()
     {
-        float thumbnailSize = 80.0f;
-        float padding = 16.0f;
-        float cellSize = thumbnailSize + padding;
         float panelWidth = ImGui.GetContentRegionAvail().X;
-        int columnCount = Math.Max(1, (int)(panelWidth / cellSize));
+        int columnCount = Math.Max(1, (int)(panelWidth / CellSize));
 
         if (!ImGui.BeginTable("ContentGrid", columnCount))
         {
             return;
         }
 
-        var directories = Directory.GetDirectories(_currentAssetPath);
-        var files = Directory.GetFiles(_currentAssetPath)
+        var directories = Directory.GetDirectories(_currentDirectory);
+        var files = Directory.GetFiles(_currentDirectory)
             .Where(f => !IsProjectMetadata(f))
             .ToArray();
 
-        foreach (var path in directories.Concat(files))
+        foreach (var directory in directories)
         {
             _ = ImGui.TableNextColumn();
-            DrawItem(path, thumbnailSize);
+            RenderDirectory(directory);
+        }
+
+        foreach (var file in files)
+        {
+            _ = ImGui.TableNextColumn();
+            RenderFile(file);
         }
 
         ImGui.EndTable();
@@ -10715,88 +10766,157 @@ public class ContentBrowserPanel : IDisposable
         return fileName is "project.yaml" or "project.yml";
     }
 
-    private void DrawItem(string path, float thumbnailSize)
+    private void RenderDirectory(string path)
     {
-        ImGui.PushID(path);
-        ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+        string name = Path.GetFileName(path);
+        IntPtr icon = _textureManager.GetTexture(IconFolder);
 
-        IntPtr textureHandle = _textureManager.GetTextureForPath(path);
-        string itemName = Path.GetFileName(path);
+        CenterAlignItem(ThumbnailSize);
 
-        CenterAlignItem(thumbnailSize);
-        if (ImGui.ImageButton(itemName, textureHandle, new Vector2(thumbnailSize, thumbnailSize)))
+        if (ImGui.ImageButton($"##dir_{path}", icon, new Vector2(ThumbnailSize, ThumbnailSize)))
         {
         }
-
-        string extension = Path.GetExtension(path).ToLowerInvariant();
-
-        string? payloadType = null;
-        if (EditorTextureManager.ImageExtensions.Contains(extension))
-        {
-            payloadType = "ASSET_PATH_TEXTURE";
-        }
-        else if (EditorTextureManager.PrefabExtensions.Contains(extension))
-        {
-            payloadType = "ASSET_PATH_PREFAB";
-        }
-
-        if (payloadType is not null && ImGui.BeginDragDropSource())
-        {
-            _payloadStringPtr = Marshal.StringToHGlobalAnsi(path);
-            _ = ImGui.SetDragDropPayload(payloadType, _payloadStringPtr, (uint)(path.Length + 1));
-
-            ImGui.Image(textureHandle, new Vector2(50, 50));
-            ImGui.SameLine();
-            ImGui.Text(itemName);
-            ImGui.EndDragDropSource();
-        }
-
 
         if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
-            if (Directory.Exists(path))
-            {
-                _currentAssetPath = path;
-            }
-            else if (Path.GetExtension(path).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
-            {
-                _editor.LoadSceneFromFile(path);
-            }
+            _currentDirectory = path;
         }
 
-        CenterAlignText(itemName);
-        ImGui.Text(itemName);
-
-        ImGui.PopStyleColor();
-        ImGui.PopID();
+        CenterAlignText(name);
+        ImGui.Text(name);
     }
 
-    private void CenterAlignItem(float itemWidth)
+    private void RenderFile(string path)
     {
-        float columnWidth = ImGui.GetColumnWidth();
-        float offsetX = (columnWidth - itemWidth) * 0.5f;
+        string name = Path.GetFileName(path);
+        IntPtr icon = _textureManager.GetTextureForPath(path);
 
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+        CenterAlignItem(ThumbnailSize);
+
+        if (ImGui.ImageButton($"##file_{path}", icon, new Vector2(ThumbnailSize, ThumbnailSize)))
+        {
+        }
+
+        HandleFileDragDrop(path, name, icon);
+        HandleFileDoubleClick(path, name);
+
+        CenterAlignText(name);
+        ImGui.Text(name);
     }
 
-    private void CenterAlignText(string text)
+    private static void HandleFileDragDrop(string path, string name, IntPtr icon)
     {
-        float columnWidth = ImGui.GetColumnWidth();
-        float textWidth = ImGui.CalcTextSize(text).X;
-        float textOffsetX = (columnWidth - textWidth) * 0.5f;
-
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textOffsetX);
-    }
-
-    public void Dispose()
-    {
-        if (_payloadStringPtr == IntPtr.Zero)
+        if (!ImGui.BeginDragDropSource())
         {
             return;
         }
 
-        Marshal.FreeHGlobal(_payloadStringPtr);
-        _payloadStringPtr = IntPtr.Zero;
+        string? payloadType = DeterminePayloadType(path);
+
+        if (payloadType is not null)
+        {
+            SendStringPayload(payloadType, path);
+
+            ImGui.Image(icon, new Vector2(50, 50));
+            ImGui.SameLine();
+            ImGui.Text(name);
+        }
+
+        ImGui.EndDragDropSource();
+    }
+
+    private static string? DeterminePayloadType(string path)
+    {
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+
+        return EditorTextureManager.ImageExtensions.Contains(extension)
+            ? "ASSET_PATH_TEXTURE"
+            : EditorTextureManager.PrefabExtensions.Contains(extension) ? "ASSET_PATH_PREFAB" : null;
+    }
+
+    private static void SendStringPayload(string payloadType, string data)
+    {
+        IntPtr ptr = Marshal.StringToHGlobalAnsi(data);
+        try
+        {
+            uint size = (uint)(data.Length + 1);
+            _ = ImGui.SetDragDropPayload(payloadType, ptr, size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    private void HandleFileDoubleClick(string path, string name)
+    {
+        if (!ImGui.IsItemHovered() || !ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        {
+            return;
+        }
+
+        if (name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        {
+            _editor.LoadSceneFromFile(path);
+        }
+    }
+
+    private void DrawDropTarget()
+    {
+        _ = ImGui.InvisibleButton("ContentDropZone", ImGui.GetContentRegionAvail());
+
+        if (!ImGui.BeginDragDropTarget())
+        {
+            return;
+        }
+
+        HandleGameObjectDrop();
+
+        ImGui.EndDragDropTarget();
+    }
+
+    private unsafe void HandleGameObjectDrop()
+    {
+        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+
+        if (payload.NativePtr is null)
+        {
+            return;
+        }
+
+        byte[] data = new byte[payload.DataSize];
+        Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+        var objectId = new Guid(data);
+
+        var gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId);
+
+        if (gameObject is null)
+        {
+            return;
+        }
+
+        string prefabPath = Path.Combine(_currentDirectory, $"{gameObject.Name}.prefab");
+        _editor.CreatePrefabFromGameObject(gameObject, prefabPath);
+    }
+
+    private static void CenterAlignItem(float itemWidth)
+    {
+        float columnWidth = ImGui.GetColumnWidth();
+        float offsetX = (columnWidth - itemWidth) * 0.5f;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+    }
+
+    private static void CenterAlignText(string text)
+    {
+        float columnWidth = ImGui.GetColumnWidth();
+        float textWidth = ImGui.CalcTextSize(text).X;
+        float offsetX = (columnWidth - textWidth) * 0.5f;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+    }
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
     }
 }
 ```

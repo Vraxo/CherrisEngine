@@ -93,7 +93,7 @@ public class EditorAppLogic : IDisposable
             return;
         }
 
-        if (_editor.CurrentProject is null)
+        if (_editor.ProjectManager.CurrentProject is null)
         {
             _projectSelector.Draw();
             return;
@@ -127,7 +127,7 @@ public class EditorAppLogic : IDisposable
 
     public void UpdateEditorLogic(float deltaTime)
     {
-        if (_editor.CurrentProject is null)
+        if (_editor.ProjectManager.CurrentProject is null)
         {
             return;
         }

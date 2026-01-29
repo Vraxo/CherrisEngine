@@ -4,49 +4,38 @@ using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Serialization;
-using Cherris.Utils;
+using CherrisEditor.Core;
 using CherrisEditor.Undo;
 using System.Numerics;
 using System.Reflection;
-using System.Runtime.Loader;
-using System.Text.RegularExpressions;
 
 namespace CherrisEditor;
 
 public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
-    public List<Type> AvailableScriptTypes { get; } = [];
+    public readonly HistoryManager History = new();
     public EditorState State { get; private set; } = EditorState.Editing;
     public bool IsViewportHovered { get; set; }
-    public readonly HistoryManager History = new();
-    public Project? CurrentProject { get; private set; }
+
+    public ProjectManager ProjectManager { get; }
+    public ScriptManager ScriptManager { get; }
+    public IReadOnlyList<Type> AvailableScriptTypes => ScriptManager.AvailableScriptTypes;
 
     private Camera? _editorCamera;
-    private AssemblyLoadContext _gameAssemblyContext;
     private readonly SceneSerializer _sceneSerializer;
-
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
         Exposure = 0.5f;
-        _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
         _sceneSerializer = new SceneSerializer();
+        ProjectManager = new ProjectManager();
+        ScriptManager = new ScriptManager(SceneLoader);
     }
 
     public void LoadProject(string projectRoot)
     {
-        if (!Directory.Exists(projectRoot))
-        {
-            Logger.Error($"[Editor] Project directory not found: {projectRoot}");
-            return;
-        }
-
-        CurrentProject = Project.Load(projectRoot);
-        ProjectFiles.ProjectRoot = projectRoot;
-        ProjectPersistence.SetLastProject(projectRoot);
-
-        Logger.Info($"[Editor] Loaded project: {CurrentProject.Name}");
+        ProjectManager.LoadProject(projectRoot);
     }
 
     public void CreatePrefabFromGameObject(GameObject go, string path)
@@ -141,45 +130,26 @@ public class Editor : Engine
 
     public void CreateAndCompileScript(string scriptName)
     {
-        if (!IsValidCSharpIdentifier(scriptName))
-        {
-            Logger.Error($"[Editor] '{scriptName}' is not a valid C# class name.");
-            return;
-        }
-
-        if (CurrentProject is null)
+        if (ProjectManager.CurrentProject is null)
         {
             Logger.Error("[Editor] No project loaded.");
             return;
         }
 
-        string scriptsPath = Path.Combine(CurrentProject.RootPath, "Scripts");
-        _ = Directory.CreateDirectory(scriptsPath);
-        string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
-
-        if (File.Exists(filePath))
-        {
-            Logger.Error($"[Editor] A script named '{scriptName}.cs' already exists.");
-            return;
-        }
-
-        string content = ScriptTemplate.GetContent(scriptName);
-        File.WriteAllText(filePath, content);
-        Logger.Info($"[Editor] Created new script at '{filePath}'");
-
-        CompileAndRegisterGameScripts();
-    }
-
-    private static bool IsValidCSharpIdentifier(string identifier)
-    {
-        return !string.IsNullOrWhiteSpace(identifier) && Regex.IsMatch(identifier, @"^[_a-zA-Z][_a-zA-Z0-9]*$");
+        string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
+        ScriptManager.CreateAndCompileScript(scriptsPath, scriptName);
     }
 
     protected override void LoadContent()
     {
         ResourceManager.LoadInitialAssets();
         RegisterBuiltInComponents();
-        CompileAndRegisterGameScripts();
+
+        if (ProjectManager.CurrentProject is not null)
+        {
+            string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
+            ScriptManager.CompileAndRegisterGameScripts(scriptsPath);
+        }
 
         History.OnHistoryChanged += () =>
         {
@@ -196,9 +166,9 @@ public class Editor : Engine
         OnDrawUI = _editorAppLogic.Draw;
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
 
-        if (CurrentProject is not null)
+        if (ProjectManager.CurrentProject is not null)
         {
-            string startScenePath = Path.Combine(CurrentProject.RootPath, CurrentProject.StartScene);
+            string startScenePath = Path.Combine(ProjectManager.CurrentProject.RootPath, ProjectManager.CurrentProject.StartScene);
             if (File.Exists(startScenePath))
             {
                 LoadSceneFromFile(startScenePath);
@@ -250,7 +220,6 @@ public class Editor : Engine
         }
 
         GameObject? cameraGo = scene.MainCamera?.GameObject;
-
         cameraGo ??= scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
 
         if (cameraGo is not null)
@@ -265,7 +234,6 @@ public class Editor : Engine
             Logger.Error("[Editor] FATAL: No camera found in scene to attach editor controls to.");
         }
     }
-
 
     public void LoadSceneFromFile(string scenePath)
     {
@@ -289,7 +257,7 @@ public class Editor : Engine
 
     private void RegisterBuiltInComponents()
     {
-        AvailableScriptTypes.Clear();
+        ScriptManager.AvailableScriptTypes.Clear();
 
         Assembly coreAssembly = typeof(Script).Assembly;
         var scriptTypes = coreAssembly.GetTypes()
@@ -297,69 +265,8 @@ public class Editor : Engine
 
         foreach (var type in scriptTypes)
         {
-            RegisterScriptComponent(type);
+            ScriptManager.RegisterScriptComponent(type);
         }
-    }
-
-    private void CompileAndRegisterGameScripts()
-    {
-        if (_gameAssemblyContext.Assemblies.Any())
-        {
-            var typesToRemove = AvailableScriptTypes
-                .Where(t => AssemblyLoadContext.GetLoadContext(t.Assembly) == _gameAssemblyContext)
-                .ToList();
-
-            foreach (var type in typesToRemove)
-            {
-                _ = AvailableScriptTypes.Remove(type);
-            }
-
-            _gameAssemblyContext.Unload();
-            Logger.Info("[Editor] Unloaded old game assembly.");
-        }
-        _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
-
-        string scriptsPath = CurrentProject is not null
-            ? Path.Combine(CurrentProject.RootPath, "Scripts")
-            : "Scripts";
-
-        Assembly? gameAssembly = ScriptCompiler.Compile(scriptsPath, _gameAssemblyContext);
-
-        if (gameAssembly is null)
-        {
-            Logger.Warning("[Editor] Game script compilation failed. No custom components will be loaded.");
-            return;
-        }
-
-        try
-        {
-            IEnumerable<Type> scriptTypes = gameAssembly.GetTypes()
-                .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
-
-            int count = 0;
-            foreach (Type type in scriptTypes)
-            {
-                RegisterScriptComponent(type);
-                count++;
-            }
-            Logger.Info($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
-        }
-    }
-
-    private void RegisterScriptComponent(Type scriptType)
-    {
-        AvailableScriptTypes.Add(scriptType);
-        Component Factory(object _)
-        {
-            return (Component)Activator.CreateInstance(scriptType)!;
-        }
-
-        SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Logger.Info($"[Editor] Registered component: {scriptType.Name}");
     }
 
     private void SetScriptsEnabledForPlayMode()
