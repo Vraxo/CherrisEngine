@@ -7,7 +7,7 @@ namespace CherrisEditor.UI;
 public class OutlinerPanel : IDisposable
 {
     private readonly Editor _editor;
-    private static IntPtr _payloadGuidPtr = IntPtr.Zero; // For GUID payloads
+    private static IntPtr _payloadGuidPtr = IntPtr.Zero;
 
     public OutlinerPanel(Editor editor)
     {
@@ -16,7 +16,6 @@ public class OutlinerPanel : IDisposable
 
     public void Draw()
     {
-        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
         if (_payloadGuidPtr != IntPtr.Zero)
         {
             Marshal.FreeHGlobal(_payloadGuidPtr);
@@ -31,7 +30,6 @@ public class OutlinerPanel : IDisposable
             DrawGameObjectNode(go);
         }
 
-        // Use the remaining space in the window as a drop target to instantiate prefabs at the root
         ImGui.InvisibleButton("OutlinerDropTarget", ImGui.GetContentRegionAvail());
         if (ImGui.BeginDragDropTarget())
         {
@@ -41,7 +39,7 @@ public class OutlinerPanel : IDisposable
                 if (prefabPayload.NativePtr != null)
                 {
                     string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
-                    _editor.InstantiatePrefab(path);
+                    _editor.SceneOperations.InstantiatePrefab(path);
                 }
             }
 
@@ -56,7 +54,7 @@ public class OutlinerPanel : IDisposable
                     var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
                     if (draggedObject is not null)
                     {
-                        draggedObject.Transform.Parent = null; // Unparent
+                        draggedObject.Transform.Parent = null;
                     }
                 }
             }
@@ -80,7 +78,6 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropSource())
         {
             byte[] guidBytes = go.Id.ToByteArray();
-            // Allocate memory and hold onto the pointer until the next frame.
             _payloadGuidPtr = Marshal.AllocHGlobal(guidBytes.Length);
             Marshal.Copy(guidBytes, 0, _payloadGuidPtr, guidBytes.Length);
             ImGui.SetDragDropPayload("GAMEOBJECT_ID", _payloadGuidPtr, (uint)guidBytes.Length);
@@ -141,11 +138,12 @@ public class OutlinerPanel : IDisposable
 
     public void Dispose()
     {
-        // Ensure we free the handle on shutdown if it's still allocated
-        if (_payloadGuidPtr != IntPtr.Zero)
+        if (_payloadGuidPtr == IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadGuidPtr);
-            _payloadGuidPtr = IntPtr.Zero;
+            return;
         }
+
+        Marshal.FreeHGlobal(_payloadGuidPtr);
+        _payloadGuidPtr = IntPtr.Zero;
     }
 }

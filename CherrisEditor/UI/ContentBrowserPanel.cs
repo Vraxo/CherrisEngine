@@ -213,7 +213,7 @@ public class ContentBrowserPanel : IDisposable
 
         if (name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            _editor.LoadSceneFromFile(path);
+            _editor.SceneOperations.LoadSceneFromFile(path);
         }
     }
 
@@ -252,7 +252,7 @@ public class ContentBrowserPanel : IDisposable
         }
 
         string prefabPath = Path.Combine(_currentDirectory, $"{gameObject.Name}.prefab");
-        _editor.CreatePrefabFromGameObject(gameObject, prefabPath);
+        _editor.SceneOperations.CreatePrefabFromGameObject(gameObject, prefabPath);
     }
 
     private static void CenterAlignItem(float itemWidth)

@@ -59,7 +59,6 @@ public class ViewportPanel
         List<Scene> openScenes = _editor.SceneManager.OpenScenes.ToList();
         Scene activeScene = _editor.SceneManager.ActiveScene;
 
-        // Default the viewport to not hovered. It will be set to true only if the image within the active tab is hovered.
         _editor.IsViewportHovered = false;
 
         if (ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
@@ -89,7 +88,6 @@ public class ViewportPanel
                         _editor.SceneManager.SetActiveScene(scene);
                     }
 
-                    // Only render the viewport content for the currently active scene
                     if (scene == activeScene)
                     {
                         ImGui.BeginChild("ViewportToolbar", new(0, ImGui.GetFrameHeightWithSpacing()), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
@@ -139,7 +137,6 @@ public class ViewportPanel
 
                 if (!isOpen)
                 {
-                    // TODO: Prompt to save if dirty
                     _editor.SceneManager.CloseScene(scene);
                 }
             }
@@ -193,7 +190,6 @@ public class ViewportPanel
         Matrix4x4 cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
         Matrix4x4 objectMatrix = selectedObject.Transform.GetModelMatrix();
 
-        // Capture initial state when manipulation starts
         if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
         {
             _isManipulatingGizmo = true;
@@ -215,7 +211,6 @@ public class ViewportPanel
             selectedObject.Transform.Scale = scale;
         }
 
-        // Create command when manipulation ends
         if (ImGuizmo.IsUsing() || !_isManipulatingGizmo)
         {
             return;
@@ -226,13 +221,11 @@ public class ViewportPanel
         Quaternion newRotation = selectedObject.Transform.Rotation;
         Vector3 newScale = selectedObject.Transform.Scale;
 
-        // Only create command if something actually changed
         if (newPosition == _initialPosition && newRotation == _initialRotation && newScale == _initialScale)
         {
             return;
         }
 
-        // Revert the change so the command can apply it
         selectedObject.Transform.Position = _initialPosition;
         selectedObject.Transform.Rotation = _initialRotation;
         selectedObject.Transform.Scale = _initialScale;
@@ -248,7 +241,7 @@ public class ViewportPanel
 
     private void HandleObjectSelection(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
-        Ray ray = _editor.CreateRayFromViewport(mousePos, viewportPos, viewportSize);
+        Ray ray = _editor.Selection.CreateRayFromViewport(mousePos, viewportPos, viewportSize);
         GameObject? closestObject = null;
         float closestDistance = float.MaxValue;
 
@@ -260,7 +253,7 @@ public class ViewportPanel
             }
 
             BoundingBox aabb = gameObject.GetWorldSpaceAABB();
-            
+
             if (!ray.Intersects(aabb, out float distance))
             {
                 continue;

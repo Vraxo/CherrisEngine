@@ -117,7 +117,6 @@ internal class InspectorPanel
         }
         ImGui.Separator();
 
-        // --- Transform Component ---
         ImGui.PushID("TransformComponent");
         IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
         if (DrawComponentHeader("Transform", transformIcon, out _))
@@ -126,7 +125,6 @@ internal class InspectorPanel
         }
         ImGui.PopID();
 
-        // --- Other Components ---
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
@@ -177,7 +175,7 @@ internal class InspectorPanel
                     ImGui.CloseCurrentPopup();
                     ImGui.PopID();
                     ImGui.EndPopup();
-                    return; // Exit loop as collection was modified
+                    return;
                 }
                 ImGui.EndPopup();
             }
@@ -225,7 +223,7 @@ internal class InspectorPanel
 
         if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
         {
-            _componentSearchText = ""; // Reset search when opening the popup
+            _componentSearchText = "";
             ImGui.OpenPopup("AddComponentPopup");
         }
 
@@ -238,7 +236,6 @@ internal class InspectorPanel
 
             bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
 
-            // Built-in components
             if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
             {
                 if (ImGui.MenuItem("Camera"))
@@ -281,7 +278,6 @@ internal class InspectorPanel
 
             ImGui.Separator();
 
-            // Scripts
             var filteredTypes = searchIsActive
                 ? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
                 : _editor.AvailableScriptTypes;

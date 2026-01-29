@@ -1,3 +1,0 @@
-
-**MODIFIED** `Cherris/Core/ComponentDeserializer.cs`
-Standardized logging to use Logger class.
