@@ -1,4 +1,5 @@
 ﻿using Cherris.Components;
+using Cherris.Core.Logging;
 using OpenTK.Audio.OpenAL;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -29,8 +30,8 @@ public class AudioSystem : IDisposable
         {
             _device = ALC.OpenDevice(null);
             _context = ALC.CreateContext(_device, null as int[]);
-            
-            ALC.MakeContextCurrent(_context);
+
+            _ = ALC.MakeContextCurrent(_context);
             CheckAlError("Initialize - MakeContextCurrent");
 
             AL.GenSources(_alSources);
@@ -41,11 +42,11 @@ public class AudioSystem : IDisposable
                 _availableSources.Enqueue(source);
             }
 
-            Console.WriteLine($"[AudioSystem] Initialized with OpenAL '{AL.Get(ALGetString.Version)}' on '{AL.Get(ALGetString.Renderer)}'");
+            Logger.Info($"[AudioSystem] Initialized with OpenAL '{AL.Get(ALGetString.Version)}' on '{AL.Get(ALGetString.Renderer)}'");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AudioSystem] FATAL: Could not initialize OpenAL. Audio will be disabled. Reason: {ex.Message}");
+            Logger.Warning($"[AudioSystem] FATAL: Could not initialize OpenAL. Audio will be disabled. Reason: {ex.Message}");
         }
     }
 
@@ -75,7 +76,7 @@ public class AudioSystem : IDisposable
         foreach ((AudioSource audioSource, int alSource) in _activeSources)
         {
             AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-            
+
             if (state != (int)ALSourceState.Stopped || !_activeSources.TryRemove(audioSource, out int removedAlSource))
             {
                 continue;
@@ -94,7 +95,7 @@ public class AudioSystem : IDisposable
 
         if (audioSource.Clip.AlBufferHandle == 0)
         {
-            Console.WriteLine($"[AudioSystem] Error: AudioSource on '{audioSource.GameObject.Name}' has an invalid AudioClip handle. Was it loaded before OpenAL was initialized?");
+            Logger.Warning($"[AudioSystem] Error: AudioSource on '{audioSource.GameObject.Name}' has an invalid AudioClip handle. Was it loaded before OpenAL was initialized?");
             return;
         }
 
@@ -105,11 +106,11 @@ public class AudioSystem : IDisposable
 
         if (!_availableSources.TryDequeue(out int alSource))
         {
-            Console.WriteLine("[AudioSystem] Warning: No available audio sources to play clip.");
+            Logger.Warning("[AudioSystem] Warning: No available audio sources to play clip.");
             return;
         }
 
-        Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
+        Logger.Info($"[AudioSystem] Playing clip on AL source #{alSource}.");
         _activeSources[audioSource] = alSource;
 
         AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
@@ -129,7 +130,7 @@ public class AudioSystem : IDisposable
 
         // Log the state immediately after the play command
         AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-        Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
+        Logger.Info($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
     }
 
     public void Stop(AudioSource audioSource)
@@ -157,11 +158,11 @@ public class AudioSystem : IDisposable
         }
 
         AL.DeleteSources(_alSources);
-        ALC.MakeContextCurrent(ALContext.Null);
+        _ = ALC.MakeContextCurrent(ALContext.Null);
         ALC.DestroyContext(_context);
-        ALC.CloseDevice(_device);
+        _ = ALC.CloseDevice(_device);
 
-        Console.WriteLine("[AudioSystem] Disposed.");
+        Logger.Info("[AudioSystem] Disposed.");
     }
 
     [Conditional("DEBUG")]
@@ -174,6 +175,6 @@ public class AudioSystem : IDisposable
             return;
         }
 
-        Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+        Logger.Warning($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
     }
 }

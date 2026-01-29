@@ -1,11 +1,11 @@
 ﻿using Cherris.Components;
-using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public static class ComponentDeserializer
 {
@@ -20,15 +20,21 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
     }
 
-    private static MeshRenderer CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
+    private static MeshRenderer? CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
     {
-        if (properties is not Dictionary<object, object> propsDict) return null;
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return null;
+        }
 
-        propsDict.TryGetValue("Mesh", out var meshNameObj);
+        _ = propsDict.TryGetValue("Mesh", out var meshNameObj);
         var meshName = meshNameObj as string;
 
         var mesh = resourceManager.GetMesh(meshName);
-        if (mesh is null) return null;
+        if (mesh is null)
+        {
+            return null;
+        }
 
         var material = CreateMaterialFromProperties(propsDict, resourceManager);
 
@@ -38,7 +44,10 @@ public static class ComponentDeserializer
     private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
     {
         var audioSource = new AudioSource();
-        if (properties is not Dictionary<object, object> propsDict) return audioSource;
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return audioSource;
+        }
 
         PopulateComponentProperties(audioSource, propsDict);
 
@@ -52,10 +61,10 @@ public static class ComponentDeserializer
 
     private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)
     {
-        componentProps.TryGetValue("Material", out var materialObj);
+        _ = componentProps.TryGetValue("Material", out var materialObj);
         var matProps = materialObj as Dictionary<object, object> ?? (Dictionary<object, object>)componentProps;
 
-        matProps.TryGetValue("Texture", out var textureNameObj);
+        _ = matProps.TryGetValue("Texture", out var textureNameObj);
         var textureName = textureNameObj as string ?? "White";
         var texture = resourceManager.GetTexture(textureName);
 
@@ -70,15 +79,13 @@ public static class ComponentDeserializer
         return material;
     }
 
-    private static Skybox CreateSkyboxComponent(object properties, IResourceManager resourceManager)
+    private static Skybox? CreateSkyboxComponent(object properties, IResourceManager resourceManager)
     {
-        if (properties is Dictionary<object, object> propsDict &&
+        return properties is Dictionary<object, object> propsDict &&
             propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
-            cubemapNameObj is string cubemapName)
-        {
-            return resourceManager.GetSkybox(cubemapName);
-        }
-        return null;
+            cubemapNameObj is string cubemapName
+            ? resourceManager.GetSkybox(cubemapName)
+            : null;
     }
 
     private static T CreateAndPopulateComponent<T>(object properties) where T : Component, new()
@@ -90,15 +97,24 @@ public static class ComponentDeserializer
 
     private static void PopulateComponentProperties(Component component, IReadOnlyDictionary<object, object> propsDict)
     {
-        if (propsDict is null) return;
+        if (propsDict is null)
+        {
+            return;
+        }
 
         var componentType = component.GetType();
         foreach (var (key, value) in propsDict)
         {
-            if (key is not string propName) continue;
+            if (key is not string propName)
+            {
+                continue;
+            }
 
             var propertyInfo = componentType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo)) continue;
+            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo))
+            {
+                continue;
+            }
 
             if (TryConvertValue(value, propertyInfo.PropertyType, out object convertedValue))
             {
@@ -116,7 +132,7 @@ public static class ComponentDeserializer
         return propertyInfo.CanWrite && !propertyInfo.IsDefined(typeof(HideInInspectorAttribute), false);
     }
 
-    private static bool TryConvertValue(object yamlValue, Type targetType, out object convertedValue)
+    private static bool TryConvertValue(object yamlValue, Type targetType, out object? convertedValue)
     {
         convertedValue = null;
         try
@@ -139,7 +155,7 @@ public static class ComponentDeserializer
         }
     }
 
-    private static bool TryConvertFromList(IReadOnlyList<object> list, Type targetType, out object convertedValue)
+    private static bool TryConvertFromList(IReadOnlyList<object> list, Type targetType, out object? convertedValue)
     {
         convertedValue = null;
         if (targetType == typeof(Vector2) && list.Count == 2)
@@ -198,6 +214,6 @@ public static class ComponentDeserializer
 
     private static void LogPropertyValueConversionWarning(string propertyName, string componentName)
     {
-        Console.WriteLine($"[Deserializer] Warning: Could not set property '{propertyName}' on component '{componentName}'.");
+        Logger.Warning($"[Deserializer] Warning: Could not set property '{propertyName}' on component '{componentName}'.");
     }
 }

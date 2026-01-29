@@ -1,5 +1,6 @@
 ﻿using Cherris;
 using Cherris.Components;
+using Cherris.Core.Logging;
 using ImGuizmoNET;
 using System.Numerics;
 
@@ -20,18 +21,13 @@ public class EditorController : Script
         _editor = editor;
     }
 
-    /// <summary>
-    /// Initializes the internal yaw and pitch from the GameObject's current rotation.
-    /// This uses the engine's standard Euler angle conversion to ensure symmetry with the creation method.
-    /// </summary>
     private void SyncYawPitchFromTransform()
     {
         var eulerAngles = EngineMath.ToEulerAngles(GameObject.Transform.Rotation);
-        _pitch = eulerAngles.X; // Pitch is rotation around X-axis
-        _yaw = eulerAngles.Y;   // Yaw is rotation around Y-axis
-                                // We ignore roll (Z-axis) for the camera controller.
+        _pitch = eulerAngles.X;
+        _yaw = eulerAngles.Y;
 
-        Console.WriteLine($"[Controller] Initializing camera orientation. Yaw: {_yaw}, Pitch: {_pitch}. From Transform Rotation: {GameObject.Transform.Rotation}");
+        Logger.Info($"[Controller] Initializing camera orientation. Yaw: {_yaw}, Pitch: {_pitch}. From Transform Rotation: {GameObject.Transform.Rotation}");
     }
 
     public override void Start()
@@ -73,7 +69,7 @@ public class EditorController : Script
         float currentSpeed = Speed;
         if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
         {
-            currentSpeed *= 3.0f; // Speed boost
+            currentSpeed *= 3.0f;
         }
 
         var localMove = Vector3.Zero;
@@ -98,11 +94,11 @@ public class EditorController : Script
         float worldVerticalMove = 0f;
         if (Input.IsKeyDown(Key.E))
         {
-            worldVerticalMove += 1; // Up
+            worldVerticalMove += 1;
         }
         if (Input.IsKeyDown(Key.Q))
         {
-            worldVerticalMove -= 1; // Down
+            worldVerticalMove -= 1;
         }
 
         if (localMove == Vector3.Zero && worldVerticalMove == 0)
@@ -127,20 +123,21 @@ public class EditorController : Script
             return;
         }
 
-        // On the first frame the button is pressed, sync to handle external changes (e.g., from the gizmo).
         if (Input.WasMouseButtonPressed(MouseButton.Right))
         {
             SyncYawPitchFromTransform();
         }
 
         Vector2 mouseDelta = Input.MouseDelta;
-        if (mouseDelta == Vector2.Zero) return;
+        if (mouseDelta == Vector2.Zero)
+        {
+            return;
+        }
 
         _yaw -= mouseDelta.X * MouseSensitivity;
         _pitch -= mouseDelta.Y * MouseSensitivity;
-        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+        _pitch = Math.Clamp(_pitch, (-MathF.PI / 2.0f) + 0.001f, (MathF.PI / 2.0f) - 0.001f);
 
-        // Create the new rotation using the standard engine function, which matches the deconstruction method.
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
     }
 }

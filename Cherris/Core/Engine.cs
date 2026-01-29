@@ -1,11 +1,11 @@
 ﻿using Cherris.Components;
-using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Rendering;
-using System.Globalization;
+using Cherris.Serialization;
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public abstract class Engine
 {
@@ -37,17 +37,17 @@ public abstract class Engine
             return new();
         }
 
-        float x = (2.0f * Input.MousePosition.X) / _gameWindow.Width - 1.0f;
-        float y = 1.0f - (2.0f * Input.MousePosition.Y) / _gameWindow.Height;
+        float x = (2.0f * Input.MousePosition.X / _gameWindow.Width) - 1.0f;
+        float y = 1.0f - (2.0f * Input.MousePosition.Y / _gameWindow.Height);
         Vector4 ndc = new(x, y, 1.0f, 1.0f);
 
-        Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
+        _ = Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
 
         Vector4 viewRay = Vector4.Transform(ndc, invProjection);
         viewRay.Z = -1.0f;
         viewRay.W = 0.0f;
 
-        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        _ = Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
         Vector4 worldRay = Vector4.Transform(viewRay, invView);
 
         Vector3 rayDir = Vector3.Normalize(new(worldRay.X, worldRay.Y, worldRay.Z));
@@ -89,7 +89,7 @@ public abstract class Engine
         {
             _snapshotsEnabled = !_snapshotsEnabled;
 
-            Console.WriteLine(
+            Logger.Info(
                 $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
                 $"Press F12 to toggle.");
         }

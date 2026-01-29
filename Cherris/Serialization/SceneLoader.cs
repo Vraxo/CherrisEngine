@@ -1,5 +1,6 @@
 ﻿using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -7,12 +8,12 @@ using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class SceneLoader
 {
     private readonly IResourceManager _resourceManager;
-    private readonly Dictionary<string, Func<object, Component>> _componentFactories = new();
+    private readonly Dictionary<string, Func<object, Component>> _componentFactories = [];
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;
 
@@ -41,7 +42,7 @@ public class SceneLoader
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return new List<GameObject>();
+            return [];
         }
 
         var createdGameObjects = new List<GameObject>();
@@ -53,10 +54,16 @@ public class SceneLoader
         foreach (var goData in gameObjectDatas)
         {
             string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName) name = goName;
+            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
+            {
+                name = goName;
+            }
 
             Guid oldId = Guid.Empty;
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId)) oldId = parsedId;
+            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
+            {
+                oldId = parsedId;
+            }
 
             Guid newId = Guid.NewGuid();
             oldToNewIdMap[oldId] = newId;
@@ -79,7 +86,11 @@ public class SceneLoader
 
                 foreach (var componentKvp in componentsDict)
                 {
-                    if (componentKvp.Key as string == "Transform") continue;
+                    if ((componentKvp.Key as string) == "Transform")
+                    {
+                        continue;
+                    }
+
                     AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
@@ -107,7 +118,7 @@ public class SceneLoader
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return new List<GameObject>();
+            return [];
         }
 
         var createdGameObjects = new Dictionary<Guid, GameObject>();
@@ -145,7 +156,11 @@ public class SceneLoader
 
                 foreach (var componentKvp in componentsDict)
                 {
-                    if (componentKvp.Key as string == "Transform") continue;
+                    if ((componentKvp.Key as string) == "Transform")
+                    {
+                        continue;
+                    }
+
                     AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
@@ -168,8 +183,16 @@ public class SceneLoader
         var yaml = _serializer.Serialize(properties);
         var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
 
-        if (props.TryGetValue("Position", out var pos)) transform.Position = pos;
-        if (props.TryGetValue("Scale", out var scale)) transform.Scale = scale;
+        if (props.TryGetValue("Position", out var pos))
+        {
+            transform.Position = pos;
+        }
+
+        if (props.TryGetValue("Scale", out var scale))
+        {
+            transform.Scale = scale;
+        }
+
         if (props.TryGetValue("Rotation", out var rotDegrees))
         {
             var rotRadians = rotDegrees * (MathF.PI / 180.0f);
@@ -179,18 +202,24 @@ public class SceneLoader
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
-        if (string.IsNullOrEmpty(componentType)) return;
+        if (string.IsNullOrEmpty(componentType))
+        {
+            return;
+        }
 
         if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
-            Console.WriteLine($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
+            Logger.Warning($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
             return;
         }
 
         var component = factory(properties);
-        if (component is null) return;
+        if (component is null)
+        {
+            return;
+        }
 
-        go.AddComponent(component);
+        _ = go.AddComponent(component);
 
         if (component is Script script && properties is Dictionary<object, object> propsDict)
         {
@@ -203,10 +232,16 @@ public class SceneLoader
         var scriptType = script.GetType();
         foreach (var propKvp in propsDict)
         {
-            if (propKvp.Key is not string propName) continue;
+            if (propKvp.Key is not string propName)
+            {
+                continue;
+            }
 
             PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !propertyInfo.CanWrite) continue;
+            if (propertyInfo is null || !propertyInfo.CanWrite)
+            {
+                continue;
+            }
 
             try
             {
@@ -214,19 +249,14 @@ public class SceneLoader
                 var propType = propertyInfo.PropertyType;
                 var yamlValue = propKvp.Value;
 
-                if (propType.IsEnum && yamlValue is string stringValue)
-                {
-                    convertedValue = Enum.Parse(propType, stringValue, true);
-                }
-                else
-                {
-                    convertedValue = Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
-                }
+                convertedValue = propType.IsEnum && yamlValue is string stringValue
+                    ? Enum.Parse(propType, stringValue, true)
+                    : Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
                 propertyInfo.SetValue(script, convertedValue);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
+                Logger.Warning($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
             }
         }
     }

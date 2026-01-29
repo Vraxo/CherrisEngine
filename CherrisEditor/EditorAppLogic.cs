@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
 using CherrisEditor.UI;
@@ -68,7 +69,7 @@ public class EditorAppLogic : IDisposable
         }
         else
         {
-            Console.WriteLine($"[Editor] Warning: Could not find editor icon '{relativePath}'");
+            Logger.Warning($"[Editor] Could not find editor icon '{relativePath}'");
         }
     }
 
@@ -76,6 +77,11 @@ public class EditorAppLogic : IDisposable
     {
         return (deltaTime) =>
         {
+            // Prevent ImGui docking layout corruption when window is minimized
+            var io = ImGui.GetIO();
+            if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
+                return;
+
             if (_editor.CurrentProject is null)
             {
                 _projectSelector.Draw();
@@ -121,7 +127,7 @@ public class EditorAppLogic : IDisposable
             {
                 _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
                 activeScene.IsDirty = false;
-                Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
+                Logger.Info($"[Editor] Scene saved to '{activeScene.FilePath}'");
             }
         }
 

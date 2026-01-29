@@ -1,4 +1,5 @@
-﻿using SharpGLTF.Schema2;
+﻿using Cherris.Core.Logging;
+using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
 using Mesh = Cherris.Components.Mesh;
@@ -12,14 +13,14 @@ public static class ModelLoader
         var loadedMeshes = new Dictionary<string, Mesh>();
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[ModelLoader] File not found: {path}");
+            Logger.Warning($"[ModelLoader] File not found: {path}");
             return loadedMeshes;
         }
 
         try
         {
             var model = ModelRoot.Load(path);
-            Console.WriteLine($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
+            Logger.Info($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
 
             for (int i = 0; i < model.LogicalMeshes.Count; i++)
             {
@@ -85,13 +86,13 @@ public static class ModelLoader
                     string meshName = string.IsNullOrWhiteSpace(gltfMesh.Name) ? $"mesh_{i}" : gltfMesh.Name;
                     var newMesh = new Mesh(allVertices.ToArray(), allIndices.ToArray());
                     loadedMeshes[meshName] = newMesh;
-                    Console.WriteLine($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
+                    Logger.Info($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
                 }
             }
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ModelLoader] Failed to load model from '{path}': {e.Message}");
+            Logger.Error($"[ModelLoader] Failed to load model from '{path}': {e.Message}");
         }
 
         return loadedMeshes;

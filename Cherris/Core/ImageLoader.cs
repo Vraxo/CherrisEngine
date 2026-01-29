@@ -1,4 +1,5 @@
-﻿using StbImageSharp;
+﻿using Cherris.Core.Logging;
+using StbImageSharp;
 
 namespace Cherris.Core;
 
@@ -8,7 +9,7 @@ public static class ImageLoader
     {
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[ImageLoader] Error: Image file not found at '{path}'");
+            Logger.Error($"[ImageLoader] Error: Image file not found at '{path}'");
             return null;
         }
 
@@ -27,7 +28,7 @@ public static class ImageLoader
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ImageLoader] Error loading image '{path}': {e.Message}");
+            Logger.Error($"[ImageLoader] Error loading image '{path}': {e.Message}");
             return null;
         }
     }

@@ -1,5 +1,6 @@
 ﻿using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Utils;
 using OpenTK.Graphics.OpenGL4;
 
@@ -13,7 +14,7 @@ public class OpenTKResourceManager : ResourceManagerBase
 
     public override void LoadInitialAssets()
     {
-        Console.WriteLine("[OpenTKResourceManager] Initial assets loaded.");
+        Logger.Info("[OpenTKResourceManager] Initial assets loaded.");
         _meshes.Add("Cube", Mesh.CreateCube());
         _meshes.Add("Plane", Mesh.CreatePlane(20f));
 
@@ -42,7 +43,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         string? path = ProjectFiles.Find(name);
         if (path is null)
         {
-            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find texture '{name}'.");
+            Logger.Warning($"[OpenTKResourceManager] Could not find texture '{name}'.");
             return _textures["White"];
         }
 
@@ -95,7 +96,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         var faceImages = GenericCubemapLoader.LoadCubemapFaces(name);
         if (faceImages is null)
         {
-            Console.WriteLine($"[OpenTKResourceManager] Error: Could not load faces for skybox '{name}'.");
+            Logger.Error($"[OpenTKResourceManager] Could not load faces for skybox '{name}'.");
             return null;
         }
 
@@ -127,7 +128,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         string? path = ProjectFiles.Find(name);
         if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find audio clip '{name}'. Only .wav is supported.");
+            Logger.Warning($"[OpenTKResourceManager] Could not find audio clip '{name}'. Only .wav is supported.");
             return null;
         }
 

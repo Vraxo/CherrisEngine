@@ -1,4 +1,5 @@
-﻿using Cherris.Utils;
+﻿using Cherris.Core.Logging;
+using Cherris.Utils;
 
 namespace Cherris.Core;
 
@@ -14,7 +15,7 @@ public static class GenericCubemapLoader
             string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
             if (path is null)
             {
-                Console.WriteLine($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
+                Logger.Warning($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
                 return null;
             }
 

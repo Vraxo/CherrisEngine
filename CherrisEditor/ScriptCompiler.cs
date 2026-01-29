@@ -1,74 +1,123 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using Cherris.Core;
+using Cherris.Core.Logging;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Emit;
 using System.Reflection;
 using System.Runtime.Loader;
 
 namespace CherrisEditor;
 
-/// <summary>
-/// A service that uses Roslyn to find and compile C# script files from the Assets folder
-/// into a dynamic, in-memory assembly at runtime.
-/// </summary>
 public static class ScriptCompiler
 {
+    private const string ScriptsDirectoryName = "Scripts";
+    private const string ScriptFilePattern = "*.cs";
+    private const string CompiledAssemblyName = "GameScriptsAssembly";
+
+    private static readonly string[] RequiredAssemblies =
+    {
+        "System.Runtime",
+        "System.Numerics.Vectors"
+    };
+
     public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
     {
-        string scriptsPath = Path.Combine(rootAssetPath, "Scripts");
+        string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
+
+        if (!TryGetScriptFiles(scriptsPath, out var files))
+        {
+            return null;
+        }
+
+        List<SyntaxTree> syntaxTrees = ParseSyntaxTrees(files);
+        IEnumerable<MetadataReference> references = CreateMetadataReferences();
+        CSharpCompilation compilation = CreateCompilation(syntaxTrees, references);
+
+        return EmitAssembly(compilation, context);
+    }
+
+    private static bool TryGetScriptFiles(string scriptsPath, out string[] files)
+    {
+        files = Array.Empty<string>();
+
         if (!Directory.Exists(scriptsPath))
         {
-            Console.WriteLine("[ScriptCompiler] 'Assets/Scripts' directory not found. No scripts to compile.");
-            return null;
+            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found. No scripts to compile.");
+            return false;
         }
 
-        var scriptFiles = Directory.GetFiles(scriptsPath, "*.cs", SearchOption.AllDirectories);
-        if (scriptFiles.Length == 0)
+        files = Directory.GetFiles(scriptsPath, ScriptFilePattern, SearchOption.AllDirectories);
+
+        if (files.Length == 0)
         {
-            Console.WriteLine("[ScriptCompiler] No C# script files found in 'Assets/Scripts'.");
-            return null;
+            Logger.Info($"[ScriptCompiler] No C# script files found in '{ScriptsDirectoryName}'.");
+            return false;
         }
 
-        Console.WriteLine($"[ScriptCompiler] Found {scriptFiles.Length} script(s). Starting compilation...");
+        Logger.Info($"[ScriptCompiler] Found {files.Length} script(s). Starting compilation...");
+        return true;
+    }
 
-        var syntaxTrees = scriptFiles
-            .Select(file => CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file))
-            .ToList();
-
-        var assemblyPaths = new HashSet<string>
+    private static List<SyntaxTree> ParseSyntaxTrees(string[] files)
+    {
+        return [.. files.Select(file =>
         {
+            return CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file);
+        })];
+    }
+
+    private static IEnumerable<MetadataReference> CreateMetadataReferences()
+    {
+        HashSet<string> assemblyPaths =
+        [
             typeof(object).Assembly.Location,
-            Assembly.Load("System.Runtime").Location,
-            typeof(Cherris.Engine).Assembly.Location,
-            typeof(System.Numerics.Vector3).Assembly.Location,
-            Assembly.Load("System.Numerics.Vectors").Location
-        };
+            typeof(Engine).Assembly.Location,
+            typeof(System.Numerics.Vector3).Assembly.Location
+        ];
 
-        var references = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
+        foreach (string assemblyName in RequiredAssemblies)
+        {
+            _ = assemblyPaths.Add(Assembly.Load(assemblyName).Location);
+        }
 
-        var compilation = CSharpCompilation.Create(
-            "GameScriptsAssembly",
+        return assemblyPaths.Select(path => MetadataReference.CreateFromFile(path));
+    }
+
+    private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> syntaxTrees, IEnumerable<MetadataReference> references)
+    {
+        return CSharpCompilation.Create(
+            CompiledAssemblyName,
             syntaxTrees,
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new(OutputKind.DynamicallyLinkedLibrary));
+    }
 
-        using var ms = new MemoryStream();
-        var result = compilation.Emit(ms);
+    private static Assembly? EmitAssembly(CSharpCompilation compilation, AssemblyLoadContext context)
+    {
+        using MemoryStream stream = new();
+        EmitResult result = compilation.Emit(stream);
 
         if (!result.Success)
         {
-            Console.WriteLine("[ScriptCompiler] Compilation failed!");
-            var failures = result.Diagnostics.Where(diagnostic =>
-                diagnostic.IsWarningAsError || diagnostic.Severity == DiagnosticSeverity.Error);
-
-            foreach (var diagnostic in failures)
-            {
-                Console.Error.WriteLine($"  {diagnostic.Id}: {diagnostic.GetMessage()} at {diagnostic.Location}");
-            }
+            LogCompilationErrors(result);
             return null;
         }
 
-        Console.WriteLine("[ScriptCompiler] Compilation successful.");
+        Logger.Info("[ScriptCompiler] Compilation successful.");
+        stream.Position = 0;
+        return context.LoadFromStream(stream);
+    }
 
-        ms.Seek(0, SeekOrigin.Begin);
-        return context.LoadFromStream(ms);
+    private static void LogCompilationErrors(EmitResult result)
+    {
+        Logger.Warning("[ScriptCompiler] Compilation failed!");
+
+        IEnumerable<Diagnostic> failures = result.Diagnostics.Where(d =>
+            d.IsWarningAsError || d.Severity == DiagnosticSeverity.Error);
+
+        foreach (Diagnostic diagnostic in failures)
+        {
+            Logger.Error($"  {diagnostic.Id}: {diagnostic.GetMessage()} at {diagnostic.Location}");
+        }
     }
 }

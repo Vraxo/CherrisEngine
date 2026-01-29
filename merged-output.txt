@@ -5191,6 +5191,9 @@ public static class ProjectFiles
 
 ```csharp
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("CherrisEditor")]
 
 namespace Cherris.Core.Logging;
 
@@ -5217,6 +5220,14 @@ public static class Logger
     public static void Error(string message)
     {
         Log(LogLevel.Error, message);
+    }
+
+    // Internal method for ConsoleLogRedirector to enqueue messages without triggering console output
+    internal static void LogRaw(LogLevel level, string message)
+    {
+        var logMessage = new LogMessage(level, message);
+        _messages.Enqueue(logMessage);
+        OnMessageLogged?.Invoke(logMessage);
     }
 
     private static void Log(LogLevel level, string message)
@@ -7667,18 +7678,21 @@ public class VeldridGraphicsManager : IDisposable
 using Cherris.Core;
 using Cherris.Core.Logging;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace CherrisEditor;
 
 public class ConsoleLogRedirector : TextWriter
 {
-    private readonly LogLevel _level;
+    [ThreadStatic] private static bool _isCapturingForLogger;
+    private readonly LogLevel _defaultLevel;
     private readonly TextWriter _originalOut;
     private readonly StringBuilder _lineBuffer = new();
+    private static readonly Regex LoggerFormatRegex = new(@"^\[\d{2}:\d{2}:\d{2}\] \[(Info|Warning|Error)\] ", RegexOptions.Compiled);
 
-    public ConsoleLogRedirector(LogLevel level, TextWriter originalOut)
+    public ConsoleLogRedirector(LogLevel defaultLevel, TextWriter originalOut)
     {
-        _level = level;
+        _defaultLevel = defaultLevel;
         _originalOut = originalOut;
     }
 
@@ -7686,17 +7700,69 @@ public class ConsoleLogRedirector : TextWriter
 
     public override void Write(char value)
     {
-        // Write to original console immediately so it appears in the terminal window
-        _originalOut.Write(value);
+        if (_isCapturingForLogger)
+        {
+            _originalOut.Write(value);
+            return;
+        }
 
-        // Buffer for Logger/editor console
         if (value == '\n')
         {
             FlushLine();
         }
         else if (value != '\r')
         {
-            _lineBuffer.Append(value);
+            _ = _lineBuffer.Append(value);
+        }
+    }
+
+    public override void Write(string? value)
+    {
+        if (_isCapturingForLogger)
+        {
+            _originalOut.Write(value);
+            return;
+        }
+
+        if (value is null)
+        {
+            return;
+        }
+
+        if (value.EndsWith('\n'))
+        {
+            if (_lineBuffer.Length > 0)
+            {
+                _ = _lineBuffer.Append(value.TrimEnd('\n', '\r'));
+                FlushLine();
+            }
+            else
+            {
+                WriteLineToOriginal(value.TrimEnd('\n', '\r'));
+            }
+        }
+        else
+        {
+            _ = _lineBuffer.Append(value);
+        }
+    }
+
+    public override void WriteLine(string? value)
+    {
+        if (_isCapturingForLogger)
+        {
+            _originalOut.WriteLine(value);
+            return;
+        }
+
+        if (_lineBuffer.Length > 0)
+        {
+            _ = _lineBuffer.Append(value);
+            FlushLine();
+        }
+        else
+        {
+            WriteLineToOriginal(value);
         }
     }
 
@@ -7710,25 +7776,65 @@ public class ConsoleLogRedirector : TextWriter
         base.Flush();
     }
 
+    private void WriteLineToOriginal(string? line)
+    {
+        if (string.IsNullOrEmpty(line))
+        {
+            _originalOut.WriteLine();
+            return;
+        }
+
+        // Check if this line is already formatted by Logger (contains timestamp and level)
+        var match = LoggerFormatRegex.Match(line);
+        bool isLoggerFormatted = match.Success;
+        LogLevel level = isLoggerFormatted
+            ? Enum.Parse<LogLevel>(match.Groups[1].Value)
+            : _defaultLevel;
+
+        var originalColor = Console.ForegroundColor;
+
+        try
+        {
+            if (level == LogLevel.Warning)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+            }
+            else if (level == LogLevel.Error)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+            }
+
+            // If not already formatted by Logger, prepend the level tag for the console
+            string outputLine = isLoggerFormatted ? line : $"[{level}] {line}";
+
+            _originalOut.WriteLine(outputLine);
+            _originalOut.Flush();
+
+            // Only enqueue to Logger if this line did NOT originate from Logger.
+            // Logger-formatted lines are already in the queue from the original Logger call.
+            if (!isLoggerFormatted)
+            {
+                _isCapturingForLogger = true;
+                Logger.LogRaw(level, line);
+                _isCapturingForLogger = false;
+            }
+        }
+        finally
+        {
+            Console.ForegroundColor = originalColor;
+        }
+    }
+
     private void FlushLine()
     {
-        if (_lineBuffer.Length == 0) return;
+        if (_lineBuffer.Length == 0)
+        {
+            return;
+        }
 
         var line = _lineBuffer.ToString();
-        _lineBuffer.Clear();
-
-        switch (_level)
-        {
-            case LogLevel.Error:
-                Logger.Error(line);
-                break;
-            case LogLevel.Warning:
-                Logger.Warning(line);
-                break;
-            default:
-                Logger.Info(line);
-                break;
-        }
+        _ = _lineBuffer.Clear();
+        WriteLineToOriginal(line);
     }
 }
 ```
@@ -7741,6 +7847,7 @@ public class ConsoleLogRedirector : TextWriter
 using Cherris;
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Serialization;
 using Cherris.Utils;
@@ -7777,7 +7884,7 @@ public class Editor : Engine
     {
         if (!Directory.Exists(projectRoot))
         {
-            Console.WriteLine($"[Editor] Project directory not found: {projectRoot}");
+            Logger.Error($"[Editor] Project directory not found: {projectRoot}");
             return;
         }
 
@@ -7785,7 +7892,7 @@ public class Editor : Engine
         ProjectFiles.ProjectRoot = projectRoot;
         ProjectPersistence.SetLastProject(projectRoot);
 
-        Console.WriteLine($"[Editor] Loaded project: {CurrentProject.Name}");
+        Logger.Info($"[Editor] Loaded project: {CurrentProject.Name}");
     }
 
     public void CreatePrefabFromGameObject(GameObject go, string path)
@@ -7795,7 +7902,7 @@ public class Editor : Engine
             return;
         }
 
-        Console.WriteLine($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
+        Logger.Info($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
         _sceneSerializer.SavePrefab(go, path);
     }
 
@@ -7803,7 +7910,7 @@ public class Editor : Engine
     {
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[Editor] Prefab file not found: {path}");
+            Logger.Error($"[Editor] Prefab file not found: {path}");
             return;
         }
 
@@ -7839,7 +7946,7 @@ public class Editor : Engine
             }
             else
             {
-                Console.WriteLine("[Editor] Warning: No game camera found to switch to for play mode. Using the editor camera.");
+                Logger.Warning("[Editor] No game camera found to switch to for play mode. Using the editor camera.");
             }
 
             SceneManager.Start();
@@ -7882,13 +7989,13 @@ public class Editor : Engine
     {
         if (!IsValidCSharpIdentifier(scriptName))
         {
-            Console.WriteLine($"[Editor] Error: '{scriptName}' is not a valid C# class name.");
+            Logger.Error($"[Editor] '{scriptName}' is not a valid C# class name.");
             return;
         }
 
         if (CurrentProject is null)
         {
-            Console.WriteLine("[Editor] Error: No project loaded.");
+            Logger.Error("[Editor] No project loaded.");
             return;
         }
 
@@ -7898,13 +8005,13 @@ public class Editor : Engine
 
         if (File.Exists(filePath))
         {
-            Console.WriteLine($"[Editor] Error: A script named '{scriptName}.cs' already exists.");
+            Logger.Error($"[Editor] A script named '{scriptName}.cs' already exists.");
             return;
         }
 
         string content = ScriptTemplate.GetContent(scriptName);
         File.WriteAllText(filePath, content);
-        Console.WriteLine($"[Editor] Created new script at '{filePath}'");
+        Logger.Info($"[Editor] Created new script at '{filePath}'");
 
         CompileAndRegisterGameScripts();
     }
@@ -7944,7 +8051,7 @@ public class Editor : Engine
             }
             else
             {
-                Console.WriteLine($"[Editor] Start scene not found: {startScenePath}");
+                Logger.Error($"[Editor] Start scene not found: {startScenePath}");
             }
         }
 
@@ -8001,7 +8108,7 @@ public class Editor : Engine
         else
         {
             _editorCamera = null;
-            Console.WriteLine("[Editor] FATAL: No camera found in scene to attach editor controls to.");
+            Logger.Error("[Editor] FATAL: No camera found in scene to attach editor controls to.");
         }
     }
 
@@ -8017,7 +8124,7 @@ public class Editor : Engine
 
         if (!File.Exists(scenePath))
         {
-            Console.WriteLine($"[Editor] Scene file not found: {scenePath}");
+            Logger.Error($"[Editor] Scene file not found: {scenePath}");
             return;
         }
 
@@ -8054,7 +8161,7 @@ public class Editor : Engine
             }
 
             _gameAssemblyContext.Unload();
-            Console.WriteLine("[Editor] Unloaded old game assembly.");
+            Logger.Info("[Editor] Unloaded old game assembly.");
         }
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
@@ -8066,7 +8173,7 @@ public class Editor : Engine
 
         if (gameAssembly is null)
         {
-            Console.WriteLine("[Editor] Game script compilation failed. No custom components will be loaded.");
+            Logger.Warning("[Editor] Game script compilation failed. No custom components will be loaded.");
             return;
         }
 
@@ -8081,11 +8188,11 @@ public class Editor : Engine
                 RegisterScriptComponent(type);
                 count++;
             }
-            Console.WriteLine($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
+            Logger.Info($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
+            Logger.Error($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
         }
     }
 
@@ -8098,7 +8205,7 @@ public class Editor : Engine
         }
 
         SceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Console.WriteLine($"[Editor] Registered component: {scriptType.Name}");
+        Logger.Info($"[Editor] Registered component: {scriptType.Name}");
     }
 
     private void SetScriptsEnabledForPlayMode()
@@ -8175,6 +8282,7 @@ public class Editor : Engine
 
 ```csharp
 using Cherris;
+using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
 using CherrisEditor.UI;
@@ -8244,7 +8352,7 @@ public class EditorAppLogic : IDisposable
         }
         else
         {
-            Console.WriteLine($"[Editor] Warning: Could not find editor icon '{relativePath}'");
+            Logger.Warning($"[Editor] Could not find editor icon '{relativePath}'");
         }
     }
 
@@ -8252,6 +8360,11 @@ public class EditorAppLogic : IDisposable
     {
         return (deltaTime) =>
         {
+            // Prevent ImGui docking layout corruption when window is minimized
+            var io = ImGui.GetIO();
+            if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
+                return;
+
             if (_editor.CurrentProject is null)
             {
                 _projectSelector.Draw();
@@ -8297,7 +8410,7 @@ public class EditorAppLogic : IDisposable
             {
                 _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
                 activeScene.IsDirty = false;
-                Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
+                Logger.Info($"[Editor] Scene saved to '{activeScene.FilePath}'");
             }
         }
 
@@ -8766,24 +8879,17 @@ public static class EditorTheme
 ```csharp
 using Cherris;
 using Cherris.Core;
-using Cherris.Core.Logging;
 using CherrisEditor;
 
 internal class Program
 {
     private static void Main(string[] args)
     {
-        // Store the original console output streams before redirecting
         var originalOut = Console.Out;
         var originalError = Console.Error;
 
-        // Redirect console output to both terminal and Logger
         Console.SetOut(new ConsoleLogRedirector(LogLevel.Info, originalOut));
         Console.SetError(new ConsoleLogRedirector(LogLevel.Error, originalError));
-
-        // Prevent Logger from writing back to Console to avoid infinite recursion
-        // (since Console.Out now points to our redirector which already wrote to originalOut)
-        Logger.WriteToConsole = false;
 
         Editor editor = new(GraphicsAPI.OpenTK);
 
@@ -10208,7 +10314,7 @@ public static class ConsolePanel
     public static void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
-        ImGui.Begin("Console");
+        _ = ImGui.Begin("Console");
 
         DrawToolbar();
         ImGui.Separator();
@@ -10228,14 +10334,13 @@ public static class ConsolePanel
             // For now, auto-scroll toggle is sufficient.
         }
         ImGui.SameLine();
-        ImGui.Checkbox("Auto-scroll", ref _autoScroll);
+        _ = ImGui.Checkbox("Auto-scroll", ref _autoScroll);
     }
 
     private static void DrawLogMessages()
     {
-        ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
+        _ = ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
 
-        // Read directly from Logger's message buffer to catch all logs including startup
         foreach (var msg in Logger.Messages)
         {
             var color = msg.Level switch
@@ -10245,11 +10350,16 @@ public static class ConsolePanel
                 _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
             };
 
-            ImGui.TextColored(color, $"[{msg.Timestamp:HH:mm:ss}]");
+            // Apply color to the entire line for consistency with literal console
+            ImGui.PushStyleColor(ImGuiCol.Text, color);
+
+            ImGui.TextUnformatted($"[{msg.Timestamp:HH:mm:ss}]");
             ImGui.SameLine();
             ImGui.TextUnformatted($"[{msg.Level}]");
             ImGui.SameLine();
             ImGui.TextWrapped(msg.Message);
+
+            ImGui.PopStyleColor();
         }
 
         if (_autoScroll && ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
@@ -10267,6 +10377,7 @@ public static class ConsolePanel
 ### `CherrisEditor\UI\ContentBrowserPanel.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using Cherris.Utils;
 using ImGuiNET;
 using System.Numerics;
@@ -10303,7 +10414,7 @@ public class ContentBrowserPanel : IDisposable
         }
         else
         {
-            Console.WriteLine($"[ContentBrowser] Warning: Could not find icon '{relativePath}'");
+            Logger.Warning($"[ContentBrowser] Could not find icon '{relativePath}'");
         }
     }
 
@@ -10323,17 +10434,20 @@ public class ContentBrowserPanel : IDisposable
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
 
-            if (payload.Data != IntPtr.Zero)
+            unsafe
             {
-                byte[] data = new byte[payload.DataSize];
-                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                var goId = new Guid(data);
-                var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
-
-                if (go is not null)
+                if (payload.NativePtr != null)
                 {
-                    string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
-                    _editor.CreatePrefabFromGameObject(go, prefabPath);
+                    byte[] data = new byte[payload.DataSize];
+                    Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                    var goId = new Guid(data);
+                    var go = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == goId);
+
+                    if (go is not null)
+                    {
+                        string prefabPath = Path.Combine(_currentAssetPath, $"{go.Name}.prefab");
+                        _editor.CreatePrefabFromGameObject(go, prefabPath);
+                    }
                 }
             }
 
@@ -10905,22 +11019,28 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr prefabPayload = ImGui.AcceptDragDropPayload("ASSET_PATH_PREFAB");
-            if (prefabPayload.Data != IntPtr.Zero)
+            unsafe
             {
-                string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
-                _editor.InstantiatePrefab(path);
+                if (prefabPayload.NativePtr != null)
+                {
+                    string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
+                    _editor.InstantiatePrefab(path);
+                }
             }
 
             ImGuiPayloadPtr goPayload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (goPayload.Data != IntPtr.Zero)
+            unsafe
             {
-                byte[] data = new byte[goPayload.DataSize];
-                Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
-                var draggedId = new Guid(data);
-                var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
-                if (draggedObject is not null)
+                if (goPayload.NativePtr != null)
                 {
-                    draggedObject.Transform.Parent = null; // Unparent
+                    byte[] data = new byte[goPayload.DataSize];
+                    Marshal.Copy(goPayload.Data, data, 0, goPayload.DataSize);
+                    var draggedId = new Guid(data);
+                    var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
+                    if (draggedObject is not null)
+                    {
+                        draggedObject.Transform.Parent = null; // Unparent
+                    }
                 }
             }
 
@@ -10955,13 +11075,16 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
-            if (payload.Data != IntPtr.Zero)
+            unsafe
             {
-                byte[] data = new byte[payload.DataSize];
-                Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-                var draggedId = new Guid(data);
-                GameObject draggedObject = _editor.SceneManager.GameObjects.First(g => g.Id == draggedId);
-                draggedObject.Transform.Parent = go.Transform;
+                if (payload.NativePtr != null)
+                {
+                    byte[] data = new byte[payload.DataSize];
+                    Marshal.Copy(payload.Data, data, 0, payload.DataSize);
+                    var draggedId = new Guid(data);
+                    GameObject draggedObject = _editor.SceneManager.GameObjects.First(g => g.Id == draggedId);
+                    draggedObject.Transform.Parent = go.Transform;
+                }
             }
             ImGui.EndDragDropTarget();
         }
