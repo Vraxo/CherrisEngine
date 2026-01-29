@@ -1,6 +1,6 @@
-﻿namespace Cherris.Core;
+﻿namespace Cherris.Core.Logging;
 
-public struct LogMessage
+public readonly struct LogMessage
 {
     public DateTime Timestamp { get; }
     public LogLevel Level { get; }

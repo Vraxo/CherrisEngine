@@ -15,6 +15,11 @@ public static class Logger
 
     public static IReadOnlyCollection<LogMessage> Messages => _messages;
 
+    public static void Clear()
+    {
+        while (_messages.TryDequeue(out _)) { }
+    }
+
     public static void Info(string message)
     {
         Log(LogLevel.Info, message);

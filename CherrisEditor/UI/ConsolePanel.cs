@@ -5,11 +5,11 @@ using System.Numerics;
 
 namespace CherrisEditor.UI;
 
-public static class ConsolePanel
+public class ConsolePanel
 {
-    private static bool _autoScroll = true;
+    private bool _autoScroll = true;
 
-    public static void Draw()
+    public void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
         _ = ImGui.Begin("Console");
@@ -22,20 +22,17 @@ public static class ConsolePanel
         ImGui.PopStyleVar();
     }
 
-    private static void DrawToolbar()
+    private void DrawToolbar()
     {
         if (ImGui.Button("Clear"))
         {
-            // Note: Logger doesn't expose a Clear method, 
-            // but we can at least reset auto-scroll if needed.
-            // To properly clear, we'd need to add Logger.ClearMessages().
-            // For now, auto-scroll toggle is sufficient.
+            Logger.Clear();
         }
         ImGui.SameLine();
         _ = ImGui.Checkbox("Auto-scroll", ref _autoScroll);
     }
 
-    private static void DrawLogMessages()
+    private void DrawLogMessages()
     {
         _ = ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
 
@@ -48,7 +45,6 @@ public static class ConsolePanel
                 _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
             };
 
-            // Apply color to the entire line for consistency with literal console
             ImGui.PushStyleColor(ImGuiCol.Text, color);
 
             ImGui.TextUnformatted($"[{msg.Timestamp:HH:mm:ss}]");

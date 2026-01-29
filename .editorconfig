@@ -2,3 +2,11 @@
 
 # IDE0290: Use primary constructor
 csharp_style_prefer_primary_constructors = false
+
+[*.cs]
+
+# IDE0058: Expression value is never used - prevents automatic discard insertion
+dotnet_diagnostic.IDE0058.severity = none
+
+# IDE0059: Value assigned to symbol is never used (for assignment statements)
+dotnet_diagnostic.IDE0059.severity = none

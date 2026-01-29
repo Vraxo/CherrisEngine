@@ -1,4 +1,5 @@
 ﻿using Cherris;
+using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
@@ -23,6 +24,7 @@ public class EditorAppLogic : IDisposable
     private readonly OutlinerPanel _outlinerPanel;
     private readonly InspectorPanel _inspectorPanel;
     private readonly ContentBrowserPanel _contentBrowserPanel;
+    private readonly ConsolePanel _consolePanel;
     private readonly EditorTextureManager _textureManager;
 
     public EditorAppLogic(Editor editor, SceneSerializer sceneSerializer)
@@ -41,6 +43,7 @@ public class EditorAppLogic : IDisposable
         _outlinerPanel = new OutlinerPanel(editor);
         _inspectorPanel = new InspectorPanel(editor, _textureManager, _history);
         _contentBrowserPanel = new ContentBrowserPanel(editor, _textureManager);
+        _consolePanel = new ConsolePanel();
 
         EditorTheme.ApplyUnrealEngineStyle();
 
@@ -77,7 +80,8 @@ public class EditorAppLogic : IDisposable
         return (deltaTime) =>
         {
             // Prevent ImGui docking layout corruption when window is minimized
-            var io = ImGui.GetIO();
+            ImGuiIOPtr io = ImGui.GetIO();
+
             if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
             {
                 return;
@@ -94,7 +98,7 @@ public class EditorAppLogic : IDisposable
 
             _viewportPanel.Draw();
             _outlinerPanel.Draw();
-            ConsolePanel.Draw();
+            _consolePanel.Draw();
             _contentBrowserPanel.Draw();
             _inspectorPanel.DrawInspectorPanel();
         };
@@ -123,7 +127,8 @@ public class EditorAppLogic : IDisposable
 
         if (ctrl && Input.WasKeyPressed(Key.S))
         {
-            var activeScene = _editor.SceneManager.ActiveScene;
+            Scene? activeScene = _editor.SceneManager.ActiveScene;
+
             if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
             {
                 _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
@@ -156,7 +161,7 @@ public class EditorAppLogic : IDisposable
 
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus | ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoBackground;
 
-        _ = ImGui.Begin("MainDockspace", windowFlags);
+        ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);
 
         _menuBar.Draw();
@@ -166,7 +171,7 @@ public class EditorAppLogic : IDisposable
         ImGui.PopStyleVar();
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
-        _ = ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
+        ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
 
         ImGui.End();
     }

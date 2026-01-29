@@ -616,14 +616,14 @@ public class AudioClip : IDisposable
 ### `Cherris\Core\AudioLoader.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using OpenTK.Audio.OpenAL;
-using System.Text;
 
 namespace Cherris.Core;
 
 public static class AudioLoader
 {
-    public static AudioClip LoadFromFile(string path)
+    public static AudioClip? LoadFromFile(string path)
     {
         try
         {
@@ -631,33 +631,42 @@ public static class AudioLoader
             using var reader = new BinaryReader(fileStream);
 
             // -- RIFF Header --
-            string signature = new string(reader.ReadChars(4));
-            if (signature != "RIFF") throw new NotSupportedException("Specified stream is not a wave file.");
+            string signature = new(reader.ReadChars(4));
+            if (signature != "RIFF")
+            {
+                throw new NotSupportedException("Specified stream is not a wave file.");
+            }
 
-            reader.ReadInt32(); // Riff Chunk Size
+            _ = reader.ReadInt32(); // Riff Chunk Size
 
-            string format = new string(reader.ReadChars(4));
-            if (format != "WAVE") throw new NotSupportedException("Specified stream is not a wave file.");
+            string format = new(reader.ReadChars(4));
+            if (format != "WAVE")
+            {
+                throw new NotSupportedException("Specified stream is not a wave file.");
+            }
 
             // -- FORMAT Chunk --
-            string formatSignature = new string(reader.ReadChars(4));
-            if (formatSignature != "fmt ") throw new NotSupportedException("Specified wave file is not supported.");
+            string formatSignature = new(reader.ReadChars(4));
+            if (formatSignature != "fmt ")
+            {
+                throw new NotSupportedException("Specified wave file is not supported.");
+            }
 
-            reader.ReadInt32(); // Format chunk size
-            reader.ReadInt16(); // Audio Format
+            _ = reader.ReadInt32(); // Format chunk size
+            _ = reader.ReadInt16(); // Audio Format
             short channels = reader.ReadInt16();
             int sampleRate = reader.ReadInt32();
-            reader.ReadInt32(); // Byte Rate
-            reader.ReadInt16(); // Block Align
+            _ = reader.ReadInt32(); // Byte Rate
+            _ = reader.ReadInt16(); // Block Align
             short bitsPerSample = reader.ReadInt16();
 
             // -- DATA Chunk --
-            string dataSignature = new string(reader.ReadChars(4));
+            string dataSignature = new(reader.ReadChars(4));
             // Handle cases where a 'JUNK' or other chunk is between 'fmt ' and 'data'
             while (dataSignature != "data")
             {
                 int chunkSize = reader.ReadInt32();
-                reader.BaseStream.Seek(chunkSize, SeekOrigin.Current);
+                _ = reader.BaseStream.Seek(chunkSize, SeekOrigin.Current);
                 dataSignature = new string(reader.ReadChars(4));
             }
 
@@ -669,12 +678,12 @@ public static class AudioLoader
             int alBuffer = AL.GenBuffer();
             AL.BufferData(alBuffer, formatEnum, audioData, sampleRate);
 
-            Console.WriteLine($"[AudioLoader] Loaded '{Path.GetFileName(path)}' ({channels} ch, {bitsPerSample}-bit, {sampleRate} Hz)");
+            Logger.Info($"[AudioLoader] Loaded '{Path.GetFileName(path)}' ({channels} ch, {bitsPerSample}-bit, {sampleRate} Hz)");
             return new AudioClip(alBuffer);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AudioLoader] Error loading '{path}': {ex.Message}");
+            Logger.Error($"[AudioLoader] Error loading '{path}': {ex.Message}");
             return null;
         }
     }
@@ -697,6 +706,7 @@ public static class AudioLoader
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core.Logging;
 using OpenTK.Audio.OpenAL;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -727,8 +737,8 @@ public class AudioSystem : IDisposable
         {
             _device = ALC.OpenDevice(null);
             _context = ALC.CreateContext(_device, null as int[]);
-            
-            ALC.MakeContextCurrent(_context);
+
+            _ = ALC.MakeContextCurrent(_context);
             CheckAlError("Initialize - MakeContextCurrent");
 
             AL.GenSources(_alSources);
@@ -739,11 +749,11 @@ public class AudioSystem : IDisposable
                 _availableSources.Enqueue(source);
             }
 
-            Console.WriteLine($"[AudioSystem] Initialized with OpenAL '{AL.Get(ALGetString.Version)}' on '{AL.Get(ALGetString.Renderer)}'");
+            Logger.Info($"[AudioSystem] Initialized with OpenAL '{AL.Get(ALGetString.Version)}' on '{AL.Get(ALGetString.Renderer)}'");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AudioSystem] FATAL: Could not initialize OpenAL. Audio will be disabled. Reason: {ex.Message}");
+            Logger.Warning($"[AudioSystem] FATAL: Could not initialize OpenAL. Audio will be disabled. Reason: {ex.Message}");
         }
     }
 
@@ -773,7 +783,7 @@ public class AudioSystem : IDisposable
         foreach ((AudioSource audioSource, int alSource) in _activeSources)
         {
             AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-            
+
             if (state != (int)ALSourceState.Stopped || !_activeSources.TryRemove(audioSource, out int removedAlSource))
             {
                 continue;
@@ -792,7 +802,7 @@ public class AudioSystem : IDisposable
 
         if (audioSource.Clip.AlBufferHandle == 0)
         {
-            Console.WriteLine($"[AudioSystem] Error: AudioSource on '{audioSource.GameObject.Name}' has an invalid AudioClip handle. Was it loaded before OpenAL was initialized?");
+            Logger.Warning($"[AudioSystem] Error: AudioSource on '{audioSource.GameObject.Name}' has an invalid AudioClip handle. Was it loaded before OpenAL was initialized?");
             return;
         }
 
@@ -803,11 +813,11 @@ public class AudioSystem : IDisposable
 
         if (!_availableSources.TryDequeue(out int alSource))
         {
-            Console.WriteLine("[AudioSystem] Warning: No available audio sources to play clip.");
+            Logger.Warning("[AudioSystem] Warning: No available audio sources to play clip.");
             return;
         }
 
-        Console.WriteLine($"[AudioSystem] Playing clip on AL source #{alSource}.");
+        Logger.Info($"[AudioSystem] Playing clip on AL source #{alSource}.");
         _activeSources[audioSource] = alSource;
 
         AL.Source(alSource, ALSourcei.Buffer, audioSource.Clip.AlBufferHandle);
@@ -827,7 +837,7 @@ public class AudioSystem : IDisposable
 
         // Log the state immediately after the play command
         AL.GetSource(alSource, ALGetSourcei.SourceState, out int state);
-        Console.WriteLine($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
+        Logger.Info($"[AudioSystem] AL source #{alSource} state after play command: {(ALSourceState)state}");
     }
 
     public void Stop(AudioSource audioSource)
@@ -855,11 +865,11 @@ public class AudioSystem : IDisposable
         }
 
         AL.DeleteSources(_alSources);
-        ALC.MakeContextCurrent(ALContext.Null);
+        _ = ALC.MakeContextCurrent(ALContext.Null);
         ALC.DestroyContext(_context);
-        ALC.CloseDevice(_device);
+        _ = ALC.CloseDevice(_device);
 
-        Console.WriteLine("[AudioSystem] Disposed.");
+        Logger.Info("[AudioSystem] Disposed.");
     }
 
     [Conditional("DEBUG")]
@@ -872,7 +882,7 @@ public class AudioSystem : IDisposable
             return;
         }
 
-        Console.WriteLine($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+        Logger.Warning($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
     }
 }
 ```
@@ -1107,13 +1117,13 @@ public class BloomRenderer : IDisposable
 
 ```csharp
 using Cherris.Components;
-using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Rendering;
-using System.Globalization;
+using Cherris.Serialization;
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public abstract class Engine
 {
@@ -1145,17 +1155,17 @@ public abstract class Engine
             return new();
         }
 
-        float x = (2.0f * Input.MousePosition.X) / _gameWindow.Width - 1.0f;
-        float y = 1.0f - (2.0f * Input.MousePosition.Y) / _gameWindow.Height;
+        float x = (2.0f * Input.MousePosition.X / _gameWindow.Width) - 1.0f;
+        float y = 1.0f - (2.0f * Input.MousePosition.Y / _gameWindow.Height);
         Vector4 ndc = new(x, y, 1.0f, 1.0f);
 
-        Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
+        _ = Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
 
         Vector4 viewRay = Vector4.Transform(ndc, invProjection);
         viewRay.Z = -1.0f;
         viewRay.W = 0.0f;
 
-        Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        _ = Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
         Vector4 worldRay = Vector4.Transform(viewRay, invView);
 
         Vector3 rayDir = Vector3.Normalize(new(worldRay.X, worldRay.Y, worldRay.Z));
@@ -1197,7 +1207,7 @@ public abstract class Engine
         {
             _snapshotsEnabled = !_snapshotsEnabled;
 
-            Console.WriteLine(
+            Logger.Info(
                 $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
                 $"Press F12 to toggle.");
         }
@@ -1810,6 +1820,7 @@ public static class VeldridKeyMapper
 ### `Cherris\Core\GenericCubemapLoader.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using Cherris.Utils;
 
 namespace Cherris.Core;
@@ -1826,7 +1837,7 @@ public static class GenericCubemapLoader
             string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
             if (path is null)
             {
-                Console.WriteLine($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
+                Logger.Warning($"[CubemapLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
                 return null;
             }
 
@@ -1876,6 +1887,7 @@ public struct ImageData
 ### `Cherris\Core\ImageLoader.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using StbImageSharp;
 
 namespace Cherris.Core;
@@ -1886,7 +1898,7 @@ public static class ImageLoader
     {
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[ImageLoader] Error: Image file not found at '{path}'");
+            Logger.Error($"[ImageLoader] Error: Image file not found at '{path}'");
             return null;
         }
 
@@ -1905,7 +1917,7 @@ public static class ImageLoader
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ImageLoader] Error loading image '{path}': {e.Message}");
+            Logger.Error($"[ImageLoader] Error loading image '{path}': {e.Message}");
             return null;
         }
     }
@@ -2152,6 +2164,7 @@ public class Material
 ### `Cherris\Core\ModelLoader.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
@@ -2166,14 +2179,14 @@ public static class ModelLoader
         var loadedMeshes = new Dictionary<string, Mesh>();
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[ModelLoader] File not found: {path}");
+            Logger.Warning($"[ModelLoader] File not found: {path}");
             return loadedMeshes;
         }
 
         try
         {
             var model = ModelRoot.Load(path);
-            Console.WriteLine($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
+            Logger.Info($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
 
             for (int i = 0; i < model.LogicalMeshes.Count; i++)
             {
@@ -2239,13 +2252,13 @@ public static class ModelLoader
                     string meshName = string.IsNullOrWhiteSpace(gltfMesh.Name) ? $"mesh_{i}" : gltfMesh.Name;
                     var newMesh = new Mesh(allVertices.ToArray(), allIndices.ToArray());
                     loadedMeshes[meshName] = newMesh;
-                    Console.WriteLine($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
+                    Logger.Info($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
                 }
             }
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ModelLoader] Failed to load model from '{path}': {e.Message}");
+            Logger.Error($"[ModelLoader] Failed to load model from '{path}': {e.Message}");
         }
 
         return loadedMeshes;
@@ -2509,6 +2522,7 @@ void main()
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core.Logging;
 using Cherris.Rendering;
 using Cherris.Utils;
 using Veldrid;
@@ -2554,21 +2568,21 @@ public class ResourceManager : IResourceManager
         {
             if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
             {
-                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
+                Logger.Warning($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
                 return null;
             }
 
             string? fullPath = ProjectFiles.Find(filePathPart);
             if (fullPath is null)
             {
-                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
+                Logger.Warning($"[ResourceManager] Could not find model file for '{filePathPart}'.");
                 return null;
             }
 
             var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
             if (!loadedMeshes.Any())
             {
-                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
+                Logger.Warning($"[ResourceManager] No meshes found in model file '{fullPath}'.");
                 return null;
             }
 
@@ -2577,7 +2591,7 @@ public class ResourceManager : IResourceManager
                 string cacheKey = $"{filePathPart}#{meshName}";
                 _meshes[cacheKey] = loadedMesh;
             }
-            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
+            Logger.Info($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
 
             if (_meshes.TryGetValue(name, out var finalMesh))
             {
@@ -2613,7 +2627,7 @@ public class ResourceManager : IResourceManager
             }
         }
 
-        Console.WriteLine($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
+        Logger.Warning($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
         return _textures["White"];
     }
 
@@ -2631,13 +2645,13 @@ public class ResourceManager : IResourceManager
             return loadedSkybox;
         }
 
-        Console.WriteLine($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
+        Logger.Warning($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
         return null;
     }
 
     public AudioClip? GetAudioClip(string name)
     {
-        Console.WriteLine("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
+        Logger.Warning("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
         return null;
     }
 
@@ -3641,10 +3655,11 @@ public class SkyboxRenderer
 ### `Cherris\Core\Snapshotter.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using System.Runtime.InteropServices;
 using Veldrid;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class Snapshotter : IDisposable
 {
@@ -3661,7 +3676,10 @@ public class Snapshotter : IDisposable
 
     public void RecordCopyCommand(CommandList cl, Veldrid.Texture source)
     {
-        if (source is null) return;
+        if (source is null)
+        {
+            return;
+        }
 
         // Ensure the staging texture is the correct size
         if (_stagingTexture is null || _width != source.Width || _height != source.Height)
@@ -3679,19 +3697,22 @@ public class Snapshotter : IDisposable
 
     public void SaveCopiedData(string path)
     {
-        if (!_snapshotPending || _stagingTexture is null) return;
+        if (!_snapshotPending || _stagingTexture is null)
+        {
+            return;
+        }
 
         try
         {
             MappedResource mapped = _graphicsDevice.Map(_stagingTexture, MapMode.Read);
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                _ = Directory.CreateDirectory(Path.GetDirectoryName(path));
                 using (var stream = new FileStream(path, FileMode.Create))
                 {
                     SaveAsBmp(stream, (int)_width, (int)_height, mapped);
                 }
-                Console.WriteLine($"[Snapshotter] Saved snapshot to '{path}'");
+                Logger.Info($"[Snapshotter] Saved snapshot to '{path}'");
             }
             finally
             {
@@ -3701,7 +3722,7 @@ public class Snapshotter : IDisposable
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[Snapshotter] Error saving snapshot: {e.Message}");
+            Logger.Error($"[Snapshotter] Error saving snapshot: {e.Message}");
         }
     }
 
@@ -3709,51 +3730,49 @@ public class Snapshotter : IDisposable
     {
         int rowPitch = (int)map.RowPitch;
         int bytesPerPixel = 4; // Assuming a 32-bit format like BGRA or RGBA
-        int bmpRowPitch = (width * 3 + 3) & ~3;
+        int bmpRowPitch = ((width * 3) + 3) & ~3;
         int imageSize = bmpRowPitch * height;
         int fileSize = 54 + imageSize;
 
-        using (var writer = new BinaryWriter(stream))
+        using var writer = new BinaryWriter(stream);
+        // File Header
+        writer.Write((byte)'B');
+        writer.Write((byte)'M');
+        writer.Write(fileSize);
+        writer.Write((ushort)0);
+        writer.Write((ushort)0);
+        writer.Write(54); // Offset to pixel data
+
+        // DIB Header (BITMAPINFOHEADER)
+        writer.Write(40); // Header size
+        writer.Write(width);
+        writer.Write(height);
+        writer.Write((ushort)1); // Planes
+        writer.Write((ushort)24); // Bits per pixel
+        writer.Write(0); // Compression
+        writer.Write(imageSize);
+        writer.Write(0); // X Pixels per meter (not important)
+        writer.Write(0); // Y Pixels per meter (not important)
+        writer.Write(0); // Colors in palette
+        writer.Write(0); // Important colors
+
+        // Pixel Data
+        byte[] rowBuffer = new byte[rowPitch];
+        byte[] bmpRowBuffer = new byte[bmpRowPitch];
+
+        // Write rows from bottom to top
+        for (int y = height - 1; y >= 0; y--)
         {
-            // File Header
-            writer.Write((byte)'B');
-            writer.Write((byte)'M');
-            writer.Write(fileSize);
-            writer.Write((ushort)0);
-            writer.Write((ushort)0);
-            writer.Write(54); // Offset to pixel data
-
-            // DIB Header (BITMAPINFOHEADER)
-            writer.Write(40); // Header size
-            writer.Write(width);
-            writer.Write(height);
-            writer.Write((ushort)1); // Planes
-            writer.Write((ushort)24); // Bits per pixel
-            writer.Write(0); // Compression
-            writer.Write(imageSize);
-            writer.Write(0); // X Pixels per meter (not important)
-            writer.Write(0); // Y Pixels per meter (not important)
-            writer.Write(0); // Colors in palette
-            writer.Write(0); // Important colors
-
-            // Pixel Data
-            byte[] rowBuffer = new byte[rowPitch];
-            byte[] bmpRowBuffer = new byte[bmpRowPitch];
-
-            // Write rows from bottom to top
-            for (int y = height - 1; y >= 0; y--)
+            Marshal.Copy(map.Data + (y * rowPitch), rowBuffer, 0, rowPitch);
+            int bmpIndex = 0;
+            for (int x = 0; x < width * bytesPerPixel; x += bytesPerPixel)
             {
-                Marshal.Copy(map.Data + (y * rowPitch), rowBuffer, 0, rowPitch);
-                int bmpIndex = 0;
-                for (int x = 0; x < width * bytesPerPixel; x += bytesPerPixel)
-                {
-                    // Veldrid swapchain on Windows is typically BGRA. We need to write BGR.
-                    bmpRowBuffer[bmpIndex++] = rowBuffer[x];     // B
-                    bmpRowBuffer[bmpIndex++] = rowBuffer[x + 1]; // G
-                    bmpRowBuffer[bmpIndex++] = rowBuffer[x + 2]; // R
-                }
-                writer.Write(bmpRowBuffer);
+                // Veldrid swapchain on Windows is typically BGRA. We need to write BGR.
+                bmpRowBuffer[bmpIndex++] = rowBuffer[x];     // B
+                bmpRowBuffer[bmpIndex++] = rowBuffer[x + 1]; // G
+                bmpRowBuffer[bmpIndex++] = rowBuffer[x + 2]; // R
             }
+            writer.Write(bmpRowBuffer);
         }
     }
 
@@ -4310,13 +4329,13 @@ public interface RenderingInterface : IDisposable
 
 ```csharp
 using Cherris.Components;
-using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public static class ComponentDeserializer
 {
@@ -4331,15 +4350,21 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
     }
 
-    private static MeshRenderer CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
+    private static MeshRenderer? CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
     {
-        if (properties is not Dictionary<object, object> propsDict) return null;
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return null;
+        }
 
-        propsDict.TryGetValue("Mesh", out var meshNameObj);
+        _ = propsDict.TryGetValue("Mesh", out var meshNameObj);
         var meshName = meshNameObj as string;
 
         var mesh = resourceManager.GetMesh(meshName);
-        if (mesh is null) return null;
+        if (mesh is null)
+        {
+            return null;
+        }
 
         var material = CreateMaterialFromProperties(propsDict, resourceManager);
 
@@ -4349,7 +4374,10 @@ public static class ComponentDeserializer
     private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
     {
         var audioSource = new AudioSource();
-        if (properties is not Dictionary<object, object> propsDict) return audioSource;
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return audioSource;
+        }
 
         PopulateComponentProperties(audioSource, propsDict);
 
@@ -4363,10 +4391,10 @@ public static class ComponentDeserializer
 
     private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)
     {
-        componentProps.TryGetValue("Material", out var materialObj);
+        _ = componentProps.TryGetValue("Material", out var materialObj);
         var matProps = materialObj as Dictionary<object, object> ?? (Dictionary<object, object>)componentProps;
 
-        matProps.TryGetValue("Texture", out var textureNameObj);
+        _ = matProps.TryGetValue("Texture", out var textureNameObj);
         var textureName = textureNameObj as string ?? "White";
         var texture = resourceManager.GetTexture(textureName);
 
@@ -4381,15 +4409,13 @@ public static class ComponentDeserializer
         return material;
     }
 
-    private static Skybox CreateSkyboxComponent(object properties, IResourceManager resourceManager)
+    private static Skybox? CreateSkyboxComponent(object properties, IResourceManager resourceManager)
     {
-        if (properties is Dictionary<object, object> propsDict &&
+        return properties is Dictionary<object, object> propsDict &&
             propsDict.TryGetValue("CubeMap", out var cubemapNameObj) &&
-            cubemapNameObj is string cubemapName)
-        {
-            return resourceManager.GetSkybox(cubemapName);
-        }
-        return null;
+            cubemapNameObj is string cubemapName
+            ? resourceManager.GetSkybox(cubemapName)
+            : null;
     }
 
     private static T CreateAndPopulateComponent<T>(object properties) where T : Component, new()
@@ -4401,15 +4427,24 @@ public static class ComponentDeserializer
 
     private static void PopulateComponentProperties(Component component, IReadOnlyDictionary<object, object> propsDict)
     {
-        if (propsDict is null) return;
+        if (propsDict is null)
+        {
+            return;
+        }
 
         var componentType = component.GetType();
         foreach (var (key, value) in propsDict)
         {
-            if (key is not string propName) continue;
+            if (key is not string propName)
+            {
+                continue;
+            }
 
             var propertyInfo = componentType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo)) continue;
+            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo))
+            {
+                continue;
+            }
 
             if (TryConvertValue(value, propertyInfo.PropertyType, out object convertedValue))
             {
@@ -4427,7 +4462,7 @@ public static class ComponentDeserializer
         return propertyInfo.CanWrite && !propertyInfo.IsDefined(typeof(HideInInspectorAttribute), false);
     }
 
-    private static bool TryConvertValue(object yamlValue, Type targetType, out object convertedValue)
+    private static bool TryConvertValue(object yamlValue, Type targetType, out object? convertedValue)
     {
         convertedValue = null;
         try
@@ -4450,7 +4485,7 @@ public static class ComponentDeserializer
         }
     }
 
-    private static bool TryConvertFromList(IReadOnlyList<object> list, Type targetType, out object convertedValue)
+    private static bool TryConvertFromList(IReadOnlyList<object> list, Type targetType, out object? convertedValue)
     {
         convertedValue = null;
         if (targetType == typeof(Vector2) && list.Count == 2)
@@ -4509,7 +4544,7 @@ public static class ComponentDeserializer
 
     private static void LogPropertyValueConversionWarning(string propertyName, string componentName)
     {
-        Console.WriteLine($"[Deserializer] Warning: Could not set property '{propertyName}' on component '{componentName}'.");
+        Logger.Warning($"[Deserializer] Warning: Could not set property '{propertyName}' on component '{componentName}'.");
     }
 }
 ```
@@ -4521,6 +4556,7 @@ public static class ComponentDeserializer
 ```csharp
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Rendering;
 using System.Globalization;
 using System.Numerics;
@@ -4528,12 +4564,12 @@ using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class SceneLoader
 {
     private readonly IResourceManager _resourceManager;
-    private readonly Dictionary<string, Func<object, Component>> _componentFactories = new();
+    private readonly Dictionary<string, Func<object, Component>> _componentFactories = [];
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;
 
@@ -4562,7 +4598,7 @@ public class SceneLoader
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return new List<GameObject>();
+            return [];
         }
 
         var createdGameObjects = new List<GameObject>();
@@ -4574,10 +4610,16 @@ public class SceneLoader
         foreach (var goData in gameObjectDatas)
         {
             string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName) name = goName;
+            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
+            {
+                name = goName;
+            }
 
             Guid oldId = Guid.Empty;
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId)) oldId = parsedId;
+            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
+            {
+                oldId = parsedId;
+            }
 
             Guid newId = Guid.NewGuid();
             oldToNewIdMap[oldId] = newId;
@@ -4600,7 +4642,11 @@ public class SceneLoader
 
                 foreach (var componentKvp in componentsDict)
                 {
-                    if (componentKvp.Key as string == "Transform") continue;
+                    if ((componentKvp.Key as string) == "Transform")
+                    {
+                        continue;
+                    }
+
                     AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
@@ -4628,7 +4674,7 @@ public class SceneLoader
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
-            return new List<GameObject>();
+            return [];
         }
 
         var createdGameObjects = new Dictionary<Guid, GameObject>();
@@ -4666,7 +4712,11 @@ public class SceneLoader
 
                 foreach (var componentKvp in componentsDict)
                 {
-                    if (componentKvp.Key as string == "Transform") continue;
+                    if ((componentKvp.Key as string) == "Transform")
+                    {
+                        continue;
+                    }
+
                     AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
@@ -4689,8 +4739,16 @@ public class SceneLoader
         var yaml = _serializer.Serialize(properties);
         var props = _deserializer.Deserialize<Dictionary<string, Vector3>>(yaml);
 
-        if (props.TryGetValue("Position", out var pos)) transform.Position = pos;
-        if (props.TryGetValue("Scale", out var scale)) transform.Scale = scale;
+        if (props.TryGetValue("Position", out var pos))
+        {
+            transform.Position = pos;
+        }
+
+        if (props.TryGetValue("Scale", out var scale))
+        {
+            transform.Scale = scale;
+        }
+
         if (props.TryGetValue("Rotation", out var rotDegrees))
         {
             var rotRadians = rotDegrees * (MathF.PI / 180.0f);
@@ -4700,18 +4758,24 @@ public class SceneLoader
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
-        if (string.IsNullOrEmpty(componentType)) return;
+        if (string.IsNullOrEmpty(componentType))
+        {
+            return;
+        }
 
         if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
-            Console.WriteLine($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
+            Logger.Warning($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
             return;
         }
 
         var component = factory(properties);
-        if (component is null) return;
+        if (component is null)
+        {
+            return;
+        }
 
-        go.AddComponent(component);
+        _ = go.AddComponent(component);
 
         if (component is Script script && properties is Dictionary<object, object> propsDict)
         {
@@ -4724,10 +4788,16 @@ public class SceneLoader
         var scriptType = script.GetType();
         foreach (var propKvp in propsDict)
         {
-            if (propKvp.Key is not string propName) continue;
+            if (propKvp.Key is not string propName)
+            {
+                continue;
+            }
 
             PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !propertyInfo.CanWrite) continue;
+            if (propertyInfo is null || !propertyInfo.CanWrite)
+            {
+                continue;
+            }
 
             try
             {
@@ -4735,19 +4805,14 @@ public class SceneLoader
                 var propType = propertyInfo.PropertyType;
                 var yamlValue = propKvp.Value;
 
-                if (propType.IsEnum && yamlValue is string stringValue)
-                {
-                    convertedValue = Enum.Parse(propType, stringValue, true);
-                }
-                else
-                {
-                    convertedValue = Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
-                }
+                convertedValue = propType.IsEnum && yamlValue is string stringValue
+                    ? Enum.Parse(propType, stringValue, true)
+                    : Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
                 propertyInfo.SetValue(script, convertedValue);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
+                Logger.Warning($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
             }
         }
     }
@@ -5046,7 +5111,7 @@ public static class EditorResources
         }
 
         string exeDir = AppContext.BaseDirectory;
-        string fullPath = Path.Combine(exeDir, "Resources", relativePath);
+        string fullPath = Path.Combine(exeDir, "EditorResources", relativePath);
 
         if (File.Exists(fullPath))
         {
@@ -5181,6 +5246,98 @@ public static class ProjectFiles
         }
 
         return null;
+    }
+}
+```
+
+---
+
+### `Cherris\Assets\Scripts\PlayerController.cs`
+
+```csharp
+using Cherris;
+using Cherris.Components;
+using System;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class PlayerController : Script
+{
+    public float Speed { get; set; } = 3.0f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Update(float deltaTime)
+    {
+        // --- Mouse Look ---
+        Vector2 mouseDelta = Input.MouseDelta;
+        _yaw -= mouseDelta.X * MouseSensitivity;
+        _pitch -= mouseDelta.Y * MouseSensitivity;
+
+        // Clamp the pitch to prevent the camera from flipping upside down
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+        // Update rotation from yaw and pitch using the standard engine function
+        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
+
+        // --- Keyboard Movement ---
+        Vector3 moveDirection = Vector3.Zero;
+
+        if (Input.IsKeyDown(Key.W))
+        {
+            moveDirection -= Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.S))
+        {
+            moveDirection += Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.A))
+        {
+            moveDirection -= Vector3.UnitX;
+        }
+        if (Input.IsKeyDown(Key.D))
+        {
+            moveDirection += Vector3.UnitX;
+        }
+
+        if (moveDirection != Vector3.Zero)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
+
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+            // Transform the local direction vector by the horizontal-only rotation.
+            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+        }
+    }
+}
+```
+
+---
+
+### `Cherris\Assets\Scripts\Spinner.cs`
+
+```csharp
+using Cherris;
+using Cherris.Components;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class Spinner : Script
+{
+    private float _totalTime;
+
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
 ```
@@ -7240,6 +7397,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
 ```csharp
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Utils;
 using OpenTK.Graphics.OpenGL4;
 
@@ -7253,7 +7411,7 @@ public class OpenTKResourceManager : ResourceManagerBase
 
     public override void LoadInitialAssets()
     {
-        Console.WriteLine("[OpenTKResourceManager] Initial assets loaded.");
+        Logger.Info("[OpenTKResourceManager] Initial assets loaded.");
         _meshes.Add("Cube", Mesh.CreateCube());
         _meshes.Add("Plane", Mesh.CreatePlane(20f));
 
@@ -7282,7 +7440,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         string? path = ProjectFiles.Find(name);
         if (path is null)
         {
-            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find texture '{name}'.");
+            Logger.Warning($"[OpenTKResourceManager] Could not find texture '{name}'.");
             return _textures["White"];
         }
 
@@ -7335,7 +7493,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         var faceImages = GenericCubemapLoader.LoadCubemapFaces(name);
         if (faceImages is null)
         {
-            Console.WriteLine($"[OpenTKResourceManager] Error: Could not load faces for skybox '{name}'.");
+            Logger.Error($"[OpenTKResourceManager] Could not load faces for skybox '{name}'.");
             return null;
         }
 
@@ -7367,7 +7525,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         string? path = ProjectFiles.Find(name);
         if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine($"[OpenTKResourceManager] Warning: Could not find audio clip '{name}'. Only .wav is supported.");
+            Logger.Warning($"[OpenTKResourceManager] Could not find audio clip '{name}'. Only .wav is supported.");
             return null;
         }
 
@@ -8327,18 +8485,17 @@ public class EditorAppLogic : IDisposable
 
         EditorTheme.ApplyUnrealEngineStyle();
 
-        LoadIcon("Play", "Icons/play.png");
-        LoadIcon("Pause", "Icons/pause.png");
-        LoadIcon("Stop", "Icons/stop.png");
-        LoadIcon("Restart", "Icons/restart.png");
-        LoadIcon("Reset", "Icons/reset.png");
+        LoadIcon("Play", "Icons/Play.png");
+        LoadIcon("Pause", "Icons/Pause.png");
+        LoadIcon("Stop", "Icons/Stop.png");
+        LoadIcon("Reset", "Icons/Reset.png");
 
-        LoadIcon("Component_Transform", "Icons/Components/transform.png");
-        LoadIcon("Component_Camera", "Icons/Components/camera.png");
-        LoadIcon("Component_MeshRenderer", "Icons/Components/mesh_renderer.png");
-        LoadIcon("Component_Script", "Icons/Components/script.png");
-        LoadIcon("Component_Light", "Icons/Components/light.png");
-        LoadIcon("Component_AudioSource", "Icons/Components/audio_source.png");
+        LoadIcon("Component_Transform", "Icons/Components/Transform.png");
+        LoadIcon("Component_Camera", "Icons/Components/Camera.png");
+        LoadIcon("Component_MeshRenderer", "Icons/Components/MeshRenderer.png");
+        LoadIcon("Component_Script", "Icons/Components/Script.png");
+        LoadIcon("Component_Light", "Icons/Components/Light.png");
+        LoadIcon("Component_AudioSource", "Icons/Components/AudioSource.png");
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
     }
@@ -8363,7 +8520,9 @@ public class EditorAppLogic : IDisposable
             // Prevent ImGui docking layout corruption when window is minimized
             var io = ImGui.GetIO();
             if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
+            {
                 return;
+            }
 
             if (_editor.CurrentProject is null)
             {
@@ -8469,6 +8628,7 @@ public class EditorAppLogic : IDisposable
 ```csharp
 using Cherris;
 using Cherris.Components;
+using Cherris.Core.Logging;
 using ImGuizmoNET;
 using System.Numerics;
 
@@ -8489,18 +8649,13 @@ public class EditorController : Script
         _editor = editor;
     }
 
-    /// <summary>
-    /// Initializes the internal yaw and pitch from the GameObject's current rotation.
-    /// This uses the engine's standard Euler angle conversion to ensure symmetry with the creation method.
-    /// </summary>
     private void SyncYawPitchFromTransform()
     {
         var eulerAngles = EngineMath.ToEulerAngles(GameObject.Transform.Rotation);
-        _pitch = eulerAngles.X; // Pitch is rotation around X-axis
-        _yaw = eulerAngles.Y;   // Yaw is rotation around Y-axis
-                                // We ignore roll (Z-axis) for the camera controller.
+        _pitch = eulerAngles.X;
+        _yaw = eulerAngles.Y;
 
-        Console.WriteLine($"[Controller] Initializing camera orientation. Yaw: {_yaw}, Pitch: {_pitch}. From Transform Rotation: {GameObject.Transform.Rotation}");
+        Logger.Info($"[Controller] Initializing camera orientation. Yaw: {_yaw}, Pitch: {_pitch}. From Transform Rotation: {GameObject.Transform.Rotation}");
     }
 
     public override void Start()
@@ -8542,7 +8697,7 @@ public class EditorController : Script
         float currentSpeed = Speed;
         if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
         {
-            currentSpeed *= 3.0f; // Speed boost
+            currentSpeed *= 3.0f;
         }
 
         var localMove = Vector3.Zero;
@@ -8567,11 +8722,11 @@ public class EditorController : Script
         float worldVerticalMove = 0f;
         if (Input.IsKeyDown(Key.E))
         {
-            worldVerticalMove += 1; // Up
+            worldVerticalMove += 1;
         }
         if (Input.IsKeyDown(Key.Q))
         {
-            worldVerticalMove -= 1; // Down
+            worldVerticalMove -= 1;
         }
 
         if (localMove == Vector3.Zero && worldVerticalMove == 0)
@@ -8596,20 +8751,21 @@ public class EditorController : Script
             return;
         }
 
-        // On the first frame the button is pressed, sync to handle external changes (e.g., from the gizmo).
         if (Input.WasMouseButtonPressed(MouseButton.Right))
         {
             SyncYawPitchFromTransform();
         }
 
         Vector2 mouseDelta = Input.MouseDelta;
-        if (mouseDelta == Vector2.Zero) return;
+        if (mouseDelta == Vector2.Zero)
+        {
+            return;
+        }
 
         _yaw -= mouseDelta.X * MouseSensitivity;
         _pitch -= mouseDelta.Y * MouseSensitivity;
-        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+        _pitch = Math.Clamp(_pitch, (-MathF.PI / 2.0f) + 0.001f, (MathF.PI / 2.0f) - 0.001f);
 
-        // Create the new rotation using the standard engine function, which matches the deconstruction method.
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
     }
 }
@@ -9022,78 +9178,127 @@ public static class ProjectPersistence
 ### `CherrisEditor\ScriptCompiler.cs`
 
 ```csharp
+using Cherris.Core;
+using Cherris.Core.Logging;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Emit;
 using System.Reflection;
 using System.Runtime.Loader;
 
 namespace CherrisEditor;
 
-/// <summary>
-/// A service that uses Roslyn to find and compile C# script files from the Assets folder
-/// into a dynamic, in-memory assembly at runtime.
-/// </summary>
 public static class ScriptCompiler
 {
+    private const string ScriptsDirectoryName = "Scripts";
+    private const string ScriptFilePattern = "*.cs";
+    private const string CompiledAssemblyName = "GameScriptsAssembly";
+
+    private static readonly string[] RequiredAssemblies =
+    {
+        "System.Runtime",
+        "System.Numerics.Vectors"
+    };
+
     public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
     {
-        string scriptsPath = Path.Combine(rootAssetPath, "Scripts");
+        string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
+
+        if (!TryGetScriptFiles(scriptsPath, out var files))
+        {
+            return null;
+        }
+
+        List<SyntaxTree> syntaxTrees = ParseSyntaxTrees(files);
+        IEnumerable<MetadataReference> references = CreateMetadataReferences();
+        CSharpCompilation compilation = CreateCompilation(syntaxTrees, references);
+
+        return EmitAssembly(compilation, context);
+    }
+
+    private static bool TryGetScriptFiles(string scriptsPath, out string[] files)
+    {
+        files = Array.Empty<string>();
+
         if (!Directory.Exists(scriptsPath))
         {
-            Console.WriteLine("[ScriptCompiler] 'Assets/Scripts' directory not found. No scripts to compile.");
-            return null;
+            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found. No scripts to compile.");
+            return false;
         }
 
-        var scriptFiles = Directory.GetFiles(scriptsPath, "*.cs", SearchOption.AllDirectories);
-        if (scriptFiles.Length == 0)
+        files = Directory.GetFiles(scriptsPath, ScriptFilePattern, SearchOption.AllDirectories);
+
+        if (files.Length == 0)
         {
-            Console.WriteLine("[ScriptCompiler] No C# script files found in 'Assets/Scripts'.");
-            return null;
+            Logger.Info($"[ScriptCompiler] No C# script files found in '{ScriptsDirectoryName}'.");
+            return false;
         }
 
-        Console.WriteLine($"[ScriptCompiler] Found {scriptFiles.Length} script(s). Starting compilation...");
+        Logger.Info($"[ScriptCompiler] Found {files.Length} script(s). Starting compilation...");
+        return true;
+    }
 
-        var syntaxTrees = scriptFiles
-            .Select(file => CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file))
-            .ToList();
-
-        var assemblyPaths = new HashSet<string>
+    private static List<SyntaxTree> ParseSyntaxTrees(string[] files)
+    {
+        return [.. files.Select(file =>
         {
+            return CSharpSyntaxTree.ParseText(File.ReadAllText(file), path: file);
+        })];
+    }
+
+    private static IEnumerable<MetadataReference> CreateMetadataReferences()
+    {
+        HashSet<string> assemblyPaths =
+        [
             typeof(object).Assembly.Location,
-            Assembly.Load("System.Runtime").Location,
-            typeof(Cherris.Engine).Assembly.Location,
-            typeof(System.Numerics.Vector3).Assembly.Location,
-            Assembly.Load("System.Numerics.Vectors").Location
-        };
+            typeof(Engine).Assembly.Location,
+            typeof(System.Numerics.Vector3).Assembly.Location
+        ];
 
-        var references = assemblyPaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
+        foreach (string assemblyName in RequiredAssemblies)
+        {
+            _ = assemblyPaths.Add(Assembly.Load(assemblyName).Location);
+        }
 
-        var compilation = CSharpCompilation.Create(
-            "GameScriptsAssembly",
+        return assemblyPaths.Select(path => MetadataReference.CreateFromFile(path));
+    }
+
+    private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> syntaxTrees, IEnumerable<MetadataReference> references)
+    {
+        return CSharpCompilation.Create(
+            CompiledAssemblyName,
             syntaxTrees,
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new(OutputKind.DynamicallyLinkedLibrary));
+    }
 
-        using var ms = new MemoryStream();
-        var result = compilation.Emit(ms);
+    private static Assembly? EmitAssembly(CSharpCompilation compilation, AssemblyLoadContext context)
+    {
+        using MemoryStream stream = new();
+        EmitResult result = compilation.Emit(stream);
 
         if (!result.Success)
         {
-            Console.WriteLine("[ScriptCompiler] Compilation failed!");
-            var failures = result.Diagnostics.Where(diagnostic =>
-                diagnostic.IsWarningAsError || diagnostic.Severity == DiagnosticSeverity.Error);
-
-            foreach (var diagnostic in failures)
-            {
-                Console.Error.WriteLine($"  {diagnostic.Id}: {diagnostic.GetMessage()} at {diagnostic.Location}");
-            }
+            LogCompilationErrors(result);
             return null;
         }
 
-        Console.WriteLine("[ScriptCompiler] Compilation successful.");
+        Logger.Info("[ScriptCompiler] Compilation successful.");
+        stream.Position = 0;
+        return context.LoadFromStream(stream);
+    }
 
-        ms.Seek(0, SeekOrigin.Begin);
-        return context.LoadFromStream(ms);
+    private static void LogCompilationErrors(EmitResult result)
+    {
+        Logger.Warning("[ScriptCompiler] Compilation failed!");
+
+        IEnumerable<Diagnostic> failures = result.Diagnostics.Where(d =>
+            d.IsWarningAsError || d.Severity == DiagnosticSeverity.Error);
+
+        foreach (Diagnostic diagnostic in failures)
+        {
+            Logger.Error($"  {diagnostic.Id}: {diagnostic.GetMessage()} at {diagnostic.Location}");
+        }
     }
 }
 ```
@@ -10397,10 +10602,10 @@ public class ContentBrowserPanel : IDisposable
         _editor = editor;
         _textureManager = textureManager;
 
-        LoadIcon("Folder", "Icons/folder.png");
-        LoadIcon("File", "Icons/file.png");
-        LoadIcon("Script", "Icons/script.png");
-        LoadIcon("Prefab", "Icons/prefab.png");
+        LoadIcon("Folder", "Icons/Folder.png");
+        LoadIcon("File", "Icons/File.png");
+        LoadIcon("Script", "Icons/Components/Script.png");
+        LoadIcon("Prefab", "Icons/Prefab.png");
 
         _currentAssetPath = _editor.CurrentProject!.RootPath;
     }
@@ -10603,6 +10808,7 @@ public class ContentBrowserPanel : IDisposable
 ```csharp
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using CherrisEditor.Inspectors;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -10610,306 +10816,337 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
 
-namespace CherrisEditor;
+namespace CherrisEditor.UI;
 
 internal class InspectorPanel
 {
-	private readonly Editor _editor;
-	private readonly EditorTextureManager _textureManager;
-	private readonly HistoryManager _history;
-	private readonly Dictionary<Type, IComponentInspector> _customInspectors = new();
-	private readonly DefaultInspector _defaultInspector;
-	private readonly TransformInspector _transformInspector;
-	private string _newScriptName = "";
-	private string _componentSearchText = "";
+    private readonly Editor _editor;
+    private readonly EditorTextureManager _textureManager;
+    private readonly HistoryManager _history;
+    private readonly Dictionary<Type, IComponentInspector> _customInspectors = [];
+    private readonly DefaultInspector _defaultInspector;
+    private readonly TransformInspector _transformInspector;
+    private string _newScriptName = "";
+    private string _componentSearchText = "";
 
-	public InspectorPanel(Editor editor, EditorTextureManager textureManager, HistoryManager history)
-	{
-		_editor = editor;
-		_textureManager = textureManager;
-		_history = history;
-		_defaultInspector = new DefaultInspector(textureManager, history);
-		_transformInspector = new TransformInspector(textureManager, history);
-		RegisterCustomInspectors(editor, textureManager, history);
-	}
+    public InspectorPanel(Editor editor, EditorTextureManager textureManager, HistoryManager history)
+    {
+        _editor = editor;
+        _textureManager = textureManager;
+        _history = history;
+        _defaultInspector = new DefaultInspector(textureManager, history);
+        _transformInspector = new TransformInspector(textureManager, history);
+        RegisterCustomInspectors(editor, textureManager, history);
+    }
 
-	private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager, HistoryManager history)
-	{
-		var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
-			.Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
+    private void RegisterCustomInspectors(Editor editor, EditorTextureManager textureManager, HistoryManager history)
+    {
+        var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
+            .Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) && typeof(IComponentInspector).IsAssignableFrom(t));
 
-		foreach (var inspectorType in inspectorTypes)
-		{
-			var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
-			try
-			{
-				IComponentInspector instance = null;
+        foreach (var inspectorType in inspectorTypes)
+        {
+            var attribute = (CustomInspectorAttribute)inspectorType.GetCustomAttribute(typeof(CustomInspectorAttribute), false);
+            try
+            {
+                IComponentInspector instance = null;
 
-				var ctorWithAll = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager), typeof(HistoryManager) });
-				var ctorWithEditor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
-				var ctorWithHistory = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager), typeof(HistoryManager) });
-				var ctorWithHistoryOnly = inspectorType.GetConstructor(new[] { typeof(HistoryManager) });
-				var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
-				var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
+                var ctorWithAll = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager), typeof(HistoryManager) });
+                var ctorWithEditor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
+                var ctorWithHistory = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager), typeof(HistoryManager) });
+                var ctorWithHistoryOnly = inspectorType.GetConstructor(new[] { typeof(HistoryManager) });
+                var ctorSimple = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
+                var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
 
-				if (ctorWithAll is not null)
-					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
-				else if (ctorWithEditor is not null)
-					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
-				else if (ctorWithHistory is not null)
-					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
-				else if (ctorWithHistoryOnly is not null)
-					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, history);
-				else if (ctorSimple is not null)
-					instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
-				else if (ctorParameterless is not null)
-					instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
+                if (ctorWithAll is not null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history);
+                }
+                else if (ctorWithEditor is not null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager);
+                }
+                else if (ctorWithHistory is not null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history);
+                }
+                else if (ctorWithHistoryOnly is not null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, history);
+                }
+                else if (ctorSimple is not null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager);
+                }
+                else if (ctorParameterless is not null)
+                {
+                    instance = (IComponentInspector)Activator.CreateInstance(inspectorType);
+                }
 
-				if (instance is not null)
-				{
-					_customInspectors[attribute.InspectedType] = instance;
-					Console.WriteLine($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
-				}
-				else
-				{
-					Console.WriteLine($"[Inspector] Could not find a suitable constructor for '{inspectorType.Name}'.");
-				}
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"[Inspector] Failed to register custom inspector '{inspectorType.Name}': {ex.Message}");
-			}
-		}
-	}
+                if (instance is not null)
+                {
+                    _customInspectors[attribute.InspectedType] = instance;
+                    Logger.Info($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
+                }
+                else
+                {
+                    Logger.Warning($"[Inspector] Could not find a suitable constructor for '{inspectorType.Name}'.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"[Inspector] Failed to register custom inspector '{inspectorType.Name}': {ex.Message}");
+            }
+        }
+    }
 
-	public void DrawInspectorPanel()
-	{
-		ImGui.Begin("Details");
-		GameObject? selectedObject = _editor.GetSelectedGameObject();
-		if (selectedObject is not null)
-		{
-			DrawGameObjectProperties(selectedObject);
-		}
-		else
-		{
-			ImGui.Text("No object selected.");
-		}
-		ImGui.End();
-	}
+    public void DrawInspectorPanel()
+    {
+        _ = ImGui.Begin("Details");
+        GameObject? selectedObject = _editor.GetSelectedGameObject();
+        if (selectedObject is not null)
+        {
+            DrawGameObjectProperties(selectedObject);
+        }
+        else
+        {
+            ImGui.Text("No object selected.");
+        }
+        ImGui.End();
+    }
 
-	private void DrawGameObjectProperties(GameObject go)
-	{
-		string name = go.Name;
-		if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
-		{
-			go.Name = name;
-			_editor.SceneManager.ActiveScene.IsDirty = true;
-		}
-		ImGui.Separator();
+    private void DrawGameObjectProperties(GameObject go)
+    {
+        string name = go.Name;
+        if (ImGui.InputText("##GameObjectName", ref name, 256, ImGuiInputTextFlags.EnterReturnsTrue))
+        {
+            go.Name = name;
+            _editor.SceneManager.ActiveScene.IsDirty = true;
+        }
+        ImGui.Separator();
 
-		// --- Transform Component ---
-		ImGui.PushID("TransformComponent");
-		IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
-		if (DrawComponentHeader("Transform", transformIcon, out bool transformHeaderOpen))
-		{
-			_transformInspector.Draw(go.Transform);
-		}
-		ImGui.PopID();
+        // --- Transform Component ---
+        ImGui.PushID("TransformComponent");
+        IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
+        if (DrawComponentHeader("Transform", transformIcon, out _))
+        {
+            _ = _transformInspector.Draw(go.Transform);
+        }
+        ImGui.PopID();
 
-		// --- Other Components ---
-		foreach (var component in go.Components.ToList())
-		{
-			ImGui.Separator();
-			ImGui.PushID(component.GetHashCode());
+        // --- Other Components ---
+        foreach (var component in go.Components.ToList())
+        {
+            ImGui.Separator();
+            ImGui.PushID(component.GetHashCode());
 
-			string componentName = SplitPascalCase(component.GetType().Name);
-			string textureKey = $"Component_{component.GetType().Name}";
-			if (component is Light) textureKey = "Component_Light";
-			if (component is AudioSource || component is AudioListener) textureKey = "Component_AudioSource";
+            string componentName = SplitPascalCase(component.GetType().Name);
+            string textureKey = $"Component_{component.GetType().Name}";
+            if (component is Light)
+            {
+                textureKey = "Component_Light";
+            }
 
-			IntPtr icon = _textureManager.GetTexture(textureKey);
-			if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
-			{
-				icon = _textureManager.GetTexture("Component_Script");
-			}
+            if (component is AudioSource or AudioListener)
+            {
+                textureKey = "Component_AudioSource";
+            }
 
-			if (DrawComponentHeader(componentName, icon, out bool headerOpen))
-			{
-				if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
-				{
-					if (customInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
-				}
-				else
-				{
-					if (_defaultInspector.Draw(component)) _editor.SceneManager.ActiveScene.IsDirty = true;
-				}
-			}
+            IntPtr icon = _textureManager.GetTexture(textureKey);
+            if (icon == IntPtr.Zero && typeof(Script).IsAssignableFrom(component.GetType()))
+            {
+                icon = _textureManager.GetTexture("Component_Script");
+            }
 
-			if (ImGui.BeginPopupContextItem("ComponentContextMenu"))
-			{
-				if (ImGui.MenuItem("Remove Component"))
-				{
-					go.RemoveComponent(component);
-					_editor.SceneManager.ActiveScene.IsDirty = true;
-					ImGui.CloseCurrentPopup();
-					ImGui.PopID();
-					ImGui.EndPopup();
-					return; // Exit loop as collection was modified
-				}
-				ImGui.EndPopup();
-			}
+            if (DrawComponentHeader(componentName, icon, out _))
+            {
+                if (_customInspectors.TryGetValue(component.GetType(), out var customInspector))
+                {
+                    if (customInspector.Draw(component))
+                    {
+                        _editor.SceneManager.ActiveScene.IsDirty = true;
+                    }
+                }
+                else
+                {
+                    if (_defaultInspector.Draw(component))
+                    {
+                        _editor.SceneManager.ActiveScene.IsDirty = true;
+                    }
+                }
+            }
 
-			ImGui.PopID();
-		}
+            if (ImGui.BeginPopupContextItem("ComponentContextMenu"))
+            {
+                if (ImGui.MenuItem("Remove Component"))
+                {
+                    go.RemoveComponent(component);
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                    ImGui.PopID();
+                    ImGui.EndPopup();
+                    return; // Exit loop as collection was modified
+                }
+                ImGui.EndPopup();
+            }
 
-		DrawAddComponentButton(go);
-	}
+            ImGui.PopID();
+        }
 
-	private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
-	{
-		var style = ImGui.GetStyle();
-		float iconSize = 20.0f;
-		float frameHeight = ImGui.GetFrameHeight();
-		float yPadding = (frameHeight - iconSize) * 0.5f;
+        DrawAddComponentButton(go);
+    }
 
-		ImGui.BeginGroup();
+    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
+    {
+        var style = ImGui.GetStyle();
+        float iconSize = 20.0f;
+        float frameHeight = ImGui.GetFrameHeight();
+        float yPadding = (frameHeight - iconSize) * 0.5f;
 
-		var startPos = ImGui.GetCursorPos();
-		ImGui.SetCursorPosY(startPos.Y + yPadding);
-		ImGui.Image(icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File"), new Vector2(iconSize, iconSize));
+        ImGui.BeginGroup();
 
-		float headerX = startPos.X + iconSize + style.ItemSpacing.X;
-		ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-		ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
-		isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
+        var startPos = ImGui.GetCursorPos();
+        ImGui.SetCursorPosY(startPos.Y + yPadding);
+        ImGui.Image(icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File"), new Vector2(iconSize, iconSize));
 
-		ImGui.EndGroup();
-		return isOpen;
-	}
+        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
+        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+        isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
 
-	private void DrawAddComponentButton(GameObject go)
-	{
-		ImGui.Spacing();
-		ImGui.Separator();
-		ImGui.Spacing();
-		float availableWidth = ImGui.GetContentRegionAvail().X;
-		float buttonWidth = 120.0f;
-		float buttonPosX = (availableWidth - buttonWidth) * 0.5f;
-		if (buttonPosX > 0) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + buttonPosX);
+        ImGui.EndGroup();
+        return isOpen;
+    }
 
-		if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
-		{
-			_componentSearchText = ""; // Reset search when opening the popup
-			ImGui.OpenPopup("AddComponentPopup");
-		}
+    private void DrawAddComponentButton(GameObject go)
+    {
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        float availableWidth = ImGui.GetContentRegionAvail().X;
+        float buttonWidth = 120.0f;
+        float buttonPosX = (availableWidth - buttonWidth) * 0.5f;
+        if (buttonPosX > 0)
+        {
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + buttonPosX);
+        }
 
-		if (ImGui.BeginPopup("AddComponentPopup"))
-		{
-			ImGui.PushItemWidth(-1);
-			ImGui.InputTextWithHint("##ComponentSearch", "Search...", ref _componentSearchText, 100);
-			ImGui.PopItemWidth();
-			ImGui.Separator();
+        if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
+        {
+            _componentSearchText = ""; // Reset search when opening the popup
+            ImGui.OpenPopup("AddComponentPopup");
+        }
 
-			bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
+        if (ImGui.BeginPopup("AddComponentPopup"))
+        {
+            ImGui.PushItemWidth(-1);
+            _ = ImGui.InputTextWithHint("##ComponentSearch", "Search...", ref _componentSearchText, 100);
+            ImGui.PopItemWidth();
+            ImGui.Separator();
 
-			// Built-in components
-			if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
-			{
-				if (ImGui.MenuItem("Camera"))
-				{
-					go.AddComponent(new Camera());
-					_editor.SceneManager.ActiveScene.IsDirty = true;
-					ImGui.CloseCurrentPopup();
-				}
-			}
+            bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
 
-			if (go.GetComponent<Light>() is null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
-			{
-				if (ImGui.MenuItem("Light"))
-				{
-					go.AddComponent(new Light());
-					_editor.SceneManager.ActiveScene.IsDirty = true;
-					ImGui.CloseCurrentPopup();
-				}
-			}
+            // Built-in components
+            if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Camera"))
+                {
+                    _ = go.AddComponent(new Camera());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
 
-			if (go.GetComponent<AudioSource>() is null && (!searchIsActive || "Audio Source".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
-			{
-				if (ImGui.MenuItem("Audio Source"))
-				{
-					go.AddComponent(new AudioSource());
-					_editor.SceneManager.ActiveScene.IsDirty = true;
-					ImGui.CloseCurrentPopup();
-				}
-			}
+            if (go.GetComponent<Light>() is null && (!searchIsActive || "Light".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Light"))
+                {
+                    _ = go.AddComponent(new Light());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
 
-			if (go.GetComponent<AudioListener>() is null && (!searchIsActive || "Audio Listener".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
-			{
-				if (ImGui.MenuItem("Audio Listener"))
-				{
-					go.AddComponent(new AudioListener());
-					_editor.SceneManager.ActiveScene.IsDirty = true;
-					ImGui.CloseCurrentPopup();
-				}
-			}
+            if (go.GetComponent<AudioSource>() is null && (!searchIsActive || "Audio Source".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Audio Source"))
+                {
+                    _ = go.AddComponent(new AudioSource());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
 
-			ImGui.Separator();
+            if (go.GetComponent<AudioListener>() is null && (!searchIsActive || "Audio Listener".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (ImGui.MenuItem("Audio Listener"))
+                {
+                    _ = go.AddComponent(new AudioListener());
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
 
-			// Scripts
-			var filteredTypes = searchIsActive
-				? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
-				: _editor.AvailableScriptTypes;
+            ImGui.Separator();
 
-			foreach (var scriptType in filteredTypes)
-			{
-				if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
-				{
-					var newComponent = (Script)Activator.CreateInstance(scriptType);
-					go.AddComponent(newComponent);
-					_editor.SceneManager.ActiveScene.IsDirty = true;
+            // Scripts
+            var filteredTypes = searchIsActive
+                ? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
+                : _editor.AvailableScriptTypes;
 
-					if (_editor.State != EditorState.Playing)
-					{
-						newComponent.Enabled = false;
-					}
+            foreach (var scriptType in filteredTypes)
+            {
+                if (!go.Components.Any(c => c.GetType() == scriptType) && ImGui.MenuItem(SplitPascalCase(scriptType.Name)))
+                {
+                    var newComponent = (Script)Activator.CreateInstance(scriptType);
+                    _ = go.AddComponent(newComponent);
+                    _editor.SceneManager.ActiveScene.IsDirty = true;
 
-					ImGui.CloseCurrentPopup();
-				}
-			}
+                    if (_editor.State != EditorState.Playing)
+                    {
+                        newComponent.Enabled = false;
+                    }
 
-			ImGui.Separator();
-			ImGui.Text("New Script");
-			ImGui.PushItemWidth(-1.0f);
-			if (ImGui.InputText("##NewScriptName", ref _newScriptName, 100, ImGuiInputTextFlags.EnterReturnsTrue))
-			{
-				if (!string.IsNullOrWhiteSpace(_newScriptName))
-				{
-					string scriptName = _newScriptName;
-					_editor.CreateAndCompileScript(scriptName);
+                    ImGui.CloseCurrentPopup();
+                }
+            }
 
-					Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
-					if (newScriptType is not null)
-					{
-						var newComponent = (Script)Activator.CreateInstance(newScriptType);
-						go.AddComponent(newComponent);
-						_editor.SceneManager.ActiveScene.IsDirty = true;
-						if (_editor.State != EditorState.Playing)
-						{
-							newComponent.Enabled = false;
-						}
-					}
+            ImGui.Separator();
+            ImGui.Text("New Script");
+            ImGui.PushItemWidth(-1.0f);
+            if (ImGui.InputText("##NewScriptName", ref _newScriptName, 100, ImGuiInputTextFlags.EnterReturnsTrue))
+            {
+                if (!string.IsNullOrWhiteSpace(_newScriptName))
+                {
+                    string scriptName = _newScriptName;
+                    _editor.CreateAndCompileScript(scriptName);
 
-					_newScriptName = "";
-					ImGui.CloseCurrentPopup();
-				}
-			}
-			ImGui.PopItemWidth();
+                    Type? newScriptType = _editor.AvailableScriptTypes.FirstOrDefault(t => t.Name == scriptName);
+                    if (newScriptType is not null)
+                    {
+                        var newComponent = (Script)Activator.CreateInstance(newScriptType);
+                        _ = go.AddComponent(newComponent);
+                        _editor.SceneManager.ActiveScene.IsDirty = true;
+                        if (_editor.State != EditorState.Playing)
+                        {
+                            newComponent.Enabled = false;
+                        }
+                    }
 
-			ImGui.EndPopup();
-		}
-	}
+                    _newScriptName = "";
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+            ImGui.PopItemWidth();
 
-	private static string SplitPascalCase(string input) => Regex.Replace(input, "(?<!^)([A-Z])", " $1");
+            ImGui.EndPopup();
+        }
+    }
+
+    private static string SplitPascalCase(string input)
+    {
+        return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
+    }
 }
 ```
 
@@ -11789,6 +12026,98 @@ public class HistoryManager
         _undoStack.Clear();
         _redoStack.Clear();
         OnHistoryChanged?.Invoke();
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Assets\Scripts\PlayerController.cs`
+
+```csharp
+using Cherris;
+using Cherris.Components;
+using System;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class PlayerController : Script
+{
+    public float Speed { get; set; } = 3.0f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Update(float deltaTime)
+    {
+        // --- Mouse Look ---
+        Vector2 mouseDelta = Input.MouseDelta;
+        _yaw -= mouseDelta.X * MouseSensitivity;
+        _pitch -= mouseDelta.Y * MouseSensitivity;
+
+        // Clamp the pitch to prevent the camera from flipping upside down
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+        // Update rotation from yaw and pitch using the standard engine function
+        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
+
+        // --- Keyboard Movement ---
+        Vector3 moveDirection = Vector3.Zero;
+
+        if (Input.IsKeyDown(Key.W))
+        {
+            moveDirection -= Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.S))
+        {
+            moveDirection += Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.A))
+        {
+            moveDirection -= Vector3.UnitX;
+        }
+        if (Input.IsKeyDown(Key.D))
+        {
+            moveDirection += Vector3.UnitX;
+        }
+
+        if (moveDirection != Vector3.Zero)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
+
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+            // Transform the local direction vector by the horizontal-only rotation.
+            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+        }
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Assets\Scripts\Spinner.cs`
+
+```csharp
+using Cherris;
+using Cherris.Components;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class Spinner : Script
+{
+    private float _totalTime;
+
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
 ```
