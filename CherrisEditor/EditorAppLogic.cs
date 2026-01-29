@@ -1,5 +1,4 @@
 ﻿using Cherris;
-using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
@@ -16,97 +15,114 @@ public class EditorAppLogic : IDisposable
     private readonly Editor _editor;
     private readonly SceneSerializer _sceneSerializer;
     private readonly HistoryManager _history;
+    private readonly EditorTextureManager _textureManager;
     private readonly ProjectSelector _projectSelector;
 
-    private readonly MenuBar _menuBar;
-    private readonly Toolbar _toolbar;
-    private readonly ViewportPanel _viewportPanel;
-    private readonly OutlinerPanel _outlinerPanel;
-    private readonly InspectorPanel _inspectorPanel;
-    private readonly ContentBrowserPanel _contentBrowserPanel;
-    private readonly ConsolePanel _consolePanel;
-    private readonly EditorTextureManager _textureManager;
+    private MenuBar _menuBar;
+    private Toolbar _toolbar;
+    private ViewportPanel _viewportPanel;
+    private OutlinerPanel _outlinerPanel;
+    private InspectorPanel _inspectorPanel;
+    private ContentBrowserPanel _contentBrowserPanel;
+    private ConsolePanel _consolePanel;
+
+    private bool _imGuizmoInitialized;
+
+    private static readonly (string Key, string Path)[] Icons =
+    {
+        ("Play", "Icons/Play.png"),
+        ("Pause", "Icons/Pause.png"),
+        ("Stop", "Icons/Stop.png"),
+        ("Reset", "Icons/Reset.png"),
+        ("Component_Transform", "Icons/Components/Transform.png"),
+        ("Component_Camera", "Icons/Components/Camera.png"),
+        ("Component_MeshRenderer", "Icons/Components/MeshRenderer.png"),
+        ("Component_Script", "Icons/Components/Script.png"),
+        ("Component_Light", "Icons/Components/Light.png"),
+        ("Component_AudioSource", "Icons/Components/AudioSource.png")
+    };
 
     public EditorAppLogic(Editor editor, SceneSerializer sceneSerializer)
     {
         _editor = editor;
         _history = editor.History;
-        _textureManager = new EditorTextureManager();
         _sceneSerializer = sceneSerializer;
+        _textureManager = new EditorTextureManager();
         _projectSelector = new ProjectSelector();
 
+        InitializePanels();
+        LoadIcons();
+
         _projectSelector.OnProjectSelected += OnProjectSelected;
-
-        _menuBar = new MenuBar(editor, _sceneSerializer, _history);
-        _toolbar = new Toolbar(editor, _textureManager);
-        _viewportPanel = new ViewportPanel(editor, _history);
-        _outlinerPanel = new OutlinerPanel(editor);
-        _inspectorPanel = new InspectorPanel(editor, _textureManager, _history);
-        _contentBrowserPanel = new ContentBrowserPanel(editor, _textureManager);
-        _consolePanel = new ConsolePanel();
-
         EditorTheme.ApplyUnrealEngineStyle();
+    }
 
-        LoadIcon("Play", "Icons/Play.png");
-        LoadIcon("Pause", "Icons/Pause.png");
-        LoadIcon("Stop", "Icons/Stop.png");
-        LoadIcon("Reset", "Icons/Reset.png");
+    private void InitializePanels()
+    {
+        _menuBar = new MenuBar(_editor, _sceneSerializer, _history);
+        _toolbar = new Toolbar(_editor, _textureManager);
+        _viewportPanel = new ViewportPanel(_editor, _history);
+        _outlinerPanel = new OutlinerPanel(_editor);
+        _inspectorPanel = new InspectorPanel(_editor, _textureManager, _history);
+        _contentBrowserPanel = new ContentBrowserPanel(_editor, _textureManager);
+        _consolePanel = new ConsolePanel();
+    }
 
-        LoadIcon("Component_Transform", "Icons/Components/Transform.png");
-        LoadIcon("Component_Camera", "Icons/Components/Camera.png");
-        LoadIcon("Component_MeshRenderer", "Icons/Components/MeshRenderer.png");
-        LoadIcon("Component_Script", "Icons/Components/Script.png");
-        LoadIcon("Component_Light", "Icons/Components/Light.png");
-        LoadIcon("Component_AudioSource", "Icons/Components/AudioSource.png");
+    private void LoadIcons()
+    {
+        foreach (var (key, path) in Icons)
+        {
+            string? fullPath = EditorResources.Find(path);
+            if (fullPath is not null)
+            {
+                _textureManager.LoadTexture(key, fullPath);
+            }
+            else
+            {
+                Logger.Warning($"[Editor] Could not find editor icon '{path}'");
+            }
+        }
+    }
+
+    public void Draw(float deltaTime)
+    {
+        InitializeImGuizmoOnce();
+
+        if (IsWindowMinimized())
+        {
+            return;
+        }
+
+        if (_editor.CurrentProject is null)
+        {
+            _projectSelector.Draw();
+            return;
+        }
+
+        SetupDockspace();
+
+        _viewportPanel.Draw();
+        _outlinerPanel.Draw();
+        _consolePanel.Draw();
+        _contentBrowserPanel.Draw();
+        _inspectorPanel.DrawInspectorPanel();
+    }
+
+    private void InitializeImGuizmoOnce()
+    {
+        if (_imGuizmoInitialized)
+        {
+            return;
+        }
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
+        _imGuizmoInitialized = true;
     }
 
-    private void LoadIcon(string key, string relativePath)
+    private static bool IsWindowMinimized()
     {
-        string? path = EditorResources.Find(relativePath);
-        if (path is not null)
-        {
-            _textureManager.LoadTexture(key, path);
-        }
-        else
-        {
-            Logger.Warning($"[Editor] Could not find editor icon '{relativePath}'");
-        }
-    }
-
-    public Action<float> DrawUI()
-    {
-        return (deltaTime) =>
-        {
-            // Prevent ImGui docking layout corruption when window is minimized
-            ImGuiIOPtr io = ImGui.GetIO();
-
-            if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
-            {
-                return;
-            }
-
-            if (_editor.CurrentProject is null)
-            {
-                _projectSelector.Draw();
-                return;
-            }
-
-            SetupDockspace();
-            ImGuizmo.BeginFrame();
-
-            _viewportPanel.Draw();
-            _outlinerPanel.Draw();
-            _consolePanel.Draw();
-            _contentBrowserPanel.Draw();
-            _inspectorPanel.DrawInspectorPanel();
-        };
-    }
-
-    private void OnProjectSelected(string projectRoot)
-    {
-        _editor.LoadProject(projectRoot);
+        var io = ImGui.GetIO();
+        return io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0;
     }
 
     public void UpdateEditorLogic(float deltaTime)
@@ -117,35 +133,61 @@ public class EditorAppLogic : IDisposable
         }
 
         _viewportPanel.Update();
+        SyncDebugRenderingState();
+        HandleEditorInput();
+    }
 
-        if (_editor.Renderer is not null)
+    private void SyncDebugRenderingState()
+    {
+        if (_editor.Renderer is null)
         {
-            _editor.Renderer.ShowPhysicsColliders = _editor.State == EditorState.Editing;
+            return;
         }
 
+        _editor.Renderer.ShowPhysicsColliders = _editor.State == EditorState.Editing;
+    }
+
+    private void HandleEditorInput()
+    {
         bool ctrl = Input.IsKeyDown(Key.ControlLeft) || Input.IsKeyDown(Key.ControlRight);
 
-        if (ctrl && Input.WasKeyPressed(Key.S))
+        if (!ctrl)
         {
-            Scene? activeScene = _editor.SceneManager.ActiveScene;
-
-            if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
-            {
-                _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
-                activeScene.IsDirty = false;
-                Logger.Info($"[Editor] Scene saved to '{activeScene.FilePath}'");
-            }
+            return;
         }
 
-        if (ctrl && Input.WasKeyPressed(Key.Z))
+        if (Input.WasKeyPressed(Key.S))
+        {
+            SaveScene();
+        }
+
+        if (Input.WasKeyPressed(Key.Z))
         {
             _history.Undo();
         }
 
-        if (ctrl && Input.WasKeyPressed(Key.Y))
+        if (Input.WasKeyPressed(Key.Y))
         {
             _history.Redo();
         }
+    }
+
+    private void SaveScene()
+    {
+        var activeScene = _editor.SceneManager.ActiveScene;
+        if (activeScene is null || string.IsNullOrEmpty(activeScene.FilePath))
+        {
+            return;
+        }
+
+        _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
+        activeScene.IsDirty = false;
+        Logger.Info($"[Editor] Scene saved to '{activeScene.FilePath}'");
+    }
+
+    private void OnProjectSelected(string projectRoot)
+    {
+        _editor.LoadProject(projectRoot);
     }
 
     private void SetupDockspace()
@@ -155,11 +197,19 @@ public class EditorAppLogic : IDisposable
         ImGui.SetNextWindowSize(viewport.Size);
         ImGui.SetNextWindowViewport(viewport.ID);
 
+        ImGuiWindowFlags windowFlags =
+            ImGuiWindowFlags.NoTitleBar |
+            ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoResize |
+            ImGuiWindowFlags.NoMove |
+            ImGuiWindowFlags.NoBringToFrontOnFocus |
+            ImGuiWindowFlags.NoNavFocus |
+            ImGuiWindowFlags.MenuBar |
+            ImGuiWindowFlags.NoBackground;
+
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus | ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoBackground;
 
         ImGui.Begin("MainDockspace", windowFlags);
         ImGui.PopStyleVar(3);

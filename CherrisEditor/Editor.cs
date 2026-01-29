@@ -193,7 +193,7 @@ public class Editor : Engine
     protected override void OnStart()
     {
         _editorAppLogic = new(this, _sceneSerializer);
-        OnDrawUI = _editorAppLogic.DrawUI();
+        OnDrawUI = _editorAppLogic.Draw;
         SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
 
         if (CurrentProject is not null)

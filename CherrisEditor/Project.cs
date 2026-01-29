@@ -23,19 +23,20 @@ public class Project
             return new Project { RootPath = projectRoot };
         }
 
-        var deserializer = new DeserializerBuilder()
+        IDeserializer deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .Build();
 
-        var yaml = File.ReadAllText(configPath);
-        var project = deserializer.Deserialize<Project>(yaml);
+        string yaml = File.ReadAllText(configPath);
+        Project project = deserializer.Deserialize<Project>(yaml);
         project.RootPath = projectRoot;
+
         return project;
     }
 
     public void Save()
     {
-        var serializer = new SerializerBuilder()
+        ISerializer serializer = new SerializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .Build();
 
@@ -46,10 +47,13 @@ public class Project
     public void CreateSceneIfNeeded()
     {
         string scenePath = Path.Combine(RootPath, StartScene);
-        if (!File.Exists(scenePath))
+
+        if (File.Exists(scenePath))
         {
-            _ = Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
-            File.WriteAllText(scenePath, "GameObjects: []");
+            return;
         }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
+        File.WriteAllText(scenePath, "GameObjects: []");
     }
 }
