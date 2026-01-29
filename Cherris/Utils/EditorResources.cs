@@ -10,7 +10,7 @@ public static class EditorResources
         }
 
         string exeDir = AppContext.BaseDirectory;
-        string fullPath = Path.Combine(exeDir, "Resources", relativePath);
+        string fullPath = Path.Combine(exeDir, "EditorResources", relativePath);
 
         if (File.Exists(fullPath))
         {

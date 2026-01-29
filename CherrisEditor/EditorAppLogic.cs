@@ -44,18 +44,17 @@ public class EditorAppLogic : IDisposable
 
         EditorTheme.ApplyUnrealEngineStyle();
 
-        LoadIcon("Play", "Icons/play.png");
-        LoadIcon("Pause", "Icons/pause.png");
-        LoadIcon("Stop", "Icons/stop.png");
-        LoadIcon("Restart", "Icons/restart.png");
-        LoadIcon("Reset", "Icons/reset.png");
+        LoadIcon("Play", "Icons/Play.png");
+        LoadIcon("Pause", "Icons/Pause.png");
+        LoadIcon("Stop", "Icons/Stop.png");
+        LoadIcon("Reset", "Icons/Reset.png");
 
-        LoadIcon("Component_Transform", "Icons/Components/transform.png");
-        LoadIcon("Component_Camera", "Icons/Components/camera.png");
-        LoadIcon("Component_MeshRenderer", "Icons/Components/mesh_renderer.png");
-        LoadIcon("Component_Script", "Icons/Components/script.png");
-        LoadIcon("Component_Light", "Icons/Components/light.png");
-        LoadIcon("Component_AudioSource", "Icons/Components/audio_source.png");
+        LoadIcon("Component_Transform", "Icons/Components/Transform.png");
+        LoadIcon("Component_Camera", "Icons/Components/Camera.png");
+        LoadIcon("Component_MeshRenderer", "Icons/Components/MeshRenderer.png");
+        LoadIcon("Component_Script", "Icons/Components/Script.png");
+        LoadIcon("Component_Light", "Icons/Components/Light.png");
+        LoadIcon("Component_AudioSource", "Icons/Components/AudioSource.png");
 
         ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
     }
@@ -80,7 +79,9 @@ public class EditorAppLogic : IDisposable
             // Prevent ImGui docking layout corruption when window is minimized
             var io = ImGui.GetIO();
             if (io.DisplaySize.X <= 0 || io.DisplaySize.Y <= 0)
+            {
                 return;
+            }
 
             if (_editor.CurrentProject is null)
             {

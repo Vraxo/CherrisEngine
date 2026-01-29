@@ -18,10 +18,10 @@ public class ContentBrowserPanel : IDisposable
         _editor = editor;
         _textureManager = textureManager;
 
-        LoadIcon("Folder", "Icons/folder.png");
-        LoadIcon("File", "Icons/file.png");
-        LoadIcon("Script", "Icons/script.png");
-        LoadIcon("Prefab", "Icons/prefab.png");
+        LoadIcon("Folder", "Icons/Folder.png");
+        LoadIcon("File", "Icons/File.png");
+        LoadIcon("Script", "Icons/Components/Script.png");
+        LoadIcon("Prefab", "Icons/Prefab.png");
 
         _currentAssetPath = _editor.CurrentProject!.RootPath;
     }
