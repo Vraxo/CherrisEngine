@@ -11075,7 +11075,7 @@ public class ContentBrowserPanel : IDisposable
 
         if (name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            _editor.LoadSceneFromFile(path);
+            _editor.SceneOperations.LoadSceneFromFile(path);
         }
     }
 
@@ -11114,7 +11114,7 @@ public class ContentBrowserPanel : IDisposable
         }
 
         string prefabPath = Path.Combine(_currentDirectory, $"{gameObject.Name}.prefab");
-        _editor.CreatePrefabFromGameObject(gameObject, prefabPath);
+        _editor.SceneOperations.CreatePrefabFromGameObject(gameObject, prefabPath);
     }
 
     private static void CenterAlignItem(float itemWidth)
@@ -11135,6 +11135,159 @@ public class ContentBrowserPanel : IDisposable
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\GizmoController.cs`
+
+```csharp
+using Cherris.Core;
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
+using ImGuiNET;
+using ImGuizmoNET;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+
+namespace CherrisEditor.UI;
+
+public class GizmoController
+{
+    private readonly Editor _editor;
+    private readonly HistoryManager _history;
+
+    private OPERATION _currentOperation = OPERATION.TRANSLATE;
+    private bool _isManipulating;
+    private Vector3 _initialPosition;
+    private Quaternion _initialRotation;
+    private Vector3 _initialScale;
+
+    public GizmoController(Editor editor, HistoryManager history)
+    {
+        _editor = editor;
+        _history = history;
+    }
+
+    public void Update()
+    {
+        if (_editor.State != EditorState.Editing || ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)
+        {
+            return;
+        }
+
+        if (ImGuiNET.ImGui.IsKeyPressed(ImGuiKey.W))
+        {
+            _currentOperation = OPERATION.TRANSLATE;
+        }
+
+        if (ImGuiNET.ImGui.IsKeyPressed(ImGuiKey.E))
+        {
+            _currentOperation = OPERATION.ROTATE;
+        }
+
+        if (ImGuiNET.ImGui.IsKeyPressed(ImGuiKey.R))
+        {
+            _currentOperation = OPERATION.SCALE;
+        }
+    }
+
+    public void Draw(Vector2 viewportPos, Vector2 viewportSize)
+    {
+        var selectedObject = _editor.GetSelectedGameObject();
+        var camera = _editor.SceneManager.MainCamera;
+
+        if (selectedObject is null || camera is null || viewportSize.X <= 0 || viewportSize.Y <= 0)
+        {
+            return;
+        }
+
+        ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
+        ImGuizmo.SetDrawlist();
+
+        var view = camera.GetViewMatrix();
+        var projection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
+        var objectMatrix = selectedObject.Transform.GetModelMatrix();
+
+        CaptureInitialStateIfStarting(selectedObject);
+
+        if (ImGuizmo.Manipulate(
+            ref AsFloat(ref view),
+            ref AsFloat(ref projection),
+            _currentOperation,
+            MODE.LOCAL,
+            ref AsFloat(ref objectMatrix)))
+        {
+            ApplyDecomposedTransform(selectedObject, objectMatrix);
+        }
+
+        RecordHistoryIfFinished(selectedObject);
+    }
+
+    private void CaptureInitialStateIfStarting(GameObject selected)
+    {
+        if (!ImGuizmo.IsUsing() || _isManipulating)
+        {
+            return;
+        }
+
+        _isManipulating = true;
+        _initialPosition = selected.Transform.Position;
+        _initialRotation = selected.Transform.Rotation;
+        _initialScale = selected.Transform.Scale;
+    }
+
+    private void RecordHistoryIfFinished(GameObject selected)
+    {
+        if (ImGuizmo.IsUsing() || !_isManipulating)
+        {
+            return;
+        }
+
+        _isManipulating = false;
+
+        bool unchanged =
+            selected.Transform.Position == _initialPosition &&
+            selected.Transform.Rotation == _initialRotation &&
+            selected.Transform.Scale == _initialScale;
+
+        if (unchanged)
+        {
+            return;
+        }
+
+        var newPosition = selected.Transform.Position;
+        var newRotation = selected.Transform.Rotation;
+        var newScale = selected.Transform.Scale;
+
+        RevertTarget(selected);
+
+        _history.Execute(new ChangeTransformCommand(
+            selected.Transform,
+            _initialPosition, _initialRotation, _initialScale,
+            newPosition, newRotation, newScale));
+    }
+
+    private void RevertTarget(GameObject target)
+    {
+        target.Transform.Position = _initialPosition;
+        target.Transform.Rotation = _initialRotation;
+        target.Transform.Scale = _initialScale;
+    }
+
+    private static void ApplyDecomposedTransform(GameObject target, Matrix4x4 matrix)
+    {
+        Matrix4x4.Decompose(matrix, out var scale, out var rotation, out var position);
+        target.Transform.Position = position;
+        target.Transform.Rotation = rotation;
+        target.Transform.Scale = scale;
+    }
+
+    private static ref float AsFloat(ref Matrix4x4 matrix)
+    {
+        return ref Unsafe.As<Matrix4x4, float>(ref matrix);
     }
 }
 ```
@@ -11263,7 +11416,6 @@ internal class InspectorPanel
         }
         ImGui.Separator();
 
-        // --- Transform Component ---
         ImGui.PushID("TransformComponent");
         IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
         if (DrawComponentHeader("Transform", transformIcon, out _))
@@ -11272,7 +11424,6 @@ internal class InspectorPanel
         }
         ImGui.PopID();
 
-        // --- Other Components ---
         foreach (var component in go.Components.ToList())
         {
             ImGui.Separator();
@@ -11323,7 +11474,7 @@ internal class InspectorPanel
                     ImGui.CloseCurrentPopup();
                     ImGui.PopID();
                     ImGui.EndPopup();
-                    return; // Exit loop as collection was modified
+                    return;
                 }
                 ImGui.EndPopup();
             }
@@ -11371,7 +11522,7 @@ internal class InspectorPanel
 
         if (ImGui.Button("Add Component", new Vector2(buttonWidth, 0)))
         {
-            _componentSearchText = ""; // Reset search when opening the popup
+            _componentSearchText = "";
             ImGui.OpenPopup("AddComponentPopup");
         }
 
@@ -11384,7 +11535,6 @@ internal class InspectorPanel
 
             bool searchIsActive = !string.IsNullOrWhiteSpace(_componentSearchText);
 
-            // Built-in components
             if (go.GetComponent<Camera>() is null && (!searchIsActive || "Camera".Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase)))
             {
                 if (ImGui.MenuItem("Camera"))
@@ -11427,7 +11577,6 @@ internal class InspectorPanel
 
             ImGui.Separator();
 
-            // Scripts
             var filteredTypes = searchIsActive
                 ? _editor.AvailableScriptTypes.Where(t => t.Name.Contains(_componentSearchText, StringComparison.OrdinalIgnoreCase))
                 : _editor.AvailableScriptTypes;
@@ -11493,6 +11642,7 @@ internal class InspectorPanel
 ### `CherrisEditor\UI\MenuBar.cs`
 
 ```csharp
+using Cherris.Core;
 using Cherris.Serialization;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -11514,13 +11664,17 @@ public class MenuBar
 
     public void Draw()
     {
-        if (!ImGui.BeginMenuBar()) return;
+        if (!ImGui.BeginMenuBar())
+        {
+            return;
+        }
 
         if (ImGui.BeginMenu("File"))
         {
             if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
-                var activeScene = _editor.SceneManager.ActiveScene;
+                Scene? activeScene = _editor.SceneManager.ActiveScene;
+
                 if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
                 {
                     _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
@@ -11529,7 +11683,12 @@ public class MenuBar
                 }
             }
             ImGui.Separator();
-            if (ImGui.MenuItem("Exit")) { Environment.Exit(0); }
+
+            if (ImGui.MenuItem("Exit"))
+            {
+                Environment.Exit(0);
+            }
+
             ImGui.EndMenu();
         }
 
@@ -11539,10 +11698,12 @@ public class MenuBar
             {
                 _history.Undo();
             }
+
             if (ImGui.MenuItem("Redo", "Ctrl+Y", false, _history.CanRedo))
             {
                 _history.Redo();
             }
+
             ImGui.EndMenu();
         }
 
@@ -11565,7 +11726,7 @@ namespace CherrisEditor.UI;
 public class OutlinerPanel : IDisposable
 {
     private readonly Editor _editor;
-    private static IntPtr _payloadGuidPtr = IntPtr.Zero; // For GUID payloads
+    private static IntPtr _payloadGuidPtr = IntPtr.Zero;
 
     public OutlinerPanel(Editor editor)
     {
@@ -11574,7 +11735,6 @@ public class OutlinerPanel : IDisposable
 
     public void Draw()
     {
-        // Free the unmanaged memory from the *previous* frame's drag-drop operation.
         if (_payloadGuidPtr != IntPtr.Zero)
         {
             Marshal.FreeHGlobal(_payloadGuidPtr);
@@ -11589,7 +11749,6 @@ public class OutlinerPanel : IDisposable
             DrawGameObjectNode(go);
         }
 
-        // Use the remaining space in the window as a drop target to instantiate prefabs at the root
         ImGui.InvisibleButton("OutlinerDropTarget", ImGui.GetContentRegionAvail());
         if (ImGui.BeginDragDropTarget())
         {
@@ -11599,7 +11758,7 @@ public class OutlinerPanel : IDisposable
                 if (prefabPayload.NativePtr != null)
                 {
                     string path = Marshal.PtrToStringAnsi(prefabPayload.Data);
-                    _editor.InstantiatePrefab(path);
+                    _editor.SceneOperations.InstantiatePrefab(path);
                 }
             }
 
@@ -11614,7 +11773,7 @@ public class OutlinerPanel : IDisposable
                     var draggedObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == draggedId);
                     if (draggedObject is not null)
                     {
-                        draggedObject.Transform.Parent = null; // Unparent
+                        draggedObject.Transform.Parent = null;
                     }
                 }
             }
@@ -11638,7 +11797,6 @@ public class OutlinerPanel : IDisposable
         if (ImGui.BeginDragDropSource())
         {
             byte[] guidBytes = go.Id.ToByteArray();
-            // Allocate memory and hold onto the pointer until the next frame.
             _payloadGuidPtr = Marshal.AllocHGlobal(guidBytes.Length);
             Marshal.Copy(guidBytes, 0, _payloadGuidPtr, guidBytes.Length);
             ImGui.SetDragDropPayload("GAMEOBJECT_ID", _payloadGuidPtr, (uint)guidBytes.Length);
@@ -11699,12 +11857,13 @@ public class OutlinerPanel : IDisposable
 
     public void Dispose()
     {
-        // Ensure we free the handle on shutdown if it's still allocated
-        if (_payloadGuidPtr != IntPtr.Zero)
+        if (_payloadGuidPtr == IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_payloadGuidPtr);
-            _payloadGuidPtr = IntPtr.Zero;
+            return;
         }
+
+        Marshal.FreeHGlobal(_payloadGuidPtr);
+        _payloadGuidPtr = IntPtr.Zero;
     }
 }
 ```
@@ -12033,56 +12192,29 @@ public class Toolbar
 
 ```csharp
 using Cherris;
-using Cherris.Components;
 using Cherris.Core;
 using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
 using ImGuiNET;
-using ImGuizmoNET;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 
 namespace CherrisEditor.UI;
 
 public class ViewportPanel
 {
     private readonly Editor _editor;
-    private readonly HistoryManager _history;
-    private OPERATION _currentOperation = OPERATION.TRANSLATE;
-    private Vector2 _viewportSize = Vector2.Zero;
-
-    private bool _isManipulatingGizmo;
-    private Vector3 _initialPosition;
-    private Quaternion _initialRotation;
-    private Vector3 _initialScale;
+    private readonly GizmoController _gizmoController;
+    private readonly ViewportSurface _viewportSurface;
 
     public ViewportPanel(Editor editor, HistoryManager history)
     {
         _editor = editor;
-        _history = history;
+        _gizmoController = new GizmoController(editor, history);
+        _viewportSurface = new ViewportSurface();
     }
 
     public void Update()
     {
-        if (_editor.State != EditorState.Editing || ImGui.GetIO().WantCaptureKeyboard)
-        {
-            return;
-        }
-
-        if (ImGui.IsKeyPressed(ImGuiKey.W))
-        {
-            _currentOperation = OPERATION.TRANSLATE;
-        }
-
-        if (ImGui.IsKeyPressed(ImGuiKey.E))
-        {
-            _currentOperation = OPERATION.ROTATE;
-        }
-
-        if (ImGui.IsKeyPressed(ImGuiKey.R))
-        {
-            _currentOperation = OPERATION.SCALE;
-        }
+        _gizmoController.Update();
     }
 
     public void Draw()
@@ -12090,103 +12222,120 @@ public class ViewportPanel
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-        List<Scene> openScenes = _editor.SceneManager.OpenScenes.ToList();
-        Scene activeScene = _editor.SceneManager.ActiveScene;
-
-        // Default the viewport to not hovered. It will be set to true only if the image within the active tab is hovered.
-        _editor.IsViewportHovered = false;
-
-        if (ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
-        {
-            if (openScenes.Count == 0)
-            {
-                if (ImGui.BeginTabItem("No Scene"))
-                {
-                    ImGui.Text("No scene loaded. Open a scene from the Content Browser.");
-                    ImGui.EndTabItem();
-                }
-            }
-
-            foreach (var scene in openScenes)
-            {
-                bool isOpen = true;
-                ImGuiTabItemFlags flags = scene.IsDirty ? ImGuiTabItemFlags.UnsavedDocument : ImGuiTabItemFlags.None;
-                if (scene == activeScene)
-                {
-                    flags |= ImGuiTabItemFlags.SetSelected;
-                }
-
-                if (ImGui.BeginTabItem(scene.Name, ref isOpen, flags))
-                {
-                    if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
-                    {
-                        _editor.SceneManager.SetActiveScene(scene);
-                    }
-
-                    // Only render the viewport content for the currently active scene
-                    if (scene == activeScene)
-                    {
-                        ImGui.BeginChild("ViewportToolbar", new(0, ImGui.GetFrameHeightWithSpacing()), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-                        DrawViewportOptions();
-                        ImGui.EndChild();
-
-                        var currentSize = ImGui.GetContentRegionAvail();
-
-                        if (_editor.Renderer is OpenTKRenderer otkRenderer)
-                        {
-                            if (currentSize.X > 0 && currentSize.Y > 0 && currentSize != _viewportSize)
-                            {
-                                _viewportSize = currentSize;
-                                otkRenderer.SetViewportSize(_viewportSize);
-                            }
-
-                            IntPtr textureHandle = otkRenderer.GetSceneTextureHandle();
-
-                            if (textureHandle != IntPtr.Zero)
-                            {
-                                ImGui.Image(textureHandle, _viewportSize, new Vector2(0, 1), new Vector2(1, 0));
-                            }
-                        }
-                        else
-                        {
-                            if (currentSize.X > 0 && currentSize.Y > 0)
-                            {
-                                _viewportSize = currentSize;
-                            }
-                        }
-
-                        _editor.IsViewportHovered = ImGui.IsItemHovered();
-
-                        Vector2 viewportPos = ImGui.GetItemRectMin();
-                        Vector2 viewportSize = ImGui.GetItemRectSize();
-
-                        if (_editor.IsViewportHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGuizmo.IsUsing() && !ImGuizmo.IsOver())
-                        {
-                            HandleObjectSelection(ImGui.GetMousePos(), viewportPos, viewportSize);
-                        }
-
-                        DrawGizmo(viewportPos, viewportSize);
-                    }
-
-                    ImGui.EndTabItem();
-                }
-
-                if (!isOpen)
-                {
-                    // TODO: Prompt to save if dirty
-                    _editor.SceneManager.CloseScene(scene);
-                }
-            }
-            ImGui.EndTabBar();
-        }
+        DrawSceneTabs();
 
         ImGui.End();
         ImGui.PopStyleVar();
     }
 
-    private void DrawViewportOptions()
+    private void DrawSceneTabs()
     {
+        var openScenes = _editor.SceneManager.OpenScenes.ToList();
+        var activeScene = _editor.SceneManager.ActiveScene;
+
+        if (!ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
+        {
+            return;
+        }
+
+        if (openScenes.Count == 0)
+        {
+            DrawEmptyTab();
+        }
+
+        foreach (var scene in openScenes)
+        {
+            DrawSceneTab(scene, activeScene);
+        }
+
+        ImGui.EndTabBar();
+    }
+
+    private static void DrawEmptyTab()
+    {
+        if (ImGui.BeginTabItem("No Scene"))
+        {
+            ImGui.Text("No scene loaded. Open a scene from the Content Browser.");
+            ImGui.EndTabItem();
+        }
+    }
+
+    private void DrawSceneTab(Scene scene, Scene activeScene)
+    {
+        bool isOpen = true;
+        var flags = CalculateTabFlags(scene, activeScene);
+
+        if (!ImGui.BeginTabItem(scene.Name, ref isOpen, flags))
+        {
+            return;
+        }
+
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
+        {
+            _editor.SceneManager.SetActiveScene(scene);
+        }
+
+        if (scene == activeScene)
+        {
+            DrawActiveSceneViewport();
+        }
+
+        ImGui.EndTabItem();
+
+        if (!isOpen)
+        {
+            _editor.SceneManager.CloseScene(scene);
+        }
+    }
+
+    private static ImGuiTabItemFlags CalculateTabFlags(Scene scene, Scene activeScene)
+    {
+        var flags = scene.IsDirty ? ImGuiTabItemFlags.UnsavedDocument : ImGuiTabItemFlags.None;
+        if (scene == activeScene)
+        {
+            flags |= ImGuiTabItemFlags.SetSelected;
+        }
+
+        return flags;
+    }
+
+    private void DrawActiveSceneViewport()
+    {
+        DrawToolbar();
+
+        Vector2 viewportPos = ImGui.GetCursorScreenPos();
+        Vector2 viewportSize = ImGui.GetContentRegionAvail();
+
+        if (_editor.Renderer is not OpenTKRenderer otkRenderer)
+        {
+            return;
+        }
+
+        _viewportSurface.Draw(otkRenderer, viewportSize);
+        _editor.IsViewportHovered = _viewportSurface.IsHovered;
+
+        if (_viewportSurface.IsHovered)
+        {
+            HandleViewportInput(viewportPos, _viewportSurface.Size);
+        }
+
+        _gizmoController.Draw(viewportPos, _viewportSurface.Size);
+    }
+
+    private void DrawToolbar()
+    {
+        ImGui.BeginChild("ViewportToolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()), false,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
+        DrawOptionsDropdown();
+        ImGui.PopStyleVar();
+
+        ImGui.EndChild();
+    }
+
+    private void DrawOptionsDropdown()
+    {
         ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.2f, 0.2f, 0.8f));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.3f, 0.3f, 0.3f, 0.9f));
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.25f, 0.25f, 0.25f, 0.9f));
@@ -12198,118 +12347,78 @@ public class ViewportPanel
 
         if (ImGui.BeginPopup("ViewportOptionsPopup"))
         {
-            var showGrid = _editor.Renderer.ShowGrid;
-            if (ImGui.Checkbox("Show Grid", ref showGrid))
-            {
-                _editor.Renderer.ShowGrid = showGrid;
-            }
+            DrawOptionsMenu();
             ImGui.EndPopup();
         }
 
         ImGui.PopStyleColor(3);
-        ImGui.PopStyleVar();
     }
 
-    private void DrawGizmo(Vector2 viewportPos, Vector2 viewportSize)
+    private void DrawOptionsMenu()
     {
-        ImGuizmo.SetRect(viewportPos.X, viewportPos.Y, viewportSize.X, viewportSize.Y);
-        ImGuizmo.SetDrawlist();
-
-        GameObject? selectedObject = _editor.GetSelectedGameObject();
-        Camera? camera = _editor.SceneManager.MainCamera;
-
-        if (selectedObject is null || camera is null || viewportSize.X <= 0 || viewportSize.Y <= 0)
+        bool showGrid = _editor.Renderer.ShowGrid;
+        if (ImGui.Checkbox("Show Grid", ref showGrid))
         {
-            return;
+            _editor.Renderer.ShowGrid = showGrid;
         }
-
-        Matrix4x4 cameraView = camera.GetViewMatrix();
-        Matrix4x4 cameraProjection = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
-        Matrix4x4 objectMatrix = selectedObject.Transform.GetModelMatrix();
-
-        // Capture initial state when manipulation starts
-        if (ImGuizmo.IsUsing() && !_isManipulatingGizmo)
-        {
-            _isManipulatingGizmo = true;
-            _initialPosition = selectedObject.Transform.Position;
-            _initialRotation = selectedObject.Transform.Rotation;
-            _initialScale = selectedObject.Transform.Scale;
-        }
-
-        if (ImGuizmo.Manipulate(
-            ref Unsafe.As<Matrix4x4, float>(ref cameraView),
-            ref Unsafe.As<Matrix4x4, float>(ref cameraProjection),
-            _currentOperation,
-            MODE.LOCAL,
-            ref Unsafe.As<Matrix4x4, float>(ref objectMatrix)))
-        {
-            Matrix4x4.Decompose(objectMatrix, out var scale, out var rotation, out var position);
-            selectedObject.Transform.Position = position;
-            selectedObject.Transform.Rotation = rotation;
-            selectedObject.Transform.Scale = scale;
-        }
-
-        // Create command when manipulation ends
-        if (ImGuizmo.IsUsing() || !_isManipulatingGizmo)
-        {
-            return;
-        }
-
-        _isManipulatingGizmo = false;
-        Vector3 newPosition = selectedObject.Transform.Position;
-        Quaternion newRotation = selectedObject.Transform.Rotation;
-        Vector3 newScale = selectedObject.Transform.Scale;
-
-        // Only create command if something actually changed
-        if (newPosition == _initialPosition && newRotation == _initialRotation && newScale == _initialScale)
-        {
-            return;
-        }
-
-        // Revert the change so the command can apply it
-        selectedObject.Transform.Position = _initialPosition;
-        selectedObject.Transform.Rotation = _initialRotation;
-        selectedObject.Transform.Scale = _initialScale;
-
-        ChangeTransformCommand command = new(
-            selectedObject.Transform,
-            _initialPosition, _initialRotation, _initialScale,
-            newPosition, newRotation, newScale
-        );
-
-        _history.Execute(command);
     }
 
-    private void HandleObjectSelection(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
+    private void HandleViewportInput(Vector2 viewportPos, Vector2 viewportSize)
     {
-        Ray ray = _editor.CreateRayFromViewport(mousePos, viewportPos, viewportSize);
-        GameObject? closestObject = null;
-        float closestDistance = float.MaxValue;
-
-        foreach (GameObject gameObject in _editor.SceneManager.GameObjects)
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || ImGuizmoNET.ImGuizmo.IsUsing() || ImGuizmoNET.ImGuizmo.IsOver())
         {
-            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null)
-            {
-                continue;
-            }
-
-            BoundingBox aabb = gameObject.GetWorldSpaceAABB();
-            
-            if (!ray.Intersects(aabb, out float distance))
-            {
-                continue;
-            }
-
-            if (distance >= closestDistance)
-            {
-                continue;
-            }
-
-            closestDistance = distance;
-            closestObject = gameObject;
+            return;
         }
 
-        _editor.SetSelectedGameObject(closestObject);
+        Vector2 mousePos = ImGui.GetMousePos();
+        var selected = _editor.Selection.PickObject(mousePos, viewportPos, viewportSize);
+        _editor.SetSelectedGameObject(selected);
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\ViewportSurface.cs`
+
+```csharp
+using Cherris;
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.UI;
+
+public class ViewportSurface
+{
+    private Vector2 _currentSize;
+
+    public bool IsHovered { get; private set; }
+    public Vector2 Size => _currentSize;
+
+    public void Draw(OpenTKRenderer renderer, Vector2 availableSize)
+    {
+        IsHovered = false;
+
+        if (availableSize.X <= 0 || availableSize.Y <= 0)
+        {
+            return;
+        }
+
+        if (availableSize != _currentSize)
+        {
+            _currentSize = availableSize;
+            renderer.SetViewportSize(_currentSize);
+        }
+
+        IntPtr textureHandle = renderer.GetSceneTextureHandle();
+
+        if (textureHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        ImGui.Image(textureHandle, _currentSize, new Vector2(0, 1), new Vector2(1, 0));
+        IsHovered = ImGui.IsItemHovered();
     }
 }
 ```

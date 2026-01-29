@@ -1,4 +1,5 @@
-﻿using Cherris.Serialization;
+﻿using Cherris.Core;
+using Cherris.Serialization;
 using CherrisEditor.Undo;
 using ImGuiNET;
 
@@ -19,13 +20,17 @@ public class MenuBar
 
     public void Draw()
     {
-        if (!ImGui.BeginMenuBar()) return;
+        if (!ImGui.BeginMenuBar())
+        {
+            return;
+        }
 
         if (ImGui.BeginMenu("File"))
         {
             if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
-                var activeScene = _editor.SceneManager.ActiveScene;
+                Scene? activeScene = _editor.SceneManager.ActiveScene;
+
                 if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
                 {
                     _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
@@ -34,7 +39,12 @@ public class MenuBar
                 }
             }
             ImGui.Separator();
-            if (ImGui.MenuItem("Exit")) { Environment.Exit(0); }
+
+            if (ImGui.MenuItem("Exit"))
+            {
+                Environment.Exit(0);
+            }
+
             ImGui.EndMenu();
         }
 
@@ -44,10 +54,12 @@ public class MenuBar
             {
                 _history.Undo();
             }
+
             if (ImGui.MenuItem("Redo", "Ctrl+Y", false, _history.CanRedo))
             {
                 _history.Redo();
             }
+
             ImGui.EndMenu();
         }
 
