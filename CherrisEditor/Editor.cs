@@ -2,7 +2,7 @@
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
-using Cherris.OpenTK;
+using Cherris.Rendering;
 using Cherris.Serialization;
 using CherrisEditor.Core;
 using CherrisEditor.Undo;
@@ -13,16 +13,15 @@ namespace CherrisEditor;
 
 public class Editor : Engine
 {
-    private EditorAppLogic? _editorAppLogic;
     public readonly HistoryManager History = new();
-    public bool IsViewportHovered { get; set; }
-
-    public ProjectManager ProjectManager { get; }
-    public ScriptManager ScriptManager { get; }
-    public PlayModeManager PlayModeManager { get; }
+    public readonly ProjectManager ProjectManager;
+    public readonly ScriptManager ScriptManager;
+    public readonly PlayModeManager PlayModeManager;
     public EditorState State => PlayModeManager.State;
     public IReadOnlyList<Type> AvailableScriptTypes => ScriptManager.AvailableScriptTypes;
+    public bool IsViewportHovered { get; set; }
 
+    private EditorAppLogic? _editorAppLogic;
     private Camera? _editorCamera;
     private readonly SceneSerializer _sceneSerializer;
 
@@ -47,6 +46,13 @@ public class Editor : Engine
             return;
         }
 
+        string? directory = Path.GetDirectoryName(path);
+
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         Logger.Info($"[Editor] Creating prefab '{path}' from '{go.Name}'.");
         _sceneSerializer.SavePrefab(go, path);
     }
@@ -59,16 +65,13 @@ public class Editor : Engine
             return;
         }
 
-        var rootObjects = SceneLoader.LoadPrefab(path);
+        List<GameObject> rootObjects = SceneLoader.LoadPrefab(path);
+
         foreach (var root in rootObjects)
         {
             SceneManager.AddGameObject(root);
         }
 
-        if (rootObjects.Any())
-        {
-            SetSelectedGameObject(rootObjects.First());
-        }
         SceneManager.ActiveScene.IsDirty = true;
     }
 
@@ -112,104 +115,10 @@ public class Editor : Engine
         ScriptManager.CreateAndCompileScript(scriptsPath, scriptName);
     }
 
-    protected override void LoadContent()
-    {
-        ResourceManager.LoadInitialAssets();
-        RegisterBuiltInComponents();
-
-        if (ProjectManager.CurrentProject is not null)
-        {
-            string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
-            ScriptManager.CompileAndRegisterGameScripts(scriptsPath);
-        }
-
-        History.OnHistoryChanged += () =>
-        {
-            if (SceneManager.ActiveScene is not null)
-            {
-                SceneManager.ActiveScene.IsDirty = true;
-            }
-        };
-    }
-
-    protected override void OnStart()
-    {
-        _editorAppLogic = new(this, _sceneSerializer);
-        OnDrawUI = _editorAppLogic.Draw;
-        SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
-
-        if (ProjectManager.CurrentProject is not null)
-        {
-            string startScenePath = Path.Combine(ProjectManager.CurrentProject.RootPath, ProjectManager.CurrentProject.StartScene);
-            if (File.Exists(startScenePath))
-            {
-                LoadSceneFromFile(startScenePath);
-            }
-            else
-            {
-                Logger.Error($"[Editor] Start scene not found: {startScenePath}");
-            }
-        }
-
-        if (_backend.GameWindow is OpenTKGameWindow otkWindow)
-        {
-            otkWindow.ShouldIgnoreImGuiCapture = () => IsViewportHovered;
-        }
-    }
-
-    protected override void Update(float deltaTime)
-    {
-        base.Update(deltaTime);
-        _editorAppLogic?.UpdateEditorLogic(deltaTime);
-        SceneManager.Update(deltaTime, State == EditorState.Playing);
-    }
-
-    private void ReloadSceneForEditing()
-    {
-        var activeScene = SceneManager.ActiveScene;
-        if (activeScene is null)
-        {
-            return;
-        }
-
-        string path = activeScene.FilePath;
-        SceneManager.CloseScene(activeScene);
-        LoadSceneFromFile(path);
-    }
-
-    private void SetupSceneForEditing(Scene scene)
-    {
-        if (scene is null)
-        {
-            return;
-        }
-
-        History.Clear();
-
-        foreach (var script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
-        {
-            script.Enabled = script is RigidBody;
-        }
-
-        GameObject? cameraGo = scene.MainCamera?.GameObject;
-        cameraGo ??= scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
-
-        if (cameraGo is not null)
-        {
-            EnsureEditorControllerEnabled(cameraGo);
-            _editorCamera = cameraGo.GetComponent<Camera>();
-            SceneManager.SetMainCamera(_editorCamera);
-        }
-        else
-        {
-            _editorCamera = null;
-            Logger.Error("[Editor] FATAL: No camera found in scene to attach editor controls to.");
-        }
-    }
-
     public void LoadSceneFromFile(string scenePath)
     {
-        var existingScene = SceneManager.OpenScenes.FirstOrDefault(s => s.FilePath == scenePath);
+        Scene? existingScene = SceneManager.OpenScenes.FirstOrDefault(s => s.FilePath == scenePath);
+
         if (existingScene is not null)
         {
             SceneManager.SetActiveScene(existingScene);
@@ -227,6 +136,206 @@ public class Editor : Engine
         SceneManager.OpenScene(newScene);
     }
 
+    public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
+    {
+        Camera? camera = SceneManager.MainCamera;
+        if (camera is null || viewportSize.X <= 0 || viewportSize.Y <= 0)
+        {
+            return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
+        }
+
+        Vector2 relativeMouse = mousePos - viewportPos;
+
+        bool isOutsideViewport = relativeMouse.X < 0
+            || relativeMouse.Y < 0
+            || relativeMouse.X > viewportSize.X
+            || relativeMouse.Y > viewportSize.Y;
+
+        return isOutsideViewport
+            ? new Ray(new Vector3(float.MaxValue), Vector3.Zero)
+            : ViewportToWorldRay(relativeMouse, viewportSize, camera);
+    }
+
+    public void SetSelectedGameObject(GameObject? go)
+    {
+        SelectedGameObject = go;
+    }
+
+    public GameObject? GetSelectedGameObject()
+    {
+        return SelectedGameObject;
+    }
+
+    protected override void LoadContent()
+    {
+        ResourceManager.LoadInitialAssets();
+        RegisterBuiltInComponents();
+
+        if (ProjectManager.CurrentProject is not null)
+        {
+            string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
+            ScriptManager.CompileAndRegisterGameScripts(scriptsPath);
+        }
+
+        History.OnHistoryChanged += MarkActiveSceneDirtyIfPresent;
+    }
+
+    protected override void OnStart()
+    {
+        _editorAppLogic = new EditorAppLogic(this, _sceneSerializer);
+        OnDrawUI = _editorAppLogic.Draw;
+        SceneManager.OnActiveSceneChanged += SetupSceneForEditing;
+
+        LoadInitialSceneIfProjectExists();
+        ConfigureWindowInputHandling();
+
+        StartEditorLogic();
+    }
+
+    protected override void Update(float deltaTime)
+    {
+        base.Update(deltaTime);
+        _editorAppLogic?.UpdateEditorLogic(deltaTime);
+
+        bool shouldStepPhysics = State == EditorState.Playing;
+        SceneManager.Update(deltaTime, shouldStepPhysics);
+    }
+
+    private Ray ViewportToWorldRay(Vector2 viewportMousePos, Vector2 viewportSize, Camera camera)
+    {
+        float normalizedX = (2.0f * viewportMousePos.X / viewportSize.X) - 1.0f;
+        float normalizedY = 1.0f - (2.0f * viewportMousePos.Y / viewportSize.Y);
+        Vector4 clipSpaceRay = new(normalizedX, normalizedY, 1.0f, 1.0f);
+
+        Matrix4x4 projectionMatrix = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
+        Matrix4x4.Invert(projectionMatrix, out Matrix4x4 inverseProjection);
+        Vector4 viewSpaceRay = Vector4.Transform(clipSpaceRay, inverseProjection);
+        viewSpaceRay.Z = -1.0f;
+        viewSpaceRay.W = 0.0f;
+
+        Matrix4x4 viewMatrix = camera.GetViewMatrix();
+        Matrix4x4.Invert(viewMatrix, out Matrix4x4 inverseView);
+        Vector4 worldSpaceRay = Vector4.Transform(viewSpaceRay, inverseView);
+
+        Vector3 rayDirection = Vector3.Normalize(new Vector3(worldSpaceRay.X, worldSpaceRay.Y, worldSpaceRay.Z));
+        Vector3 rayOrigin = camera.GameObject.Transform.Position;
+
+        return new Ray(rayOrigin, rayDirection);
+    }
+
+    private void SetupSceneForEditing(Scene scene)
+    {
+        if (scene is null)
+        {
+            return;
+        }
+
+        ResetEditorState();
+        PrepareScriptsForEditing(scene);
+        _editorCamera = EnsureEditorCamera(scene);
+
+        if (_editorCamera is null)
+        {
+            Logger.Error("[Editor] FATAL: No camera found in scene to attach editor controls to.");
+            return;
+        }
+
+        SceneManager.SetMainCamera(_editorCamera);
+    }
+
+    private void ResetEditorState()
+    {
+        History.Clear();
+    }
+
+    private static void PrepareScriptsForEditing(Scene scene)
+    {
+        foreach (Script? script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
+        {
+            script.Enabled = script is RigidBody;
+        }
+    }
+
+    private Camera? EnsureEditorCamera(Scene scene)
+    {
+        GameObject? cameraObject = scene.MainCamera?.GameObject;
+
+        cameraObject ??= scene.GameObjects
+                .Select(go => go.GetComponent<Camera>())
+                .FirstOrDefault(c => c is not null)?.GameObject;
+
+        if (cameraObject is null)
+        {
+            return null;
+        }
+
+        EditorController? controller = cameraObject.GetComponent<EditorController>();
+        controller ??= cameraObject.AddComponent(new EditorController(this));
+
+        controller.Start();
+        controller.Enabled = true;
+
+        return cameraObject.GetComponent<Camera>();
+    }
+
+    private void ReloadSceneForEditing()
+    {
+        Scene? activeScene = SceneManager.ActiveScene;
+
+        if (activeScene is null)
+        {
+            return;
+        }
+
+        string path = activeScene.FilePath;
+        SceneManager.CloseScene(activeScene);
+        LoadSceneFromFile(path);
+    }
+
+    private void LoadInitialSceneIfProjectExists()
+    {
+        if (ProjectManager.CurrentProject is null)
+        {
+            return;
+        }
+
+        string startScenePath = Path.Combine(ProjectManager.CurrentProject.RootPath, ProjectManager.CurrentProject.StartScene);
+
+        if (File.Exists(startScenePath))
+        {
+            LoadSceneFromFile(startScenePath);
+        }
+        else
+        {
+            Logger.Error($"[Editor] Start scene not found: {startScenePath}");
+        }
+    }
+
+    private void ConfigureWindowInputHandling()
+    {
+        if (_backend.GameWindow is not IGameWindow window || window.ShouldIgnoreImGuiCapture is null)
+        {
+            return;
+        }
+
+        window.ShouldIgnoreImGuiCapture = () => IsViewportHovered;
+    }
+
+    private void StartEditorLogic()
+    {
+        // Left empty for future editor startup logic
+    }
+
+    private void MarkActiveSceneDirtyIfPresent()
+    {
+        if (SceneManager.ActiveScene is null)
+        {
+            return;
+        }
+
+        SceneManager.ActiveScene.IsDirty = true;
+    }
+
     private void RegisterBuiltInComponents()
     {
         ScriptManager.AvailableScriptTypes.Clear();
@@ -239,55 +348,5 @@ public class Editor : Engine
         {
             ScriptManager.RegisterScriptComponent(type);
         }
-    }
-
-    private void EnsureEditorControllerEnabled(GameObject cameraGo)
-    {
-        EditorController? editorController = cameraGo.GetComponent<EditorController>();
-        editorController ??= cameraGo.AddComponent(new EditorController(this));
-        editorController.Start();
-        editorController.Enabled = true;
-    }
-
-    public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
-    {
-        Camera? camera = SceneManager.MainCamera;
-        if (camera is null)
-        {
-            return new Ray();
-        }
-
-        Vector2 relativeMouse = mousePos - viewportPos;
-        if (relativeMouse.X < 0 || relativeMouse.Y < 0 || relativeMouse.X > viewportSize.X || relativeMouse.Y > viewportSize.Y)
-        {
-            return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
-        }
-
-        float x = (2.0f * relativeMouse.X / viewportSize.X) - 1.0f;
-        float y = 1.0f - (2.0f * relativeMouse.Y / viewportSize.Y);
-        Vector4 ndc = new(x, y, 1.0f, 1.0f);
-
-        _ = Matrix4x4.Invert(camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y), out var invProjection);
-        Vector4 viewRay = Vector4.Transform(ndc, invProjection);
-        viewRay.Z = -1.0f;
-        viewRay.W = 0.0f;
-
-        _ = Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
-        Vector4 worldRay = Vector4.Transform(viewRay, invView);
-
-        Vector3 rayDir = Vector3.Normalize(new Vector3(worldRay.X, worldRay.Y, worldRay.Z));
-        Vector3 rayOrigin = camera.GameObject.Transform.Position;
-
-        return new Ray(rayOrigin, rayDir);
-    }
-
-    public void SetSelectedGameObject(GameObject? go)
-    {
-        SelectedGameObject = go;
-    }
-
-    public GameObject? GetSelectedGameObject()
-    {
-        return SelectedGameObject;
     }
 }
