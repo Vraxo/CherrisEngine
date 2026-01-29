@@ -15,11 +15,12 @@ public class Editor : Engine
 {
     private EditorAppLogic? _editorAppLogic;
     public readonly HistoryManager History = new();
-    public EditorState State { get; private set; } = EditorState.Editing;
     public bool IsViewportHovered { get; set; }
 
     public ProjectManager ProjectManager { get; }
     public ScriptManager ScriptManager { get; }
+    public PlayModeManager PlayModeManager { get; }
+    public EditorState State => PlayModeManager.State;
     public IReadOnlyList<Type> AvailableScriptTypes => ScriptManager.AvailableScriptTypes;
 
     private Camera? _editorCamera;
@@ -31,6 +32,7 @@ public class Editor : Engine
         _sceneSerializer = new SceneSerializer();
         ProjectManager = new ProjectManager();
         ScriptManager = new ScriptManager(SceneLoader);
+        PlayModeManager = new PlayModeManager(SceneManager);
     }
 
     public void LoadProject(string projectRoot)
@@ -72,48 +74,18 @@ public class Editor : Engine
 
     public void EnterPlayMode()
     {
-        if (State == EditorState.Playing)
-        {
-            return;
-        }
-
-        if (State == EditorState.Editing)
-        {
-            var gameCamera = SceneManager.GameObjects
-                .Select(g => g.GetComponent<Camera>())
-                .FirstOrDefault(c => c is not null && c != _editorCamera);
-
-            if (gameCamera is not null)
-            {
-                SceneManager.SetMainCamera(gameCamera);
-            }
-            else
-            {
-                Logger.Warning("[Editor] No game camera found to switch to for play mode. Using the editor camera.");
-            }
-
-            SceneManager.Start();
-        }
-
-        State = EditorState.Playing;
+        PlayModeManager.EnterPlayMode(_editorCamera);
         SetSelectedGameObject(null);
-        SetScriptsEnabledForPlayMode();
     }
 
     public void EnterPauseMode()
     {
-        if (State != EditorState.Playing)
-        {
-            return;
-        }
-
-        State = EditorState.Paused;
-        SetScriptsEnabledForPauseMode();
+        PlayModeManager.EnterPauseMode();
     }
 
     public void EnterEditMode()
     {
-        State = EditorState.Editing;
+        PlayModeManager.Stop();
         ReloadSceneForEditing();
     }
 
@@ -266,22 +238,6 @@ public class Editor : Engine
         foreach (var type in scriptTypes)
         {
             ScriptManager.RegisterScriptComponent(type);
-        }
-    }
-
-    private void SetScriptsEnabledForPlayMode()
-    {
-        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
-        {
-            script.Enabled = script is not EditorController;
-        }
-    }
-
-    private void SetScriptsEnabledForPauseMode()
-    {
-        foreach (var script in SceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
-        {
-            script.Enabled = script is EditorController;
         }
     }
 
