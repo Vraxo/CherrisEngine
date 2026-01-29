@@ -1,20 +1,19 @@
 ﻿using Cherris;
 using Cherris.Components;
+using CherrisEditor.UI;
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
-using System.Text.RegularExpressions;
 
 namespace CherrisEditor.Inspectors;
 
 public class DefaultInspector : IComponentInspector
 {
-    private static readonly Dictionary<Type, object> _defaultComponentCache = new();
     private readonly EditorTextureManager _textureManager;
     private readonly HistoryManager _history;
-    private object _undoInitialValue;
+    private object? _undoInitialValue = null!;
 
     public DefaultInspector(EditorTextureManager textureManager, HistoryManager history)
     {
@@ -26,39 +25,50 @@ public class DefaultInspector : IComponentInspector
     {
         bool dirty = false;
         Type componentType = component.GetType();
-        if (!ImGui.BeginTable(componentType.Name + "Table", 3)) return false;
+
+        if (!ImGui.BeginTable(componentType.Name + "Table", 3))
+        {
+            return false;
+        }
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var properties = componentType.GetProperties();
         IntPtr resetIcon = _textureManager.GetTexture("Reset");
-        float buttonSize = ImGui.GetFrameHeight() - 4; // A bit of padding
+        float buttonSize = ImGui.GetFrameHeight() - 4;
 
         foreach (var prop in properties)
         {
             if (!prop.CanRead || !prop.CanWrite || prop.IsDefined(typeof(HideInInspectorAttribute), false))
+            {
                 continue;
+            }
 
             ImGui.TableNextRow();
+
             ImGui.TableSetColumnIndex(0);
-            ImGui.Text(SplitPascalCase(prop.Name));
+            ImGui.Text(ImGuiPropertyControls.SplitPascalCase(prop.Name));
 
             ImGui.TableSetColumnIndex(1);
             ImGui.PushItemWidth(-1.0f);
 
             object valueBeforeEdit = prop.GetValue(component);
-            if (DrawPropertyControl(component, prop, out bool activated, out bool deactivated))
+            if (DrawPropertyControl(component, prop, valueBeforeEdit, out bool activated, out bool deactivated))
             {
                 dirty = true;
             }
 
-            if (activated) _undoInitialValue = valueBeforeEdit;
-            if (deactivated)
+            if (activated)
+            {
+                _undoInitialValue = valueBeforeEdit;
+            }
+
+            if (deactivated && _undoInitialValue != null)
             {
                 object valueAfterEdit = prop.GetValue(component);
-                if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
+                if (!_undoInitialValue.Equals(valueAfterEdit))
                 {
                     prop.SetValue(component, _undoInitialValue);
                     _history.Execute(new ChangePropertyCommand(component, prop, _undoInitialValue, valueAfterEdit));
@@ -71,12 +81,8 @@ public class DefaultInspector : IComponentInspector
             ImGui.TableSetColumnIndex(2);
             if (ImGui.ImageButton($"Reset##{prop.Name}", resetIcon, new Vector2(buttonSize, buttonSize)))
             {
-                object defaultValue = GetDefaultValue(componentType, prop.Name);
-                if (defaultValue is not null)
-                {
-                    prop.SetValue(component, defaultValue);
-                    dirty = true;
-                }
+                ResetToDefault(component, componentType, prop);
+                dirty = true;
             }
         }
 
@@ -84,238 +90,311 @@ public class DefaultInspector : IComponentInspector
         return dirty;
     }
 
-    private bool DrawPropertyControl(object instance, PropertyInfo prop, out bool activated, out bool deactivated)
+    private bool DrawPropertyControl(object instance, PropertyInfo prop, object currentValue, out bool activated, out bool deactivated)
     {
-        object currentValue = prop.GetValue(instance);
-        bool valueChanged = false;
         activated = false;
         deactivated = false;
 
-        ImGui.PushID(prop.Name);
+        if (TryDrawFloat(instance, prop, currentValue, ref activated, ref deactivated))
+        {
+            return true;
+        }
 
-        if (prop.PropertyType == typeof(float))
+        if (TryDrawInt(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            float val = (float)currentValue;
-            if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
+            return true;
         }
-        else if (prop.PropertyType == typeof(int))
+
+        if (TryDrawBool(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            int val = (int)currentValue;
-            if (ImGui.DragInt($"##{prop.Name}", ref val))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
+            return true;
         }
-        else if (prop.PropertyType == typeof(bool))
+
+        if (TryDrawString(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            bool val = (bool)currentValue;
-            if (ImGui.Checkbox($"##{prop.Name}", ref val))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
+            return true;
         }
-        else if (prop.PropertyType == typeof(string))
+
+        if (TryDrawEnum(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            string val = (string)currentValue ?? "";
-            if (ImGui.InputText($"##{prop.Name}", ref val, 256))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
+            return true;
         }
-        else if (prop.PropertyType.IsEnum)
+
+        if (TryDrawVector2(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            var enumValues = Enum.GetNames(prop.PropertyType);
-            string currentEnumValue = currentValue.ToString();
-            int currentIndex = Array.IndexOf(enumValues, currentEnumValue);
-            if (ImGui.Combo($"##{prop.Name}", ref currentIndex, enumValues, enumValues.Length))
-            {
-                prop.SetValue(instance, Enum.Parse(prop.PropertyType, enumValues[currentIndex]));
-                valueChanged = true;
-            }
+            return true;
         }
-        else if (prop.PropertyType == typeof(Vector2))
+
+        if (TryDrawVector3(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            var val = (Vector2)currentValue;
-            ImGui.PopItemWidth();
-            if (DrawVector2Control($"##{prop.Name}", ref val, out activated, out deactivated))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
-            ImGui.PushItemWidth(-1.0f);
+            return true;
         }
-        else if (prop.PropertyType == typeof(Vector3))
+
+        if (TryDrawVector4(instance, prop, currentValue, ref activated, ref deactivated))
         {
-            var val = (Vector3)currentValue;
-            ImGui.PopItemWidth();
-            if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
-            {
-                if (DrawColor3Control($"##{prop.Name}", ref val, out activated, out deactivated))
-                {
-                    prop.SetValue(instance, val);
-                    valueChanged = true;
-                }
-            }
-            else if (DrawVector3Control($"##{prop.Name}", ref val, out activated, out deactivated))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
-            ImGui.PushItemWidth(-1.0f);
+            return true;
         }
-        else if (prop.PropertyType == typeof(Vector4))
+
+        ImGui.Text(currentValue?.ToString() ?? "null");
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+
+        return false;
+    }
+
+    private bool TryDrawFloat(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(float))
         {
-            var val = (Vector4)currentValue;
-            ImGui.PopItemWidth();
-            if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
-            {
-                if (DrawColor4Control($"##{prop.Name}", ref val, out activated, out deactivated))
-                {
-                    prop.SetValue(instance, val);
-                    valueChanged = true;
-                }
-            }
-            else if (ImGui.DragFloat4($"##{prop.Name}", ref val, 0.1f))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
-            ImGui.PushItemWidth(-1.0f);
+            return false;
+        }
+
+        ImGui.PushID(prop.Name);
+        float value = (float)currentValue;
+
+        if (ImGui.IsItemActivated())
+        {
+            activated = true;
+        }
+
+        bool changed = ImGui.DragFloat("##val", ref value, 0.01f);
+        if (changed)
+        {
+            prop.SetValue(instance, value);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            deactivated = true;
+        }
+
+        ImGui.PopID();
+        return changed;
+    }
+
+    private bool TryDrawInt(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(int))
+        {
+            return false;
+        }
+
+        ImGui.PushID(prop.Name);
+        int value = (int)currentValue;
+
+        if (ImGui.IsItemActivated())
+        {
+            activated = true;
+        }
+
+        bool changed = ImGui.DragInt("##val", ref value);
+        if (changed)
+        {
+            prop.SetValue(instance, value);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            deactivated = true;
+        }
+
+        ImGui.PopID();
+        return changed;
+    }
+
+    private bool TryDrawBool(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(bool))
+        {
+            return false;
+        }
+
+        ImGui.PushID(prop.Name);
+        bool value = (bool)currentValue;
+
+        if (ImGui.IsItemActivated())
+        {
+            activated = true;
+        }
+
+        bool changed = ImGui.Checkbox("##val", ref value);
+        if (changed)
+        {
+            prop.SetValue(instance, value);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            deactivated = true;
+        }
+
+        ImGui.PopID();
+        return changed;
+    }
+
+    private bool TryDrawString(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(string))
+        {
+            return false;
+        }
+
+        ImGui.PushID(prop.Name);
+        string value = (string)currentValue ?? "";
+
+        if (ImGui.IsItemActivated())
+        {
+            activated = true;
+        }
+
+        bool changed = ImGui.InputText("##val", ref value, 256);
+        if (changed)
+        {
+            prop.SetValue(instance, value);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            deactivated = true;
+        }
+
+        ImGui.PopID();
+        return changed;
+    }
+
+    private bool TryDrawEnum(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (!prop.PropertyType.IsEnum)
+        {
+            return false;
+        }
+
+        ImGui.PushID(prop.Name);
+        var names = Enum.GetNames(prop.PropertyType);
+        int currentIndex = Array.IndexOf(names, currentValue.ToString());
+
+        if (ImGui.IsItemActivated())
+        {
+            activated = true;
+        }
+
+        bool changed = ImGui.Combo("##val", ref currentIndex, names, names.Length);
+        if (changed)
+        {
+            prop.SetValue(instance, Enum.Parse(prop.PropertyType, names[currentIndex]));
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            deactivated = true;
+        }
+
+        ImGui.PopID();
+        return changed;
+    }
+
+    private bool TryDrawVector2(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(Vector2))
+        {
+            return false;
+        }
+
+        var value = (Vector2)currentValue;
+        bool changed = ImGuiPropertyControls.DrawVector2Control("##val", ref value, out bool subActivated, out bool subDeactivated);
+        if (changed)
+        {
+            prop.SetValue(instance, value);
+        }
+
+        activated = subActivated;
+        deactivated = subDeactivated;
+        return changed;
+    }
+
+    private bool TryDrawVector3(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(Vector3))
+        {
+            return false;
+        }
+
+        var value = (Vector3)currentValue;
+        bool isColor = prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase);
+
+        bool changed = isColor
+            ? ImGuiPropertyControls.DrawColor3Control("##val", ref value, out bool subActivated, out bool subDeactivated)
+            : ImGuiPropertyControls.DrawVector3Control("##val", ref value, out subActivated, out subDeactivated);
+
+        if (changed)
+        {
+            prop.SetValue(instance, value);
+        }
+
+        activated = subActivated;
+        deactivated = subDeactivated;
+        return changed;
+    }
+
+    private bool TryDrawVector4(object instance, PropertyInfo prop, object currentValue, ref bool activated, ref bool deactivated)
+    {
+        if (prop.PropertyType != typeof(Vector4))
+        {
+            return false;
+        }
+
+        var value = (Vector4)currentValue;
+        bool isColor = prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase);
+
+        bool changed;
+        if (isColor)
+        {
+            changed = ImGuiPropertyControls.DrawColor4Control("##val", ref value, out activated, out deactivated);
         }
         else
         {
-            ImGui.Text(currentValue?.ToString() ?? "null");
+            ImGui.PushID(prop.Name);
+            if (ImGui.IsItemActivated())
+            {
+                activated = true;
+            }
+
+            changed = ImGui.DragFloat4("##val", ref value, 0.1f);
+            if (changed)
+            {
+                prop.SetValue(instance, value);
+            }
+
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                deactivated = true;
+            }
+
+            ImGui.PopID();
         }
 
-        if (!activated) activated = ImGui.IsItemActivated();
-        if (!deactivated) deactivated = ImGui.IsItemDeactivatedAfterEdit();
-
-        ImGui.PopID();
-
-        return valueChanged;
+        return changed;
     }
 
-    public static bool DrawVector2Control(string label, ref Vector2 values, out bool activated, out bool deactivated)
+    private void ResetToDefault(object component, Type componentType, PropertyInfo prop)
     {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - (ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X)) / 2.0f;
-
-        // X
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // Y
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth();
-
-        ImGui.PopID();
-
-        return valueChanged;
-    }
-
-    public static bool DrawVector3Control(string label, ref Vector3 values, out bool activated, out bool deactivated)
-    {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - ImGui.CalcTextSize("X").X * 3) / 3.0f;
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("Z"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f)) valueChanged = true;
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-        ImGui.PopItemWidth();
-        ImGui.PopID();
-
-        return valueChanged;
-    }
-
-    public static bool DrawColor3Control(string label, ref Vector3 color, out bool activated, out bool deactivated)
-    {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(label);
-
-        if (ImGui.ColorEdit3(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        var defaultValue = GetDefaultValue(componentType, prop.Name);
+        if (defaultValue == null)
         {
-            valueChanged = true;
+            return;
         }
 
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-
-        ImGui.PopID();
-
-        return valueChanged;
-    }
-
-    public static bool DrawColor4Control(string label, ref Vector4 color, out bool activated, out bool deactivated)
-    {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(label);
-
-        if (ImGui.ColorEdit4(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        var currentValue = prop.GetValue(component);
+        if (currentValue?.Equals(defaultValue) ?? false)
         {
-            valueChanged = true;
+            return;
         }
 
-        if (ImGui.IsItemActivated()) activated = true;
-        if (ImGui.IsItemDeactivatedAfterEdit()) deactivated = true;
-
-        ImGui.PopID();
-
-        return valueChanged;
+        prop.SetValue(component, defaultValue);
+        _history.Execute(new ChangePropertyCommand(component, prop, currentValue, defaultValue));
     }
 
-    private object GetDefaultValue(Type componentType, string propertyName)
+    private static object? GetDefaultValue(Type componentType, string propertyName)
     {
         if (!_defaultComponentCache.TryGetValue(componentType, out object defaultInstance))
         {
@@ -327,18 +406,11 @@ public class DefaultInspector : IComponentInspector
                     _defaultComponentCache[componentType] = defaultInstance;
                 }
             }
-            catch { return null; }
+            catch { return null!; }
         }
 
-        if (defaultInstance is not null)
-        {
-            return componentType.GetProperty(propertyName)?.GetValue(defaultInstance);
-        }
-        return null;
+        return defaultInstance is not null ? (componentType.GetProperty(propertyName)?.GetValue(defaultInstance)) : null;
     }
 
-    private static string SplitPascalCase(string input)
-    {
-        return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
-    }
+    private static readonly Dictionary<Type, object> _defaultComponentCache = [];
 }
