@@ -1,8 +1,7 @@
 ﻿using Cherris.Components;
-using CherrisEditor.Inspectors;
 using ImGuiNET;
 
-namespace CherrisEditor;
+namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(AudioListener))]
 public class AudioListenerInspector : IComponentInspector

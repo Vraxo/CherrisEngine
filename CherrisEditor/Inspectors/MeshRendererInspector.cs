@@ -9,191 +9,185 @@ using System.Runtime.InteropServices;
 namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(MeshRenderer))]
-public class MeshRendererInspector : IComponentInspector
+public sealed class MeshRendererInspector : IComponentInspector
 {
     private readonly Editor _editor;
-    private readonly EditorTextureManager _textureManager;
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private object _undoInitialValue;
+    private readonly UndoTracker _undo;
 
-    public MeshRendererInspector(Editor editor, EditorTextureManager textureManager, HistoryManager history)
+    public MeshRendererInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
     {
         _editor = editor;
-        _textureManager = textureManager;
+        _textures = textures;
         _history = history;
+        _undo = new UndoTracker(history);
     }
 
     public unsafe bool Draw(Component component)
     {
-        var mr = (MeshRenderer)component;
-        var material = mr.Material;
-        bool dirty = false;
+        var renderer = (MeshRenderer)component;
+        var material = renderer.Material;
 
-        if (material is null)
+        if (material == null)
         {
             ImGui.Text("No Material assigned.");
             return false;
         }
 
-        if (!ImGui.BeginTable("MRTable", 3)) return false;
+        bool dirty = false;
+
+        if (!ImGui.BeginTable("MeshRendererTable", 3))
+        {
+            return false;
+        }
+
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        IntPtr resetIcon = _textureManager.GetTexture("Reset");
-        float buttonSize = ImGui.GetFrameHeight() - 4;
-
-        // Texture
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Texture");
-        ImGui.TableSetColumnIndex(1);
-
-        IntPtr textureHandle = IntPtr.Zero;
-        if (material.Texture?.GetBackendHandle() is int handle && handle != 0)
-        {
-            textureHandle = (IntPtr)handle;
-        }
-        else
-        {
-            textureHandle = _textureManager.GetTexture("File");
-        }
-
-        ImGui.ImageButton("TextureThumb", textureHandle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
-
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
-            if (payload.NativePtr is not null)
-            {
-                string path = Marshal.PtrToStringAnsi(payload.Data);
-                if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                {
-                    string newTextureName = Path.GetFileNameWithoutExtension(path);
-                    var newTexture = _editor.ResourceManager.GetTexture(newTextureName);
-
-                    _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newTextureName, newTexture));
-                    dirty = true;
-                }
-            }
-            ImGui.EndDragDropTarget();
-        }
-
-        ImGui.SameLine();
-        ImGui.Text(material.TextureName);
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTexture", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var newTexture = _editor.ResourceManager.GetTexture("White");
-            _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", newTexture));
-            dirty = true;
-        }
-
-        // Tiling
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Texture Tiling");
-        ImGui.TableSetColumnIndex(1);
-        var tilingBeforeEdit = material.TextureTiling;
-        var tiling = tilingBeforeEdit;
-        if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling, out bool activated, out bool deactivated))
-        {
-            material.TextureTiling = tiling; dirty = true;
-        }
-        HandleUndo(material, nameof(Material.TextureTiling), tilingBeforeEdit, activated, deactivated);
-
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = material.TextureTiling;
-            if (valueBeforeReset != Vector2.One)
-            {
-                material.TextureTiling = Vector2.One;
-                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.TextureTiling)), valueBeforeReset, Vector2.One));
-                dirty = true;
-            }
-        }
-
-
-        // Emissive Color
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Emissive Color");
-        ImGui.TableSetColumnIndex(1);
-        var emissiveBeforeEdit = material.EmissiveColor;
-        var emissive = emissiveBeforeEdit;
-        if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive, out bool emissiveActivated, out bool emissiveDeactivated))
-        {
-            material.EmissiveColor = emissive; dirty = true;
-        }
-        HandleUndo(material, nameof(Material.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = material.EmissiveColor;
-            if (valueBeforeReset != Vector3.Zero)
-            {
-                material.EmissiveColor = Vector3.Zero;
-                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.EmissiveColor)), valueBeforeReset, Vector3.Zero));
-                dirty = true;
-            }
-        }
+        DrawTextureRow(material, ref dirty);
+        DrawTilingRow(material, ref dirty);
+        DrawEmissiveRow(material, ref dirty);
 
         ImGui.EndTable();
         return dirty;
     }
 
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
+    private void DrawTextureRow(Material material, ref bool dirty)
     {
-        var property = target.GetType().GetProperty(propertyName);
-        if (property is null) return;
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture");
 
-        if (activated)
-        {
-            _undoInitialValue = valueBeforeEdit;
-        }
+        ImGui.TableSetColumnIndex(1);
+        DrawTextureThumb(material, ref dirty);
 
-        if (deactivated)
-        {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
-            {
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
-            }
-            _undoInitialValue = null;
-        }
+        ImGui.TableSetColumnIndex(2);
+        DrawTextureResetButton(material, ref dirty);
     }
 
-    // Inner class for the specific command
-    private class ChangeMaterialTextureCommand : ICommand
+    private unsafe void DrawTextureThumb(Material material, ref bool dirty)
     {
-        private readonly Material _target;
-        private readonly string _oldTextureName;
-        private readonly Cherris.Rendering.ITexture _oldTexture;
-        private readonly string _newTextureName;
-        private readonly Cherris.Rendering.ITexture _newTexture;
+        IntPtr handle = IntPtr.Zero;
+        handle = material.Texture?.GetBackendHandle() is int h && h != 0 ? h : _textures.GetTexture("File");
 
-        public ChangeMaterialTextureCommand(Material target, string oldTextureName, Cherris.Rendering.ITexture oldTexture, string newTextureName, Cherris.Rendering.ITexture newTexture)
+        ImGui.ImageButton("TextureThumb", handle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
+
+        if (!ImGui.BeginDragDropTarget())
         {
-            _target = target;
-            _oldTextureName = oldTextureName;
-            _oldTexture = oldTexture;
-            _newTextureName = newTextureName;
-            _newTexture = newTexture;
+            return;
         }
 
-        public void Execute()
+        var payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
+        if (payload.NativePtr == null)
         {
-            _target.TextureName = _newTextureName;
-            _target.Texture = _newTexture;
+            ImGui.EndDragDropTarget();
+            return;
         }
 
-        public void Undo()
+        string path = Marshal.PtrToStringAnsi(payload.Data) ?? "";
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {
-            _target.TextureName = _oldTextureName;
-            _target.Texture = _oldTexture;
+            ImGui.EndDragDropTarget();
+            return;
         }
+
+        string newName = Path.GetFileNameWithoutExtension(path);
+        var newTexture = _editor.ResourceManager.GetTexture(newName);
+
+        _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newName, newTexture));
+        dirty = true;
+
+        ImGui.EndDragDropTarget();
+    }
+
+    private void DrawTextureResetButton(Material material, ref bool dirty)
+    {
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
+
+        if (!ImGui.ImageButton("ResetTexture", icon, new Vector2(size, size)))
+        {
+            return;
+        }
+
+        var defaultTexture = _editor.ResourceManager.GetTexture("White");
+        if (material.TextureName == "White")
+        {
+            return;
+        }
+
+        _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", defaultTexture));
+        dirty = true;
+    }
+
+    private void DrawTilingRow(Material material, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture Tiling");
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var tiling = material.TextureTiling;
+        if (PropertyDrawer.Vector2("##Tiling", ref tiling, out bool activated, out bool deactivated))
+        {
+            material.TextureTiling = tiling;
+            dirty = true;
+        }
+        _undo.Track(material, nameof(Material.TextureTiling), activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        DrawPropertyResetButton(material, nameof(Material.TextureTiling), Vector2.One, ref dirty);
+    }
+
+    private void DrawEmissiveRow(Material material, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Emissive Color");
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var color = material.EmissiveColor;
+        if (PropertyDrawer.Color3("##Emissive", ref color, out bool activated, out bool deactivated))
+        {
+            material.EmissiveColor = color;
+            dirty = true;
+        }
+        _undo.Track(material, nameof(Material.EmissiveColor), activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        DrawPropertyResetButton(material, nameof(Material.EmissiveColor), Vector3.Zero, ref dirty);
+    }
+
+    private void DrawPropertyResetButton(Material material, string propName, object defaultValue, ref bool dirty)
+    {
+        ImGui.TableSetColumnIndex(2);
+
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
+
+        if (!ImGui.ImageButton($"Reset{propName}", icon, new Vector2(size, size)))
+        {
+            return;
+        }
+
+        var property = typeof(Material).GetProperty(propName)!;
+        var current = property.GetValue(material)!;
+
+        if (Equals(current, defaultValue))
+        {
+            return;
+        }
+
+        _history.Execute(new ChangePropertyCommand(material, property, current, defaultValue));
+        property.SetValue(material, defaultValue);
+        dirty = true;
     }
 }

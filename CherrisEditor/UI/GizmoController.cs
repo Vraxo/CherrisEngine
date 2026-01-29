@@ -112,9 +112,9 @@ public class GizmoController
             return;
         }
 
-        var newPosition = selected.Transform.Position;
-        var newRotation = selected.Transform.Rotation;
-        var newScale = selected.Transform.Scale;
+        Vector3 newPosition = selected.Transform.Position;
+        Quaternion newRotation = selected.Transform.Rotation;
+        Vector3 newScale = selected.Transform.Scale;
 
         RevertTarget(selected);
 

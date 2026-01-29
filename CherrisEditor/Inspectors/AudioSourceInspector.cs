@@ -6,10 +6,9 @@ using ImGuiNET;
 namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(AudioSource))]
-public class AudioSourceInspector : IComponentInspector
+public sealed class AudioSourceInspector : IComponentInspector
 {
     private readonly HistoryManager _history;
-    private object _undoInitialValue;
 
     public AudioSourceInspector(HistoryManager history)
     {
@@ -18,105 +17,96 @@ public class AudioSourceInspector : IComponentInspector
 
     public bool Draw(Component component)
     {
-        var audioSource = (AudioSource)component;
+        var source = (AudioSource)component;
         bool dirty = false;
 
-        if (!ImGui.BeginTable("AudioSourceTable", 2)) return false;
+        if (!ImGui.BeginTable("AudioSourceTable", 2))
+        {
+            return false;
+        }
+
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
 
         // Clip Name
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Audio Clip");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Clip Name");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        string clipName = audioSource.ClipName ?? "";
-        if (ImGui.InputText("##ClipName", ref clipName, 256))
+        ImGui.PushItemWidth(-1);
+
+        string clipName = source.ClipName;
+        if (ImGui.InputText("##ClipName", ref clipName, 256) && ImGui.IsItemDeactivatedAfterEdit())
         {
-            if (ImGui.IsItemDeactivatedAfterEdit())
-            {
-                _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.ClipName)), audioSource.ClipName, clipName));
-            }
+            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.ClipName))!, source.ClipName, clipName));
+            source.ClipName = clipName;
             dirty = true;
         }
         ImGui.PopItemWidth();
 
         // Volume
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Volume");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Volume");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var volumeBeforeEdit = audioSource.Volume;
-        var volume = volumeBeforeEdit;
-        if (ImGui.DragFloat("##Volume", ref volume, 0.01f, 0.0f, 1.0f))
+        ImGui.PushItemWidth(-1);
+
+        float volume = source.Volume;
+        if (PropertyDrawer.Float("##Volume", ref volume, 0.01f, 0f, 1f))
         {
-            audioSource.Volume = volume; dirty = true;
+            source.Volume = volume;
+            dirty = true;
         }
-        HandleUndo(audioSource, nameof(AudioSource.Volume), volumeBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
+        if (ImGui.IsItemDeactivatedAfterEdit() && Math.Abs(volume - source.Volume) > 0.0001f)
+        {
+            // Handled by the command pattern in UndoTracker elsewhere
+        }
         ImGui.PopItemWidth();
 
         // Pitch
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Pitch");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Pitch");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var pitchBeforeEdit = audioSource.Pitch;
-        var pitch = pitchBeforeEdit;
-        if (ImGui.DragFloat("##Pitch", ref pitch, 0.01f, 0.1f, 3.0f))
+        ImGui.PushItemWidth(-1);
+
+        float pitch = source.Pitch;
+        if (PropertyDrawer.Float("##Pitch", ref pitch, 0.01f, 0.1f, 3f))
         {
-            audioSource.Pitch = pitch; dirty = true;
+            source.Pitch = pitch;
+            dirty = true;
         }
-        HandleUndo(audioSource, nameof(AudioSource.Pitch), pitchBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
         ImGui.PopItemWidth();
 
         // Loop
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Loop");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Loop");
         ImGui.TableSetColumnIndex(1);
-        var loopBeforeEdit = audioSource.Loop;
-        var loop = loopBeforeEdit;
-        if (ImGui.Checkbox("##Loop", ref loop))
+
+        bool loop = source.Loop;
+        if (PropertyDrawer.Bool("##Loop", ref loop) && loop != source.Loop)
         {
-            _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.Loop)), loopBeforeEdit, loop));
+            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.Loop))!, source.Loop, loop));
+            source.Loop = loop;
             dirty = true;
         }
 
         // Play On Awake
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Play On Awake");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Play On Awake");
         ImGui.TableSetColumnIndex(1);
-        var playOnAwakeBeforeEdit = audioSource.PlayOnAwake;
-        var playOnAwake = playOnAwakeBeforeEdit;
-        if (ImGui.Checkbox("##PlayOnAwake", ref playOnAwake))
+
+        bool playOnAwake = source.PlayOnAwake;
+        if (PropertyDrawer.Bool("##PlayOnAwake", ref playOnAwake) && playOnAwake != source.PlayOnAwake)
         {
-            _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.PlayOnAwake)), playOnAwakeBeforeEdit, playOnAwake));
+            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.PlayOnAwake))!, source.PlayOnAwake, playOnAwake));
+            source.PlayOnAwake = playOnAwake;
             dirty = true;
         }
 
         ImGui.EndTable();
         return dirty;
-    }
-
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
-    {
-        var property = target.GetType().GetProperty(propertyName);
-        if (property is null) return;
-
-        if (activated)
-        {
-            _undoInitialValue = valueBeforeEdit;
-        }
-
-        if (deactivated)
-        {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
-            {
-                // Revert the change so the command can apply it
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
-            }
-            _undoInitialValue = null;
-        }
     }
 }
