@@ -1,4 +1,5 @@
-﻿using Cherris.Core.Logging;
+﻿using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Utils;
 using ImGuiNET;
 using System.Numerics;
@@ -69,20 +70,33 @@ public class ContentBrowserPanel : IDisposable
     {
         string projectRoot = _editor.ProjectManager.CurrentProject?.RootPath ?? _currentDirectory;
 
-        if (_currentDirectory != projectRoot)
+        ImGuiTableFlags flags = ImGuiTableFlags.SizingFixedFit;
+        if (ImGui.BeginTable("ContentBrowserHeader", 2, flags))
         {
-            if (ImGui.Button("<- Back"))
+            ImGui.TableSetupColumn("BackButton", ImGuiTableColumnFlags.WidthFixed, 80.0f);
+            ImGui.TableSetupColumn("PathText", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableNextRow();
+
+            ImGui.TableSetColumnIndex(0);
+            if (_currentDirectory != projectRoot)
             {
-                _currentDirectory = Directory.GetParent(_currentDirectory)?.FullName ?? projectRoot;
+                if (ImGui.Button("<- Back"))
+                {
+                    _currentDirectory = Directory.GetParent(_currentDirectory)?.FullName ?? projectRoot;
+                }
             }
-            ImGui.SameLine();
+
+            ImGui.TableSetColumnIndex(1);
+            ImGui.AlignTextToFramePadding();
+
+            string displayPath = _currentDirectory == projectRoot
+                ? _editor.ProjectManager.CurrentProject?.Name ?? "Project"
+                : _currentDirectory.Replace(projectRoot, _editor.ProjectManager.CurrentProject?.Name ?? "Project");
+
+            ImGui.Text($"Path: {displayPath}");
+            ImGui.EndTable();
         }
 
-        string displayPath = _currentDirectory == projectRoot
-            ? _editor.ProjectManager.CurrentProject?.Name ?? "Project"
-            : _currentDirectory.Replace(projectRoot, _editor.ProjectManager.CurrentProject?.Name ?? "Project");
-
-        ImGui.Text($"Path: {displayPath}");
         ImGui.Separator();
     }
 
@@ -129,7 +143,7 @@ public class ContentBrowserPanel : IDisposable
 
         CenterAlignItem(ThumbnailSize);
 
-        if (ImGui.ImageButton($"##dir_{path}", icon, new Vector2(ThumbnailSize, ThumbnailSize)))
+        if (ImGui.ImageButton($"##dir_{path}", icon, new(ThumbnailSize, ThumbnailSize)))
         {
         }
 
@@ -149,7 +163,7 @@ public class ContentBrowserPanel : IDisposable
 
         CenterAlignItem(ThumbnailSize);
 
-        if (ImGui.ImageButton($"##file_{path}", icon, new Vector2(ThumbnailSize, ThumbnailSize)))
+        if (ImGui.ImageButton($"##file_{path}", icon, new(ThumbnailSize, ThumbnailSize)))
         {
         }
 
@@ -185,17 +199,11 @@ public class ContentBrowserPanel : IDisposable
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        if (EditorTextureManager.ImageExtensions.Contains(extension))
-        {
-            return EditorConstants.DragDropPayloads.Texture;
-        }
-
-        if (EditorTextureManager.PrefabExtensions.Contains(extension))
-        {
-            return EditorConstants.DragDropPayloads.Prefab;
-        }
-
-        return EditorTextureManager.MeshExtensions.Contains(extension) ? EditorConstants.DragDropPayloads.Mesh : null;
+        return EditorTextureManager.ImageExtensions.Contains(extension)
+            ? (string?)EditorConstants.DragDropPayloads.Texture
+            : EditorTextureManager.PrefabExtensions.Contains(extension)
+            ? EditorConstants.DragDropPayloads.Prefab
+            : EditorTextureManager.MeshExtensions.Contains(extension) ? EditorConstants.DragDropPayloads.Mesh : null;
     }
 
     private static void SendStringPayload(string payloadType, string data)
@@ -204,7 +212,7 @@ public class ContentBrowserPanel : IDisposable
         try
         {
             uint size = (uint)(data.Length + 1);
-            _ = ImGui.SetDragDropPayload(payloadType, ptr, size);
+            ImGui.SetDragDropPayload(payloadType, ptr, size);
         }
         finally
         {
@@ -219,15 +227,17 @@ public class ContentBrowserPanel : IDisposable
             return;
         }
 
-        if (name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        if (!name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            _editor.SceneOperations.LoadSceneFromFile(path);
+            return;
         }
+
+        _editor.SceneOperations.LoadSceneFromFile(path);
     }
 
     private void DrawDropTarget()
     {
-        _ = ImGui.InvisibleButton("ContentDropZone", ImGui.GetContentRegionAvail());
+        ImGui.InvisibleButton("ContentDropZone", ImGui.GetContentRegionAvail());
 
         if (!ImGui.BeginDragDropTarget())
         {
@@ -250,9 +260,9 @@ public class ContentBrowserPanel : IDisposable
 
         byte[] data = new byte[payload.DataSize];
         Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-        var objectId = new Guid(data);
+        Guid objectId = new(data);
 
-        var gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId);
+        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId);
 
         if (gameObject is null)
         {
@@ -267,6 +277,7 @@ public class ContentBrowserPanel : IDisposable
     {
         float columnWidth = ImGui.GetColumnWidth();
         float offsetX = (columnWidth - itemWidth) * 0.5f;
+
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 
@@ -275,6 +286,7 @@ public class ContentBrowserPanel : IDisposable
         float columnWidth = ImGui.GetColumnWidth();
         float textWidth = ImGui.CalcTextSize(text).X;
         float offsetX = (columnWidth - textWidth) * 0.5f;
+
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 
