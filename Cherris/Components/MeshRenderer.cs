@@ -1,9 +1,14 @@
-﻿namespace Cherris.Components;
+﻿using Cherris.Attributes;
+using Cherris.Core;
+
+namespace Cherris.Components;
 
 public class MeshRenderer : Component, IDisposable
 {
-    public Mesh Mesh { get; }
-    public string MeshName { get; }
+    public Mesh Mesh { get; set; }
+
+    [DragDropTarget("ASSET_PATH_MESH")]
+    public string MeshName { get; set; }
 
     private Material _material;
     public Material Material
@@ -19,8 +24,8 @@ public class MeshRenderer : Component, IDisposable
         }
     }
 
-    // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
-    public object BackendData { get; set; }
+    [HideInInspector]
+    public object? BackendData { get; set; }
 
     public MeshRenderer(Mesh mesh, Material material, string meshName)
     {

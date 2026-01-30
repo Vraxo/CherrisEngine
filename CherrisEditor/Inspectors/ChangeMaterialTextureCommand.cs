@@ -1,4 +1,4 @@
-﻿using Cherris;
+﻿using Cherris.Core;
 using Cherris.Rendering;
 using CherrisEditor.Undo;
 

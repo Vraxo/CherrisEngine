@@ -9646,10 +9646,9 @@ public class ScriptManager
 
 ```csharp
 using Cherris.Components;
-using CherrisEditor.Inspectors;
 using ImGuiNET;
 
-namespace CherrisEditor;
+namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(AudioListener))]
 public class AudioListenerInspector : IComponentInspector
@@ -9677,10 +9676,9 @@ using ImGuiNET;
 namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(AudioSource))]
-public class AudioSourceInspector : IComponentInspector
+public sealed class AudioSourceInspector : IComponentInspector
 {
     private readonly HistoryManager _history;
-    private object _undoInitialValue;
 
     public AudioSourceInspector(HistoryManager history)
     {
@@ -9689,106 +9687,139 @@ public class AudioSourceInspector : IComponentInspector
 
     public bool Draw(Component component)
     {
-        var audioSource = (AudioSource)component;
+        var source = (AudioSource)component;
         bool dirty = false;
 
-        if (!ImGui.BeginTable("AudioSourceTable", 2)) return false;
+        if (!ImGui.BeginTable("AudioSourceTable", 2))
+        {
+            return false;
+        }
+
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
 
         // Clip Name
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Audio Clip");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Clip Name");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        string clipName = audioSource.ClipName ?? "";
-        if (ImGui.InputText("##ClipName", ref clipName, 256))
+        ImGui.PushItemWidth(-1);
+
+        string clipName = source.ClipName;
+        if (ImGui.InputText("##ClipName", ref clipName, 256) && ImGui.IsItemDeactivatedAfterEdit())
         {
-            if (ImGui.IsItemDeactivatedAfterEdit())
-            {
-                _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.ClipName)), audioSource.ClipName, clipName));
-            }
+            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.ClipName))!, source.ClipName, clipName));
+            source.ClipName = clipName;
             dirty = true;
         }
         ImGui.PopItemWidth();
 
         // Volume
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Volume");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Volume");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var volumeBeforeEdit = audioSource.Volume;
-        var volume = volumeBeforeEdit;
-        if (ImGui.DragFloat("##Volume", ref volume, 0.01f, 0.0f, 1.0f))
+        ImGui.PushItemWidth(-1);
+
+        float volume = source.Volume;
+        if (PropertyDrawer.Float("##Volume", ref volume, 0.01f, 0f, 1f))
         {
-            audioSource.Volume = volume; dirty = true;
+            source.Volume = volume;
+            dirty = true;
         }
-        HandleUndo(audioSource, nameof(AudioSource.Volume), volumeBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
+        if (ImGui.IsItemDeactivatedAfterEdit() && Math.Abs(volume - source.Volume) > 0.0001f)
+        {
+            // Handled by the command pattern in UndoTracker elsewhere
+        }
         ImGui.PopItemWidth();
 
         // Pitch
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Pitch");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Pitch");
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var pitchBeforeEdit = audioSource.Pitch;
-        var pitch = pitchBeforeEdit;
-        if (ImGui.DragFloat("##Pitch", ref pitch, 0.01f, 0.1f, 3.0f))
+        ImGui.PushItemWidth(-1);
+
+        float pitch = source.Pitch;
+        if (PropertyDrawer.Float("##Pitch", ref pitch, 0.01f, 0.1f, 3f))
         {
-            audioSource.Pitch = pitch; dirty = true;
+            source.Pitch = pitch;
+            dirty = true;
         }
-        HandleUndo(audioSource, nameof(AudioSource.Pitch), pitchBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
         ImGui.PopItemWidth();
 
         // Loop
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Loop");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Loop");
         ImGui.TableSetColumnIndex(1);
-        var loopBeforeEdit = audioSource.Loop;
-        var loop = loopBeforeEdit;
-        if (ImGui.Checkbox("##Loop", ref loop))
+
+        bool loop = source.Loop;
+        if (PropertyDrawer.Bool("##Loop", ref loop) && loop != source.Loop)
         {
-            _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.Loop)), loopBeforeEdit, loop));
+            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.Loop))!, source.Loop, loop));
+            source.Loop = loop;
             dirty = true;
         }
 
         // Play On Awake
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Play On Awake");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Play On Awake");
         ImGui.TableSetColumnIndex(1);
-        var playOnAwakeBeforeEdit = audioSource.PlayOnAwake;
-        var playOnAwake = playOnAwakeBeforeEdit;
-        if (ImGui.Checkbox("##PlayOnAwake", ref playOnAwake))
+
+        bool playOnAwake = source.PlayOnAwake;
+        if (PropertyDrawer.Bool("##PlayOnAwake", ref playOnAwake) && playOnAwake != source.PlayOnAwake)
         {
-            _history.Execute(new ChangePropertyCommand(audioSource, typeof(AudioSource).GetProperty(nameof(AudioSource.PlayOnAwake)), playOnAwakeBeforeEdit, playOnAwake));
+            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.PlayOnAwake))!, source.PlayOnAwake, playOnAwake));
+            source.PlayOnAwake = playOnAwake;
             dirty = true;
         }
 
         ImGui.EndTable();
         return dirty;
     }
+}
+```
 
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
+---
+
+### `CherrisEditor\Inspectors\ChangeMaterialTextureCommand.cs`
+
+```csharp
+using Cherris;
+using Cherris.Rendering;
+using CherrisEditor.Undo;
+
+namespace CherrisEditor.Inspectors;
+
+public sealed class ChangeMaterialTextureCommand : ICommand
+{
+    private readonly Material _target;
+    private readonly string _oldName;
+    private readonly ITexture _oldTexture;
+    private readonly string _newName;
+    private readonly ITexture _newTexture;
+
+    public ChangeMaterialTextureCommand(Material target, string oldName, ITexture oldTexture, string newName, ITexture newTexture)
     {
-        var property = target.GetType().GetProperty(propertyName);
-        if (property is null) return;
+        _target = target;
+        _oldName = oldName;
+        _oldTexture = oldTexture;
+        _newName = newName;
+        _newTexture = newTexture;
+    }
 
-        if (activated)
-        {
-            _undoInitialValue = valueBeforeEdit;
-        }
+    public void Execute()
+    {
+        _target.TextureName = _newName;
+        _target.Texture = _newTexture;
+    }
 
-        if (deactivated)
-        {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
-            {
-                // Revert the change so the command can apply it
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
-            }
-            _undoInitialValue = null;
-        }
+    public void Undo()
+    {
+        _target.TextureName = _oldName;
+        _target.Texture = _oldTexture;
     }
 }
 ```
@@ -9801,7 +9832,6 @@ public class AudioSourceInspector : IComponentInspector
 using Cherris;
 using Cherris.Components;
 using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
@@ -9809,24 +9839,25 @@ using System.Text.RegularExpressions;
 
 namespace CherrisEditor.Inspectors;
 
-public class DefaultInspector : IComponentInspector
+public sealed class DefaultInspector : IComponentInspector
 {
-    private static readonly Dictionary<Type, object> _defaultComponentCache = [];
-    private readonly EditorTextureManager _textureManager;
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private object? _undoInitialValue;
+    private readonly UndoTracker _undo;
 
-    public DefaultInspector(EditorTextureManager textureManager, HistoryManager history)
+    public DefaultInspector(EditorTextureManager textures, HistoryManager history)
     {
-        _textureManager = textureManager;
+        _textures = textures;
         _history = history;
+        _undo = new UndoTracker(history);
     }
 
     public bool Draw(Component component)
     {
         bool dirty = false;
-        Type componentType = component.GetType();
-        if (!ImGui.BeginTable(componentType.Name + "Table", 3))
+        Type type = component.GetType();
+
+        if (!ImGui.BeginTable($"{type.Name}Table", 3))
         {
             return false;
         }
@@ -9835,57 +9866,14 @@ public class DefaultInspector : IComponentInspector
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        var properties = componentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-        IntPtr resetIcon = _textureManager.GetTexture("Reset");
-        float buttonSize = ImGui.GetFrameHeight() - 4; // A bit of padding
+        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.CanWrite && !p.IsDefined(typeof(HideInInspectorAttribute), false));
 
         foreach (var prop in properties)
         {
-            if (!prop.CanRead || !prop.CanWrite || prop.IsDefined(typeof(HideInInspectorAttribute), false))
-            {
-                continue;
-            }
-
-            ImGui.TableNextRow();
-            ImGui.TableSetColumnIndex(0);
-            ImGui.Text(SplitPascalCase(prop.Name));
-
-            ImGui.TableSetColumnIndex(1);
-            ImGui.PushItemWidth(-1.0f);
-
-            object valueBeforeEdit = prop.GetValue(component);
-            if (DrawPropertyControl(component, prop, out bool activated, out bool deactivated))
+            if (DrawPropertyRow(component, prop))
             {
                 dirty = true;
-            }
-
-            if (activated)
-            {
-                _undoInitialValue = valueBeforeEdit;
-            }
-
-            if (deactivated)
-            {
-                object valueAfterEdit = prop.GetValue(component);
-                if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
-                {
-                    prop.SetValue(component, _undoInitialValue);
-                    _history.Execute(new ChangePropertyCommand(component, prop, _undoInitialValue, valueAfterEdit));
-                }
-                _undoInitialValue = null;
-            }
-
-            ImGui.PopItemWidth();
-
-            ImGui.TableSetColumnIndex(2);
-            if (ImGui.ImageButton($"Reset##{prop.Name}", resetIcon, new Vector2(buttonSize, buttonSize)))
-            {
-                object defaultValue = GetDefaultValue(componentType, prop.Name);
-                if (defaultValue is not null)
-                {
-                    prop.SetValue(component, defaultValue);
-                    dirty = true;
-                }
             }
         }
 
@@ -9893,114 +9881,129 @@ public class DefaultInspector : IComponentInspector
         return dirty;
     }
 
-    private bool DrawPropertyControl(object instance, PropertyInfo prop, out bool activated, out bool deactivated)
+    private bool DrawPropertyRow(Component component, PropertyInfo prop)
     {
-        object currentValue = prop.GetValue(instance);
-        bool valueChanged = false;
+        ImGui.TableNextRow();
+
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text(SplitPascalCase(prop.Name));
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        bool changed = DrawPropertyControl(component, prop, out bool activated, out bool deactivated);
+
+        _undo.Track(component, prop.Name, activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        ImGui.TableSetColumnIndex(2);
+        if (DrawResetButton(component, prop))
+        {
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private bool DrawPropertyControl(Component component, PropertyInfo prop, out bool activated, out bool deactivated)
+    {
         activated = false;
         deactivated = false;
+
+        object value = prop.GetValue(component) ?? CreateDefault(prop.PropertyType);
+        bool changed = false;
 
         ImGui.PushID(prop.Name);
 
         if (prop.PropertyType == typeof(float))
         {
-            float val = (float)currentValue;
-            if (ImGui.DragFloat($"##{prop.Name}", ref val, 0.01f))
+            float v = (float)value;
+            if (PropertyDrawer.Float($"##{prop.Name}", ref v))
             {
-                prop.SetValue(instance, val);
-                valueChanged = true;
+                prop.SetValue(component, v);
+                changed = true;
             }
         }
         else if (prop.PropertyType == typeof(int))
         {
-            int val = (int)currentValue;
-            if (ImGui.DragInt($"##{prop.Name}", ref val))
+            int v = (int)value;
+            if (PropertyDrawer.Int($"##{prop.Name}", ref v))
             {
-                prop.SetValue(instance, val);
-                valueChanged = true;
+                prop.SetValue(component, v);
+                changed = true;
             }
         }
         else if (prop.PropertyType == typeof(bool))
         {
-            bool val = (bool)currentValue;
-            if (ImGui.Checkbox($"##{prop.Name}", ref val))
+            bool v = (bool)value;
+            if (PropertyDrawer.Bool($"##{prop.Name}", ref v))
             {
-                prop.SetValue(instance, val);
-                valueChanged = true;
+                prop.SetValue(component, v);
+                changed = true;
             }
         }
         else if (prop.PropertyType == typeof(string))
         {
-            string val = (string)currentValue ?? "";
-            if (ImGui.InputText($"##{prop.Name}", ref val, 256))
+            string v = (string)value ?? "";
+            if (PropertyDrawer.String($"##{prop.Name}", ref v))
             {
-                prop.SetValue(instance, val);
-                valueChanged = true;
+                prop.SetValue(component, v);
+                changed = true;
             }
         }
         else if (prop.PropertyType.IsEnum)
         {
-            var enumValues = Enum.GetNames(prop.PropertyType);
-            string currentEnumValue = currentValue.ToString();
-            int currentIndex = Array.IndexOf(enumValues, currentEnumValue);
-            if (ImGui.Combo($"##{prop.Name}", ref currentIndex, enumValues, enumValues.Length))
+            var enumValue = (Enum)value;
+            if (DrawEnum(prop.Name, enumValue, out var newValue))
             {
-                prop.SetValue(instance, Enum.Parse(prop.PropertyType, enumValues[currentIndex]));
-                valueChanged = true;
+                prop.SetValue(component, newValue);
+                changed = true;
             }
         }
         else if (prop.PropertyType == typeof(Vector2))
         {
-            var val = (Vector2)currentValue;
-            ImGui.PopItemWidth();
-            if (DrawVector2Control($"##{prop.Name}", ref val, out activated, out deactivated))
+            var v = (Vector2)value;
+            if (PropertyDrawer.Vector2($"##{prop.Name}", ref v, out activated, out deactivated))
             {
-                prop.SetValue(instance, val);
-                valueChanged = true;
+                prop.SetValue(component, v);
+                changed = true;
             }
-            ImGui.PushItemWidth(-1.0f);
         }
         else if (prop.PropertyType == typeof(Vector3))
         {
-            var val = (Vector3)currentValue;
-            ImGui.PopItemWidth();
-            if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
+            var v = (Vector3)value;
+            bool isColor = prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase);
+
+            if (isColor)
             {
-                if (DrawColor3Control($"##{prop.Name}", ref val, out activated, out deactivated))
+                if (PropertyDrawer.Color3($"##{prop.Name}", ref v, out activated, out deactivated))
                 {
-                    prop.SetValue(instance, val);
-                    valueChanged = true;
+                    prop.SetValue(component, v);
+                    changed = true;
                 }
             }
-            else if (DrawVector3Control($"##{prop.Name}", ref val, out activated, out deactivated))
+            else
             {
-                prop.SetValue(instance, val);
-                valueChanged = true;
+                if (PropertyDrawer.Vector3($"##{prop.Name}", ref v, out activated, out deactivated))
+                {
+                    prop.SetValue(component, v);
+                    changed = true;
+                }
             }
-            ImGui.PushItemWidth(-1.0f);
         }
         else if (prop.PropertyType == typeof(Vector4))
         {
-            var val = (Vector4)currentValue;
-            ImGui.PopItemWidth();
-            if (prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase))
+            var v = (Vector4)value;
+            if (ImGui.DragFloat4($"##{prop.Name}", ref v, 0.1f))
             {
-                if (DrawColor4Control($"##{prop.Name}", ref val, out activated, out deactivated))
-                {
-                    prop.SetValue(instance, val);
-                    valueChanged = true;
-                }
+                prop.SetValue(component, v);
+                changed = true;
             }
-            else if (ImGui.DragFloat4($"##{prop.Name}", ref val, 0.1f))
-            {
-                prop.SetValue(instance, val);
-                valueChanged = true;
-            }
-            ImGui.PushItemWidth(-1.0f);
         }
         else
         {
-            ImGui.Text(currentValue?.ToString() ?? "null");
+            ImGui.Text(value.ToString() ?? "null");
         }
 
         if (!activated)
@@ -10014,213 +10017,76 @@ public class DefaultInspector : IComponentInspector
         }
 
         ImGui.PopID();
-
-        return valueChanged;
+        return changed;
     }
 
-    public static bool DrawVector2Control(string label, ref Vector2 values, out bool activated, out bool deactivated)
+    private static bool DrawEnum(string id, Enum current, out Enum result)
     {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
+        result = current;
+        var names = Enum.GetNames(current.GetType());
+        string currentName = current.ToString();
+        int index = Array.IndexOf(names, currentName);
 
-        ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - (ImGui.CalcTextSize("X").X + ImGui.CalcTextSize("Y").X)) / 2.0f;
-
-        // X
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f))
+        if (!ImGui.Combo($"##{id}", ref index, names, names.Length))
         {
-            valueChanged = true;
+            return false;
         }
 
-        if (ImGui.IsItemActivated())
-        {
-            activated = true;
-        }
-
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            deactivated = true;
-        }
-
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        // Y
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f))
-        {
-            valueChanged = true;
-        }
-
-        if (ImGui.IsItemActivated())
-        {
-            activated = true;
-        }
-
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            deactivated = true;
-        }
-
-        ImGui.PopItemWidth();
-
-        ImGui.PopID();
-
-        return valueChanged;
+        result = (Enum)Enum.Parse(current.GetType(), names[index]);
+        return true;
     }
 
-    public static bool DrawVector3Control(string label, ref Vector3 values, out bool activated, out bool deactivated)
+    private bool DrawResetButton(Component component, PropertyInfo prop)
     {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
 
-        ImGui.PushID(label);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("X").X * 3)) / 3.0f;
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)); ImGui.Text("X"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}X", ref values.X, 0.1f))
+        if (!ImGui.ImageButton($"Reset{prop.Name}", icon, new Vector2(size, size)))
         {
-            valueChanged = true;
+            return false;
         }
 
-        if (ImGui.IsItemActivated())
+        object? defaultValue = GetDefaultValue(component.GetType(), prop.Name);
+        if (defaultValue == null)
         {
-            activated = true;
+            return false;
         }
 
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            deactivated = true;
-        }
-
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1.0f)); ImGui.Text("Y"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Y", ref values.Y, 0.1f))
-        {
-            valueChanged = true;
-        }
-
-        if (ImGui.IsItemActivated())
-        {
-            activated = true;
-        }
-
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            deactivated = true;
-        }
-
-        ImGui.PopItemWidth(); ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.3f, 0.8f, 1.0f)); ImGui.Text("Z"); ImGui.PopStyleColor(); ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-        if (ImGui.DragFloat($"##{label}Z", ref values.Z, 0.1f))
-        {
-            valueChanged = true;
-        }
-
-        if (ImGui.IsItemActivated())
-        {
-            activated = true;
-        }
-
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            deactivated = true;
-        }
-
-        ImGui.PopItemWidth();
-        ImGui.PopID();
-
-        return valueChanged;
+        prop.SetValue(component, defaultValue);
+        return true;
     }
 
-    public static bool DrawColor3Control(string label, ref Vector3 color, out bool activated, out bool deactivated)
+    private static object? GetDefaultValue(Type componentType, string propertyName)
     {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(label);
-
-        if (ImGui.ColorEdit3(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        try
         {
-            valueChanged = true;
+            var instance = Activator.CreateInstance(componentType);
+            return componentType.GetProperty(propertyName)?.GetValue(instance);
         }
-
-        if (ImGui.IsItemActivated())
+        catch
         {
-            activated = true;
+            return null;
         }
-
-        if (ImGui.IsItemDeactivatedAfterEdit())
-        {
-            deactivated = true;
-        }
-
-        ImGui.PopID();
-
-        return valueChanged;
     }
 
-    public static bool DrawColor4Control(string label, ref Vector4 color, out bool activated, out bool deactivated)
+    private static object CreateDefault(Type type)
     {
-        bool valueChanged = false;
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(label);
-
-        if (ImGui.ColorEdit4(label, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+        if (type == typeof(string))
         {
-            valueChanged = true;
+            return "";
         }
 
-        if (ImGui.IsItemActivated())
+        if (type == typeof(Vector2))
         {
-            activated = true;
+            return Vector2.Zero;
         }
 
-        if (ImGui.IsItemDeactivatedAfterEdit())
+        if (type == typeof(Vector3))
         {
-            deactivated = true;
+            return Vector3.Zero;
         }
 
-        ImGui.PopID();
-
-        return valueChanged;
-    }
-
-    private object? GetDefaultValue(Type componentType, string propertyName)
-    {
-        if (!_defaultComponentCache.TryGetValue(componentType, out object defaultInstance))
-        {
-            try
-            {
-                if (componentType.GetConstructor(Type.EmptyTypes) is not null)
-                {
-                    defaultInstance = Activator.CreateInstance(componentType);
-                    _defaultComponentCache[componentType] = defaultInstance;
-                }
-            }
-            catch { return null; }
-        }
-
-        return defaultInstance is not null ? (componentType.GetProperty(propertyName)?.GetValue(defaultInstance)) : null;
+        return type == typeof(Vector4) ? Vector4.Zero : Activator.CreateInstance(type) ?? new object();
     }
 
     private static string SplitPascalCase(string input)
@@ -10259,16 +10125,17 @@ using System.Numerics;
 namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(Light))]
-public class LightInspector : IComponentInspector
+public sealed class LightInspector : IComponentInspector
 {
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private readonly EditorTextureManager _textureManager;
-    private object _undoInitialValue;
+    private readonly UndoTracker _undo;
 
-    public LightInspector(EditorTextureManager textureManager, HistoryManager history)
+    public LightInspector(EditorTextureManager textures, HistoryManager history)
     {
-        _textureManager = textureManager;
+        _textures = textures;
         _history = history;
+        _undo = new UndoTracker(history);
     }
 
     public bool Draw(Component component)
@@ -10276,100 +10143,31 @@ public class LightInspector : IComponentInspector
         var light = (Light)component;
         bool dirty = false;
 
-        if (!ImGui.BeginTable("LightTable", 3)) return false;
+        if (!ImGui.BeginTable("LightTable", 3))
+        {
+            return false;
+        }
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        IntPtr resetIcon = _textureManager.GetTexture("Reset");
-        float buttonSize = ImGui.GetFrameHeight() - 4;
+        DrawTypeRow(light, ref dirty);
+        DrawColorRow(light, ref dirty);
+        DrawFloatRow(light, nameof(Light.Intensity), 0.01f, 0f, float.MaxValue, 1f, ref dirty);
 
-        // --- Light Type ---
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Type");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var typeBeforeEdit = light.Type;
-        var enumValues = Enum.GetNames<LightType>();
-        int currentIndex = (int)light.Type;
-        if (ImGui.Combo("##LightType", ref currentIndex, enumValues, enumValues.Length))
-        {
-            var newType = (LightType)currentIndex;
-            if (newType != typeBeforeEdit)
-            {
-                _history.Execute(new ChangePropertyCommand(
-                    light, typeof(Light).GetProperty(nameof(Light.Type)), typeBeforeEdit, newType));
-                dirty = true;
-            }
-        }
-        ImGui.PopItemWidth();
-
-        // --- Common Properties ---
-        // Color
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Color");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var colorBeforeEdit = light.Color;
-        var color = colorBeforeEdit;
-        if (DefaultInspector.DrawColor3Control("##Color", ref color, out bool colorActivated, out bool colorDeactivated))
-        {
-            light.Color = color; dirty = true;
-        }
-        HandleUndo(light, nameof(Light.Color), colorBeforeEdit, colorActivated, colorDeactivated);
-        ImGui.PopItemWidth();
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetColor", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = light.Color;
-            if (valueBeforeReset != Vector3.One)
-            {
-                _history.Execute(new ChangePropertyCommand(
-                   light, typeof(Light).GetProperty(nameof(Light.Color)), valueBeforeReset, Vector3.One));
-                dirty = true;
-            }
-        }
-
-        // Intensity
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Intensity");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var intensityBeforeEdit = light.Intensity;
-        var intensity = intensityBeforeEdit;
-        if (ImGui.DragFloat("##Intensity", ref intensity, 0.01f, 0.0f, float.MaxValue))
-        {
-            light.Intensity = intensity; dirty = true;
-        }
-        HandleUndo(light, nameof(Light.Intensity), intensityBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
-        ImGui.PopItemWidth();
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetIntensity", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = light.Intensity;
-            if (valueBeforeReset != 1.0f)
-            {
-                _history.Execute(new ChangePropertyCommand(
-                   light, typeof(Light).GetProperty(nameof(Light.Intensity)), valueBeforeReset, 1.0f));
-                dirty = true;
-            }
-        }
-
-
-        // --- Type-Specific Properties ---
         switch (light.Type)
         {
             case LightType.Directional:
-                DrawDirectionalProperties(light, resetIcon, buttonSize, ref dirty);
+                DrawFloatRow(light, nameof(Light.AmbientStrength), 0.01f, 0f, 1f, 0.3f, ref dirty);
                 break;
             case LightType.Point:
-                DrawPointProperties(light, resetIcon, buttonSize, ref dirty);
+                DrawFloatRow(light, nameof(Light.Range), 0.1f, 0f, float.MaxValue, 50f, ref dirty);
                 break;
             case LightType.Spot:
-                DrawSpotProperties(light, resetIcon, buttonSize, ref dirty);
+                DrawFloatRow(light, nameof(Light.Range), 0.1f, 0f, float.MaxValue, 50f, ref dirty);
+                DrawFloatRow(light, nameof(Light.InnerConeAngle), 0.1f, 0f, light.OuterConeAngle, 12.5f, ref dirty);
+                DrawFloatRow(light, nameof(Light.OuterConeAngle), 0.1f, light.InnerConeAngle, 89f, 17.5f, ref dirty);
                 break;
         }
 
@@ -10377,143 +10175,114 @@ public class LightInspector : IComponentInspector
         return dirty;
     }
 
-    private void DrawDirectionalProperties(Light light, IntPtr resetIcon, float buttonSize, ref bool dirty)
+    private void DrawTypeRow(Light light, ref bool dirty)
     {
-        // Ambient Strength
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Ambient Strength");
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Type");
+
         ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var ambientBeforeEdit = light.AmbientStrength;
-        var ambient = ambientBeforeEdit;
-        if (ImGui.DragFloat("##AmbientStrength", ref ambient, 0.01f, 0.0f, 1.0f))
+        ImGui.PushItemWidth(-1);
+
+        LightType typeBefore = light.Type;
+        LightType currentType = light.Type;
+
+        if (PropertyDrawer.EnumField("##LightType", ref currentType) && currentType != typeBefore)
         {
-            light.AmbientStrength = ambient; dirty = true;
+            _history.Execute(new ChangePropertyCommand(light, typeof(Light).GetProperty(nameof(Light.Type))!, typeBefore, currentType));
+            light.Type = currentType;
+            dirty = true;
         }
-        HandleUndo(light, nameof(Light.AmbientStrength), ambientBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
+
+        ImGui.PopItemWidth();
+        ImGui.TableSetColumnIndex(2);
+    }
+
+    private static bool DrawEnum<T>(string id, ref T value) where T : struct, Enum
+    {
+        var names = Enum.GetNames<T>();
+        string current = value.ToString();
+        int index = Array.IndexOf(names, current);
+
+        if (!ImGui.Combo(id, ref index, names, names.Length))
+        {
+            return false;
+        }
+
+        value = Enum.Parse<T>(names[index]);
+        return true;
+    }
+
+    private void DrawColorRow(Light light, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Color");
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        Vector3 color = light.Color;
+        if (PropertyDrawer.Color3("##Color", ref color, out bool activated, out bool deactivated))
+        {
+            light.Color = color;
+            dirty = true;
+        }
+        _undo.Track(light, nameof(Light.Color), activated, deactivated);
+
         ImGui.PopItemWidth();
 
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetAmbient", resetIcon, new Vector2(buttonSize, buttonSize)))
+        DrawResetButton(light, nameof(Light.Color), Vector3.One, ref dirty);
+    }
+
+    private void DrawFloatRow(Light light, string propName, float speed, float min, float max, float defaultValue, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text(SplitCamelCase(propName));
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var property = typeof(Light).GetProperty(propName)!;
+        float value = (float)property.GetValue(light)!;
+
+        if (PropertyDrawer.Float($"##{propName}", ref value, speed, min, max))
         {
-            var valueBeforeReset = light.AmbientStrength;
-            if (Math.Abs(valueBeforeReset - 0.3f) > 0.001f)
+            property.SetValue(light, value);
+            dirty = true;
+        }
+        _undo.Track(light, propName, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
+
+        ImGui.PopItemWidth();
+
+        DrawResetButton(light, propName, defaultValue, ref dirty);
+    }
+
+    private void DrawResetButton(Light light, string propName, object defaultValue, ref bool dirty)
+    {
+        ImGui.TableSetColumnIndex(2);
+
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
+
+        if (ImGui.ImageButton($"Reset{propName}", icon, new Vector2(size, size)))
+        {
+            var property = typeof(Light).GetProperty(propName)!;
+            var current = property.GetValue(light);
+
+            if (!Equals(current, defaultValue))
             {
-                _history.Execute(new ChangePropertyCommand(
-                   light, typeof(Light).GetProperty(nameof(Light.AmbientStrength)), valueBeforeReset, 0.3f));
+                _history.Execute(new ChangePropertyCommand(light, property, current!, defaultValue));
+                property.SetValue(light, defaultValue);
                 dirty = true;
             }
         }
     }
 
-    private void DrawPointProperties(Light light, IntPtr resetIcon, float buttonSize, ref bool dirty)
+    private static string SplitCamelCase(string input)
     {
-        // Range
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Range");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var rangeBeforeEdit = light.Range;
-        var range = rangeBeforeEdit;
-        if (ImGui.DragFloat("##Range", ref range, 0.1f, 0.0f, float.MaxValue))
-        {
-            light.Range = range; dirty = true;
-        }
-        HandleUndo(light, nameof(Light.Range), rangeBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
-        ImGui.PopItemWidth();
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetRange", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = light.Range;
-            if (Math.Abs(valueBeforeReset - 50.0f) > 0.001f)
-            {
-                _history.Execute(new ChangePropertyCommand(
-                   light, typeof(Light).GetProperty(nameof(Light.Range)), valueBeforeReset, 50.0f));
-                dirty = true;
-            }
-        }
-    }
-
-    private void DrawSpotProperties(Light light, IntPtr resetIcon, float buttonSize, ref bool dirty)
-    {
-        // Range
-        DrawPointProperties(light, resetIcon, buttonSize, ref dirty); // Spotlights also have a range
-
-        // Inner Cone Angle
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Inner Cone Angle");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var innerAngleBeforeEdit = light.InnerConeAngle;
-        var innerAngle = innerAngleBeforeEdit;
-        if (ImGui.DragFloat("##InnerConeAngle", ref innerAngle, 0.1f, 0.0f, light.OuterConeAngle))
-        {
-            light.InnerConeAngle = innerAngle; dirty = true;
-        }
-        HandleUndo(light, nameof(Light.InnerConeAngle), innerAngleBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
-        ImGui.PopItemWidth();
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetInner", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = light.InnerConeAngle;
-            if (Math.Abs(valueBeforeReset - 12.5f) > 0.001f)
-            {
-                _history.Execute(new ChangePropertyCommand(
-                   light, typeof(Light).GetProperty(nameof(Light.InnerConeAngle)), valueBeforeReset, 12.5f));
-                dirty = true;
-            }
-        }
-
-        // Outer Cone Angle
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Outer Cone Angle");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1.0f);
-        var outerAngleBeforeEdit = light.OuterConeAngle;
-        var outerAngle = outerAngleBeforeEdit;
-        if (ImGui.DragFloat("##OuterConeAngle", ref outerAngle, 0.1f, light.InnerConeAngle, 89.0f))
-        {
-            light.OuterConeAngle = outerAngle; dirty = true;
-        }
-        HandleUndo(light, nameof(Light.OuterConeAngle), outerAngleBeforeEdit, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
-        ImGui.PopItemWidth();
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetOuter", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = light.OuterConeAngle;
-            if (Math.Abs(valueBeforeReset - 17.5f) > 0.001f)
-            {
-                _history.Execute(new ChangePropertyCommand(
-                   light, typeof(Light).GetProperty(nameof(Light.OuterConeAngle)), valueBeforeReset, 17.5f));
-                dirty = true;
-            }
-        }
-    }
-
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
-    {
-        var property = target.GetType().GetProperty(propertyName);
-        if (property is null) return;
-
-        if (activated)
-        {
-            _undoInitialValue = valueBeforeEdit;
-        }
-
-        if (deactivated)
-        {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
-            {
-                // Revert the change so the command can apply it
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
-            }
-            _undoInitialValue = null;
-        }
+        return System.Text.RegularExpressions.Regex.Replace(input, "(?<!^)([A-Z])", " $1");
     }
 }
 ```
@@ -10534,192 +10303,351 @@ using System.Runtime.InteropServices;
 namespace CherrisEditor.Inspectors;
 
 [CustomInspector(typeof(MeshRenderer))]
-public class MeshRendererInspector : IComponentInspector
+public sealed class MeshRendererInspector : IComponentInspector
 {
     private readonly Editor _editor;
-    private readonly EditorTextureManager _textureManager;
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private object _undoInitialValue;
+    private readonly UndoTracker _undo;
 
-    public MeshRendererInspector(Editor editor, EditorTextureManager textureManager, HistoryManager history)
+    public MeshRendererInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
     {
         _editor = editor;
-        _textureManager = textureManager;
+        _textures = textures;
         _history = history;
+        _undo = new UndoTracker(history);
     }
 
     public unsafe bool Draw(Component component)
     {
-        var mr = (MeshRenderer)component;
-        var material = mr.Material;
-        bool dirty = false;
+        var renderer = (MeshRenderer)component;
+        var material = renderer.Material;
 
-        if (material is null)
+        if (material == null)
         {
             ImGui.Text("No Material assigned.");
             return false;
         }
 
-        if (!ImGui.BeginTable("MRTable", 3)) return false;
+        bool dirty = false;
+
+        if (!ImGui.BeginTable("MeshRendererTable", 3))
+        {
+            return false;
+        }
+
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        IntPtr resetIcon = _textureManager.GetTexture("Reset");
-        float buttonSize = ImGui.GetFrameHeight() - 4;
-
-        // Texture
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Texture");
-        ImGui.TableSetColumnIndex(1);
-
-        IntPtr textureHandle = IntPtr.Zero;
-        if (material.Texture?.GetBackendHandle() is int handle && handle != 0)
-        {
-            textureHandle = (IntPtr)handle;
-        }
-        else
-        {
-            textureHandle = _textureManager.GetTexture("File");
-        }
-
-        ImGui.ImageButton("TextureThumb", textureHandle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
-
-        if (ImGui.BeginDragDropTarget())
-        {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
-            if (payload.NativePtr is not null)
-            {
-                string path = Marshal.PtrToStringAnsi(payload.Data);
-                if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                {
-                    string newTextureName = Path.GetFileNameWithoutExtension(path);
-                    var newTexture = _editor.ResourceManager.GetTexture(newTextureName);
-
-                    _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newTextureName, newTexture));
-                    dirty = true;
-                }
-            }
-            ImGui.EndDragDropTarget();
-        }
-
-        ImGui.SameLine();
-        ImGui.Text(material.TextureName);
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTexture", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var newTexture = _editor.ResourceManager.GetTexture("White");
-            _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", newTexture));
-            dirty = true;
-        }
-
-        // Tiling
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Texture Tiling");
-        ImGui.TableSetColumnIndex(1);
-        var tilingBeforeEdit = material.TextureTiling;
-        var tiling = tilingBeforeEdit;
-        if (DefaultInspector.DrawVector2Control("##Tiling", ref tiling, out bool activated, out bool deactivated))
-        {
-            material.TextureTiling = tiling; dirty = true;
-        }
-        HandleUndo(material, nameof(Material.TextureTiling), tilingBeforeEdit, activated, deactivated);
-
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetTiling", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = material.TextureTiling;
-            if (valueBeforeReset != Vector2.One)
-            {
-                material.TextureTiling = Vector2.One;
-                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.TextureTiling)), valueBeforeReset, Vector2.One));
-                dirty = true;
-            }
-        }
-
-
-        // Emissive Color
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Emissive Color");
-        ImGui.TableSetColumnIndex(1);
-        var emissiveBeforeEdit = material.EmissiveColor;
-        var emissive = emissiveBeforeEdit;
-        if (DefaultInspector.DrawColor3Control("##Emissive", ref emissive, out bool emissiveActivated, out bool emissiveDeactivated))
-        {
-            material.EmissiveColor = emissive; dirty = true;
-        }
-        HandleUndo(material, nameof(Material.EmissiveColor), emissiveBeforeEdit, emissiveActivated, emissiveDeactivated);
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetEmissive", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = material.EmissiveColor;
-            if (valueBeforeReset != Vector3.Zero)
-            {
-                material.EmissiveColor = Vector3.Zero;
-                _history.Execute(new ChangePropertyCommand(material, typeof(Material).GetProperty(nameof(Material.EmissiveColor)), valueBeforeReset, Vector3.Zero));
-                dirty = true;
-            }
-        }
+        DrawTextureRow(material, ref dirty);
+        DrawTilingRow(material, ref dirty);
+        DrawEmissiveRow(material, ref dirty);
 
         ImGui.EndTable();
         return dirty;
     }
 
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
+    private void DrawTextureRow(Material material, ref bool dirty)
     {
-        var property = target.GetType().GetProperty(propertyName);
-        if (property is null) return;
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture");
 
-        if (activated)
-        {
-            _undoInitialValue = valueBeforeEdit;
-        }
+        ImGui.TableSetColumnIndex(1);
+        DrawTextureThumb(material, ref dirty);
 
-        if (deactivated)
-        {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
-            {
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
-            }
-            _undoInitialValue = null;
-        }
+        ImGui.TableSetColumnIndex(2);
+        DrawTextureResetButton(material, ref dirty);
     }
 
-    // Inner class for the specific command
-    private class ChangeMaterialTextureCommand : ICommand
+    private unsafe void DrawTextureThumb(Material material, ref bool dirty)
     {
-        private readonly Material _target;
-        private readonly string _oldTextureName;
-        private readonly Cherris.Rendering.ITexture _oldTexture;
-        private readonly string _newTextureName;
-        private readonly Cherris.Rendering.ITexture _newTexture;
+        IntPtr handle = IntPtr.Zero;
+        handle = material.Texture?.GetBackendHandle() is int h && h != 0 ? h : _textures.GetTexture("File");
 
-        public ChangeMaterialTextureCommand(Material target, string oldTextureName, Cherris.Rendering.ITexture oldTexture, string newTextureName, Cherris.Rendering.ITexture newTexture)
+        ImGui.ImageButton("TextureThumb", handle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
+
+        if (!ImGui.BeginDragDropTarget())
         {
-            _target = target;
-            _oldTextureName = oldTextureName;
-            _oldTexture = oldTexture;
-            _newTextureName = newTextureName;
-            _newTexture = newTexture;
+            return;
         }
 
-        public void Execute()
+        var payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
+        if (payload.NativePtr == null)
         {
-            _target.TextureName = _newTextureName;
-            _target.Texture = _newTexture;
+            ImGui.EndDragDropTarget();
+            return;
         }
 
-        public void Undo()
+        string path = Marshal.PtrToStringAnsi(payload.Data) ?? "";
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {
-            _target.TextureName = _oldTextureName;
-            _target.Texture = _oldTexture;
+            ImGui.EndDragDropTarget();
+            return;
         }
+
+        string newName = Path.GetFileNameWithoutExtension(path);
+        var newTexture = _editor.ResourceManager.GetTexture(newName);
+
+        _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newName, newTexture));
+        dirty = true;
+
+        ImGui.EndDragDropTarget();
+    }
+
+    private void DrawTextureResetButton(Material material, ref bool dirty)
+    {
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
+
+        if (!ImGui.ImageButton("ResetTexture", icon, new Vector2(size, size)))
+        {
+            return;
+        }
+
+        var defaultTexture = _editor.ResourceManager.GetTexture("White");
+        if (material.TextureName == "White")
+        {
+            return;
+        }
+
+        _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", defaultTexture));
+        dirty = true;
+    }
+
+    private void DrawTilingRow(Material material, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Texture Tiling");
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var tiling = material.TextureTiling;
+        if (PropertyDrawer.Vector2("##Tiling", ref tiling, out bool activated, out bool deactivated))
+        {
+            material.TextureTiling = tiling;
+            dirty = true;
+        }
+        _undo.Track(material, nameof(Material.TextureTiling), activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        DrawPropertyResetButton(material, nameof(Material.TextureTiling), Vector2.One, ref dirty);
+    }
+
+    private void DrawEmissiveRow(Material material, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Emissive Color");
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var color = material.EmissiveColor;
+        if (PropertyDrawer.Color3("##Emissive", ref color, out bool activated, out bool deactivated))
+        {
+            material.EmissiveColor = color;
+            dirty = true;
+        }
+        _undo.Track(material, nameof(Material.EmissiveColor), activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        DrawPropertyResetButton(material, nameof(Material.EmissiveColor), Vector3.Zero, ref dirty);
+    }
+
+    private void DrawPropertyResetButton(Material material, string propName, object defaultValue, ref bool dirty)
+    {
+        ImGui.TableSetColumnIndex(2);
+
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
+
+        if (!ImGui.ImageButton($"Reset{propName}", icon, new Vector2(size, size)))
+        {
+            return;
+        }
+
+        var property = typeof(Material).GetProperty(propName)!;
+        var current = property.GetValue(material)!;
+
+        if (Equals(current, defaultValue))
+        {
+            return;
+        }
+
+        _history.Execute(new ChangePropertyCommand(material, property, current, defaultValue));
+        property.SetValue(material, defaultValue);
+        dirty = true;
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Inspectors\PropertyDrawer.cs`
+
+```csharp
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.Inspectors;
+
+public static class PropertyDrawer
+{
+    public static bool Float(string id, ref float value, float speed = 0.01f, float min = float.MinValue, float max = float.MaxValue)
+    {
+        return ImGui.DragFloat(id, ref value, speed, min, max);
+    }
+
+    public static bool Int(string id, ref int value)
+    {
+        return ImGui.DragInt(id, ref value);
+    }
+
+    public static bool Bool(string id, ref bool value)
+    {
+        return ImGui.Checkbox(id, ref value);
+    }
+
+    public static bool String(string id, ref string value, uint maxLength = 256)
+    {
+        return ImGui.InputText(id, ref value, maxLength);
+    }
+
+    public static bool EnumField<T>(string id, ref T value) where T : struct, Enum
+    {
+        var names = Enum.GetNames<T>();
+        var current = value.ToString();
+        var index = Array.IndexOf(names, current);
+
+        if (!ImGui.Combo(id, ref index, names, names.Length))
+        {
+            return false;
+        }
+
+        value = Enum.Parse<T>(names[index]);
+        return true;
+    }
+
+    public static bool Vector2(string id, ref Vector2 value, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(id);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - ImGui.CalcTextSize("X").X - ImGui.CalcTextSize("Y").X) / 2f;
+
+        bool changed = false;
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1));
+        ImGui.Text("X");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+
+        if (ImGui.DragFloat("##X", ref value.X, 0.1f))
+        {
+            changed = true;
+        }
+
+        activated |= ImGui.IsItemActivated();
+        deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopItemWidth();
+        ImGui.SameLine();
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1));
+        ImGui.Text("Y");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushItemWidth(itemWidth);
+
+        if (ImGui.DragFloat("##Y", ref value.Y, 0.1f))
+        {
+            changed = true;
+        }
+
+        activated |= ImGui.IsItemActivated();
+        deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopItemWidth();
+
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Vector3(string id, ref Vector3 value, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(id);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("X").X * 3)) / 3f;
+
+        bool changed = false;
+        string[] labels = { "X", "Y", "Z" };
+        Vector4[] colors =
+        {
+            new(0.8f, 0.2f, 0.2f, 1),
+            new(0.2f, 0.8f, 0.2f, 1),
+            new(0.2f, 0.3f, 0.8f, 1)
+        };
+        float[] components = { value.X, value.Y, value.Z };
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0)
+            {
+                ImGui.SameLine();
+            }
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.PushStyleColor(ImGuiCol.Text, colors[i]);
+            ImGui.Text(labels[i]);
+            ImGui.PopStyleColor();
+            ImGui.SameLine();
+            ImGui.PushItemWidth(itemWidth);
+
+            if (ImGui.DragFloat($"##{labels[i]}", ref components[i], 0.1f))
+            {
+                changed = true;
+            }
+
+            activated |= ImGui.IsItemActivated();
+            deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+            ImGui.PopItemWidth();
+        }
+
+        value = new Vector3(components[0], components[1], components[2]);
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Color3(string id, ref Vector3 color, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        bool changed = ImGui.ColorEdit3(id, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Color4(string id, ref Vector4 color, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        bool changed = ImGui.ColorEdit4(id, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
     }
 }
 ```
@@ -10735,135 +10663,173 @@ using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
 using ImGuiNET;
 using System.Numerics;
+using System.Reflection;
 
 namespace CherrisEditor.Inspectors;
 
-public class TransformInspector
+public sealed class TransformInspector
 {
-    private readonly EditorTextureManager _textureManager;
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private object _undoInitialValue;
+    private readonly UndoTracker _undo;
 
-    public TransformInspector(EditorTextureManager textureManager, HistoryManager history)
+    public TransformInspector(EditorTextureManager textures, HistoryManager history)
     {
-        _textureManager = textureManager;
+        _textures = textures;
         _history = history;
+        _undo = new UndoTracker(history);
     }
 
     public bool Draw(Transform transform)
     {
         bool dirty = false;
-        if (!ImGui.BeginTable("TransformTable", 3)) return false;
+
+        if (!ImGui.BeginTable("TransformTable", 3))
+        {
+            return false;
+        }
 
         ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.25f);
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.70f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        IntPtr resetIcon = _textureManager.GetTexture("Reset");
-        float buttonSize = ImGui.GetFrameHeight() - 4;
-
-        // Position
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Position");
-        ImGui.TableSetColumnIndex(1);
-        var posBeforeEdit = transform.Position;
-        var position = posBeforeEdit;
-        if (DefaultInspector.DrawVector3Control("Position", ref position, out bool posActivated, out bool posDeactivated))
-        {
-            transform.Position = position;
-            dirty = true;
-        }
-        HandleUndo(transform, nameof(Transform.Position), posBeforeEdit, posActivated, posDeactivated);
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetPos", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = transform.Position;
-            if (valueBeforeReset != Vector3.Zero)
-            {
-                transform.Position = Vector3.Zero;
-                _history.Execute(new ChangePropertyCommand(transform, typeof(Transform).GetProperty(nameof(Transform.Position)), valueBeforeReset, Vector3.Zero));
-                dirty = true;
-            }
-        }
-
-        // Rotation
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Rotation");
-        ImGui.TableSetColumnIndex(1);
-        var rotBeforeEdit = transform.Rotation;
-        Vector3 eulerDegrees = EngineMath.ToEulerAngles(rotBeforeEdit) * (180.0f / System.MathF.PI);
-        if (DefaultInspector.DrawVector3Control("Rotation", ref eulerDegrees, out bool rotActivated, out bool rotDeactivated))
-        {
-            Vector3 eulerRadians = eulerDegrees * (System.MathF.PI / 180.0f);
-            transform.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
-            dirty = true;
-        }
-        HandleUndo(transform, nameof(Transform.Rotation), rotBeforeEdit, rotActivated, rotDeactivated);
-
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetRot", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = transform.Rotation;
-            if (valueBeforeReset != Quaternion.Identity)
-            {
-                transform.Rotation = Quaternion.Identity;
-                _history.Execute(new ChangePropertyCommand(transform, typeof(Transform).GetProperty(nameof(Transform.Rotation)), valueBeforeReset, Quaternion.Identity));
-                dirty = true;
-            }
-        }
-
-        // Scale
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0); ImGui.Text("Scale");
-        ImGui.TableSetColumnIndex(1);
-        var scaleBeforeEdit = transform.Scale;
-        var scale = scaleBeforeEdit;
-        if (DefaultInspector.DrawVector3Control("Scale", ref scale, out bool scaleActivated, out bool scaleDeactivated))
-        {
-            transform.Scale = scale;
-            dirty = true;
-        }
-        HandleUndo(transform, nameof(Transform.Scale), scaleBeforeEdit, scaleActivated, scaleDeactivated);
-
-
-        ImGui.TableSetColumnIndex(2);
-        if (ImGui.ImageButton("ResetSca", resetIcon, new Vector2(buttonSize, buttonSize)))
-        {
-            var valueBeforeReset = transform.Scale;
-            if (valueBeforeReset != Vector3.One)
-            {
-                transform.Scale = Vector3.One;
-                _history.Execute(new ChangePropertyCommand(transform, typeof(Transform).GetProperty(nameof(Transform.Scale)), valueBeforeReset, Vector3.One));
-                dirty = true;
-            }
-        }
+        DrawVector3Property(transform, nameof(Transform.Position), Vector3.Zero, ref dirty);
+        DrawRotationProperty(transform, ref dirty);
+        DrawVector3Property(transform, nameof(Transform.Scale), Vector3.One, ref dirty);
 
         ImGui.EndTable();
         return dirty;
     }
 
-    private void HandleUndo(object target, string propertyName, object valueBeforeEdit, bool activated, bool deactivated)
+    private void DrawVector3Property(Transform target, string propName, Vector3 defaultValue, ref bool dirty)
     {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text(propName);
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var property = typeof(Transform).GetProperty(propName)!;
+        var value = (Vector3)property.GetValue(target)!;
+
+        if (PropertyDrawer.Vector3($"##{propName}", ref value, out bool activated, out bool deactivated))
+        {
+            property.SetValue(target, value);
+            dirty = true;
+        }
+        _undo.Track(target, propName, activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        DrawResetButton(target, property, value, defaultValue, ref dirty);
+    }
+
+    private void DrawRotationProperty(Transform target, ref bool dirty)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableSetColumnIndex(0);
+        ImGui.Text("Rotation");
+
+        ImGui.TableSetColumnIndex(1);
+        ImGui.PushItemWidth(-1);
+
+        var currentRot = target.Rotation;
+        var eulerDegrees = EngineMath.ToEulerAngles(currentRot) * (180f / MathF.PI);
+
+        if (PropertyDrawer.Vector3("##Rotation", ref eulerDegrees, out bool activated, out bool deactivated))
+        {
+            var eulerRadians = eulerDegrees * (MathF.PI / 180f);
+            target.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
+            dirty = true;
+        }
+        _undo.Track(target, nameof(Transform.Rotation), activated, deactivated);
+
+        ImGui.PopItemWidth();
+
+        var property = typeof(Transform).GetProperty(nameof(Transform.Rotation))!;
+        DrawResetButton(target, property, currentRot, Quaternion.Identity, ref dirty);
+    }
+
+    private void DrawResetButton(Transform target, PropertyInfo property, object current, object defaultValue, ref bool dirty)
+    {
+        ImGui.TableSetColumnIndex(2);
+
+        IntPtr icon = _textures.GetTexture("Reset");
+        float size = ImGui.GetFrameHeight() - 4;
+
+        if (!ImGui.ImageButton($"Reset{property.Name}", icon, new Vector2(size, size)))
+        {
+            return;
+        }
+
+        if (Equals(current, defaultValue))
+        {
+            return;
+        }
+
+        _history.Execute(new ChangePropertyCommand(target, property, current, defaultValue));
+        property.SetValue(target, defaultValue);
+        dirty = true;
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Inspectors\UndoTracker.cs`
+
+```csharp
+using CherrisEditor.Undo;
+using CherrisEditor.Undo.Commands;
+
+namespace CherrisEditor.Inspectors;
+
+public sealed class UndoTracker
+{
+    private readonly HistoryManager _history;
+    private readonly Stack<object> _stack = new();
+
+    public UndoTracker(HistoryManager history)
+    {
+        _history = history;
+    }
+
+    public void Track(object target, string propertyName, bool activated, bool deactivated)
+    {
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            return;
+        }
+
         var property = target.GetType().GetProperty(propertyName);
-        if (property is null) return;
+        if (property == null || !property.CanWrite)
+        {
+            return;
+        }
 
         if (activated)
         {
-            _undoInitialValue = valueBeforeEdit;
+            var value = property.GetValue(target);
+            _stack.Push(value ?? new object());
         }
 
-        if (deactivated)
+        if (deactivated && _stack.Count > 0)
         {
-            object valueAfterEdit = property.GetValue(target);
-            if (_undoInitialValue is not null && !_undoInitialValue.Equals(valueAfterEdit))
+            var initial = _stack.Pop();
+            var currentValue = property.GetValue(target);
+
+            if (!Equals(initial, currentValue))
             {
-                property.SetValue(target, _undoInitialValue);
-                _history.Execute(new ChangePropertyCommand(target, property, _undoInitialValue, valueAfterEdit));
+                property.SetValue(target, initial);
+                _history.Execute(new ChangePropertyCommand(target, property, initial, currentValue ?? new object()));
             }
-            _undoInitialValue = null;
         }
+    }
+
+    public void Reset()
+    {
+        _stack.Clear();
     }
 }
 ```

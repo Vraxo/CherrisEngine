@@ -1,25 +1,26 @@
-﻿using Cherris.Core;
+﻿using Cherris.Attributes;
+using Cherris.Core;
 
 namespace Cherris.Components;
 
-/// <summary>
-/// Plays back an AudioClip in the scene.
-/// </summary>
 public class AudioSource : Component
 {
     public string ClipName { get; set; } = string.Empty;
 
     [HideInInspector]
-    public AudioClip Clip { get; internal set; }
+    public AudioClip? Clip { get; internal set; }
 
+    [Range(0f, 1f, 0.01f)]
     public float Volume { get; set; } = 1.0f;
+
+    [Range(0.1f, 3f, 0.01f)]
     public float Pitch { get; set; } = 1.0f;
+
     public bool Loop { get; set; } = false;
     public bool PlayOnAwake { get; set; } = true;
 
-    private AudioSystem _audioSystem;
+    private AudioSystem? _audioSystem;
 
-    // Called by the Scene to provide the AudioSystem instance.
     internal void Initialize(AudioSystem audioSystem)
     {
         _audioSystem = audioSystem;
@@ -37,11 +38,10 @@ public class AudioSource : Component
     {
         if (Clip is null)
         {
-            Console.WriteLine($"[AudioSource] Warning: No AudioClip assigned to '{GameObject.Name}'.");
+            Console.WriteLine($"[AudioSource] Warning: No AudioClip assigned to '{GameObject?.Name}'.");
             return;
         }
 
-        Console.WriteLine($"[AudioSource] Requesting playback for '{ClipName}' on '{GameObject.Name}'.");
         _audioSystem?.Play(this);
     }
 

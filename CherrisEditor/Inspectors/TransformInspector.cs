@@ -54,7 +54,7 @@ public sealed class TransformInspector
         var property = typeof(Transform).GetProperty(propName)!;
         var value = (Vector3)property.GetValue(target)!;
 
-        if (PropertyDrawer.Vector3($"##{propName}", ref value, out bool activated, out bool deactivated))
+        if (DrawVector3Control($"##{propName}", ref value, out bool activated, out bool deactivated))
         {
             property.SetValue(target, value);
             dirty = true;
@@ -62,7 +62,6 @@ public sealed class TransformInspector
         _undo.Track(target, propName, activated, deactivated);
 
         ImGui.PopItemWidth();
-
         DrawResetButton(target, property, value, defaultValue, ref dirty);
     }
 
@@ -78,7 +77,7 @@ public sealed class TransformInspector
         var currentRot = target.Rotation;
         var eulerDegrees = EngineMath.ToEulerAngles(currentRot) * (180f / MathF.PI);
 
-        if (PropertyDrawer.Vector3("##Rotation", ref eulerDegrees, out bool activated, out bool deactivated))
+        if (DrawVector3Control("##Rotation", ref eulerDegrees, out bool activated, out bool deactivated))
         {
             var eulerRadians = eulerDegrees * (MathF.PI / 180f);
             target.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
@@ -90,6 +89,53 @@ public sealed class TransformInspector
 
         var property = typeof(Transform).GetProperty(nameof(Transform.Rotation))!;
         DrawResetButton(target, property, currentRot, Quaternion.Identity, ref dirty);
+    }
+
+    private static bool DrawVector3Control(string id, ref Vector3 value, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(id);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("X").X * 3)) / 3f;
+        bool changed = false;
+        float[] components = { value.X, value.Y, value.Z };
+        string[] labels = { "X", "Y", "Z" };
+        System.Numerics.Vector4[] colors =
+        {
+            new(0.8f, 0.2f, 0.2f, 1),
+            new(0.2f, 0.8f, 0.2f, 1),
+            new(0.2f, 0.3f, 0.8f, 1)
+        };
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0)
+            {
+                ImGui.SameLine();
+            }
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.PushStyleColor(ImGuiCol.Text, colors[i]);
+            ImGui.Text(labels[i]);
+            ImGui.PopStyleColor();
+            ImGui.SameLine();
+            ImGui.PushItemWidth(itemWidth);
+
+            if (ImGui.DragFloat($"##c{i}", ref components[i], 0.1f))
+            {
+                changed = true;
+            }
+
+            activated |= ImGui.IsItemActivated();
+            deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+            ImGui.PopItemWidth();
+        }
+
+        value = new Vector3(components[0], components[1], components[2]);
+        ImGui.PopID();
+        return changed;
     }
 
     private void DrawResetButton(Transform target, PropertyInfo property, object current, object defaultValue, ref bool dirty)

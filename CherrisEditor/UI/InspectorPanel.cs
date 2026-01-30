@@ -13,7 +13,6 @@ internal class InspectorPanel
 {
     private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
-    private readonly InspectorRegistry _inspectorRegistry;
     private readonly DefaultInspector _defaultInspector;
     private readonly TransformInspector _transformInspector;
     private readonly ComponentAdderPresenter _componentAdder;
@@ -22,16 +21,11 @@ internal class InspectorPanel
     {
         _editor = editor;
         _textureManager = textureManager;
-        _inspectorRegistry = new InspectorRegistry(editor, textureManager, history);
-        _defaultInspector = new DefaultInspector(textureManager, history);
+        _defaultInspector = new DefaultInspector(editor, textureManager, history);
         _transformInspector = new TransformInspector(textureManager, history);
 
         var menuBuilder = new ComponentTypeMenuBuilder();
-        _componentAdder = new ComponentAdderPresenter(
-            menuBuilder,
-            editor.SceneManager,
-            editor.ScriptManager);
-
+        _componentAdder = new ComponentAdderPresenter(menuBuilder, editor.SceneManager, editor.ScriptManager);
         ConfigureMenuBuilder(editor, menuBuilder);
     }
 
@@ -114,7 +108,10 @@ internal class InspectorPanel
 
         if (DrawComponentHeader(componentName, icon, out _))
         {
-            DrawComponentInspector(component);
+            if (_defaultInspector.Draw(component))
+            {
+                _editor.SceneManager.ActiveScene!.IsDirty = true;
+            }
         }
 
         DrawComponentContextMenu(go, component);
@@ -145,26 +142,6 @@ internal class InspectorPanel
         }
 
         return icon == IntPtr.Zero ? _textureManager.GetTexture("File") : icon;
-    }
-
-    private void DrawComponentInspector(Component component)
-    {
-        var inspector = _inspectorRegistry.GetInspector(component.GetType());
-
-        if (inspector is not null)
-        {
-            if (inspector.Draw(component))
-            {
-                _editor.SceneManager.ActiveScene!.IsDirty = true;
-            }
-        }
-        else
-        {
-            if (_defaultInspector.Draw(component))
-            {
-                _editor.SceneManager.ActiveScene!.IsDirty = true;
-            }
-        }
     }
 
     private void DrawComponentContextMenu(GameObject go, Component component)

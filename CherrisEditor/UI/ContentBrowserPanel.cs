@@ -21,6 +21,8 @@ public class ContentBrowserPanel : IDisposable
     private readonly EditorTextureManager _textureManager;
     private string _currentDirectory;
 
+    private static readonly string[] MeshExtensions = { ".obj", ".gltf", ".glb", ".fbx", ".dae" };
+
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
@@ -185,9 +187,14 @@ public class ContentBrowserPanel : IDisposable
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        return EditorTextureManager.ImageExtensions.Contains(extension)
-            ? "ASSET_PATH_TEXTURE"
-            : EditorTextureManager.PrefabExtensions.Contains(extension) ? "ASSET_PATH_PREFAB" : null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            return "ASSET_PATH_TEXTURE";
+        }
+
+        return EditorTextureManager.PrefabExtensions.Contains(extension)
+            ? "ASSET_PATH_PREFAB"
+            : MeshExtensions.Contains(extension) ? "ASSET_PATH_MESH" : null;
     }
 
     private static void SendStringPayload(string payloadType, string data)
