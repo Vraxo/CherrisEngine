@@ -1,3 +1,40 @@
+### `Cherris\Attributes\InspctorAttributes.cs`
+
+```csharp
+namespace Cherris.Attributes;
+
+[AttributeUsage(AttributeTargets.Property)]
+public class RangeAttribute : Attribute
+{
+    public float Min { get; }
+    public float Max { get; }
+    public float Speed { get; }
+
+    public RangeAttribute(float min, float max, float speed = 0.01f)
+    {
+        Min = min;
+        Max = max;
+        Speed = speed;
+    }
+}
+
+[AttributeUsage(AttributeTargets.Property)]
+public class ColorUsageAttribute : Attribute { }
+
+[AttributeUsage(AttributeTargets.Property)]
+public class DragDropTargetAttribute : Attribute
+{
+    public string PayloadType { get; }
+
+    public DragDropTargetAttribute(string payloadType)
+    {
+        PayloadType = payloadType;
+    }
+}
+```
+
+---
+
 ### `Cherris\Components\AudioListener.cs`
 
 ```csharp
@@ -19,28 +56,29 @@ public class AudioListener : Component
 ### `Cherris\Components\AudioSource.cs`
 
 ```csharp
+using Cherris.Attributes;
 using Cherris.Core;
 
 namespace Cherris.Components;
 
-/// <summary>
-/// Plays back an AudioClip in the scene.
-/// </summary>
 public class AudioSource : Component
 {
     public string ClipName { get; set; } = string.Empty;
 
     [HideInInspector]
-    public AudioClip Clip { get; internal set; }
+    public AudioClip? Clip { get; internal set; }
 
+    [Range(0f, 1f, 0.01f)]
     public float Volume { get; set; } = 1.0f;
+
+    [Range(0.1f, 3f, 0.01f)]
     public float Pitch { get; set; } = 1.0f;
+
     public bool Loop { get; set; } = false;
     public bool PlayOnAwake { get; set; } = true;
 
-    private AudioSystem _audioSystem;
+    private AudioSystem? _audioSystem;
 
-    // Called by the Scene to provide the AudioSystem instance.
     internal void Initialize(AudioSystem audioSystem)
     {
         _audioSystem = audioSystem;
@@ -58,11 +96,10 @@ public class AudioSource : Component
     {
         if (Clip is null)
         {
-            Console.WriteLine($"[AudioSource] Warning: No AudioClip assigned to '{GameObject.Name}'.");
+            Console.WriteLine($"[AudioSource] Warning: No AudioClip assigned to '{GameObject?.Name}'.");
             return;
         }
 
-        Console.WriteLine($"[AudioSource] Requesting playback for '{ClipName}' on '{GameObject.Name}'.");
         _audioSystem?.Play(this);
     }
 
@@ -146,6 +183,7 @@ public abstract class Component
 ### `Cherris\Components\Light.cs`
 
 ```csharp
+using Cherris.Attributes;
 using System.Numerics;
 
 namespace Cherris.Components;
@@ -160,18 +198,24 @@ public enum LightType
 public class Light : Component
 {
     public LightType Type { get; set; } = LightType.Directional;
+
+    [ColorUsage]
     public Vector3 Color { get; set; } = Vector3.One;
+
+    [Range(0f, float.MaxValue, 0.1f)]
     public float Intensity { get; set; } = 1.0f;
 
-    // Used by DirectionalLight for global ambient term
+    [Range(0f, 1f, 0.01f)]
     public float AmbientStrength { get; set; } = 0.3f;
 
-    // Point Light / Spot Light
+    [Range(0.1f, float.MaxValue, 0.1f)]
     public float Range { get; set; } = 50.0f;
 
-    // Spot Light
-    public float InnerConeAngle { get; set; } = 12.5f; // In degrees
-    public float OuterConeAngle { get; set; } = 17.5f; // In degrees
+    [Range(0f, 89f, 0.1f)]
+    public float InnerConeAngle { get; set; } = 12.5f;
+
+    [Range(0f, 89f, 0.1f)]
+    public float OuterConeAngle { get; set; } = 17.5f;
 }
 ```
 
@@ -303,12 +347,17 @@ public class Mesh
 ### `Cherris\Components\MeshRenderer.cs`
 
 ```csharp
+using Cherris.Attributes;
+using Cherris.Core;
+
 namespace Cherris.Components;
 
 public class MeshRenderer : Component, IDisposable
 {
-    public Mesh Mesh { get; }
-    public string MeshName { get; }
+    public Mesh Mesh { get; set; }
+
+    [DragDropTarget("ASSET_PATH_MESH")]
+    public string MeshName { get; set; }
 
     private Material _material;
     public Material Material
@@ -324,8 +373,8 @@ public class MeshRenderer : Component, IDisposable
         }
     }
 
-    // This property will hold backend-specific data (e.g., Veldrid resource sets, buffers)
-    public object BackendData { get; set; }
+    [HideInInspector]
+    public object? BackendData { get; set; }
 
     public MeshRenderer(Mesh mesh, Material material, string meshName)
     {
@@ -2137,18 +2186,27 @@ public static class JitterConvert
 ### `Cherris\Core\Material.cs`
 
 ```csharp
+using Cherris.Attributes;
 using Cherris.Rendering;
 using System.Numerics;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class Material
 {
-    public ITexture Texture { get; set; }
+    [DragDropTarget("ASSET_PATH_TEXTURE")]
     public string TextureName { get; set; }
+
+    public ITexture Texture { get; set; }
     public Vector2 TextureTiling { get; set; } = Vector2.One;
+
+    [ColorUsage]
     public Vector3 EmissiveColor { get; set; } = Vector3.Zero;
+
+    [Range(0f, 1f, 0.01f)]
     public float SpecularIntensity { get; set; } = 0.5f;
+
+    [Range(1f, 128f, 1f)]
     public float Shininess { get; set; } = 32.0f;
 
     public Material(ITexture texture, string textureName)
@@ -4329,6 +4387,7 @@ public interface RenderingInterface : IDisposable
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
 using System.Globalization;
@@ -9195,28 +9254,6 @@ public class {scriptName} : Script
 
 ---
 
-### `CherrisEditor\Attributes\CustomInspectorAttribute.cs`
-
-```csharp
-namespace CherrisEditor;
-
-/// <summary>
-/// Marks a class as a custom inspector for a specific component type.
-/// </summary>
-[AttributeUsage(AttributeTargets.Class)]
-public class CustomInspectorAttribute : Attribute
-{
-    public Type InspectedType { get; }
-
-    public CustomInspectorAttribute(Type inspectedType)
-    {
-        InspectedType = inspectedType;
-    }
-}
-```
-
----
-
 ### `CherrisEditor\Core\EditorSelection.cs`
 
 ```csharp
@@ -9642,152 +9679,10 @@ public class ScriptManager
 
 ---
 
-### `CherrisEditor\Inspectors\AudioListenerInspector.cs`
-
-```csharp
-using Cherris.Components;
-using ImGuiNET;
-
-namespace CherrisEditor.Inspectors;
-
-[CustomInspector(typeof(AudioListener))]
-public class AudioListenerInspector : IComponentInspector
-{
-    public bool Draw(Component component)
-    {
-        ImGui.TextWrapped("Acts as the 'ears' in the 3D world for positional audio.");
-        ImGui.Separator();
-        ImGui.TextWrapped("There should only be one Audio Listener in a scene, typically attached to the main camera.");
-        return false;
-    }
-}
-```
-
----
-
-### `CherrisEditor\Inspectors\AudioSourceInspector.cs`
-
-```csharp
-using Cherris.Components;
-using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
-using ImGuiNET;
-
-namespace CherrisEditor.Inspectors;
-
-[CustomInspector(typeof(AudioSource))]
-public sealed class AudioSourceInspector : IComponentInspector
-{
-    private readonly HistoryManager _history;
-
-    public AudioSourceInspector(HistoryManager history)
-    {
-        _history = history;
-    }
-
-    public bool Draw(Component component)
-    {
-        var source = (AudioSource)component;
-        bool dirty = false;
-
-        if (!ImGui.BeginTable("AudioSourceTable", 2))
-        {
-            return false;
-        }
-
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
-
-        // Clip Name
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Clip Name");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        string clipName = source.ClipName;
-        if (ImGui.InputText("##ClipName", ref clipName, 256) && ImGui.IsItemDeactivatedAfterEdit())
-        {
-            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.ClipName))!, source.ClipName, clipName));
-            source.ClipName = clipName;
-            dirty = true;
-        }
-        ImGui.PopItemWidth();
-
-        // Volume
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Volume");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        float volume = source.Volume;
-        if (PropertyDrawer.Float("##Volume", ref volume, 0.01f, 0f, 1f))
-        {
-            source.Volume = volume;
-            dirty = true;
-        }
-        if (ImGui.IsItemDeactivatedAfterEdit() && Math.Abs(volume - source.Volume) > 0.0001f)
-        {
-            // Handled by the command pattern in UndoTracker elsewhere
-        }
-        ImGui.PopItemWidth();
-
-        // Pitch
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Pitch");
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        float pitch = source.Pitch;
-        if (PropertyDrawer.Float("##Pitch", ref pitch, 0.01f, 0.1f, 3f))
-        {
-            source.Pitch = pitch;
-            dirty = true;
-        }
-        ImGui.PopItemWidth();
-
-        // Loop
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Loop");
-        ImGui.TableSetColumnIndex(1);
-
-        bool loop = source.Loop;
-        if (PropertyDrawer.Bool("##Loop", ref loop) && loop != source.Loop)
-        {
-            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.Loop))!, source.Loop, loop));
-            source.Loop = loop;
-            dirty = true;
-        }
-
-        // Play On Awake
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Play On Awake");
-        ImGui.TableSetColumnIndex(1);
-
-        bool playOnAwake = source.PlayOnAwake;
-        if (PropertyDrawer.Bool("##PlayOnAwake", ref playOnAwake) && playOnAwake != source.PlayOnAwake)
-        {
-            _history.Execute(new ChangePropertyCommand(source, typeof(AudioSource).GetProperty(nameof(AudioSource.PlayOnAwake))!, source.PlayOnAwake, playOnAwake));
-            source.PlayOnAwake = playOnAwake;
-            dirty = true;
-        }
-
-        ImGui.EndTable();
-        return dirty;
-    }
-}
-```
-
----
-
 ### `CherrisEditor\Inspectors\ChangeMaterialTextureCommand.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Core;
 using Cherris.Rendering;
 using CherrisEditor.Undo;
 
@@ -9839,17 +9734,17 @@ using System.Text.RegularExpressions;
 
 namespace CherrisEditor.Inspectors;
 
-public sealed class DefaultInspector : IComponentInspector
+public sealed class DefaultInspector
 {
     private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private readonly UndoTracker _undo;
+    private readonly PropertyDrawer _propertyDrawer;
 
-    public DefaultInspector(EditorTextureManager textures, HistoryManager history)
+    public DefaultInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
     {
         _textures = textures;
         _history = history;
-        _undo = new UndoTracker(history);
+        _propertyDrawer = new PropertyDrawer(editor, textures, history);
     }
 
     public bool Draw(Component component)
@@ -9891,10 +9786,7 @@ public sealed class DefaultInspector : IComponentInspector
         ImGui.TableSetColumnIndex(1);
         ImGui.PushItemWidth(-1);
 
-        bool changed = DrawPropertyControl(component, prop, out bool activated, out bool deactivated);
-
-        _undo.Track(component, prop.Name, activated, deactivated);
-
+        bool changed = _propertyDrawer.Draw(component, prop, out _, out _);
         ImGui.PopItemWidth();
 
         ImGui.TableSetColumnIndex(2);
@@ -9904,136 +9796,6 @@ public sealed class DefaultInspector : IComponentInspector
         }
 
         return changed;
-    }
-
-    private bool DrawPropertyControl(Component component, PropertyInfo prop, out bool activated, out bool deactivated)
-    {
-        activated = false;
-        deactivated = false;
-
-        object value = prop.GetValue(component) ?? CreateDefault(prop.PropertyType);
-        bool changed = false;
-
-        ImGui.PushID(prop.Name);
-
-        if (prop.PropertyType == typeof(float))
-        {
-            float v = (float)value;
-            if (PropertyDrawer.Float($"##{prop.Name}", ref v))
-            {
-                prop.SetValue(component, v);
-                changed = true;
-            }
-        }
-        else if (prop.PropertyType == typeof(int))
-        {
-            int v = (int)value;
-            if (PropertyDrawer.Int($"##{prop.Name}", ref v))
-            {
-                prop.SetValue(component, v);
-                changed = true;
-            }
-        }
-        else if (prop.PropertyType == typeof(bool))
-        {
-            bool v = (bool)value;
-            if (PropertyDrawer.Bool($"##{prop.Name}", ref v))
-            {
-                prop.SetValue(component, v);
-                changed = true;
-            }
-        }
-        else if (prop.PropertyType == typeof(string))
-        {
-            string v = (string)value ?? "";
-            if (PropertyDrawer.String($"##{prop.Name}", ref v))
-            {
-                prop.SetValue(component, v);
-                changed = true;
-            }
-        }
-        else if (prop.PropertyType.IsEnum)
-        {
-            var enumValue = (Enum)value;
-            if (DrawEnum(prop.Name, enumValue, out var newValue))
-            {
-                prop.SetValue(component, newValue);
-                changed = true;
-            }
-        }
-        else if (prop.PropertyType == typeof(Vector2))
-        {
-            var v = (Vector2)value;
-            if (PropertyDrawer.Vector2($"##{prop.Name}", ref v, out activated, out deactivated))
-            {
-                prop.SetValue(component, v);
-                changed = true;
-            }
-        }
-        else if (prop.PropertyType == typeof(Vector3))
-        {
-            var v = (Vector3)value;
-            bool isColor = prop.Name.Contains("Color", StringComparison.OrdinalIgnoreCase);
-
-            if (isColor)
-            {
-                if (PropertyDrawer.Color3($"##{prop.Name}", ref v, out activated, out deactivated))
-                {
-                    prop.SetValue(component, v);
-                    changed = true;
-                }
-            }
-            else
-            {
-                if (PropertyDrawer.Vector3($"##{prop.Name}", ref v, out activated, out deactivated))
-                {
-                    prop.SetValue(component, v);
-                    changed = true;
-                }
-            }
-        }
-        else if (prop.PropertyType == typeof(Vector4))
-        {
-            var v = (Vector4)value;
-            if (ImGui.DragFloat4($"##{prop.Name}", ref v, 0.1f))
-            {
-                prop.SetValue(component, v);
-                changed = true;
-            }
-        }
-        else
-        {
-            ImGui.Text(value.ToString() ?? "null");
-        }
-
-        if (!activated)
-        {
-            activated = ImGui.IsItemActivated();
-        }
-
-        if (!deactivated)
-        {
-            deactivated = ImGui.IsItemDeactivatedAfterEdit();
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawEnum(string id, Enum current, out Enum result)
-    {
-        result = current;
-        var names = Enum.GetNames(current.GetType());
-        string currentName = current.ToString();
-        int index = Array.IndexOf(names, currentName);
-
-        if (!ImGui.Combo($"##{id}", ref index, names, names.Length))
-        {
-            return false;
-        }
-
-        result = (Enum)Enum.Parse(current.GetType(), names[index]);
-        return true;
     }
 
     private bool DrawResetButton(Component component, PropertyInfo prop)
@@ -10069,7 +9831,365 @@ public sealed class DefaultInspector : IComponentInspector
         }
     }
 
-    private static object CreateDefault(Type type)
+    private static string SplitPascalCase(string input)
+    {
+        return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Inspectors\PropertyDrawer.cs`
+
+```csharp
+using Cherris.Attributes;
+using Cherris.Components;
+using Cherris.Rendering;
+using CherrisEditor.Undo;
+using ImGuiNET;
+using System.Numerics;
+using System.Reflection;
+
+namespace CherrisEditor.Inspectors;
+
+public sealed class PropertyDrawer
+{
+    private readonly HistoryManager _history;
+    private readonly UndoTracker _undo;
+    private readonly ResourceNameSynchronizer _resourceSync;
+    private readonly TexturePropertyDrawer _textureDrawer;
+
+    public PropertyDrawer(Editor editor, EditorTextureManager textures, HistoryManager history)
+    {
+        _history = history;
+        _undo = new UndoTracker(history);
+        _resourceSync = new ResourceNameSynchronizer(editor);
+        _textureDrawer = new TexturePropertyDrawer(editor, textures);
+    }
+
+    public bool Draw(Component component, PropertyInfo prop, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+
+        object value = prop.GetValue(component) ?? PropertyDrawingPrimitives.CreateDefault(prop.PropertyType);
+        var rangeAttr = prop.GetCustomAttribute<RangeAttribute>();
+        var colorAttr = prop.GetCustomAttribute<ColorUsageAttribute>();
+        var dragDropAttr = prop.GetCustomAttribute<DragDropTargetAttribute>();
+
+        ImGui.PushID(prop.Name);
+        bool changed = false;
+
+        if (prop.PropertyType == typeof(float))
+        {
+            float v = (float)value;
+            float min = rangeAttr?.Min ?? float.MinValue;
+            float max = rangeAttr?.Max ?? float.MaxValue;
+            float speed = rangeAttr?.Speed ?? 0.01f;
+
+            changed = rangeAttr != null
+                ? PropertyDrawingPrimitives.SliderFloat("##val", v, min, max, out v, out activated, out deactivated)
+                : PropertyDrawingPrimitives.Float("##val", v, speed, min, max, out v, out activated, out deactivated);
+
+            if (changed)
+            {
+                prop.SetValue(component, v);
+            }
+        }
+        else if (prop.PropertyType == typeof(int))
+        {
+            int v = (int)value;
+            changed = PropertyDrawingPrimitives.Int("##val", v, out v, out activated, out deactivated);
+            if (changed)
+            {
+                prop.SetValue(component, v);
+            }
+        }
+        else if (prop.PropertyType == typeof(bool))
+        {
+            bool v = (bool)value;
+            changed = PropertyDrawingPrimitives.Bool("##val", v, out v, out activated, out deactivated);
+            if (changed)
+            {
+                prop.SetValue(component, v);
+            }
+        }
+        else if (prop.PropertyType == typeof(string))
+        {
+            string v = (string)value ?? "";
+            string newVal;
+
+            if (dragDropAttr != null)
+            {
+                changed = PropertyDrawingPrimitives.DragDropString("##val", v, dragDropAttr.PayloadType, out newVal, out activated, out deactivated);
+                if (changed)
+                {
+                    prop.SetValue(component, newVal);
+                    _resourceSync.Sync(component, prop.Name, newVal);
+                }
+            }
+            else
+            {
+                changed = PropertyDrawingPrimitives.String("##val", v, out newVal, out activated, out deactivated);
+                if (changed)
+                {
+                    prop.SetValue(component, newVal);
+                }
+            }
+        }
+        else if (prop.PropertyType.IsEnum)
+        {
+            var v = (Enum)value;
+            changed = PropertyDrawingPrimitives.EnumField("##val", v, out var newVal, out activated, out deactivated);
+            if (changed)
+            {
+                prop.SetValue(component, newVal);
+            }
+        }
+        else if (prop.PropertyType == typeof(Vector2))
+        {
+            var v = (Vector2)value;
+            changed = PropertyDrawingPrimitives.Vector2Field("##val", v, out var newVal, out activated, out deactivated);
+            if (changed)
+            {
+                prop.SetValue(component, newVal);
+            }
+        }
+        else if (prop.PropertyType == typeof(Vector3))
+        {
+            var v = (Vector3)value;
+            changed = colorAttr != null
+                ? PropertyDrawingPrimitives.Color3("##val", v, out var newVal, out activated, out deactivated)
+                : PropertyDrawingPrimitives.Vector3Field("##val", v, out newVal, out activated, out deactivated);
+            if (changed)
+            {
+                prop.SetValue(component, newVal);
+            }
+        }
+        else if (prop.PropertyType == typeof(ITexture))
+        {
+            changed = _textureDrawer.Draw(component, prop, (ITexture)value, dragDropAttr, out activated, out deactivated);
+        }
+        else
+        {
+            ImGui.Text(value.ToString() ?? "null");
+        }
+
+        _undo.Track(component, prop.Name, activated, deactivated);
+        ImGui.PopID();
+        return changed;
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Inspectors\PropertyDrawingPrimitive.cs`
+
+```csharp
+using ImGuiNET;
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace CherrisEditor.Inspectors;
+
+public static class PropertyDrawingPrimitives
+{
+    public static bool Float(string id, float value, float speed, float min, float max, out float newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value;
+        bool changed = ImGui.DragFloat("##val", ref newValue, speed, min, max);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool SliderFloat(string id, float value, float min, float max, out float newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value;
+        bool changed = ImGui.SliderFloat("##val", ref newValue, min, max);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Int(string id, int value, out int newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value;
+        bool changed = ImGui.DragInt("##val", ref newValue);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Bool(string id, bool value, out bool newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value;
+        bool changed = ImGui.Checkbox("##val", ref newValue);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool String(string id, string value, out string newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value ?? "";
+        bool changed = ImGui.InputText("##val", ref newValue, 256);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool DragDropString(string id, string value, string payloadType, out string newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value ?? "";
+        bool changed = ImGui.InputText("##val", ref newValue, 256);
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload(payloadType);
+            unsafe
+            {
+                if (payload.NativePtr != null)
+                {
+                    string? path = Marshal.PtrToStringAnsi(payload.Data);
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        newValue = Path.GetFileNameWithoutExtension(path);
+                        changed = true;
+                    }
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool EnumField(string id, Enum value, out Enum newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value;
+        var names = Enum.GetNames(value.GetType());
+        string currentName = value.ToString();
+        int index = Array.IndexOf(names, currentName);
+
+        bool changed = ImGui.Combo("##val", ref index, names, names.Length);
+        if (changed)
+        {
+            newValue = (Enum)Enum.Parse(value.GetType(), names[index]);
+        }
+
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Vector2Field(string id, Vector2 value, out Vector2 newValue, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+        ImGui.PushID(id);
+
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - ImGui.CalcTextSize("X").X - ImGui.CalcTextSize("Y").X) / 2f;
+        float[] comps = { value.X, value.Y };
+        bool changed = false;
+
+        for (int i = 0; i < 2; i++)
+        {
+            if (i > 0)
+            {
+                ImGui.SameLine();
+            }
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text(i == 0 ? "X" : "Y");
+            ImGui.SameLine();
+            ImGui.PushItemWidth(itemWidth);
+
+            if (ImGui.DragFloat($"##c{i}", ref comps[i], 0.1f))
+            {
+                changed = true;
+            }
+
+            activated |= ImGui.IsItemActivated();
+            deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+            ImGui.PopItemWidth();
+        }
+
+        newValue = new Vector2(comps[0], comps[1]);
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Vector3Field(string id, Vector3 value, out Vector3 newValue, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+        ImGui.PushID(id);
+
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("X").X * 3)) / 3f;
+        float[] comps = { value.X, value.Y, value.Z };
+        string[] labels = { "X", "Y", "Z" };
+        bool changed = false;
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0)
+            {
+                ImGui.SameLine();
+            }
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text(labels[i]);
+            ImGui.SameLine();
+            ImGui.PushItemWidth(itemWidth);
+
+            if (ImGui.DragFloat($"##c{i}", ref comps[i], 0.1f))
+            {
+                changed = true;
+            }
+
+            activated |= ImGui.IsItemActivated();
+            deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+            ImGui.PopItemWidth();
+        }
+
+        newValue = new Vector3(comps[0], comps[1], comps[2]);
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static bool Color3(string id, Vector3 value, out Vector3 newValue, out bool activated, out bool deactivated)
+    {
+        ImGui.PushID(id);
+        newValue = value;
+        bool changed = ImGui.ColorEdit3("##val", ref newValue, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR);
+        activated = ImGui.IsItemActivated();
+        deactivated = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopID();
+        return changed;
+    }
+
+    public static object CreateDefault(Type type)
     {
         if (type == typeof(string))
         {
@@ -10088,566 +10208,128 @@ public sealed class DefaultInspector : IComponentInspector
 
         return type == typeof(Vector4) ? Vector4.Zero : Activator.CreateInstance(type) ?? new object();
     }
-
-    private static string SplitPascalCase(string input)
-    {
-        return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
-    }
 }
 ```
 
 ---
 
-### `CherrisEditor\Inspectors\IComponentInspector.cs`
+### `CherrisEditor\Inspectors\ResourceNameSynchronizer.cs`
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core;
+using Cherris.Rendering;
+using System.Reflection;
 
 namespace CherrisEditor.Inspectors;
 
-public interface IComponentInspector
+public sealed class ResourceNameSynchronizer
 {
-    bool Draw(Component component);
-}
-```
+    private readonly Editor _editor;
 
----
-
-### `CherrisEditor\Inspectors\LightInspector.cs`
-
-```csharp
-using Cherris.Components;
-using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
-using ImGuiNET;
-using System.Numerics;
-
-namespace CherrisEditor.Inspectors;
-
-[CustomInspector(typeof(Light))]
-public sealed class LightInspector : IComponentInspector
-{
-    private readonly EditorTextureManager _textures;
-    private readonly HistoryManager _history;
-    private readonly UndoTracker _undo;
-
-    public LightInspector(EditorTextureManager textures, HistoryManager history)
+    public ResourceNameSynchronizer(Editor editor)
     {
-        _textures = textures;
-        _history = history;
-        _undo = new UndoTracker(history);
+        _editor = editor;
     }
 
-    public bool Draw(Component component)
+    public void Sync(Component component, string namePropertyName, string resourceName)
     {
-        var light = (Light)component;
-        bool dirty = false;
-
-        if (!ImGui.BeginTable("LightTable", 3))
+        if (string.IsNullOrEmpty(resourceName) || !namePropertyName.EndsWith("Name"))
         {
-            return false;
+            return;
         }
 
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
+        string targetPropertyName = namePropertyName[..^4];
+        PropertyInfo? targetProp = component.GetType().GetProperty(targetPropertyName);
 
-        DrawTypeRow(light, ref dirty);
-        DrawColorRow(light, ref dirty);
-        DrawFloatRow(light, nameof(Light.Intensity), 0.01f, 0f, float.MaxValue, 1f, ref dirty);
-
-        switch (light.Type)
+        if (targetProp == null)
         {
-            case LightType.Directional:
-                DrawFloatRow(light, nameof(Light.AmbientStrength), 0.01f, 0f, 1f, 0.3f, ref dirty);
-                break;
-            case LightType.Point:
-                DrawFloatRow(light, nameof(Light.Range), 0.1f, 0f, float.MaxValue, 50f, ref dirty);
-                break;
-            case LightType.Spot:
-                DrawFloatRow(light, nameof(Light.Range), 0.1f, 0f, float.MaxValue, 50f, ref dirty);
-                DrawFloatRow(light, nameof(Light.InnerConeAngle), 0.1f, 0f, light.OuterConeAngle, 12.5f, ref dirty);
-                DrawFloatRow(light, nameof(Light.OuterConeAngle), 0.1f, light.InnerConeAngle, 89f, 17.5f, ref dirty);
-                break;
+            return;
         }
 
-        ImGui.EndTable();
-        return dirty;
-    }
-
-    private void DrawTypeRow(Light light, ref bool dirty)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Type");
-
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        LightType typeBefore = light.Type;
-        LightType currentType = light.Type;
-
-        if (PropertyDrawer.EnumField("##LightType", ref currentType) && currentType != typeBefore)
+        object? resource = targetProp.PropertyType switch
         {
-            _history.Execute(new ChangePropertyCommand(light, typeof(Light).GetProperty(nameof(Light.Type))!, typeBefore, currentType));
-            light.Type = currentType;
-            dirty = true;
-        }
+            Type t when t == typeof(ITexture) => _editor.ResourceManager.GetTexture(resourceName),
+            Type t when t == typeof(AudioClip) => _editor.ResourceManager.GetAudioClip(resourceName),
+            Type t when t == typeof(Mesh) => _editor.ResourceManager.GetMesh(resourceName),
+            _ => null
+        };
 
-        ImGui.PopItemWidth();
-        ImGui.TableSetColumnIndex(2);
-    }
-
-    private static bool DrawEnum<T>(string id, ref T value) where T : struct, Enum
-    {
-        var names = Enum.GetNames<T>();
-        string current = value.ToString();
-        int index = Array.IndexOf(names, current);
-
-        if (!ImGui.Combo(id, ref index, names, names.Length))
+        if (resource != null)
         {
-            return false;
+            targetProp.SetValue(component, resource);
         }
-
-        value = Enum.Parse<T>(names[index]);
-        return true;
-    }
-
-    private void DrawColorRow(Light light, ref bool dirty)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Color");
-
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        Vector3 color = light.Color;
-        if (PropertyDrawer.Color3("##Color", ref color, out bool activated, out bool deactivated))
-        {
-            light.Color = color;
-            dirty = true;
-        }
-        _undo.Track(light, nameof(Light.Color), activated, deactivated);
-
-        ImGui.PopItemWidth();
-
-        DrawResetButton(light, nameof(Light.Color), Vector3.One, ref dirty);
-    }
-
-    private void DrawFloatRow(Light light, string propName, float speed, float min, float max, float defaultValue, ref bool dirty)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text(SplitCamelCase(propName));
-
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        var property = typeof(Light).GetProperty(propName)!;
-        float value = (float)property.GetValue(light)!;
-
-        if (PropertyDrawer.Float($"##{propName}", ref value, speed, min, max))
-        {
-            property.SetValue(light, value);
-            dirty = true;
-        }
-        _undo.Track(light, propName, ImGui.IsItemActivated(), ImGui.IsItemDeactivatedAfterEdit());
-
-        ImGui.PopItemWidth();
-
-        DrawResetButton(light, propName, defaultValue, ref dirty);
-    }
-
-    private void DrawResetButton(Light light, string propName, object defaultValue, ref bool dirty)
-    {
-        ImGui.TableSetColumnIndex(2);
-
-        IntPtr icon = _textures.GetTexture("Reset");
-        float size = ImGui.GetFrameHeight() - 4;
-
-        if (ImGui.ImageButton($"Reset{propName}", icon, new Vector2(size, size)))
-        {
-            var property = typeof(Light).GetProperty(propName)!;
-            var current = property.GetValue(light);
-
-            if (!Equals(current, defaultValue))
-            {
-                _history.Execute(new ChangePropertyCommand(light, property, current!, defaultValue));
-                property.SetValue(light, defaultValue);
-                dirty = true;
-            }
-        }
-    }
-
-    private static string SplitCamelCase(string input)
-    {
-        return System.Text.RegularExpressions.Regex.Replace(input, "(?<!^)([A-Z])", " $1");
     }
 }
 ```
 
 ---
 
-### `CherrisEditor\Inspectors\MeshRendererInspector.cs`
+### `CherrisEditor\Inspectors\TexturePropertyDrawer.cs`
 
 ```csharp
-using Cherris;
+using Cherris.Attributes;
 using Cherris.Components;
-using CherrisEditor.Undo;
-using CherrisEditor.Undo.Commands;
+using Cherris.Rendering;
 using ImGuiNET;
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace CherrisEditor.Inspectors;
 
-[CustomInspector(typeof(MeshRenderer))]
-public sealed class MeshRendererInspector : IComponentInspector
+public sealed class TexturePropertyDrawer
 {
     private readonly Editor _editor;
-    private readonly EditorTextureManager _textures;
-    private readonly HistoryManager _history;
-    private readonly UndoTracker _undo;
+    private readonly EditorTextureManager _textureManager;
 
-    public MeshRendererInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
+    public TexturePropertyDrawer(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
-        _textures = textures;
-        _history = history;
-        _undo = new UndoTracker(history);
+        _textureManager = textureManager;
     }
 
-    public unsafe bool Draw(Component component)
-    {
-        var renderer = (MeshRenderer)component;
-        var material = renderer.Material;
-
-        if (material == null)
-        {
-            ImGui.Text("No Material assigned.");
-            return false;
-        }
-
-        bool dirty = false;
-
-        if (!ImGui.BeginTable("MeshRendererTable", 3))
-        {
-            return false;
-        }
-
-        ImGui.TableSetupColumn("Property", ImGuiTableColumnFlags.WidthStretch, 0.475f);
-        ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
-        ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
-
-        DrawTextureRow(material, ref dirty);
-        DrawTilingRow(material, ref dirty);
-        DrawEmissiveRow(material, ref dirty);
-
-        ImGui.EndTable();
-        return dirty;
-    }
-
-    private void DrawTextureRow(Material material, ref bool dirty)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Texture");
-
-        ImGui.TableSetColumnIndex(1);
-        DrawTextureThumb(material, ref dirty);
-
-        ImGui.TableSetColumnIndex(2);
-        DrawTextureResetButton(material, ref dirty);
-    }
-
-    private unsafe void DrawTextureThumb(Material material, ref bool dirty)
+    public bool Draw(Component component, PropertyInfo prop, ITexture texture, DragDropTargetAttribute? dragDropAttr, out bool activated, out bool deactivated)
     {
         IntPtr handle = IntPtr.Zero;
-        handle = material.Texture?.GetBackendHandle() is int h && h != 0 ? h : _textures.GetTexture("File");
+        handle = texture?.GetBackendHandle() is int h && h != 0 ? h : _textureManager.GetTexture("File");
 
-        ImGui.ImageButton("TextureThumb", handle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
-
-        if (!ImGui.BeginDragDropTarget())
-        {
-            return;
-        }
-
-        var payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
-        if (payload.NativePtr == null)
-        {
-            ImGui.EndDragDropTarget();
-            return;
-        }
-
-        string path = Marshal.PtrToStringAnsi(payload.Data) ?? "";
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-        {
-            ImGui.EndDragDropTarget();
-            return;
-        }
-
-        string newName = Path.GetFileNameWithoutExtension(path);
-        var newTexture = _editor.ResourceManager.GetTexture(newName);
-
-        _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, newName, newTexture));
-        dirty = true;
-
-        ImGui.EndDragDropTarget();
-    }
-
-    private void DrawTextureResetButton(Material material, ref bool dirty)
-    {
-        IntPtr icon = _textures.GetTexture("Reset");
-        float size = ImGui.GetFrameHeight() - 4;
-
-        if (!ImGui.ImageButton("ResetTexture", icon, new Vector2(size, size)))
-        {
-            return;
-        }
-
-        var defaultTexture = _editor.ResourceManager.GetTexture("White");
-        if (material.TextureName == "White")
-        {
-            return;
-        }
-
-        _history.Execute(new ChangeMaterialTextureCommand(material, material.TextureName, material.Texture, "White", defaultTexture));
-        dirty = true;
-    }
-
-    private void DrawTilingRow(Material material, ref bool dirty)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Texture Tiling");
-
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        var tiling = material.TextureTiling;
-        if (PropertyDrawer.Vector2("##Tiling", ref tiling, out bool activated, out bool deactivated))
-        {
-            material.TextureTiling = tiling;
-            dirty = true;
-        }
-        _undo.Track(material, nameof(Material.TextureTiling), activated, deactivated);
-
-        ImGui.PopItemWidth();
-
-        DrawPropertyResetButton(material, nameof(Material.TextureTiling), Vector2.One, ref dirty);
-    }
-
-    private void DrawEmissiveRow(Material material, ref bool dirty)
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        ImGui.Text("Emissive Color");
-
-        ImGui.TableSetColumnIndex(1);
-        ImGui.PushItemWidth(-1);
-
-        var color = material.EmissiveColor;
-        if (PropertyDrawer.Color3("##Emissive", ref color, out bool activated, out bool deactivated))
-        {
-            material.EmissiveColor = color;
-            dirty = true;
-        }
-        _undo.Track(material, nameof(Material.EmissiveColor), activated, deactivated);
-
-        ImGui.PopItemWidth();
-
-        DrawPropertyResetButton(material, nameof(Material.EmissiveColor), Vector3.Zero, ref dirty);
-    }
-
-    private void DrawPropertyResetButton(Material material, string propName, object defaultValue, ref bool dirty)
-    {
-        ImGui.TableSetColumnIndex(2);
-
-        IntPtr icon = _textures.GetTexture("Reset");
-        float size = ImGui.GetFrameHeight() - 4;
-
-        if (!ImGui.ImageButton($"Reset{propName}", icon, new Vector2(size, size)))
-        {
-            return;
-        }
-
-        var property = typeof(Material).GetProperty(propName)!;
-        var current = property.GetValue(material)!;
-
-        if (Equals(current, defaultValue))
-        {
-            return;
-        }
-
-        _history.Execute(new ChangePropertyCommand(material, property, current, defaultValue));
-        property.SetValue(material, defaultValue);
-        dirty = true;
-    }
-}
-```
-
----
-
-### `CherrisEditor\Inspectors\PropertyDrawer.cs`
-
-```csharp
-using ImGuiNET;
-using System.Numerics;
-
-namespace CherrisEditor.Inspectors;
-
-public static class PropertyDrawer
-{
-    public static bool Float(string id, ref float value, float speed = 0.01f, float min = float.MinValue, float max = float.MaxValue)
-    {
-        return ImGui.DragFloat(id, ref value, speed, min, max);
-    }
-
-    public static bool Int(string id, ref int value)
-    {
-        return ImGui.DragInt(id, ref value);
-    }
-
-    public static bool Bool(string id, ref bool value)
-    {
-        return ImGui.Checkbox(id, ref value);
-    }
-
-    public static bool String(string id, ref string value, uint maxLength = 256)
-    {
-        return ImGui.InputText(id, ref value, maxLength);
-    }
-
-    public static bool EnumField<T>(string id, ref T value) where T : struct, Enum
-    {
-        var names = Enum.GetNames<T>();
-        var current = value.ToString();
-        var index = Array.IndexOf(names, current);
-
-        if (!ImGui.Combo(id, ref index, names, names.Length))
-        {
-            return false;
-        }
-
-        value = Enum.Parse<T>(names[index]);
-        return true;
-    }
-
-    public static bool Vector2(string id, ref Vector2 value, out bool activated, out bool deactivated)
-    {
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(id);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 3) - ImGui.CalcTextSize("X").X - ImGui.CalcTextSize("Y").X) / 2f;
-
+        ImGui.ImageButton($"tex_{prop.Name}", handle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
         bool changed = false;
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.2f, 0.2f, 1));
-        ImGui.Text("X");
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-
-        if (ImGui.DragFloat("##X", ref value.X, 0.1f))
-        {
-            changed = true;
-        }
-
-        activated |= ImGui.IsItemActivated();
-        deactivated |= ImGui.IsItemDeactivatedAfterEdit();
-        ImGui.PopItemWidth();
-        ImGui.SameLine();
-
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.8f, 0.2f, 1));
-        ImGui.Text("Y");
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushItemWidth(itemWidth);
-
-        if (ImGui.DragFloat("##Y", ref value.Y, 0.1f))
-        {
-            changed = true;
-        }
-
-        activated |= ImGui.IsItemActivated();
-        deactivated |= ImGui.IsItemDeactivatedAfterEdit();
-        ImGui.PopItemWidth();
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    public static bool Vector3(string id, ref Vector3 value, out bool activated, out bool deactivated)
-    {
-        activated = false;
-        deactivated = false;
-
-        ImGui.PushID(id);
-        var style = ImGui.GetStyle();
-        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("X").X * 3)) / 3f;
-
-        bool changed = false;
-        string[] labels = { "X", "Y", "Z" };
-        Vector4[] colors =
-        {
-            new(0.8f, 0.2f, 0.2f, 1),
-            new(0.2f, 0.8f, 0.2f, 1),
-            new(0.2f, 0.3f, 0.8f, 1)
-        };
-        float[] components = { value.X, value.Y, value.Z };
-
-        for (int i = 0; i < 3; i++)
-        {
-            if (i > 0)
-            {
-                ImGui.SameLine();
-            }
-
-            ImGui.AlignTextToFramePadding();
-            ImGui.PushStyleColor(ImGuiCol.Text, colors[i]);
-            ImGui.Text(labels[i]);
-            ImGui.PopStyleColor();
-            ImGui.SameLine();
-            ImGui.PushItemWidth(itemWidth);
-
-            if (ImGui.DragFloat($"##{labels[i]}", ref components[i], 0.1f))
-            {
-                changed = true;
-            }
-
-            activated |= ImGui.IsItemActivated();
-            deactivated |= ImGui.IsItemDeactivatedAfterEdit();
-            ImGui.PopItemWidth();
-        }
-
-        value = new Vector3(components[0], components[1], components[2]);
-        ImGui.PopID();
-        return changed;
-    }
-
-    public static bool Color3(string id, ref Vector3 color, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(id);
-        bool changed = ImGui.ColorEdit3(id, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR);
         activated = ImGui.IsItemActivated();
         deactivated = ImGui.IsItemDeactivatedAfterEdit();
-        ImGui.PopID();
-        return changed;
-    }
 
-    public static bool Color4(string id, ref Vector4 color, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(id);
-        bool changed = ImGui.ColorEdit4(id, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR);
-        activated = ImGui.IsItemActivated();
-        deactivated = ImGui.IsItemDeactivatedAfterEdit();
-        ImGui.PopID();
-        return changed;
+        if (dragDropAttr != null && ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload(dragDropAttr.PayloadType);
+            unsafe
+            {
+                if (payload.NativePtr != null)
+                {
+                    string? path = Marshal.PtrToStringAnsi(payload.Data);
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        string name = Path.GetFileNameWithoutExtension(path);
+                        var newTex = _editor.ResourceManager.GetTexture(name);
+                        if (newTex != null)
+                        {
+                            prop.SetValue(component, newTex);
+
+                            var textureNameProp = component.GetType().GetProperty(prop.Name + "Name");
+                            if (textureNameProp != null && textureNameProp.PropertyType == typeof(string))
+                            {
+                                textureNameProp.SetValue(component, name);
+                            }
+
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        return changed || activated || deactivated;
     }
 }
 ```
@@ -10713,7 +10395,7 @@ public sealed class TransformInspector
         var property = typeof(Transform).GetProperty(propName)!;
         var value = (Vector3)property.GetValue(target)!;
 
-        if (PropertyDrawer.Vector3($"##{propName}", ref value, out bool activated, out bool deactivated))
+        if (DrawVector3Control($"##{propName}", ref value, out bool activated, out bool deactivated))
         {
             property.SetValue(target, value);
             dirty = true;
@@ -10721,7 +10403,6 @@ public sealed class TransformInspector
         _undo.Track(target, propName, activated, deactivated);
 
         ImGui.PopItemWidth();
-
         DrawResetButton(target, property, value, defaultValue, ref dirty);
     }
 
@@ -10737,7 +10418,7 @@ public sealed class TransformInspector
         var currentRot = target.Rotation;
         var eulerDegrees = EngineMath.ToEulerAngles(currentRot) * (180f / MathF.PI);
 
-        if (PropertyDrawer.Vector3("##Rotation", ref eulerDegrees, out bool activated, out bool deactivated))
+        if (DrawVector3Control("##Rotation", ref eulerDegrees, out bool activated, out bool deactivated))
         {
             var eulerRadians = eulerDegrees * (MathF.PI / 180f);
             target.Rotation = Quaternion.CreateFromYawPitchRoll(eulerRadians.Y, eulerRadians.X, eulerRadians.Z);
@@ -10749,6 +10430,53 @@ public sealed class TransformInspector
 
         var property = typeof(Transform).GetProperty(nameof(Transform.Rotation))!;
         DrawResetButton(target, property, currentRot, Quaternion.Identity, ref dirty);
+    }
+
+    private static bool DrawVector3Control(string id, ref Vector3 value, out bool activated, out bool deactivated)
+    {
+        activated = false;
+        deactivated = false;
+
+        ImGui.PushID(id);
+        var style = ImGui.GetStyle();
+        float itemWidth = (ImGui.GetContentRegionAvail().X - (style.ItemSpacing.X * 5) - (ImGui.CalcTextSize("X").X * 3)) / 3f;
+        bool changed = false;
+        float[] components = { value.X, value.Y, value.Z };
+        string[] labels = { "X", "Y", "Z" };
+        System.Numerics.Vector4[] colors =
+        {
+            new(0.8f, 0.2f, 0.2f, 1),
+            new(0.2f, 0.8f, 0.2f, 1),
+            new(0.2f, 0.3f, 0.8f, 1)
+        };
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0)
+            {
+                ImGui.SameLine();
+            }
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.PushStyleColor(ImGuiCol.Text, colors[i]);
+            ImGui.Text(labels[i]);
+            ImGui.PopStyleColor();
+            ImGui.SameLine();
+            ImGui.PushItemWidth(itemWidth);
+
+            if (ImGui.DragFloat($"##c{i}", ref components[i], 0.1f))
+            {
+                changed = true;
+            }
+
+            activated |= ImGui.IsItemActivated();
+            deactivated |= ImGui.IsItemDeactivatedAfterEdit();
+            ImGui.PopItemWidth();
+        }
+
+        value = new Vector3(components[0], components[1], components[2]);
+        ImGui.PopID();
+        return changed;
     }
 
     private void DrawResetButton(Transform target, PropertyInfo property, object current, object defaultValue, ref bool dirty)
@@ -10935,6 +10663,8 @@ public class ContentBrowserPanel : IDisposable
     private readonly EditorTextureManager _textureManager;
     private string _currentDirectory;
 
+    private static readonly string[] MeshExtensions = { ".obj", ".gltf", ".glb", ".fbx", ".dae" };
+
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
@@ -11099,9 +10829,14 @@ public class ContentBrowserPanel : IDisposable
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        return EditorTextureManager.ImageExtensions.Contains(extension)
-            ? "ASSET_PATH_TEXTURE"
-            : EditorTextureManager.PrefabExtensions.Contains(extension) ? "ASSET_PATH_PREFAB" : null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            return "ASSET_PATH_TEXTURE";
+        }
+
+        return EditorTextureManager.PrefabExtensions.Contains(extension)
+            ? "ASSET_PATH_PREFAB"
+            : MeshExtensions.Contains(extension) ? "ASSET_PATH_MESH" : null;
     }
 
     private static void SendStringPayload(string payloadType, string data)
@@ -11364,7 +11099,6 @@ internal class InspectorPanel
 {
     private readonly Editor _editor;
     private readonly EditorTextureManager _textureManager;
-    private readonly InspectorRegistry _inspectorRegistry;
     private readonly DefaultInspector _defaultInspector;
     private readonly TransformInspector _transformInspector;
     private readonly ComponentAdderPresenter _componentAdder;
@@ -11373,16 +11107,11 @@ internal class InspectorPanel
     {
         _editor = editor;
         _textureManager = textureManager;
-        _inspectorRegistry = new InspectorRegistry(editor, textureManager, history);
-        _defaultInspector = new DefaultInspector(textureManager, history);
+        _defaultInspector = new DefaultInspector(editor, textureManager, history);
         _transformInspector = new TransformInspector(textureManager, history);
 
         var menuBuilder = new ComponentTypeMenuBuilder();
-        _componentAdder = new ComponentAdderPresenter(
-            menuBuilder,
-            editor.SceneManager,
-            editor.ScriptManager);
-
+        _componentAdder = new ComponentAdderPresenter(menuBuilder, editor.SceneManager, editor.ScriptManager);
         ConfigureMenuBuilder(editor, menuBuilder);
     }
 
@@ -11465,7 +11194,10 @@ internal class InspectorPanel
 
         if (DrawComponentHeader(componentName, icon, out _))
         {
-            DrawComponentInspector(component);
+            if (_defaultInspector.Draw(component))
+            {
+                _editor.SceneManager.ActiveScene!.IsDirty = true;
+            }
         }
 
         DrawComponentContextMenu(go, component);
@@ -11496,26 +11228,6 @@ internal class InspectorPanel
         }
 
         return icon == IntPtr.Zero ? _textureManager.GetTexture("File") : icon;
-    }
-
-    private void DrawComponentInspector(Component component)
-    {
-        var inspector = _inspectorRegistry.GetInspector(component.GetType());
-
-        if (inspector is not null)
-        {
-            if (inspector.Draw(component))
-            {
-                _editor.SceneManager.ActiveScene!.IsDirty = true;
-            }
-        }
-        else
-        {
-            if (_defaultInspector.Draw(component))
-            {
-                _editor.SceneManager.ActiveScene!.IsDirty = true;
-            }
-        }
     }
 
     private void DrawComponentContextMenu(GameObject go, Component component)
@@ -12757,116 +12469,6 @@ public class ComponentTypeMenuBuilder
     public ImmutableArray<MenuEntry> GetBuiltInEntries()
     {
         return _builtInEntries.ToImmutableArray();
-    }
-}
-```
-
----
-
-### `CherrisEditor\UI\Inspector\InspectorRegistry.cs`
-
-```csharp
-using Cherris.Core.Logging;
-using CherrisEditor.Inspectors;
-using CherrisEditor.Undo;
-using System.Reflection;
-
-namespace CherrisEditor.UI.Inspector;
-
-public class InspectorRegistry
-{
-    private readonly Dictionary<Type, IComponentInspector> _customInspectors = [];
-
-    public InspectorRegistry(
-        Editor editor,
-        EditorTextureManager textureManager,
-        HistoryManager history)
-    {
-        RegisterCustomInspectors(editor, textureManager, history);
-    }
-
-    public IComponentInspector? GetInspector(Type componentType)
-    {
-        _customInspectors.TryGetValue(componentType, out var inspector);
-        return inspector;
-    }
-
-    private void RegisterCustomInspectors(
-        Editor editor,
-        EditorTextureManager textureManager,
-        HistoryManager history)
-    {
-        var inspectorTypes = Assembly.GetExecutingAssembly().GetTypes()
-            .Where(t => t.IsDefined(typeof(CustomInspectorAttribute), false) &&
-                        typeof(IComponentInspector).IsAssignableFrom(t));
-
-        foreach (var inspectorType in inspectorTypes)
-        {
-            var attribute = (CustomInspectorAttribute)inspectorType
-                .GetCustomAttribute(typeof(CustomInspectorAttribute), false)!;
-
-            try
-            {
-                IComponentInspector? instance = CreateInspectorInstance(
-                    inspectorType, editor, textureManager, history);
-
-                if (instance is not null)
-                {
-                    _customInspectors[attribute.InspectedType] = instance;
-                    Logger.Info($"[Inspector] Registered custom inspector for '{attribute.InspectedType.Name}'");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning($"[Inspector] Failed to register custom inspector '{inspectorType.Name}': {ex.Message}");
-            }
-        }
-    }
-
-    private static IComponentInspector? CreateInspectorInstance(
-        Type inspectorType,
-        Editor editor,
-        EditorTextureManager textureManager,
-        HistoryManager history)
-    {
-        var ctorWithAll = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager), typeof(HistoryManager) });
-        if (ctorWithAll is not null)
-        {
-            return (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager, history)!;
-        }
-
-        var ctorWithEditor = inspectorType.GetConstructor(new[] { typeof(Editor), typeof(EditorTextureManager) });
-        if (ctorWithEditor is not null)
-        {
-            return (IComponentInspector)Activator.CreateInstance(inspectorType, editor, textureManager)!;
-        }
-
-        var ctorWithTextureAndHistory = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager), typeof(HistoryManager) });
-        if (ctorWithTextureAndHistory is not null)
-        {
-            return (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager, history)!;
-        }
-
-        var ctorWithHistoryOnly = inspectorType.GetConstructor(new[] { typeof(HistoryManager) });
-        if (ctorWithHistoryOnly is not null)
-        {
-            return (IComponentInspector)Activator.CreateInstance(inspectorType, history)!;
-        }
-
-        var ctorWithTextureOnly = inspectorType.GetConstructor(new[] { typeof(EditorTextureManager) });
-        if (ctorWithTextureOnly is not null)
-        {
-            return (IComponentInspector)Activator.CreateInstance(inspectorType, textureManager)!;
-        }
-
-        var ctorParameterless = inspectorType.GetConstructor(Type.EmptyTypes);
-        if (ctorParameterless is not null)
-        {
-            return (IComponentInspector)Activator.CreateInstance(inspectorType)!;
-        }
-
-        Logger.Warning($"[Inspector] Could not find a suitable constructor for '{inspectorType.Name}'.");
-        return null;
     }
 }
 ```
