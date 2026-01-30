@@ -45,11 +45,16 @@ public class EditorAppLogic : IDisposable
     public EditorAppLogic(Editor editor, SceneSerializer sceneSerializer)
     {
         _editor = editor;
-        _history = editor.History;
         _sceneSerializer = sceneSerializer;
+        _history = editor.History;
         _textureManager = new EditorTextureManager();
         _projectSelector = new ProjectSelector();
 
+        Initialize();
+    }
+
+    private void Initialize()
+    {
         InitializePanels();
         LoadIcons();
 

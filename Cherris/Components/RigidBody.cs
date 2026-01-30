@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using Cherris.Utils;
+using System.Numerics;
 
 namespace Cherris.Components;
 
@@ -11,17 +12,20 @@ public enum ColliderType
 
 public class RigidBody : Script
 {
-    private ColliderType _shape = ColliderType.Box;
     public ColliderType Shape
     {
-        get => _shape;
+        get;
         set
         {
-            if (_shape == value) return;
-            _shape = value;
+            if (field == value)
+            {
+                return;
+            }
+
+            field = value;
             RecreatePhysicsBody();
         }
-    }
+    } = ColliderType.Box;
 
     public float Mass { get; set; } = 1.0f;
     public bool IsStatic { get; set; } = false;
@@ -29,9 +33,9 @@ public class RigidBody : Script
     public float Bounciness { get; set; } = 0.5f;
 
     [HideInInspector]
-    public Jitter.Dynamics.RigidBody JitterBody { get; private set; }
+    public Jitter.Dynamics.RigidBody? JitterBody { get; private set; }
 
-    private PhysicsSystem _physicsSystem;
+    private PhysicsSystem? _physicsSystem;
     private Vector3 _lastScale;
 
     // Called by the Scene to provide the PhysicsSystem instance.
@@ -60,7 +64,10 @@ public class RigidBody : Script
 
     private void RecreatePhysicsBody()
     {
-        if (JitterBody is null || _physicsSystem is null) return;
+        if (JitterBody is null || _physicsSystem is null)
+        {
+            return;
+        }
 
         _physicsSystem.RemoveBody(JitterBody);
         JitterBody = null;

@@ -2,6 +2,7 @@
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
+using Cherris.Utils;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
@@ -28,23 +29,30 @@ public static class ComponentDeserializer
             return null;
         }
 
-        _ = propsDict.TryGetValue("Mesh", out var meshNameObj);
-        var meshName = meshNameObj as string;
+        propsDict.TryGetValue("Mesh", out var meshNameObj);
+        string? meshName = meshNameObj as string;
 
-        var mesh = resourceManager.GetMesh(meshName);
+        Mesh? mesh = resourceManager.GetMesh(meshName);
+
         if (mesh is null)
         {
             return null;
         }
 
-        var material = CreateMaterialFromProperties(propsDict, resourceManager);
+        Material material = CreateMaterialFromProperties(propsDict, resourceManager);
 
-        return new MeshRenderer(mesh, material, meshName);
+        return new()
+        {
+            Mesh = mesh,
+            Material = material,
+            MeshName = meshName
+        };
     }
 
     private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
     {
-        var audioSource = new AudioSource();
+        AudioSource audioSource = new();
+
         if (properties is not Dictionary<object, object> propsDict)
         {
             return audioSource;

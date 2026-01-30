@@ -21,8 +21,6 @@ public class ContentBrowserPanel : IDisposable
     private readonly EditorTextureManager _textureManager;
     private string _currentDirectory;
 
-    private static readonly string[] MeshExtensions = { ".obj", ".gltf", ".glb", ".fbx", ".dae" };
-
     public ContentBrowserPanel(Editor editor, EditorTextureManager textureManager)
     {
         _editor = editor;
@@ -189,12 +187,15 @@ public class ContentBrowserPanel : IDisposable
 
         if (EditorTextureManager.ImageExtensions.Contains(extension))
         {
-            return "ASSET_PATH_TEXTURE";
+            return EditorConstants.DragDropPayloads.Texture;
         }
 
-        return EditorTextureManager.PrefabExtensions.Contains(extension)
-            ? "ASSET_PATH_PREFAB"
-            : MeshExtensions.Contains(extension) ? "ASSET_PATH_MESH" : null;
+        if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        {
+            return EditorConstants.DragDropPayloads.Prefab;
+        }
+
+        return EditorTextureManager.MeshExtensions.Contains(extension) ? EditorConstants.DragDropPayloads.Mesh : null;
     }
 
     private static void SendStringPayload(string payloadType, string data)
@@ -240,7 +241,7 @@ public class ContentBrowserPanel : IDisposable
 
     private unsafe void HandleGameObjectDrop()
     {
-        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
 
         if (payload.NativePtr is null)
         {

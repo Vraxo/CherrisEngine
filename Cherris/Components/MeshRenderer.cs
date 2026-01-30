@@ -1,38 +1,34 @@
 ﻿using Cherris.Attributes;
 using Cherris.Core;
+using Cherris.Utils;
 
 namespace Cherris.Components;
 
 public class MeshRenderer : Component, IDisposable
 {
-    public Mesh Mesh { get; set; }
+    public required Mesh Mesh { get; set; }
 
     [DragDropTarget("ASSET_PATH_MESH")]
-    public string MeshName { get; set; }
+    public required string MeshName { get; set; }
 
-    private Material _material;
     public Material Material
     {
-        get => _material;
+        get;
+
         set
         {
-            if (_material != value)
+            if ((field) == value)
             {
-                _material = value;
-                InvalidateBackendData();
+                return;
             }
+
+            field = value;
+            InvalidateBackendData();
         }
     }
 
     [HideInInspector]
     public object? BackendData { get; set; }
-
-    public MeshRenderer(Mesh mesh, Material material, string meshName)
-    {
-        Mesh = mesh;
-        MeshName = meshName;
-        _material = material;
-    }
 
     private void InvalidateBackendData()
     {

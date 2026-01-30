@@ -33,7 +33,7 @@ public class OutlinerPanel : IDisposable
         ImGui.InvisibleButton("OutlinerDropTarget", ImGui.GetContentRegionAvail());
         if (ImGui.BeginDragDropTarget())
         {
-            ImGuiPayloadPtr prefabPayload = ImGui.AcceptDragDropPayload("ASSET_PATH_PREFAB");
+            ImGuiPayloadPtr prefabPayload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.Prefab);
             unsafe
             {
                 if (prefabPayload.NativePtr != null)
@@ -43,7 +43,7 @@ public class OutlinerPanel : IDisposable
                 }
             }
 
-            ImGuiPayloadPtr goPayload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+            ImGuiPayloadPtr goPayload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
             unsafe
             {
                 if (goPayload.NativePtr != null)
@@ -80,7 +80,7 @@ public class OutlinerPanel : IDisposable
             byte[] guidBytes = go.Id.ToByteArray();
             _payloadGuidPtr = Marshal.AllocHGlobal(guidBytes.Length);
             Marshal.Copy(guidBytes, 0, _payloadGuidPtr, guidBytes.Length);
-            ImGui.SetDragDropPayload("GAMEOBJECT_ID", _payloadGuidPtr, (uint)guidBytes.Length);
+            ImGui.SetDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId, _payloadGuidPtr, (uint)guidBytes.Length);
 
             ImGui.Text(go.Name);
             ImGui.EndDragDropSource();
@@ -88,7 +88,7 @@ public class OutlinerPanel : IDisposable
 
         if (ImGui.BeginDragDropTarget())
         {
-            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("GAMEOBJECT_ID");
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
             unsafe
             {
                 if (payload.NativePtr != null)

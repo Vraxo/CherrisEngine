@@ -8,10 +8,11 @@ namespace CherrisEditor;
 /// </summary>
 public class EditorTextureManager : IDisposable
 {
-    private readonly Dictionary<string, int> _textures = new();
+    private readonly Dictionary<string, int> _textures = [];
     public static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
     private static readonly string[] ScriptExtensions = { ".cs" };
     public static readonly string[] PrefabExtensions = { ".prefab" };
+    public static readonly string[] MeshExtensions = { ".obj", ".gltf", ".glb", ".fbx", ".dae" };
 
 
     /// <summary>
@@ -23,7 +24,11 @@ public class EditorTextureManager : IDisposable
     {
         if (_textures.ContainsKey(key) || !File.Exists(path))
         {
-            if (!File.Exists(path)) Console.WriteLine($"[TextureManager] Icon not found at path: {path}");
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"[TextureManager] Icon not found at path: {path}");
+            }
+
             return;
         }
 
@@ -41,7 +46,7 @@ public class EditorTextureManager : IDisposable
     /// <returns>An IntPtr to the texture, or IntPtr.Zero if not found.</returns>
     public IntPtr GetTexture(string key)
     {
-        return _textures.TryGetValue(key, out int handle) ? (IntPtr)handle : IntPtr.Zero;
+        return _textures.TryGetValue(key, out int handle) ? handle : IntPtr.Zero;
     }
 
     /// <summary>
@@ -74,7 +79,7 @@ public class EditorTextureManager : IDisposable
             // It's an image file, try to load it as a thumbnail.
             if (_textures.TryGetValue(path, out int handle))
             {
-                return (IntPtr)handle; // Return cached thumbnail
+                return handle; // Return cached thumbnail
             }
 
             // Not cached, load it now.
@@ -82,7 +87,7 @@ public class EditorTextureManager : IDisposable
             if (newHandle != 0)
             {
                 _textures[path] = newHandle;
-                return (IntPtr)newHandle;
+                return newHandle;
             }
         }
 
