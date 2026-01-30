@@ -4,12 +4,12 @@ using System.Runtime.InteropServices;
 
 namespace CherrisEditor.UI;
 
-public class OutlinerPanel : IDisposable
+public class HierarchyPanel : IDisposable
 {
     private readonly Editor _editor;
     private static IntPtr _payloadGuidPtr = IntPtr.Zero;
 
-    public OutlinerPanel(Editor editor)
+    public HierarchyPanel(Editor editor)
     {
         _editor = editor;
     }
@@ -22,15 +22,15 @@ public class OutlinerPanel : IDisposable
             _payloadGuidPtr = IntPtr.Zero;
         }
 
-        ImGui.Begin("Outliner");
-        DrawOutlinerContextMenu();
+        ImGui.Begin("Hierarchy");
+        DrawHierarchyContextMenu();
 
         foreach (var go in _editor.SceneManager.GameObjects.Where(g => g.Transform.Parent is null).ToList())
         {
             DrawGameObjectNode(go);
         }
 
-        ImGui.InvisibleButton("OutlinerDropTarget", ImGui.GetContentRegionAvail());
+        ImGui.InvisibleButton("HierarchyDropTarget", ImGui.GetContentRegionAvail());
         if (ImGui.BeginDragDropTarget())
         {
             ImGuiPayloadPtr prefabPayload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.Prefab);
@@ -113,9 +113,9 @@ public class OutlinerPanel : IDisposable
         }
     }
 
-    private void DrawOutlinerContextMenu()
+    private void DrawHierarchyContextMenu()
     {
-        if (!ImGui.BeginPopupContextWindow("OutlinerContextMenu"))
+        if (!ImGui.BeginPopupContextWindow("HierarchyContextMenu"))
         {
             return;
         }

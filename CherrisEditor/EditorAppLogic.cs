@@ -21,7 +21,7 @@ public class EditorAppLogic : IDisposable
     private MenuBar _menuBar;
     private Toolbar _toolbar;
     private ViewportPanel _viewportPanel;
-    private OutlinerPanel _outlinerPanel;
+    private HierarchyPanel _hierarchyPanel;
     private InspectorPanel _inspectorPanel;
     private ContentBrowserPanel _contentBrowserPanel;
     private ConsolePanel _consolePanel;
@@ -67,7 +67,7 @@ public class EditorAppLogic : IDisposable
         _menuBar = new MenuBar(_editor, _sceneSerializer, _history);
         _toolbar = new Toolbar(_editor, _textureManager);
         _viewportPanel = new ViewportPanel(_editor, _history);
-        _outlinerPanel = new OutlinerPanel(_editor);
+        _hierarchyPanel = new HierarchyPanel(_editor);
         _inspectorPanel = new InspectorPanel(_editor, _textureManager, _history);
         _contentBrowserPanel = new ContentBrowserPanel(_editor, _textureManager);
         _consolePanel = new ConsolePanel();
@@ -107,7 +107,7 @@ public class EditorAppLogic : IDisposable
         SetupDockspace();
 
         _viewportPanel.Draw();
-        _outlinerPanel.Draw();
+        _hierarchyPanel.Draw();
         _consolePanel.Draw();
         _contentBrowserPanel.Draw();
         _inspectorPanel.DrawInspectorPanel();
@@ -234,7 +234,7 @@ public class EditorAppLogic : IDisposable
     public void Dispose()
     {
         _contentBrowserPanel.Dispose();
-        _outlinerPanel.Dispose();
+        _hierarchyPanel.Dispose();
         _textureManager.Dispose();
     }
 }

@@ -37,7 +37,7 @@ internal class InspectorPanel
 
     public void DrawInspectorPanel()
     {
-        ImGui.Begin("Details");
+        ImGui.Begin("Inspector");
 
         GameObject? selectedObject = _editor.GetSelectedGameObject();
         if (selectedObject is not null)
