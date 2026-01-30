@@ -16,7 +16,7 @@ public class ConsolePanel
 
         DrawToolbar();
         ImGui.Separator();
-        DrawLogMessages();
+        DrawLogContent();
 
         ImGui.End();
         ImGui.PopStyleVar();
@@ -28,39 +28,57 @@ public class ConsolePanel
         {
             Logger.Clear();
         }
+
         ImGui.SameLine();
         _ = ImGui.Checkbox("Auto-scroll", ref _autoScroll);
     }
 
-    private void DrawLogMessages()
+    private void DrawLogContent()
     {
-        _ = ImGui.BeginChild("LogRegion", Vector2.Zero, false, ImGuiWindowFlags.HorizontalScrollbar);
+        _ = ImGui.BeginChild("LogRegion", Vector2.Zero, false);
 
-        foreach (var msg in Logger.Messages)
+        foreach (LogMessage message in Logger.Messages)
         {
-            var color = msg.Level switch
-            {
-                LogLevel.Warning => new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
-                LogLevel.Error => new Vector4(1.0f, 0.2f, 0.2f, 1.0f),
-                _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
-            };
-
-            ImGui.PushStyleColor(ImGuiCol.Text, color);
-
-            ImGui.TextUnformatted($"[{msg.Timestamp:HH:mm:ss}]");
-            ImGui.SameLine();
-            ImGui.TextUnformatted($"[{msg.Level}]");
-            ImGui.SameLine();
-            ImGui.TextWrapped(msg.Message);
-
-            ImGui.PopStyleColor();
+            RenderMessage(message);
         }
 
-        if (_autoScroll && ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
+        HandleAutoScroll();
+        ImGui.EndChild();
+    }
+
+    private static void RenderMessage(LogMessage message)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, GetMessageColor(message.Level));
+
+        ImGui.TextUnformatted($"[{message.Timestamp:HH:mm:ss}]");
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"[{message.Level}]");
+        ImGui.SameLine();
+        ImGui.TextWrapped(message.Message);
+
+        ImGui.PopStyleColor();
+    }
+
+    private static Vector4 GetMessageColor(LogLevel level)
+    {
+        return level switch
+        {
+            LogLevel.Warning => new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
+            LogLevel.Error => new Vector4(1.0f, 0.2f, 0.2f, 1.0f),
+            _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
+        };
+    }
+
+    private void HandleAutoScroll()
+    {
+        if (!_autoScroll)
+        {
+            return;
+        }
+
+        if (ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
         {
             ImGui.SetScrollHereY(1.0f);
         }
-
-        ImGui.EndChild();
     }
 }
