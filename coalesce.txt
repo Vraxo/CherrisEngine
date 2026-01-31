@@ -5579,6 +5579,170 @@ public readonly struct LogMessage
 
 ---
 
+### `Cherris\Rendering\OpenTK\FrameBuffer.cs`
+
+```csharp
+using OpenTK.Graphics.OpenGL4;
+
+namespace Cherris.Rendering.OpenTK;
+
+internal sealed class Framebuffer : IDisposable
+{
+    public int Handle { get; }
+    public int ColorTexture { get; }
+    public int? DepthStencilRenderbuffer { get; }
+
+    public Framebuffer(int handle, int colorTexture, int? depthStencilRenderbuffer = null)
+    {
+        Handle = handle;
+        ColorTexture = colorTexture;
+        DepthStencilRenderbuffer = depthStencilRenderbuffer;
+    }
+
+    public void Dispose()
+    {
+        GL.DeleteFramebuffer(Handle);
+        GL.DeleteTexture(ColorTexture);
+        if (DepthStencilRenderbuffer.HasValue)
+        {
+            GL.DeleteRenderbuffer(DepthStencilRenderbuffer.Value);
+        }
+
+        GC.SuppressFinalize(this);
+    }
+}
+
+internal sealed class FramebufferBuilder
+{
+    private readonly int _width;
+    private readonly int _height;
+    private bool _halfSize;
+    private bool _multisampled;
+    private int _samples = 4;
+    private PixelInternalFormat _colorFormat = PixelInternalFormat.Rgba8;
+    private readonly PixelFormat _pixelFormat = PixelFormat.Rgba;
+    private PixelType _pixelType = PixelType.UnsignedByte;
+    private bool _depthStencil;
+    private TextureWrapMode _wrapMode = TextureWrapMode.Repeat;
+
+    public FramebufferBuilder(int width, int height)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            throw new ArgumentException($"Invalid framebuffer size: {width}x{height}");
+        }
+
+        _width = width;
+        _height = height;
+    }
+
+    public FramebufferBuilder WithHalfSize()
+    {
+        _halfSize = true;
+        return this;
+    }
+
+    public FramebufferBuilder WithMultisampling(int samples)
+    {
+        _multisampled = true;
+        _samples = samples;
+        return this;
+    }
+
+    public FramebufferBuilder WithColorFormat(PixelInternalFormat format, PixelType pixelType)
+    {
+        _colorFormat = format;
+        _pixelType = pixelType;
+        return this;
+    }
+
+    public FramebufferBuilder WithWrapMode(TextureWrapMode mode)
+    {
+        _wrapMode = mode;
+        return this;
+    }
+
+    public FramebufferBuilder WithDepthStencil()
+    {
+        _depthStencil = true;
+        return this;
+    }
+
+    public Framebuffer Build(string label)
+    {
+        int w = _halfSize ? Math.Max(1, _width / 2) : _width;
+        int h = _halfSize ? Math.Max(1, _height / 2) : _height;
+
+        int fbo = GL.GenFramebuffer();
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
+
+        int colorTexture;
+        if (_multisampled)
+        {
+            colorTexture = CreateMultisampleColorTexture(w, h);
+        }
+        else
+        {
+            colorTexture = CreateRegularColorTexture(w, h);
+        }
+
+        int? depthStencil = _depthStencil ? CreateDepthStencil(w, h) : null;
+
+        var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status != FramebufferErrorCode.FramebufferComplete)
+        {
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            throw new InvalidOperationException($"[FramebufferBuilder] {label} Framebuffer incomplete: {status}");
+        }
+
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        return new Framebuffer(fbo, colorTexture, depthStencil);
+    }
+
+    private int CreateMultisampleColorTexture(int w, int h)
+    {
+        int tex = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2DMultisample, tex);
+        GL.TexImage2DMultisample(TextureTargetMultisample.Texture2DMultisample, _samples, _colorFormat, w, h, true);
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2DMultisample, tex, 0);
+        return tex;
+    }
+
+    private int CreateRegularColorTexture(int w, int h)
+    {
+        int tex = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, tex);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, _colorFormat, w, h, 0, _pixelFormat, _pixelType, IntPtr.Zero);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)_wrapMode);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)_wrapMode);
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
+        return tex;
+    }
+
+    private int CreateDepthStencil(int w, int h)
+    {
+        int rbo = GL.GenRenderbuffer();
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, rbo);
+
+        if (_multisampled)
+        {
+            GL.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer, _samples, RenderbufferStorage.Depth24Stencil8, w, h);
+        }
+        else
+        {
+            GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Depth24Stencil8, w, h);
+        }
+
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, rbo);
+        return rbo;
+    }
+}
+```
+
+---
+
 ### `Cherris\Rendering\OpenTK\ImGuiController.cs`
 
 ```csharp
@@ -5963,7 +6127,7 @@ void main()
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
-namespace Cherris.OpenTK;
+namespace Cherris.Rendering.OpenTK;
 
 internal struct DebugVertex
 {
@@ -5976,38 +6140,13 @@ internal class OpenGLDebugRenderer : IDisposable
 {
     private readonly ShaderProgram _shader;
     private readonly int _viewLocation, _projectionLocation;
-    private readonly List<DebugVertex> _vertices = new();
+    private readonly List<DebugVertex> _vertices = [];
     private readonly int _vao;
     private readonly int _vbo;
 
     public OpenGLDebugRenderer()
     {
-        const string vertSource = @"
-#version 330 core
-layout (location = 0) in vec3 aPosition;
-layout (location = 1) in vec3 aColor;
-
-uniform mat4 view;
-uniform mat4 projection;
-
-out vec3 f_color;
-
-void main()
-{
-    gl_Position = projection * view * vec4(aPosition, 1.0);
-    f_color = aColor;
-}";
-        const string fragSource = @"
-#version 330 core
-in vec3 f_color;
-out vec4 FragColor;
-
-void main()
-{
-    FragColor = vec4(f_color, 1.0);
-}";
-
-        _shader = new ShaderProgram(vertSource, fragSource);
+        _shader = ShaderProgram.FromFiles("Shaders/debug.vert", "Shaders/debug.frag");
         _viewLocation = _shader.GetUniformLocation("view");
         _projectionLocation = _shader.GetUniformLocation("projection");
 
@@ -6016,10 +6155,9 @@ void main()
 
         GL.BindVertexArray(_vao);
         GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-        // Position
+
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, 0);
-        // Color
         GL.EnableVertexAttribArray(1);
         GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, Vector3.SizeInBytes);
         GL.BindVertexArray(0);
@@ -6035,14 +6173,14 @@ void main()
     {
         Vector3 halfSize = ToOpenTKVector(size * 0.5f);
         Vector3[] corners = {
-            new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),
-            new Vector3( halfSize.X, -halfSize.Y, -halfSize.Z),
-            new Vector3( halfSize.X,  halfSize.Y, -halfSize.Z),
-            new Vector3(-halfSize.X,  halfSize.Y, -halfSize.Z),
-            new Vector3(-halfSize.X, -halfSize.Y,  halfSize.Z),
-            new Vector3( halfSize.X, -halfSize.Y,  halfSize.Z),
-            new Vector3( halfSize.X,  halfSize.Y,  halfSize.Z),
-            new Vector3(-halfSize.X,  halfSize.Y,  halfSize.Z)
+            new(-halfSize.X, -halfSize.Y, -halfSize.Z),
+            new( halfSize.X, -halfSize.Y, -halfSize.Z),
+            new( halfSize.X,  halfSize.Y, -halfSize.Z),
+            new(-halfSize.X,  halfSize.Y, -halfSize.Z),
+            new(-halfSize.X, -halfSize.Y,  halfSize.Z),
+            new( halfSize.X, -halfSize.Y,  halfSize.Z),
+            new( halfSize.X,  halfSize.Y,  halfSize.Z),
+            new(-halfSize.X,  halfSize.Y,  halfSize.Z)
         };
 
         var otkOrientation = new Quaternion(orientation.X, orientation.Y, orientation.Z, orientation.W);
@@ -6053,11 +6191,10 @@ void main()
             corners[i] = Vector3.Transform(corners[i], otkOrientation) + otkCenter;
         }
 
-        // Connect the corners
         int[] indices = {
-            0, 1, 1, 2, 2, 3, 3, 0, // Bottom face
-            4, 5, 5, 6, 6, 7, 7, 4, // Top face
-            0, 4, 1, 5, 2, 6, 3, 7  // Connecting lines
+            0, 1, 1, 2, 2, 3, 3, 0,
+            4, 5, 5, 6, 6, 7, 7, 4,
+            0, 4, 1, 5, 2, 6, 3, 7
         };
 
         var tkColor = ToOpenTKVector(color);
@@ -6074,28 +6211,27 @@ void main()
         var tkColor = ToOpenTKVector(color);
         var tkCenter = ToOpenTKVector(center);
 
-        // Draw three circles on XY, XZ, YZ planes
         for (int axis = 0; axis < 3; axis++)
         {
             for (int i = 0; i < segments; i++)
             {
-                float angle1 = (i / (float)segments) * 2.0f * MathF.PI;
-                float angle2 = ((i + 1) / (float)segments) * 2.0f * MathF.PI;
+                float angle1 = i / (float)segments * 2.0f * MathF.PI;
+                float angle2 = (i + 1) / (float)segments * 2.0f * MathF.PI;
 
                 Vector3 p1 = Vector3.Zero;
                 Vector3 p2 = Vector3.Zero;
 
-                if (axis == 0) // XY plane
+                if (axis == 0)
                 {
                     p1 = new Vector3(MathF.Cos(angle1) * radius, MathF.Sin(angle1) * radius, 0);
                     p2 = new Vector3(MathF.Cos(angle2) * radius, MathF.Sin(angle2) * radius, 0);
                 }
-                else if (axis == 1) // XZ plane
+                else if (axis == 1)
                 {
                     p1 = new Vector3(MathF.Cos(angle1) * radius, 0, MathF.Sin(angle1) * radius);
                     p2 = new Vector3(MathF.Cos(angle2) * radius, 0, MathF.Sin(angle2) * radius);
                 }
-                else // YZ plane
+                else
                 {
                     p1 = new Vector3(0, MathF.Cos(angle1) * radius, MathF.Sin(angle1) * radius);
                     p2 = new Vector3(0, MathF.Cos(angle2) * radius, MathF.Sin(angle2) * radius);
@@ -6118,15 +6254,13 @@ void main()
         var topSphereCenter = center + halfLengthVector;
         var bottomSphereCenter = center - halfLengthVector;
 
-        // Draw the two hemispheres
         AddSphere(topSphereCenter, radius, color);
         AddSphere(bottomSphereCenter, radius, color);
 
-        // Draw connecting lines
-        AddLine(topSphereCenter + right * radius, bottomSphereCenter + right * radius, color);
-        AddLine(topSphereCenter - right * radius, bottomSphereCenter - right * radius, color);
-        AddLine(topSphereCenter + forward * radius, bottomSphereCenter + forward * radius, color);
-        AddLine(topSphereCenter - forward * radius, bottomSphereCenter - forward * radius, color);
+        AddLine(topSphereCenter + (right * radius), bottomSphereCenter + (right * radius), color);
+        AddLine(topSphereCenter - (right * radius), bottomSphereCenter - (right * radius), color);
+        AddLine(topSphereCenter + (forward * radius), bottomSphereCenter + (forward * radius), color);
+        AddLine(topSphereCenter - (forward * radius), bottomSphereCenter - (forward * radius), color);
     }
 
     public void Clear()
@@ -6136,7 +6270,10 @@ void main()
 
     public void Render(Matrix4 view, Matrix4 projection)
     {
-        if (_vertices.Count == 0) return;
+        if (_vertices.Count == 0)
+        {
+            return;
+        }
 
         _shader.Use();
         GL.UniformMatrix4(_viewLocation, false, ref view);
@@ -6175,9 +6312,8 @@ void main()
 ```csharp
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
-using System;
 
-namespace Cherris.OpenTK;
+namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLGridRenderer : IDisposable
 {
@@ -6190,81 +6326,7 @@ internal class OpenGLGridRenderer : IDisposable
 
     public OpenGLGridRenderer(float planeSize = 2000f)
     {
-        const string vertSource = @"
-#version 330 core
-layout (location = 0) in vec3 aPosition; // World space position of quad vertex
-
-uniform mat4 view;
-uniform mat4 projection;
-uniform vec3 uCameraPos;
-
-out vec3 vWorldPos;
-out vec3 vToCamera;
-
-void main()
-{
-    vWorldPos = aPosition;
-    vToCamera = uCameraPos - vWorldPos;
-    gl_Position = projection * view * vec4(aPosition, 1.0);
-}";
-        const string fragSource = @"
-#version 330 core
-in vec3 vWorldPos;
-in vec3 vToCamera;
-
-out vec4 FragColor;
-
-void main()
-{
-    float dist = length(vToCamera);
-    
-    // Choose grid spacing based on distance from camera
-    float spacing = 1.0;
-    if (dist > 200.0) spacing = 10.0;
-    else if (dist > 50.0) spacing = 5.0;
-
-    vec2 coord = vWorldPos.xz / spacing;
-    
-    // Compute anti-aliased grid lines
-    vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
-    float line = min(grid.x, grid.y);
-    
-    // Major lines every 10 minor lines
-    vec2 coord_major = vWorldPos.xz / (spacing * 10.0);
-    vec2 grid_major = abs(fract(coord_major - 0.5) - 0.5) / fwidth(coord_major);
-    float line_major = min(grid_major.x, grid_major.y);
-    
-    // Combine to get grid alpha
-    float grid_alpha = 1.0 - min(line, 1.0);
-    float grid_major_alpha = 1.0 - min(line_major, 1.0);
-    
-    // Axes
-    float axis_width = 1.5; // in pixels
-    vec2 axis_d = fwidth(vWorldPos.xz);
-    float x_axis_alpha = smoothstep(axis_width * axis_d.y, 0.0, abs(vWorldPos.z)); // Line on Z=0 is X axis
-    float z_axis_alpha = smoothstep(axis_width * axis_d.x, 0.0, abs(vWorldPos.x)); // Line on X=0 is Z axis
-    float axes_alpha = max(x_axis_alpha, z_axis_alpha);
-    
-    // Fade out in the distance
-    float fade_start = 250.0;
-    float fade_end = 350.0;
-    float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
-    
-    float final_alpha = (max(grid_alpha, axes_alpha) + grid_major_alpha) * fade;
-    
-    if (final_alpha < 0.01)
-        discard;
-    
-    // Determine color
-    vec3 color = vec3(0.3); // Minor grid line color
-    color = mix(color, vec3(0.4), grid_major_alpha); // Major grid line color
-    color = mix(color, vec3(0.8, 0.2, 0.2), x_axis_alpha); // X-Axis (line at Z=0) -> Red
-    color = mix(color, vec3(0.2, 0.3, 0.8), z_axis_alpha); // Z-Axis (line at X=0) -> Blue
-
-    FragColor = vec4(color, final_alpha);
-}";
-
-        _shader = new ShaderProgram(vertSource, fragSource);
+        _shader = ShaderProgram.FromFiles("Shaders/grid.vert", "Shaders/grid.frag");
         _viewLocation = _shader.GetUniformLocation("view");
         _projectionLocation = _shader.GetUniformLocation("projection");
         _cameraPosLocation = _shader.GetUniformLocation("uCameraPos");
@@ -6285,7 +6347,6 @@ void main()
         GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
         GL.BufferData(BufferTarget.ArrayBuffer, _vertexCount * Vector3.SizeInBytes, vertices, BufferUsageHint.StaticDraw);
 
-        // Position attribute
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, Vector3.SizeInBytes, 0);
         GL.BindVertexArray(0);
@@ -6293,7 +6354,10 @@ void main()
 
     public void Render(Matrix4 view, Matrix4 projection, Vector3 cameraPos)
     {
-        if (_vertexCount == 0) return;
+        if (_vertexCount == 0)
+        {
+            return;
+        }
 
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
@@ -6316,13 +6380,15 @@ void main()
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            _shader?.Dispose();
-            GL.DeleteVertexArray(_vao);
-            GL.DeleteBuffer(_vbo);
-            _disposed = true;
+            return;
         }
+
+        _shader?.Dispose();
+        GL.DeleteVertexArray(_vao);
+        GL.DeleteBuffer(_vbo);
+        _disposed = true;
     }
 }
 ```
@@ -6400,252 +6466,322 @@ internal class OpenGLMeshRendererData : IDisposable
 ### `Cherris\Rendering\OpenTK\OpenGLPostProcessor.cs`
 
 ```csharp
-using Cherris;
-using Cherris.Components;
-using Cherris.Core;
+using Cherris.Core.Logging;
 using OpenTK.Graphics.OpenGL4;
 using System.Diagnostics;
 
-namespace Cherris;
+namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLPostProcessor : IDisposable
 {
-    // Framebuffers and Textures
-    private int _width, _height;
-    private int _msaaFbo;
-    private int _msaaColorTexture;
-    private int _rboDepthStencil;
-
-    private int _resolvedFbo;
-    private int _resolvedColorTexture;
-
-    private int _compositeFbo;
-    private int _compositeTexture;
-    public int FinalSceneTexture => _compositeTexture;
-
-    private readonly int[] _bloomFbos = new int[2];
-    private readonly int[] _bloomTextures = new int[2];
-
-    // Quad for rendering post-processing effects
-    private int _quadVao;
-    private int _quadVbo;
-
-    // Shaders
-    private ShaderProgram _brightPassShader;
-    private ShaderProgram _blurShader;
-    private ShaderProgram _finalCompositeShader;
+    private readonly OpenGLPostProcessResources _resources;
+    private int _width = 1;
+    private int _height = 1;
 
     public OpenGLPostProcessor()
     {
-        SetupShaders();
-        SetupQuad();
+        _resources = new OpenGLPostProcessResources();
+        CreateFramebuffers();
+        CheckGLError("Constructor end");
     }
+
+    public int FinalSceneTexture => _resources.Composite?.ColorTexture ?? 0;
 
     public void OnResize(int width, int height)
     {
-        _width = width;
-        _height = height;
-        SetupFramebuffers(width, height);
+        int newW = Math.Max(1, width);
+        int newH = Math.Max(1, height);
+
+        if (newW == _width && newH == _height && _resources.Msaa != null)
+        {
+            return;
+        }
+
+        Logger.Info($"[OpenGLPostProcessor] Resizing to {newW}x{newH}");
+        _width = newW;
+        _height = newH;
+        DisposeFramebuffers();
+        CreateFramebuffers();
+        CheckGLError("Resize end");
     }
 
     public void BeginFrame()
     {
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
+        if (_resources.Msaa == null)
+        {
+            Logger.Error("[OpenGLPostProcessor] MSAA FBO is null");
+            return;
+        }
+
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _resources.Msaa.Handle);
+        CheckGLError("Bind MSAA FBO");
         GL.Viewport(0, 0, _width, _height);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        CheckGLError("Clear MSAA");
     }
 
     public void ResolveMsaa()
     {
-        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFbo);
-        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _resolvedFbo);
+        if (_resources.Msaa == null || _resources.Resolved == null)
+        {
+            return;
+        }
+
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _resources.Msaa.Handle);
+        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _resources.Resolved.Handle);
+        CheckGLError("Bind Resolve FBOs");
         GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+        CheckGLError("Blit MSAA->Resolved");
     }
 
     public void RenderBloom()
     {
+        if (_resources.Bloom[0] == null || _resources.BrightPassShader == null)
+        {
+            return;
+        }
+
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
+        CheckGLError("Disable depth/cull");
 
-        // A. Bright pass
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]);
-        GL.Viewport(0, 0, _width / 2, _height / 2);
-        _brightPassShader.Use();
+        RenderBrightPass();
+        RenderBlur();
+
+        GL.Enable(EnableCap.DepthTest);
+        GL.Enable(EnableCap.CullFace);
+    }
+
+    private void RenderBrightPass()
+    {
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _resources.Bloom[0].Handle);
+        CheckGLError("Bind Bloom[0]");
+        GL.Viewport(0, 0, Math.Max(1, _width / 2), Math.Max(1, _height / 2));
+
+        _resources.BrightPassShader.Use();
+        CheckGLError("Use BrightPass shader");
         GL.ActiveTexture(TextureUnit.Texture0);
-        GL.BindTexture(TextureTarget.Texture2D, _resolvedColorTexture);
-        RenderQuad();
+        GL.BindTexture(TextureTarget.Texture2D, _resources.Resolved.ColorTexture);
+        CheckGLError("Bind Resolved texture");
+        _resources.RenderQuad();
+        CheckGLError("Render brightpass quad");
+    }
 
-        // B. Blur pass
+    private void RenderBlur()
+    {
         bool horizontal = true;
         bool firstIteration = true;
         const int amount = 10;
-        _blurShader.Use();
-        GL.Uniform1(_blurShader.GetUniformLocation("image"), 0);
+
+        int imageLoc = GL.GetUniformLocation(_resources.BlurShader.Handle, "image");
+        int horizontalLoc = GL.GetUniformLocation(_resources.BlurShader.Handle, "horizontal");
+        CheckGLError("Get blur uniform locations");
+
+        _resources.BlurShader.Use();
+        GL.Uniform1(imageLoc, 0);
+        CheckGLError("Set blur uniform 'image'");
+
         for (int i = 0; i < amount; i++)
         {
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[horizontal ? 1 : 0]);
-            GL.Uniform1(_blurShader.GetUniformLocation("horizontal"), horizontal ? 1 : 0);
+            int targetIndex = horizontal ? 1 : 0;
+            int sourceIndex = firstIteration ? 0 : (horizontal ? 0 : 1);
+
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _resources.Bloom[targetIndex].Handle);
+            CheckGLError($"Bind Bloom[{targetIndex}]");
+            GL.Uniform1(horizontalLoc, horizontal ? 1 : 0);
             GL.ActiveTexture(TextureUnit.Texture0);
-            GL.BindTexture(TextureTarget.Texture2D, _bloomTextures[firstIteration ? 0 : (horizontal ? 0 : 1)]);
-            RenderQuad();
+            GL.BindTexture(TextureTarget.Texture2D, _resources.Bloom[sourceIndex].ColorTexture);
+            CheckGLError($"Bind Bloom[{sourceIndex}] texture");
+            _resources.RenderQuad();
+
             horizontal = !horizontal;
-            if (firstIteration) firstIteration = false;
+            if (firstIteration)
+            {
+                firstIteration = false;
+            }
         }
+        CheckGLError("Blur loop end");
     }
 
     public void Composite(float exposure)
     {
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
-        GL.Viewport(0, 0, _width, _height);
-        GL.Clear(ClearBufferMask.ColorBufferBit);
-
-        _finalCompositeShader.Use();
-        var imageLoc = _finalCompositeShader.GetUniformLocation("image");
-        var exposureLoc = _finalCompositeShader.GetUniformLocation("exposure");
-        var isBloomLoc = _finalCompositeShader.GetUniformLocation("isBloomPass");
-
-        // Pass 1: Draw tonemapped scene
-        GL.ActiveTexture(TextureUnit.Texture0);
-        GL.BindTexture(TextureTarget.Texture2D, _resolvedColorTexture);
-        GL.Uniform1(imageLoc, 0);
-        GL.Uniform1(exposureLoc, exposure);
-        GL.Uniform1(isBloomLoc, 0); // Corresponds to 'false'
-        RenderQuad();
-
-        // Pass 2: Additively blend bloom on top
-        GL.Enable(EnableCap.Blend);
-        GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
-        GL.ActiveTexture(TextureUnit.Texture0);
-
-        // After 10 blur iterations, the final result is in _bloomTextures[0].
-        GL.BindTexture(TextureTarget.Texture2D, _bloomTextures[0]);
-        GL.Uniform1(imageLoc, 0); // Sampler is still 0
-        GL.Uniform1(isBloomLoc, 1); // Corresponds to 'true'
-        RenderQuad();
-
-        GL.Disable(EnableCap.Blend); // Reset blend state
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-    }
-
-    private void RenderQuad()
-    {
-        GL.BindVertexArray(_quadVao);
-        GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
-        GL.BindVertexArray(0);
-    }
-
-    private void SetupShaders()
-    {
-        _brightPassShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
-        _blurShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_blur.frag");
-        _finalCompositeShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_composite.frag");
-    }
-
-    private void SetupQuad()
-    {
-        float[] quadVertices = {
-            // positions   // texCoords
-            -1.0f,  1.0f,  0.0f, 1.0f,
-            -1.0f, -1.0f,  0.0f, 0.0f,
-             1.0f, -1.0f,  1.0f, 0.0f,
-             -1.0f,  1.0f,  0.0f, 1.0f,
-             1.0f, -1.0f,  1.0f, 0.0f,
-             1.0f,  1.0f,  1.0f, 1.0f
-        };
-
-        _quadVao = GL.GenVertexArray();
-        _quadVbo = GL.GenBuffer();
-        GL.BindVertexArray(_quadVao);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _quadVbo);
-        GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * quadVertices.Length, quadVertices, BufferUsageHint.StaticDraw);
-        GL.EnableVertexAttribArray(0);
-        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
-        GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (2 * sizeof(float)));
-        GL.BindVertexArray(0);
-    }
-
-    private void SetupFramebuffers(int width, int height)
-    {
-        DisposeFramebuffers();
-
-        // MSAA FBO for scene rendering
-        _msaaFbo = GL.GenFramebuffer();
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
-        _msaaColorTexture = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2DMultisample, _msaaColorTexture);
-        GL.TexImage2DMultisample(TextureTargetMultisample.Texture2DMultisample, 4, PixelInternalFormat.Rgba16f, width, height, true);
-        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2DMultisample, _msaaColorTexture, 0);
-        _rboDepthStencil = GL.GenRenderbuffer();
-        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _rboDepthStencil);
-        GL.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer, 4, RenderbufferStorage.Depth24Stencil8, width, height);
-        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _rboDepthStencil);
-        if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) Console.WriteLine("ERROR::FRAMEBUFFER:: MSAA Framebuffer is not complete!");
-
-        // Resolved FBO for post-processing source
-        _resolvedFbo = GL.GenFramebuffer();
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _resolvedFbo);
-        _resolvedColorTexture = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, _resolvedColorTexture);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f, width, height, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _resolvedColorTexture, 0);
-        if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) Console.WriteLine("ERROR::FRAMEBUFFER:: Resolved Framebuffer is not complete!");
-
-        // Ping-pong FBOs for bloom blur
-        GL.GenFramebuffers(_bloomFbos.Length, _bloomFbos);
-        GL.GenTextures(_bloomTextures.Length, _bloomTextures);
-        for (int i = 0; i < 2; i++)
+        if (_resources.Composite == null || _resources.FinalCompositeShader == null)
         {
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[i]);
-            GL.BindTexture(TextureTarget.Texture2D, _bloomTextures[i]);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba16f, width / 2, height / 2, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _bloomTextures[i], 0);
-            if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) Console.WriteLine($"ERROR::FRAMEBUFFER:: Bloom Framebuffer {i} is not complete!");
+            Logger.Error("[OpenGLPostProcessor] Cannot composite: null resources");
+            return;
         }
 
-        // Final composite FBO for ImGui
-        _compositeFbo = GL.GenFramebuffer();
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo);
-        _compositeTexture = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, _compositeTexture);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8, width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _compositeTexture, 0);
-        if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) Console.WriteLine("ERROR::FRAMEBUFFER:: Composite Framebuffer is not complete!");
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _resources.Composite.Handle);
+        CheckGLError("Bind Composite");
+        GL.Viewport(0, 0, _width, _height);
+        GL.Clear(ClearBufferMask.ColorBufferBit);
+        CheckGLError("Clear Composite");
+
+        int imageLoc = GL.GetUniformLocation(_resources.FinalCompositeShader.Handle, "image");
+        int exposureLoc = GL.GetUniformLocation(_resources.FinalCompositeShader.Handle, "exposure");
+        int isBloomLoc = GL.GetUniformLocation(_resources.FinalCompositeShader.Handle, "isBloomPass");
+        CheckGLError("Get composite uniform locations");
+
+        _resources.FinalCompositeShader.Use();
+
+        // Main scene pass (IsBloomPass = 0)
+        GL.ActiveTexture(TextureUnit.Texture0);
+        GL.BindTexture(TextureTarget.Texture2D, _resources.Resolved.ColorTexture);
+        GL.Uniform1(imageLoc, 0);
+        GL.Uniform1(exposureLoc, exposure);
+        GL.Uniform1(isBloomLoc, 0);
+        CheckGLError("Set composite uniforms (main pass)");
+        _resources.RenderQuad();
+        CheckGLError("Render composite main quad");
+
+        // Bloom additive blend (IsBloomPass = 1)
+        GL.Enable(EnableCap.Blend);
+        GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
+        GL.BindTexture(TextureTarget.Texture2D, _resources.Bloom[0].ColorTexture);
+        GL.Uniform1(isBloomLoc, 1);
+        CheckGLError("Set composite uniforms (bloom pass)");
+        _resources.RenderQuad();
+        CheckGLError("Render composite bloom quad");
+        GL.Disable(EnableCap.Blend);
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        CheckGLError("Unbind Composite");
+    }
+
+    private void CreateFramebuffers()
+    {
+        _resources.Msaa = new FramebufferBuilder(_width, _height)
+            .WithMultisampling(4)
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .WithDepthStencil()
+            .Build("MSAA");
+
+        _resources.Resolved = new FramebufferBuilder(_width, _height)
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .Build("Resolved");
+
+        _resources.Bloom[0] = new FramebufferBuilder(_width, _height)
+            .WithHalfSize()
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .WithWrapMode(TextureWrapMode.ClampToEdge)
+            .Build("Bloom0");
+
+        _resources.Bloom[1] = new FramebufferBuilder(_width, _height)
+            .WithHalfSize()
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .WithWrapMode(TextureWrapMode.ClampToEdge)
+            .Build("Bloom1");
+
+        _resources.Composite = new FramebufferBuilder(_width, _height)
+            .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
+            .Build("Composite");
+
+        Logger.Info($"[OpenGLPostProcessor] Framebuffers created. Composite handle: {_resources.Composite.Handle}, Texture: {_resources.Composite.ColorTexture}");
     }
 
     private void DisposeFramebuffers()
     {
-        GL.DeleteFramebuffer(_msaaFbo);
-        GL.DeleteTexture(_msaaColorTexture);
-        GL.DeleteRenderbuffer(_rboDepthStencil);
-        GL.DeleteFramebuffer(_resolvedFbo);
-        GL.DeleteTexture(_resolvedColorTexture);
-        GL.DeleteFramebuffer(_compositeFbo);
-        GL.DeleteTexture(_compositeTexture);
-        GL.DeleteFramebuffers(_bloomFbos.Length, _bloomFbos);
-        GL.DeleteTextures(_bloomTextures.Length, _bloomTextures);
+        _resources.Msaa?.Dispose();
+        _resources.Resolved?.Dispose();
+        _resources.Bloom[0]?.Dispose();
+        _resources.Bloom[1]?.Dispose();
+        _resources.Composite?.Dispose();
+
+        _resources.Msaa = null;
+        _resources.Resolved = null;
+        _resources.Bloom[0] = null;
+        _resources.Bloom[1] = null;
+        _resources.Composite = null;
     }
 
     public void Dispose()
     {
-        _brightPassShader?.Dispose();
-        _blurShader?.Dispose();
-        _finalCompositeShader?.Dispose();
-
-        GL.DeleteVertexArray(_quadVao);
-        GL.DeleteBuffer(_quadVbo);
-
         DisposeFramebuffers();
+        _resources.Dispose();
+    }
+
+    [Conditional("DEBUG")]
+    private void CheckGLError(string context)
+    {
+        ErrorCode error;
+        while ((error = GL.GetError()) != ErrorCode.NoError)
+        {
+            Logger.Error($"[GL ERROR] {context}: {error}");
+        }
+    }
+
+    private class OpenGLPostProcessResources : IDisposable
+    {
+        public Framebuffer? Msaa { get; set; }
+        public Framebuffer? Resolved { get; set; }
+        public Framebuffer[] Bloom { get; set; } = new Framebuffer[2];
+        public Framebuffer? Composite { get; set; }
+
+        public ShaderProgram BrightPassShader { get; }
+        public ShaderProgram BlurShader { get; }
+        public ShaderProgram FinalCompositeShader { get; }
+
+        private readonly int _quadVao;
+        private readonly int _quadVbo;
+
+        public OpenGLPostProcessResources()
+        {
+            BrightPassShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
+            BlurShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_blur.frag");
+            FinalCompositeShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_composite.frag");
+
+            if (BrightPassShader == null || BlurShader == null || FinalCompositeShader == null)
+            {
+                throw new InvalidOperationException("Failed to load post-processing shaders");
+            }
+
+            (_quadVao, _quadVbo) = CreateFullscreenQuad();
+        }
+
+        public void RenderQuad()
+        {
+            if (_quadVao == 0)
+            {
+                return;
+            }
+
+            GL.BindVertexArray(_quadVao);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+            GL.BindVertexArray(0);
+        }
+
+        private static (int vao, int vbo) CreateFullscreenQuad()
+        {
+            float[] quadVertices = {
+                -1.0f,  1.0f,  0.0f, 1.0f,
+                -1.0f, -1.0f,  0.0f, 0.0f,
+                 1.0f, -1.0f,  1.0f, 0.0f,
+                -1.0f,  1.0f,  0.0f, 1.0f,
+                 1.0f, -1.0f,  1.0f, 0.0f,
+                 1.0f,  1.0f,  1.0f, 1.0f
+            };
+
+            int vao = GL.GenVertexArray();
+            int vbo = GL.GenBuffer();
+            GL.BindVertexArray(vao);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * quadVertices.Length, quadVertices, BufferUsageHint.StaticDraw);
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
+            GL.EnableVertexAttribArray(1);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
+            GL.BindVertexArray(0);
+            return (vao, vbo);
+        }
+
+        public void Dispose()
+        {
+            BrightPassShader?.Dispose();
+            BlurShader?.Dispose();
+            FinalCompositeShader?.Dispose();
+            GL.DeleteVertexArray(_quadVao);
+            GL.DeleteBuffer(_quadVbo);
+        }
     }
 }
 ```
@@ -6891,7 +7027,7 @@ using Cherris.Components;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
-namespace Cherris;
+namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLSkyboxRenderer : IDisposable
 {
@@ -6903,32 +7039,7 @@ internal class OpenGLSkyboxRenderer : IDisposable
 
     public OpenGLSkyboxRenderer()
     {
-        const string skyboxVert = @"
-#version 330 core
-layout (location = 0) in vec3 aPosition;
-
-out vec3 TexCoords;
-
-uniform mat4 view;
-uniform mat4 projection;
-
-void main()
-{
-    TexCoords = aPosition;
-    vec4 pos = projection * view * vec4(aPosition, 1.0);
-    gl_Position = pos.xyww;
-}";
-        const string skyboxFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec3 TexCoords;
-uniform samplerCube skybox;
-
-void main()
-{    
-    FragColor = texture(skybox, TexCoords);
-}";
-        _skyboxShaderProgram = new ShaderProgram(skyboxVert, skyboxFrag);
+        _skyboxShaderProgram = ShaderProgram.FromFiles("Shaders/skybox.vert", "Shaders/skybox.frag");
         _skyboxViewLocation = _skyboxShaderProgram.GetUniformLocation("view");
         _skyboxProjectionLocation = _skyboxShaderProgram.GetUniformLocation("projection");
         _skyboxSamplerLocation = _skyboxShaderProgram.GetUniformLocation("skybox");
@@ -6936,6 +7047,7 @@ void main()
         _skyboxCubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
     }
 
+    [Obsolete]
     public void Render(Skybox skybox, Matrix4 view, Matrix4 projection)
     {
         GL.DepthFunc(DepthFunction.Lequal);
@@ -6944,7 +7056,7 @@ void main()
         _skyboxShaderProgram.Use();
 
         var skyboxView = view;
-        skyboxView.Row3 = new Vector4(0, 0, 0, 1); // Remove translation
+        skyboxView.Row3 = new Vector4(0, 0, 0, 1);
 
         GL.UniformMatrix4(_skyboxViewLocation, false, ref skyboxView);
         GL.UniformMatrix4(_skyboxProjectionLocation, false, ref projection);
@@ -7267,7 +7379,6 @@ public class OpenTKGameWindow : IGameWindow
 ```csharp
 using Cherris.Components;
 using Cherris.Core;
-using Cherris.OpenTK;
 using Cherris.Rendering;
 using Cherris.Rendering.OpenTK;
 using OpenTK.Graphics.OpenGL4;
@@ -7726,8 +7837,11 @@ public class OpenTKTexture : ITexture
 ### `Cherris\Rendering\OpenTK\ShaderProgram.cs`
 
 ```csharp
+using Cherris.Core.Logging;
 using Cherris.Utils;
 using OpenTK.Graphics.OpenGL;
+
+namespace Cherris.Rendering.OpenTK;
 
 public class ShaderProgram : IDisposable
 {
@@ -7736,8 +7850,8 @@ public class ShaderProgram : IDisposable
 
     public ShaderProgram(string vertexSource, string fragmentSource)
     {
-        var vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
-        var fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
+        int vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
+        int fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
 
         Handle = GL.CreateProgram();
         GL.AttachShader(Handle, vertexShader);
@@ -7745,10 +7859,11 @@ public class ShaderProgram : IDisposable
         GL.LinkProgram(Handle);
 
         GL.GetProgram(Handle, GetProgramParameterName.LinkStatus, out int linkStatus);
+
         if (linkStatus == 0)
         {
-            var info = GL.GetProgramInfoLog(Handle);
-            throw new InvalidOperationException($"Failed to link shader program: {info}");
+            string info = GL.GetProgramInfoLog(Handle);
+            throw new InvalidOperationException($"Program linking failed: {info}");
         }
 
         GL.DetachShader(Handle, vertexShader);
@@ -7759,41 +7874,42 @@ public class ShaderProgram : IDisposable
 
     public static ShaderProgram? FromFiles(string vertexPath, string fragmentPath)
     {
-        var vertSourcePath = EditorResources.Find(vertexPath);
-        var fragSourcePath = EditorResources.Find(fragmentPath);
+        string? vertSourcePath = EditorResources.Find(vertexPath);
+        string? fragSourcePath = EditorResources.Find(fragmentPath);
 
         if (vertSourcePath is null || fragSourcePath is null)
         {
-            Console.WriteLine($"[ShaderProgram] Error: Could not find shader files: {vertexPath}, {fragmentPath}");
+            Logger.Error($"[ShaderProgram] Could not find shader files: {vertexPath}, {fragmentPath}");
             return null;
         }
 
         try
         {
-            var vertSource = File.ReadAllText(vertSourcePath);
-            var fragSource = File.ReadAllText(fragSourcePath);
+            string vertSource = File.ReadAllText(vertSourcePath);
+            string fragSource = File.ReadAllText(fragSourcePath);
             return new ShaderProgram(vertSource, fragSource);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ShaderProgram] Error creating shader from files: {ex.Message}");
+            Logger.Error($"[ShaderProgram] {ex.Message}");
             return null;
         }
     }
 
-
     private static int CompileShader(ShaderType type, string source)
     {
-        var shader = GL.CreateShader(type);
+        int shader = GL.CreateShader(type);
         GL.ShaderSource(shader, source);
         GL.CompileShader(shader);
 
         GL.GetShader(shader, ShaderParameter.CompileStatus, out int compileStatus);
+
         if (compileStatus == 0)
         {
-            var info = GL.GetShaderInfoLog(shader);
-            throw new InvalidOperationException($"Failed to compile {type}: {info}");
+            string info = GL.GetShaderInfoLog(shader);
+            throw new InvalidOperationException($"{type} compilation failed: {info}");
         }
+
         return shader;
     }
 
@@ -7809,11 +7925,13 @@ public class ShaderProgram : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            GL.DeleteProgram(Handle);
-            _disposed = true;
+            return;
         }
+
+        GL.DeleteProgram(Handle);
+        _disposed = true;
     }
 }
 ```

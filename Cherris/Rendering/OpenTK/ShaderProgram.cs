@@ -2,6 +2,8 @@
 using Cherris.Utils;
 using OpenTK.Graphics.OpenGL;
 
+namespace Cherris.Rendering.OpenTK;
+
 public class ShaderProgram : IDisposable
 {
     public readonly int Handle;
@@ -9,8 +11,8 @@ public class ShaderProgram : IDisposable
 
     public ShaderProgram(string vertexSource, string fragmentSource)
     {
-        var vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
-        var fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
+        int vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
+        int fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
 
         Handle = GL.CreateProgram();
         GL.AttachShader(Handle, vertexShader);
@@ -18,9 +20,10 @@ public class ShaderProgram : IDisposable
         GL.LinkProgram(Handle);
 
         GL.GetProgram(Handle, GetProgramParameterName.LinkStatus, out int linkStatus);
+
         if (linkStatus == 0)
         {
-            var info = GL.GetProgramInfoLog(Handle);
+            string info = GL.GetProgramInfoLog(Handle);
             throw new InvalidOperationException($"Program linking failed: {info}");
         }
 
@@ -32,8 +35,8 @@ public class ShaderProgram : IDisposable
 
     public static ShaderProgram? FromFiles(string vertexPath, string fragmentPath)
     {
-        var vertSourcePath = EditorResources.Find(vertexPath);
-        var fragSourcePath = EditorResources.Find(fragmentPath);
+        string? vertSourcePath = EditorResources.Find(vertexPath);
+        string? fragSourcePath = EditorResources.Find(fragmentPath);
 
         if (vertSourcePath is null || fragSourcePath is null)
         {
@@ -43,8 +46,8 @@ public class ShaderProgram : IDisposable
 
         try
         {
-            var vertSource = File.ReadAllText(vertSourcePath);
-            var fragSource = File.ReadAllText(fragSourcePath);
+            string vertSource = File.ReadAllText(vertSourcePath);
+            string fragSource = File.ReadAllText(fragSourcePath);
             return new ShaderProgram(vertSource, fragSource);
         }
         catch (Exception ex)
@@ -54,19 +57,20 @@ public class ShaderProgram : IDisposable
         }
     }
 
-
     private static int CompileShader(ShaderType type, string source)
     {
-        var shader = GL.CreateShader(type);
+        int shader = GL.CreateShader(type);
         GL.ShaderSource(shader, source);
         GL.CompileShader(shader);
 
         GL.GetShader(shader, ShaderParameter.CompileStatus, out int compileStatus);
+
         if (compileStatus == 0)
         {
-            var info = GL.GetShaderInfoLog(shader);
+            string info = GL.GetShaderInfoLog(shader);
             throw new InvalidOperationException($"{type} compilation failed: {info}");
         }
+
         return shader;
     }
 
@@ -82,10 +86,12 @@ public class ShaderProgram : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            GL.DeleteProgram(Handle);
-            _disposed = true;
+            return;
         }
+
+        GL.DeleteProgram(Handle);
+        _disposed = true;
     }
 }
