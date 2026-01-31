@@ -68,12 +68,14 @@ internal class OpenGLGridRenderer : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            _shader?.Dispose();
-            GL.DeleteVertexArray(_vao);
-            GL.DeleteBuffer(_vbo);
-            _disposed = true;
+            return;
         }
+
+        _shader?.Dispose();
+        GL.DeleteVertexArray(_vao);
+        GL.DeleteBuffer(_vbo);
+        _disposed = true;
     }
 }

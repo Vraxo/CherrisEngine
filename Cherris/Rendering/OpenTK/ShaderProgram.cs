@@ -1,4 +1,5 @@
-﻿using Cherris.Utils;
+﻿using Cherris.Core.Logging;
+using Cherris.Utils;
 using OpenTK.Graphics.OpenGL;
 
 public class ShaderProgram : IDisposable
@@ -20,7 +21,7 @@ public class ShaderProgram : IDisposable
         if (linkStatus == 0)
         {
             var info = GL.GetProgramInfoLog(Handle);
-            throw new InvalidOperationException($"Failed to link shader program: {info}");
+            throw new InvalidOperationException($"Program linking failed: {info}");
         }
 
         GL.DetachShader(Handle, vertexShader);
@@ -36,7 +37,7 @@ public class ShaderProgram : IDisposable
 
         if (vertSourcePath is null || fragSourcePath is null)
         {
-            Console.WriteLine($"[ShaderProgram] Error: Could not find shader files: {vertexPath}, {fragmentPath}");
+            Logger.Error($"[ShaderProgram] Could not find shader files: {vertexPath}, {fragmentPath}");
             return null;
         }
 
@@ -48,7 +49,7 @@ public class ShaderProgram : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ShaderProgram] Error creating shader from files: {ex.Message}");
+            Logger.Error($"[ShaderProgram] {ex.Message}");
             return null;
         }
     }
@@ -64,7 +65,7 @@ public class ShaderProgram : IDisposable
         if (compileStatus == 0)
         {
             var info = GL.GetShaderInfoLog(shader);
-            throw new InvalidOperationException($"Failed to compile {type}: {info}");
+            throw new InvalidOperationException($"{type} compilation failed: {info}");
         }
         return shader;
     }
