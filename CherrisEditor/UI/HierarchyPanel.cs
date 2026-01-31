@@ -20,7 +20,10 @@ public class HierarchyPanel : IDisposable
     {
         ImGui.Begin("Hierarchy");
 
+        ImGui.PushItemWidth(-1);
         ImGui.InputTextWithHint("##HierarchySearch", "Search...", ref _searchQuery, 256);
+        ImGui.PopItemWidth();
+
         ImGui.Separator();
 
         DrawHierarchyContextMenu();
