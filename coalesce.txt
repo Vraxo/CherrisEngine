@@ -1172,8 +1172,8 @@ public class BloomRenderer : IDisposable
 ```csharp
 using Cherris.Components;
 using Cherris.Core.Logging;
-using Cherris.OpenTK;
 using Cherris.Rendering;
+using Cherris.Rendering.OpenTK;
 using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using System.Numerics;
@@ -1191,7 +1191,7 @@ public abstract class Engine
     public IRenderer Renderer { get; }
 
     protected GameObject? SelectedGameObject { get; set; }
-    protected readonly RenderingInterface _backend;
+    protected readonly IRenderingInterface _backend;
 
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
@@ -1272,7 +1272,7 @@ public abstract class Engine
 
     protected abstract void LoadContent();
 
-    private static RenderingInterface CreateBackend(GraphicsAPI api)
+    private static IRenderingInterface CreateBackend(GraphicsAPI api)
     {
         return api switch
         {
@@ -1312,8 +1312,14 @@ public abstract class Engine
         }
 
         Renderer.RenderFrame(
-            SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects, SceneManager.Lights,
-            SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
+            SceneManager.MainCamera,
+            SceneManager.Skybox,
+            SceneManager.GameObjects,
+            SceneManager.Lights,
+            SelectedGameObject,
+            _gameWindow.Width,
+            _gameWindow.Height,
+            Exposure);
 
         Renderer.ProcessSnapshot();
         _gameWindow.SwapBuffers();
@@ -3907,7 +3913,7 @@ using Veldrid.StartupUtilities;
 namespace Cherris.Core;
 
 // Concrete Veldrid backend implementation, nested here to avoid creating new files.
-public class VeldridBackend : RenderingInterface
+public class VeldridBackend : IRenderingInterface
 {
     public IGameWindow GameWindow { get; private set; }
     public IRenderer Renderer { get; private set; }
@@ -4371,6 +4377,26 @@ public interface IRenderer : IDisposable
 
 ---
 
+### `Cherris\RenderingInterface\IRenderingInterface.cs`
+
+```csharp
+using Cherris.Rendering;
+
+namespace Cherris.RenderingInterface;
+
+public interface IRenderingInterface : IDisposable
+{
+    IGameWindow GameWindow { get; }
+    IRenderer Renderer { get; }
+    IResourceManager ResourceManager { get; }
+    IUIController? UIController { get; }
+
+    void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked);
+}
+```
+
+---
+
 ### `Cherris\RenderingInterface\IResourceManager.cs`
 
 ```csharp
@@ -4413,26 +4439,6 @@ public interface IUIController : IDisposable
 {
     void Update(float deltaTime);
     void Render();
-}
-```
-
----
-
-### `Cherris\RenderingInterface\RenderingInterface.cs`
-
-```csharp
-using Cherris.RenderingInterface;
-
-namespace Cherris.Rendering;
-
-public interface RenderingInterface : IDisposable
-{
-    IGameWindow GameWindow { get; }
-    IRenderer Renderer { get; }
-    IResourceManager ResourceManager { get; }
-    IUIController? UIController { get; }
-
-    void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked);
 }
 ```
 
@@ -6972,41 +6978,40 @@ void main()
 ### `Cherris\Rendering\OpenTK\OpenTKBackend.cs`
 
 ```csharp
-using Cherris.Rendering;
-using Cherris.Rendering.OpenTK;
 using Cherris.RenderingInterface;
 
-namespace Cherris.OpenTK
+namespace Cherris.Rendering.OpenTK;
+
+public class OpenTKBackend : IRenderingInterface
 {
-    public class OpenTKBackend : RenderingInterface
+    public IGameWindow? GameWindow { get; private set; }
+    public IRenderer? Renderer { get; private set; }
+    public IResourceManager? ResourceManager { get; private set; }
+    public IUIController? UIController { get; private set; }
+
+    private ImGuiController? _imGuiController;
+
+    public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
     {
-        public IGameWindow GameWindow { get; private set; }
-        public IRenderer Renderer { get; private set; }
-        public IResourceManager ResourceManager { get; private set; }
-        public IUIController? UIController { get; private set; }
+        OpenTKGameWindow window = new(windowTitle, width, height, startWithMouseLocked);
+        GameWindow = window;
 
-        private ImGuiController _imGuiController;
+        _imGuiController = new(width, height);
+        UIController = _imGuiController;
+        window.SetImGuiController(_imGuiController);
 
-        public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
-        {
-            var window = new OpenTKGameWindow(windowTitle, width, height, startWithMouseLocked);
-            GameWindow = window;
+        Renderer = new OpenTKRenderer(_imGuiController);
+        ResourceManager = new OpenTKResourceManager();
+    }
 
-            _imGuiController = new ImGuiController(width, height);
-            UIController = _imGuiController;
-            window.SetImGuiController(_imGuiController);
+    public void Dispose()
+    {
+        _imGuiController?.Dispose();
+        GameWindow?.Dispose();
+        Renderer?.Dispose();
+        ResourceManager?.Dispose();
 
-            Renderer = new OpenTKRenderer(_imGuiController);
-            ResourceManager = new OpenTKResourceManager();
-        }
-
-        public void Dispose()
-        {
-            _imGuiController?.Dispose();
-            GameWindow?.Dispose();
-            Renderer?.Dispose();
-            ResourceManager?.Dispose();
-        }
+        GC.SuppressFinalize(this);
     }
 }
 ```

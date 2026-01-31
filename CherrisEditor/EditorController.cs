@@ -1,6 +1,5 @@
 ﻿using Cherris;
 using Cherris.Components;
-using Cherris.Core.Logging;
 using ImGuizmoNET;
 using System.Numerics;
 
@@ -15,6 +14,7 @@ public class EditorController : Script
     private float _yaw;
     private float _pitch;
     private readonly Editor _editor;
+    private bool _isRotating;
 
     public EditorController(Editor editor)
     {
@@ -26,8 +26,6 @@ public class EditorController : Script
         var eulerAngles = EngineMath.ToEulerAngles(GameObject.Transform.Rotation);
         _pitch = eulerAngles.X;
         _yaw = eulerAngles.Y;
-
-        Logger.Info($"[Controller] Initializing camera orientation. Yaw: {_yaw}, Pitch: {_pitch}. From Transform Rotation: {GameObject.Transform.Rotation}");
     }
 
     public override void Start()
@@ -37,19 +35,37 @@ public class EditorController : Script
 
     public override void Update(float deltaTime)
     {
-        if (!_editor.IsViewportHovered || ImGuizmo.IsUsing())
+        if (ImGuizmo.IsUsing())
         {
             return;
         }
 
-        HandleInput(deltaTime);
-    }
+        // Manage camera rotation drag state
+        if (_isRotating && !Input.IsMouseButtonDown(MouseButton.Right))
+        {
+            _isRotating = false;
+        }
 
-    private void HandleInput(float deltaTime)
-    {
-        HandleMouseZoom();
-        HandleKeyboardMovement(deltaTime);
-        HandleMouseLook();
+        if (!_isRotating && Input.WasMouseButtonPressed(MouseButton.Right) && _editor.IsViewportHovered)
+        {
+            _isRotating = true;
+            SyncYawPitchFromTransform();
+        }
+
+        bool viewportHovered = _editor.IsViewportHovered;
+
+        // Keyboard and Zoom only work when viewport is hovered
+        if (viewportHovered)
+        {
+            HandleMouseZoom();
+            HandleKeyboardMovement(deltaTime);
+        }
+
+        // Mouse look works when hovering OR when dragging started inside
+        if (viewportHovered || _isRotating)
+        {
+            HandleMouseLook();
+        }
     }
 
     private void HandleMouseZoom()
@@ -125,11 +141,6 @@ public class EditorController : Script
         if (!Input.IsMouseButtonDown(MouseButton.Right))
         {
             return;
-        }
-
-        if (Input.WasMouseButtonPressed(MouseButton.Right))
-        {
-            SyncYawPitchFromTransform();
         }
 
         Vector2 mouseDelta = Input.MouseDelta;
