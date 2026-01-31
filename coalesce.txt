@@ -5611,6 +5611,16 @@ internal sealed class Framebuffer : IDisposable
         GC.SuppressFinalize(this);
     }
 }
+```
+
+---
+
+### `Cherris\Rendering\OpenTK\FramebufferBuilder.cs`
+
+```csharp
+using OpenTK.Graphics.OpenGL4;
+
+namespace Cherris.Rendering.OpenTK;
 
 internal sealed class FramebufferBuilder
 {
@@ -6472,7 +6482,7 @@ using System.Diagnostics;
 
 namespace Cherris.Rendering.OpenTK;
 
-internal class OpenGLPostProcessor : IDisposable
+internal partial class OpenGLPostProcessor : IDisposable
 {
     private readonly OpenGLPostProcessResources _resources;
     private int _width = 1;
@@ -6548,6 +6558,7 @@ internal class OpenGLPostProcessor : IDisposable
         RenderBrightPass();
         RenderBlur();
 
+        // Restore state if needed, though usually RenderFrame handles this for the next pass
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.CullFace);
     }
@@ -6611,6 +6622,10 @@ internal class OpenGLPostProcessor : IDisposable
             return;
         }
 
+        // Disable culling and depth test for the fullscreen quad pass
+        GL.Disable(EnableCap.CullFace);
+        GL.Disable(EnableCap.DepthTest);
+
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _resources.Composite.Handle);
         CheckGLError("Bind Composite");
         GL.Viewport(0, 0, _width, _height);
@@ -6646,6 +6661,10 @@ internal class OpenGLPostProcessor : IDisposable
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         CheckGLError("Unbind Composite");
+
+        // Restore depth/cull defaults for safety, although RenderFrame usually resets them
+        GL.Enable(EnableCap.DepthTest);
+        GL.Enable(EnableCap.CullFace);
     }
 
     private void CreateFramebuffers()
@@ -6709,8 +6728,21 @@ internal class OpenGLPostProcessor : IDisposable
             Logger.Error($"[GL ERROR] {context}: {error}");
         }
     }
+}
+```
 
-    private class OpenGLPostProcessResources : IDisposable
+---
+
+### `Cherris\Rendering\OpenTK\OpenGLPostProcessResources.cs`
+
+```csharp
+using OpenTK.Graphics.OpenGL4;
+
+namespace Cherris.Rendering.OpenTK;
+
+internal partial class OpenGLPostProcessor
+{
+    public class OpenGLPostProcessResources : IDisposable
     {
         public Framebuffer? Msaa { get; set; }
         public Framebuffer? Resolved { get; set; }

@@ -11,140 +11,104 @@ internal class OpenGLSceneRenderer : IDisposable
     private const int MAX_POINT_LIGHTS = 4;
     private const int MAX_SPOT_LIGHTS = 4;
 
-    private readonly ShaderProgram _shaderProgram;
-    private readonly int _modelLocation, _viewLocation, _projectionLocation;
-    private readonly int _tilingLocation, _emissiveLocation, _viewPosLocation;
+    private readonly ShaderProgram _shader;
 
-    // Material Uniform Locations
-    private readonly int _materialTextureLocation, _materialShininessLocation, _materialSpecularIntensityLocation;
+    // Uniform Locations
+    private readonly int _modelLoc, _viewLoc, _projLoc, _viewPosLoc;
+    private readonly int _tilingLoc, _emissiveLoc, _specularLoc, _shininessLoc, _textureLoc;
 
-    // Directional Light Uniform Locations
-    private readonly int _dirLightDirLocation, _dirLightColorLocation, _dirLightIntensityLocation, _dirLightAmbientStrengthLocation;
-    private readonly int _hasDirLightLocation;
+    // Light Uniforms
+    private readonly int _hasDirLightLoc;
+    private readonly int _dirLightDirLoc, _dirLightColorLoc, _dirLightIntLoc, _dirLightAmbLoc;
 
-    // Point Light Uniform Locations
-    private readonly int _numPointLightsLocation;
-    private readonly int[] _pointLightPosLocations = new int[MAX_POINT_LIGHTS];
-    private readonly int[] _pointLightColorLocations = new int[MAX_POINT_LIGHTS];
-    private readonly int[] _pointLightIntensityLocations = new int[MAX_POINT_LIGHTS];
-    private readonly int[] _pointLightRangeLocations = new int[MAX_POINT_LIGHTS];
+    private readonly int _numPointLightsLoc;
+    private readonly LightUniforms[] _pointLightUniforms = new LightUniforms[MAX_POINT_LIGHTS];
 
-    // Spot Light Uniform Locations
-    private readonly int _numSpotLightsLocation;
-    private readonly int[] _spotLightPosLocations = new int[MAX_SPOT_LIGHTS];
-    private readonly int[] _spotLightDirLocations = new int[MAX_SPOT_LIGHTS];
-    private readonly int[] _spotLightColorLocations = new int[MAX_SPOT_LIGHTS];
-    private readonly int[] _spotLightIntensityLocations = new int[MAX_SPOT_LIGHTS];
-    private readonly int[] _spotLightRangeLocations = new int[MAX_SPOT_LIGHTS];
-    private readonly int[] _spotLightInnerCutOffLocations = new int[MAX_SPOT_LIGHTS];
-    private readonly int[] _spotLightOuterCutOffLocations = new int[MAX_SPOT_LIGHTS];
+    private readonly int _numSpotLightsLoc;
+    private readonly SpotLightUniforms[] _spotLightUniforms = new SpotLightUniforms[MAX_SPOT_LIGHTS];
 
+    private struct LightUniforms
+    {
+        public int Pos, Color, Intensity, Range;
+    }
+
+    private struct SpotLightUniforms
+    {
+        public int Pos, Dir, Color, Intensity, Range, InnerCut, OuterCut;
+    }
 
     public OpenGLSceneRenderer()
     {
-        _shaderProgram = ShaderProgram.FromFiles("Shaders/scene.vert", "Shaders/scene.frag");
+        _shader = ShaderProgram.FromFiles("Shaders/scene.vert", "Shaders/scene.frag");
 
-        // Standard uniforms
-        _modelLocation = _shaderProgram.GetUniformLocation("model");
-        _viewLocation = _shaderProgram.GetUniformLocation("view");
-        _projectionLocation = _shaderProgram.GetUniformLocation("projection");
-        _tilingLocation = _shaderProgram.GetUniformLocation("uTiling");
-        _emissiveLocation = _shaderProgram.GetUniformLocation("uEmissive");
-        _viewPosLocation = _shaderProgram.GetUniformLocation("uViewPos");
+        // Matrices
+        _modelLoc = _shader.GetUniformLocation("model");
+        _viewLoc = _shader.GetUniformLocation("view");
+        _projLoc = _shader.GetUniformLocation("projection");
+        _viewPosLoc = _shader.GetUniformLocation("uViewPos");
 
-        // Material uniforms
-        _materialTextureLocation = _shaderProgram.GetUniformLocation("uMaterial.texture_diffuse");
-        _materialShininessLocation = _shaderProgram.GetUniformLocation("uMaterial.shininess");
-        _materialSpecularIntensityLocation = _shaderProgram.GetUniformLocation("uMaterial.specularIntensity");
+        // Material
+        _textureLoc = _shader.GetUniformLocation("uMaterial.texture_diffuse");
+        _tilingLoc = _shader.GetUniformLocation("uTiling");
+        _emissiveLoc = _shader.GetUniformLocation("uEmissive");
+        _specularLoc = _shader.GetUniformLocation("uMaterial.specularIntensity");
+        _shininessLoc = _shader.GetUniformLocation("uMaterial.shininess");
 
-        // Directional light uniforms
-        _hasDirLightLocation = _shaderProgram.GetUniformLocation("uHasDirLight");
-        _dirLightDirLocation = _shaderProgram.GetUniformLocation("uDirLight.direction");
-        _dirLightColorLocation = _shaderProgram.GetUniformLocation("uDirLight.color");
-        _dirLightIntensityLocation = _shaderProgram.GetUniformLocation("uDirLight.intensity");
-        _dirLightAmbientStrengthLocation = _shaderProgram.GetUniformLocation("uDirLight.ambientStrength");
+        // Directional Light
+        _hasDirLightLoc = _shader.GetUniformLocation("uHasDirLight");
+        _dirLightDirLoc = _shader.GetUniformLocation("uDirLight.direction");
+        _dirLightColorLoc = _shader.GetUniformLocation("uDirLight.color");
+        _dirLightIntLoc = _shader.GetUniformLocation("uDirLight.intensity");
+        _dirLightAmbLoc = _shader.GetUniformLocation("uDirLight.ambientStrength");
 
-        // Point light uniforms
-        _numPointLightsLocation = _shaderProgram.GetUniformLocation("uNumPointLights");
+        // Point Lights
+        _numPointLightsLoc = _shader.GetUniformLocation("uNumPointLights");
         for (int i = 0; i < MAX_POINT_LIGHTS; i++)
         {
-            _pointLightPosLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].position");
-            _pointLightColorLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].color");
-            _pointLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].intensity");
-            _pointLightRangeLocations[i] = _shaderProgram.GetUniformLocation($"uPointLights[{i}].range");
+            string baseName = $"uPointLights[{i}]";
+            _pointLightUniforms[i] = new LightUniforms
+            {
+                Pos = _shader.GetUniformLocation($"{baseName}.position"),
+                Color = _shader.GetUniformLocation($"{baseName}.color"),
+                Intensity = _shader.GetUniformLocation($"{baseName}.intensity"),
+                Range = _shader.GetUniformLocation($"{baseName}.range")
+            };
         }
 
-        // Spot light uniforms
-        _numSpotLightsLocation = _shaderProgram.GetUniformLocation("uNumSpotLights");
+        // Spot Lights
+        _numSpotLightsLoc = _shader.GetUniformLocation("uNumSpotLights");
         for (int i = 0; i < MAX_SPOT_LIGHTS; i++)
         {
-            _spotLightPosLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].position");
-            _spotLightDirLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].direction");
-            _spotLightColorLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].color");
-            _spotLightIntensityLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].intensity");
-            _spotLightRangeLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].range");
-            _spotLightInnerCutOffLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].innerCutOff");
-            _spotLightOuterCutOffLocations[i] = _shaderProgram.GetUniformLocation($"uSpotLights[{i}].outerCutOff");
+            string baseName = $"uSpotLights[{i}]";
+            _spotLightUniforms[i] = new SpotLightUniforms
+            {
+                Pos = _shader.GetUniformLocation($"{baseName}.position"),
+                Dir = _shader.GetUniformLocation($"{baseName}.direction"),
+                Color = _shader.GetUniformLocation($"{baseName}.color"),
+                Intensity = _shader.GetUniformLocation($"{baseName}.intensity"),
+                Range = _shader.GetUniformLocation($"{baseName}.range"),
+                InnerCut = _shader.GetUniformLocation($"{baseName}.innerCutOff"),
+                OuterCut = _shader.GetUniformLocation($"{baseName}.outerCutOff")
+            };
         }
     }
 
     public void Render(IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, Matrix4 view, Matrix4 projection)
     {
-        _shaderProgram.Use();
+        _shader.Use();
 
-        // Set uniforms that are constant for the frame
-        GL.Uniform1(_materialTextureLocation, 0);
-        GL.UniformMatrix4(_viewLocation, false, ref view);
-        GL.UniformMatrix4(_projectionLocation, false, ref projection);
+        // 1. Global Uniforms
+        GL.Uniform1(_textureLoc, 0);
+        GL.UniformMatrix4(_viewLoc, false, ref view);
+        GL.UniformMatrix4(_projLoc, false, ref projection);
+
         var viewPos = view.Inverted().Row3.Xyz;
-        GL.Uniform3(_viewPosLocation, viewPos.X, viewPos.Y, viewPos.Z);
+        GL.Uniform3(_viewPosLoc, viewPos.X, viewPos.Y, viewPos.Z);
 
-        // Find and set light uniforms from the cached list
-        var directionalLight = lights.FirstOrDefault(l => l.Type == LightType.Directional);
-        var pointLights = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
-        var spotLights = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
+        // 2. Lights
+        UploadLights(lights);
 
-        if (directionalLight is not null)
-        {
-            GL.Uniform1(_hasDirLightLocation, 1);
-            var lightTravelDirection = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, directionalLight.GameObject.Transform.Rotation));
-            var directionToLight = -lightTravelDirection;
-            GL.Uniform3(_dirLightDirLocation, directionToLight.X, directionToLight.Y, directionToLight.Z);
-            GL.Uniform3(_dirLightColorLocation, directionalLight.Color.X, directionalLight.Color.Y, directionalLight.Color.Z);
-            GL.Uniform1(_dirLightIntensityLocation, directionalLight.Intensity);
-            GL.Uniform1(_dirLightAmbientStrengthLocation, directionalLight.AmbientStrength);
-        }
-        else
-        {
-            GL.Uniform1(_hasDirLightLocation, 0);
-        }
-
-        GL.Uniform1(_numPointLightsLocation, pointLights.Count);
-        for (int i = 0; i < pointLights.Count; i++)
-        {
-            var light = pointLights[i];
-            GL.Uniform3(_pointLightPosLocations[i], light.GameObject.Transform.Position.X, light.GameObject.Transform.Position.Y, light.GameObject.Transform.Position.Z);
-            GL.Uniform3(_pointLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
-            GL.Uniform1(_pointLightIntensityLocations[i], light.Intensity);
-            GL.Uniform1(_pointLightRangeLocations[i], light.Range);
-        }
-
-        GL.Uniform1(_numSpotLightsLocation, spotLights.Count);
-        for (int i = 0; i < spotLights.Count; i++)
-        {
-            var light = spotLights[i];
-            var transform = light.GameObject.Transform;
-            var direction = transform.Forward;
-            GL.Uniform3(_spotLightPosLocations[i], transform.Position.X, transform.Position.Y, transform.Position.Z);
-            GL.Uniform3(_spotLightDirLocations[i], direction.X, direction.Y, direction.Z);
-            GL.Uniform3(_spotLightColorLocations[i], light.Color.X, light.Color.Y, light.Color.Z);
-            GL.Uniform1(_spotLightIntensityLocations[i], light.Intensity);
-            GL.Uniform1(_spotLightRangeLocations[i], light.Range);
-            GL.Uniform1(_spotLightInnerCutOffLocations[i], MathF.Cos(light.InnerConeAngle * (MathF.PI / 180.0f)));
-            GL.Uniform1(_spotLightOuterCutOffLocations[i], MathF.Cos(light.OuterConeAngle * (MathF.PI / 180.0f)));
-        }
-
-        // Render each object
+        // 3. Objects
         foreach (var go in gameObjects)
         {
             var mr = go.GetComponent<MeshRenderer>();
@@ -153,15 +117,68 @@ internal class OpenGLSceneRenderer : IDisposable
                 continue;
             }
 
-            var data = GetOrCreateBackendData(mr);
-            DrawObject(go, mr, data);
+            DrawObject(go, mr);
         }
     }
 
-    private void DrawObject(GameObject go, MeshRenderer meshRenderer, OpenGLMeshRendererData data)
+    private void UploadLights(IEnumerable<Light> lights)
     {
-        var material = meshRenderer.Material;
-        if (material.Texture is OpenTKTexture glTexture)
+        var dirLight = lights.FirstOrDefault(l => l.Type == LightType.Directional);
+
+        if (dirLight != null)
+        {
+            GL.Uniform1(_hasDirLightLoc, 1);
+            var dir = Vector3.Normalize(Vector3.Transform(-Vector3.UnitZ, dirLight.GameObject.Transform.Rotation.ToOpenTK()));
+
+            GL.Uniform3(_dirLightDirLoc, -dir); // Direction *to* light
+            GL.Uniform3(_dirLightColorLoc, dirLight.Color.ToOpenTK());
+            GL.Uniform1(_dirLightIntLoc, dirLight.Intensity);
+            GL.Uniform1(_dirLightAmbLoc, dirLight.AmbientStrength);
+        }
+        else
+        {
+            GL.Uniform1(_hasDirLightLoc, 0);
+        }
+
+        var points = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
+        GL.Uniform1(_numPointLightsLoc, points.Count);
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            var l = points[i];
+            var u = _pointLightUniforms[i];
+            GL.Uniform3(u.Pos, l.GameObject.Transform.Position.ToOpenTK());
+            GL.Uniform3(u.Color, l.Color.ToOpenTK());
+            GL.Uniform1(u.Intensity, l.Intensity);
+            GL.Uniform1(u.Range, l.Range);
+        }
+
+        var spots = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
+        GL.Uniform1(_numSpotLightsLoc, spots.Count);
+
+        for (int i = 0; i < spots.Count; i++)
+        {
+            var l = spots[i];
+            var u = _spotLightUniforms[i];
+            var transform = l.GameObject.Transform;
+
+            GL.Uniform3(u.Pos, transform.Position.ToOpenTK());
+            GL.Uniform3(u.Dir, transform.Forward.ToOpenTK());
+            GL.Uniform3(u.Color, l.Color.ToOpenTK());
+            GL.Uniform1(u.Intensity, l.Intensity);
+            GL.Uniform1(u.Range, l.Range);
+            GL.Uniform1(u.InnerCut, MathF.Cos(l.InnerConeAngle * (MathF.PI / 180.0f)));
+            GL.Uniform1(u.OuterCut, MathF.Cos(l.OuterConeAngle * (MathF.PI / 180.0f)));
+        }
+    }
+
+    private void DrawObject(GameObject go, MeshRenderer mr)
+    {
+        var data = GetOrCreateBackendData(mr);
+        var mat = mr.Material;
+
+        // Texture
+        if (mat.Texture is OpenTKTexture glTexture)
         {
             glTexture.Bind(TextureUnit.Texture0);
         }
@@ -170,14 +187,15 @@ internal class OpenGLSceneRenderer : IDisposable
             GL.BindTexture(TextureTarget.Texture2D, 0);
         }
 
+        // Material Uniforms
         var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
+        GL.UniformMatrix4(_modelLoc, false, ref model);
+        GL.Uniform2(_tilingLoc, mat.TextureTiling.X, mat.TextureTiling.Y);
+        GL.Uniform3(_emissiveLoc, mat.EmissiveColor.X, mat.EmissiveColor.Y, mat.EmissiveColor.Z);
+        GL.Uniform1(_specularLoc, mat.SpecularIntensity);
+        GL.Uniform1(_shininessLoc, mat.Shininess);
 
-        GL.UniformMatrix4(_modelLocation, false, ref model);
-        GL.Uniform2(_tilingLocation, material.TextureTiling.X, material.TextureTiling.Y);
-        GL.Uniform3(_emissiveLocation, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
-        GL.Uniform1(_materialSpecularIntensityLocation, material.SpecularIntensity);
-        GL.Uniform1(_materialShininessLocation, material.Shininess);
-
+        // Draw
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
         GL.BindVertexArray(0);
@@ -220,6 +238,20 @@ internal class OpenGLSceneRenderer : IDisposable
 
     public void Dispose()
     {
-        _shaderProgram?.Dispose();
+        _shader.Dispose();
+    }
+}
+
+// Helpers Extensions for this file
+file static class MathExtensions
+{
+    public static Vector3 ToOpenTK(this System.Numerics.Vector3 v)
+    {
+        return new(v.X, v.Y, v.Z);
+    }
+
+    public static Quaternion ToOpenTK(this System.Numerics.Quaternion q)
+    {
+        return new(q.X, q.Y, q.Z, q.W);
     }
 }
