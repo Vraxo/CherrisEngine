@@ -7,15 +7,18 @@ namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKRenderer : IRenderer, IDisposable
 {
+    private readonly ImGuiController _imGuiController;
+
+    // Sub-renderers
     private readonly OpenGLSceneRenderer _sceneRenderer;
     private readonly OpenGLSkyboxRenderer _skyboxRenderer;
     private readonly OpenGLPostProcessor _postProcessor;
-    private readonly ImGuiController _imGuiController;
     private readonly OpenGLDebugRenderer _debugRenderer;
     private readonly OpenGLGizmoRenderer _gizmoRenderer;
     private readonly OpenGLGridRenderer _gridRenderer;
 
     private Vector2i _viewportSize = new(1, 1);
+
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
 
@@ -23,7 +26,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
     {
         _imGuiController = imGuiController;
 
-        // Sub-renderers
         _sceneRenderer = new OpenGLSceneRenderer();
         _skyboxRenderer = new OpenGLSkyboxRenderer();
         _postProcessor = new OpenGLPostProcessor();
@@ -52,19 +54,20 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        // 1. Scene Pass (if viewport visible)
-        if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
+        bool isViewportValid = _viewportSize.X > 1 && _viewportSize.Y > 1;
+
+        if (mainCamera is not null && isViewportValid)
         {
             RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
         }
 
-        // 2. UI Pass (Screen)
         RenderUIPass((int)windowWidth, (int)windowHeight);
     }
 
     [Obsolete]
     private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure)
     {
+        // 1. Prepare Framebuffer & State
         GL.Enable(EnableCap.FramebufferSrgb);
         _postProcessor.BeginFrame();
 
@@ -73,6 +76,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.CullFace(CullFaceMode.Back);
         GL.Disable(EnableCap.Blend);
 
+        // 2. Calculate Matrices
         var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
         var projection = Matrix4.CreatePerspectiveFieldOfView(
             mainCamera.FieldOfView * (float)Math.PI / 180.0f,
@@ -80,27 +84,24 @@ public class OpenTKRenderer : IRenderer, IDisposable
             mainCamera.NearClipPlane,
             mainCamera.FarClipPlane);
 
-        // Render Skybox
+        // 3. Render Passes
         if (skybox?.CubeMapTexture is not null)
         {
             _skyboxRenderer.Render(skybox, view, projection);
         }
 
-        // Render Grid
         if (ShowGrid)
         {
             var cameraPos = view.Inverted().Row3.Xyz;
             _gridRenderer.Render(view, projection, cameraPos);
         }
 
-        // Render Scene Objects
         _sceneRenderer.Render(gameObjects, lights, view, projection);
 
-        // Render Gizmos & Debug Lines
         _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
         _debugRenderer.Render(view, projection);
 
-        // Post Processing
+        // 4. Post Processing
         _postProcessor.ResolveMsaa();
         _postProcessor.RenderBloom();
         _postProcessor.Composite(exposure);
@@ -110,17 +111,20 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
     private void RenderUIPass(int width, int height)
     {
+        // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
         GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        GL.Disable(EnableCap.DepthTest);
+        GL.Disable(EnableCap.CullFace);
 
         _imGuiController.Render();
     }
 
     public void OnWindowResized() { }
-    public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
-    public void ProcessSnapshot() { /* Not implemented for OpenTK */ }
+    public void RequestSnapshot(string path) { /* Not implemented */ }
+    public void ProcessSnapshot() { /* Not implemented */ }
 
     public void Dispose()
     {

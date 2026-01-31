@@ -6,20 +6,22 @@ namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLSkyboxRenderer : IDisposable
 {
-    private readonly ShaderProgram _skyboxShaderProgram;
-    private readonly int _skyboxViewLocation;
-    private readonly int _skyboxProjectionLocation;
-    private readonly int _skyboxSamplerLocation;
-    private readonly OpenGLMeshRendererData _skyboxCubeData;
+    private readonly ShaderProgram _shader;
+    private readonly int _viewLoc;
+    private readonly int _projLoc;
+    private readonly int _samplerLoc;
+    private readonly OpenGLMeshRendererData _cubeData;
 
     public OpenGLSkyboxRenderer()
     {
-        _skyboxShaderProgram = ShaderProgram.FromFiles("Shaders/skybox.vert", "Shaders/skybox.frag");
-        _skyboxViewLocation = _skyboxShaderProgram.GetUniformLocation("view");
-        _skyboxProjectionLocation = _skyboxShaderProgram.GetUniformLocation("projection");
-        _skyboxSamplerLocation = _skyboxShaderProgram.GetUniformLocation("skybox");
+        _shader = ShaderProgram.FromFiles("Shaders/skybox.vert", "Shaders/skybox.frag")
+                 ?? throw new InvalidOperationException("Failed to load skybox shaders.");
 
-        _skyboxCubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
+        _viewLoc = _shader.GetUniformLocation("view");
+        _projLoc = _shader.GetUniformLocation("projection");
+        _samplerLoc = _shader.GetUniformLocation("skybox");
+
+        _cubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
     }
 
     [Obsolete]
@@ -28,33 +30,35 @@ internal class OpenGLSkyboxRenderer : IDisposable
         GL.DepthFunc(DepthFunction.Lequal);
         GL.CullFace(CullFaceMode.Front);
 
-        _skyboxShaderProgram.Use();
+        _shader.Use();
 
+        // Remove translation from view matrix (skybox stays at origin)
         var skyboxView = view;
         skyboxView.Row3 = new Vector4(0, 0, 0, 1);
 
-        GL.UniformMatrix4(_skyboxViewLocation, false, ref skyboxView);
-        GL.UniformMatrix4(_skyboxProjectionLocation, false, ref projection);
+        GL.UniformMatrix4(_viewLoc, false, ref skyboxView);
+        GL.UniformMatrix4(_projLoc, false, ref projection);
 
         if (skybox.CubeMapTexture is OpenTKTexture glSkyboxTexture)
         {
             glSkyboxTexture.Bind(TextureUnit.Texture0);
-            GL.Uniform1(_skyboxSamplerLocation, 0);
+            GL.Uniform1(_samplerLoc, 0);
         }
 
-        GL.BindVertexArray(_skyboxCubeData.VaoHandle);
-        GL.DrawElements(PrimitiveType.Triangles, _skyboxCubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
+        GL.BindVertexArray(_cubeData.VaoHandle);
+        GL.DrawElements(PrimitiveType.Triangles, _cubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
 
         GL.BindVertexArray(0);
         GL.BindTexture(TextureTarget.TextureCubeMap, 0);
 
+        // Restore default state
         GL.CullFace(CullFaceMode.Back);
         GL.DepthFunc(DepthFunction.Less);
     }
 
     public void Dispose()
     {
-        _skyboxShaderProgram?.Dispose();
-        _skyboxCubeData?.Dispose();
+        _shader?.Dispose();
+        _cubeData?.Dispose();
     }
 }

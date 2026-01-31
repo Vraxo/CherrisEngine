@@ -1,6 +1,6 @@
 ﻿using Cherris.Core.Logging;
 using Cherris.Utils;
-using OpenTK.Graphics.OpenGL;
+using OpenTK.Graphics.OpenGL4;
 
 namespace Cherris.Rendering.OpenTK;
 
@@ -81,7 +81,12 @@ public class ShaderProgram : IDisposable
 
     public int GetUniformLocation(string name)
     {
-        return GL.GetUniformLocation(Handle, name);
+        int location = GL.GetUniformLocation(Handle, name);
+        if (location == -1)
+        {
+            Logger.Warning($"[ShaderProgram] Uniform '{name}' not found or optimized out.");
+        }
+        return location;
     }
 
     public void Dispose()

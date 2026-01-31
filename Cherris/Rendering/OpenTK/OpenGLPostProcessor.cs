@@ -1,12 +1,10 @@
 ﻿using Cherris.Core.Logging;
 using OpenTK.Graphics.OpenGL4;
-using System.Diagnostics;
 
 namespace Cherris.Rendering.OpenTK;
 
 internal sealed class OpenGLPostProcessor : IDisposable
 {
-    // -- Resources --
     private Framebuffer? _msaaFbo;
     private Framebuffer? _resolvedFbo;
     private readonly Framebuffer?[] _bloomFbos = new Framebuffer[2];
@@ -26,22 +24,18 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
     public OpenGLPostProcessor()
     {
-        // Load Shaders
-        _brightPassShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_brightpass.frag")
-            ?? throw new InvalidOperationException("Failed to load brightpass shader");
+        _brightPassShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
+        _blurShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_blur.frag");
+        _compositeShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_composite.frag");
 
-        _blurShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_blur.frag")
-            ?? throw new InvalidOperationException("Failed to load blur shader");
-
-        _compositeShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_composite.frag")
-            ?? throw new InvalidOperationException("Failed to load composite shader");
-
-        // Create Quad
         (_quadVao, _quadVbo) = CreateFullscreenQuad();
-
-        // Create Initial Framebuffers
         CreateFramebuffers();
-        CheckGLError("Constructor end");
+    }
+
+    private static ShaderProgram LoadShaderOrThrow(string vert, string frag)
+    {
+        return ShaderProgram.FromFiles(vert, frag)
+               ?? throw new InvalidOperationException($"Failed to load shader: {vert}, {frag}");
     }
 
     public void OnResize(int width, int height)
@@ -60,7 +54,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         DisposeFramebuffers();
         CreateFramebuffers();
-        CheckGLError("Resize end");
     }
 
     public void BeginFrame()
@@ -97,8 +90,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
 
-        RenderBrightPass();
-        RenderBlur();
+        PerformBrightPass();
+        PerformBlurPass();
 
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.CullFace);
@@ -120,23 +113,21 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         _compositeShader.Use();
 
-        // Main scene pass
+        // Pass 1: Draw Scene
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("image"), 0);
         GL.Uniform1(_compositeShader.GetUniformLocation("exposure"), exposure);
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 0);
+        DrawQuad();
 
-        RenderQuad();
-
-        // Bloom additive pass
+        // Pass 2: Add Bloom
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
 
         GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[0]!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 1);
-
-        RenderQuad();
+        DrawQuad();
 
         GL.Disable(EnableCap.Blend);
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
@@ -145,7 +136,7 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Enable(EnableCap.CullFace);
     }
 
-    private void RenderBrightPass()
+    private void PerformBrightPass()
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);
         GL.Viewport(0, 0, Math.Max(1, _width / 2), Math.Max(1, _height / 2));
@@ -153,41 +144,41 @@ internal sealed class OpenGLPostProcessor : IDisposable
         _brightPassShader.Use();
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
-
-        RenderQuad();
+        DrawQuad();
     }
 
-    private void RenderBlur()
+    private void PerformBlurPass()
     {
         bool horizontal = true;
-        bool firstIteration = true;
-        const int amount = 10;
-
-        int imageLoc = _blurShader.GetUniformLocation("image");
+        const int blurIterations = 10;
         int horizontalLoc = _blurShader.GetUniformLocation("horizontal");
 
         _blurShader.Use();
-        GL.Uniform1(imageLoc, 0);
+        GL.Uniform1(_blurShader.GetUniformLocation("image"), 0);
 
-        for (int i = 0; i < amount; i++)
+        for (int i = 0; i < blurIterations; i++)
         {
-            int targetIndex = horizontal ? 1 : 0;
-            int sourceIndex = firstIteration ? 0 : (horizontal ? 0 : 1);
+            int sourceIdx = horizontal ? 0 : 1;
+            int targetIdx = horizontal ? 1 : 0;
 
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIndex]!.Handle);
+            // First iteration reads from Bloom0 (result of bright pass)
+            if (i == 0)
+            {
+                sourceIdx = 0;
+            }
+
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIdx]!.Handle);
             GL.Uniform1(horizontalLoc, horizontal ? 1 : 0);
 
             GL.ActiveTexture(TextureUnit.Texture0);
-            GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[sourceIndex]!.ColorTexture);
+            GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[sourceIdx]!.ColorTexture);
 
-            RenderQuad();
-
+            DrawQuad();
             horizontal = !horizontal;
-            firstIteration = false;
         }
     }
 
-    private void RenderQuad()
+    private void DrawQuad()
     {
         GL.BindVertexArray(_quadVao);
         GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
@@ -206,17 +197,15 @@ internal sealed class OpenGLPostProcessor : IDisposable
             .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
             .Build("Resolved");
 
-        _bloomFbos[0] = new FramebufferBuilder(_width, _height)
-            .WithHalfSize()
-            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
-            .WithWrapMode(TextureWrapMode.ClampToEdge)
-            .Build("Bloom0");
-
-        _bloomFbos[1] = new FramebufferBuilder(_width, _height)
-            .WithHalfSize()
-            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
-            .WithWrapMode(TextureWrapMode.ClampToEdge)
-            .Build("Bloom1");
+        // Bloom buffers are half size
+        for (int i = 0; i < 2; i++)
+        {
+            _bloomFbos[i] = new FramebufferBuilder(_width, _height)
+                .WithHalfSize()
+                .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+                .WithWrapMode(TextureWrapMode.ClampToEdge)
+                .Build($"Bloom{i}");
+        }
 
         _compositeFbo = new FramebufferBuilder(_width, _height)
             .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
@@ -258,7 +247,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
-
         GL.EnableVertexAttribArray(1);
         GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
 
@@ -274,15 +262,5 @@ internal sealed class OpenGLPostProcessor : IDisposable
         _compositeShader.Dispose();
         GL.DeleteVertexArray(_quadVao);
         GL.DeleteBuffer(_quadVbo);
-    }
-
-    [Conditional("DEBUG")]
-    private void CheckGLError(string context)
-    {
-        ErrorCode error;
-        while ((error = GL.GetError()) != ErrorCode.NoError)
-        {
-            Logger.Error($"[GL ERROR] {context}: {error}");
-        }
     }
 }
