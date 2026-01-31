@@ -1,7 +1,7 @@
 ﻿using Cherris.Components;
 using Cherris.Core.Logging;
-using Cherris.OpenTK;
 using Cherris.Rendering;
+using Cherris.Rendering.OpenTK;
 using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using System.Numerics;
@@ -19,7 +19,7 @@ public abstract class Engine
     public IRenderer Renderer { get; }
 
     protected GameObject? SelectedGameObject { get; set; }
-    protected readonly RenderingInterface _backend;
+    protected readonly IRenderingInterface _backend;
 
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
@@ -100,7 +100,7 @@ public abstract class Engine
 
     protected abstract void LoadContent();
 
-    private static RenderingInterface CreateBackend(GraphicsAPI api)
+    private static IRenderingInterface CreateBackend(GraphicsAPI api)
     {
         return api switch
         {
@@ -140,8 +140,14 @@ public abstract class Engine
         }
 
         Renderer.RenderFrame(
-            SceneManager.MainCamera, SceneManager.Skybox, SceneManager.GameObjects, SceneManager.Lights,
-            SelectedGameObject, _gameWindow.Width, _gameWindow.Height, Exposure);
+            SceneManager.MainCamera,
+            SceneManager.Skybox,
+            SceneManager.GameObjects,
+            SceneManager.Lights,
+            SelectedGameObject,
+            _gameWindow.Width,
+            _gameWindow.Height,
+            Exposure);
 
         Renderer.ProcessSnapshot();
         _gameWindow.SwapBuffers();

@@ -1,4 +1,4 @@
-outputFilePath: merged-output.txt
+outputFilePath: coalesce.txt
 sourceDirectoryPaths:
   - Cherris
   - CherrisEditor

@@ -1,8 +1,8 @@
-﻿using Cherris.RenderingInterface;
+﻿using Cherris.Rendering;
 
-namespace Cherris.Rendering;
+namespace Cherris.RenderingInterface;
 
-public interface RenderingInterface : IDisposable
+public interface IRenderingInterface : IDisposable
 {
     IGameWindow GameWindow { get; }
     IRenderer Renderer { get; }

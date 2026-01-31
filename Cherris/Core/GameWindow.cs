@@ -43,18 +43,24 @@ public class GameWindow : IGameWindow
             WindowHeight = height,
             WindowTitle = title
         };
+
         SdlWindow = VeldridStartup.CreateWindow(ref windowCI);
         SdlWindow.Resized += () => Resized?.Invoke();
         _windowCenter = new Vector2(SdlWindow.Width / 2f, SdlWindow.Height / 2f);
 
+        SubscribeToEvents();
+
+        IsMouseLocked = startWithMouseLocked;
+        Input.ClearState();
+    }
+
+    private void SubscribeToEvents()
+    {
         SdlWindow.KeyDown += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), true);
         SdlWindow.KeyUp += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), false);
         SdlWindow.MouseDown += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), true);
         SdlWindow.MouseUp += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), false);
         SdlWindow.MouseMove += OnMouseMove;
-
-        IsMouseLocked = startWithMouseLocked;
-        Input.ClearState();
     }
 
     public void SetGraphicsDevice(GraphicsDevice gd)
@@ -94,9 +100,11 @@ public class GameWindow : IGameWindow
 
     public void Dispose()
     {
-        if (SdlWindow.Exists)
+        if (!SdlWindow.Exists)
         {
-            SdlWindow.Close();
+            return;
         }
+
+        SdlWindow.Close();
     }
 }

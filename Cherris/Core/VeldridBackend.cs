@@ -6,7 +6,7 @@ using Veldrid.StartupUtilities;
 namespace Cherris.Core;
 
 // Concrete Veldrid backend implementation, nested here to avoid creating new files.
-public class VeldridBackend : RenderingInterface
+public class VeldridBackend : IRenderingInterface
 {
     public IGameWindow GameWindow { get; private set; }
     public IRenderer Renderer { get; private set; }

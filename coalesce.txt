@@ -1174,6 +1174,7 @@ using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using System.Numerics;
 
@@ -1529,7 +1530,7 @@ public partial class VeldridRenderer
 ### `Cherris\Core\GameLoop.cs`
 
 ```csharp
-using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using System.Diagnostics;
 
 namespace Cherris;
@@ -1702,13 +1703,13 @@ public class GameObject
 ### `Cherris\Core\GameWindow.cs`
 
 ```csharp
-using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class GameWindow : IGameWindow
 {
@@ -1720,7 +1721,8 @@ public class GameWindow : IGameWindow
     public float Width => SdlWindow.Width;
     public float Height => SdlWindow.Height;
     public event Action Resized;
-    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
+
+    public Func<bool> IsViewportActive { get; set; } = () => false;
 
     public bool IsMouseLocked
     {
@@ -1738,7 +1740,7 @@ public class GameWindow : IGameWindow
 
     public GameWindow(string title, int width, int height, bool startWithMouseLocked)
     {
-        WindowCreateInfo windowCI = new WindowCreateInfo
+        WindowCreateInfo windowCI = new()
         {
             X = 100,
             Y = 100,
@@ -1746,21 +1748,30 @@ public class GameWindow : IGameWindow
             WindowHeight = height,
             WindowTitle = title
         };
+
         SdlWindow = VeldridStartup.CreateWindow(ref windowCI);
         SdlWindow.Resized += () => Resized?.Invoke();
         _windowCenter = new Vector2(SdlWindow.Width / 2f, SdlWindow.Height / 2f);
 
-        SdlWindow.KeyDown += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), true);
-        SdlWindow.KeyUp += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), false);
-        SdlWindow.MouseDown += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), true);
-        SdlWindow.MouseUp += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), false);
-        SdlWindow.MouseMove += OnMouseMove;
+        SubscribeToEvents();
 
         IsMouseLocked = startWithMouseLocked;
         Input.ClearState();
     }
 
-    public void SetGraphicsDevice(GraphicsDevice gd) => _graphicsDevice = gd;
+    private void SubscribeToEvents()
+    {
+        SdlWindow.KeyDown += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), true);
+        SdlWindow.KeyUp += (e) => Input.SetKeyState(VeldridKeyMapper.ToEngineKey(e.Key), false);
+        SdlWindow.MouseDown += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), true);
+        SdlWindow.MouseUp += (e) => Input.SetMouseButtonState(VeldridKeyMapper.ToEngineButton(e.MouseButton), false);
+        SdlWindow.MouseMove += OnMouseMove;
+    }
+
+    public void SetGraphicsDevice(GraphicsDevice gd)
+    {
+        _graphicsDevice = gd;
+    }
 
     private void OnMouseMove(MouseMoveEventArgs e)
     {
@@ -1789,82 +1800,17 @@ public class GameWindow : IGameWindow
 
     public void SwapBuffers()
     {
-        if (_graphicsDevice is not null)
-        {
-            _graphicsDevice.SwapBuffers();
-        }
+        _graphicsDevice?.SwapBuffers();
     }
 
     public void Dispose()
     {
-        if (SdlWindow.Exists)
+        if (!SdlWindow.Exists)
         {
-            SdlWindow.Close();
+            return;
         }
-    }
-}
 
-// Helper class to map Veldrid inputs to engine inputs.
-public static class VeldridKeyMapper
-{
-    public static Key ToEngineKey(Veldrid.Key key)
-    {
-        if (key >= Veldrid.Key.F1 && key <= Veldrid.Key.F35) return (Key)((int)Key.F1 + (int)key - (int)Veldrid.Key.F1);
-        if (key >= Veldrid.Key.Keypad0 && key <= Veldrid.Key.KeypadEnter) return (Key)((int)Key.Keypad0 + (int)key - (int)Veldrid.Key.Keypad0);
-        if (key >= Veldrid.Key.A && key <= Veldrid.Key.Z) return (Key)((int)Key.A + (int)key - (int)Veldrid.Key.A);
-        if (key >= Veldrid.Key.Number0 && key <= Veldrid.Key.Number9) return (Key)((int)Key.Number0 + (int)key - (int)Veldrid.Key.Number9);
-
-        switch (key)
-        {
-            case Veldrid.Key.ShiftLeft: return Key.ShiftLeft;
-            case Veldrid.Key.ShiftRight: return Key.ShiftRight;
-            case Veldrid.Key.ControlLeft: return Key.ControlLeft;
-            case Veldrid.Key.ControlRight: return Key.ControlRight;
-            case Veldrid.Key.AltLeft: return Key.AltLeft;
-            case Veldrid.Key.AltRight: return Key.AltRight;
-            case Veldrid.Key.WinLeft: return Key.WinLeft;
-            case Veldrid.Key.WinRight: return Key.WinRight;
-            case Veldrid.Key.Menu: return Key.Menu;
-            case Veldrid.Key.Up: return Key.Up;
-            case Veldrid.Key.Down: return Key.Down;
-            case Veldrid.Key.Left: return Key.Left;
-            case Veldrid.Key.Right: return Key.Right;
-            case Veldrid.Key.Enter: return Key.Enter;
-            case Veldrid.Key.Escape: return Key.Escape;
-            case Veldrid.Key.Space: return Key.Space;
-            case Veldrid.Key.Tab: return Key.Tab;
-            case Veldrid.Key.BackSpace: return Key.BackSpace;
-            case Veldrid.Key.Insert: return Key.Insert;
-            case Veldrid.Key.Delete: return Key.Delete;
-            case Veldrid.Key.PageUp: return Key.PageUp;
-            case Veldrid.Key.PageDown: return Key.PageDown;
-            case Veldrid.Key.Home: return Key.Home;
-            case Veldrid.Key.End: return Key.End;
-            case Veldrid.Key.CapsLock: return Key.CapsLock;
-            case Veldrid.Key.ScrollLock: return Key.ScrollLock;
-            case Veldrid.Key.PrintScreen: return Key.PrintScreen;
-            case Veldrid.Key.Pause: return Key.Pause;
-            case Veldrid.Key.NumLock: return Key.NumLock;
-            case Veldrid.Key.Clear: return Key.Clear;
-            case Veldrid.Key.Sleep: return Key.Sleep;
-            case Veldrid.Key.Tilde: return Key.Tilde;
-            case Veldrid.Key.Minus: return Key.Minus;
-            case Veldrid.Key.Plus: return Key.Plus;
-            case Veldrid.Key.BracketLeft: return Key.BracketLeft;
-            case Veldrid.Key.BracketRight: return Key.BracketRight;
-            case Veldrid.Key.Semicolon: return Key.Semicolon;
-            case Veldrid.Key.Quote: return Key.Quote;
-            case Veldrid.Key.Comma: return Key.Comma;
-            case Veldrid.Key.Period: return Key.Period;
-            case Veldrid.Key.Slash: return Key.Slash;
-            case Veldrid.Key.BackSlash: return Key.BackSlash;
-            default: return Key.Unknown;
-        }
-    }
-
-    public static MouseButton ToEngineButton(Veldrid.MouseButton button)
-    {
-        return (MouseButton)button;
+        SdlWindow.Close();
     }
 }
 ```
@@ -3954,6 +3900,7 @@ public static class TextureLoader
 
 ```csharp
 using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using Veldrid;
 using Veldrid.StartupUtilities;
 
@@ -3997,6 +3944,106 @@ public class VeldridBackend : RenderingInterface
         ResourceManager?.Dispose();
         _graphicsDevice?.Dispose();
         GameWindow?.Dispose();
+    }
+}
+```
+
+---
+
+### `Cherris\Core\VeldridKeyMapper.cs`
+
+```csharp
+namespace Cherris.Core;
+
+public static class VeldridKeyMapper
+{
+    private static readonly Dictionary<Veldrid.Key, Key> DirectMap = new()
+    {
+        // Modifiers
+        [Veldrid.Key.ShiftLeft] = Key.ShiftLeft,
+        [Veldrid.Key.ShiftRight] = Key.ShiftRight,
+        [Veldrid.Key.ControlLeft] = Key.ControlLeft,
+        [Veldrid.Key.ControlRight] = Key.ControlRight,
+        [Veldrid.Key.AltLeft] = Key.AltLeft,
+        [Veldrid.Key.AltRight] = Key.AltRight,
+        [Veldrid.Key.WinLeft] = Key.WinLeft,
+        [Veldrid.Key.WinRight] = Key.WinRight,
+
+        // Navigation
+        [Veldrid.Key.Up] = Key.Up,
+        [Veldrid.Key.Down] = Key.Down,
+        [Veldrid.Key.Left] = Key.Left,
+        [Veldrid.Key.Right] = Key.Right,
+        [Veldrid.Key.Home] = Key.Home,
+        [Veldrid.Key.End] = Key.End,
+        [Veldrid.Key.PageUp] = Key.PageUp,
+        [Veldrid.Key.PageDown] = Key.PageDown,
+        [Veldrid.Key.Insert] = Key.Insert,
+        [Veldrid.Key.Delete] = Key.Delete,
+
+        // Action keys
+        [Veldrid.Key.Enter] = Key.Enter,
+        [Veldrid.Key.Escape] = Key.Escape,
+        [Veldrid.Key.Space] = Key.Space,
+        [Veldrid.Key.Tab] = Key.Tab,
+        [Veldrid.Key.BackSpace] = Key.BackSpace,
+
+        // Lock keys
+        [Veldrid.Key.CapsLock] = Key.CapsLock,
+        [Veldrid.Key.ScrollLock] = Key.ScrollLock,
+        [Veldrid.Key.NumLock] = Key.NumLock,
+        [Veldrid.Key.PrintScreen] = Key.PrintScreen,
+        [Veldrid.Key.Pause] = Key.Pause,
+
+        // Symbols
+        [Veldrid.Key.Tilde] = Key.Tilde,
+        [Veldrid.Key.Minus] = Key.Minus,
+        [Veldrid.Key.Plus] = Key.Plus,
+        [Veldrid.Key.BracketLeft] = Key.BracketLeft,
+        [Veldrid.Key.BracketRight] = Key.BracketRight,
+        [Veldrid.Key.Semicolon] = Key.Semicolon,
+        [Veldrid.Key.Quote] = Key.Quote,
+        [Veldrid.Key.Comma] = Key.Comma,
+        [Veldrid.Key.Period] = Key.Period,
+        [Veldrid.Key.Slash] = Key.Slash,
+        [Veldrid.Key.BackSlash] = Key.BackSlash,
+
+        // Other
+        [Veldrid.Key.Menu] = Key.Menu,
+        [Veldrid.Key.Clear] = Key.Clear,
+        [Veldrid.Key.Sleep] = Key.Sleep
+    };
+
+    public static Key ToEngineKey(Veldrid.Key key)
+    {
+        if (key is >= Veldrid.Key.F1 and <= Veldrid.Key.F35)
+        {
+            return Key.F1 + (key - Veldrid.Key.F1);
+        }
+
+        if (key is >= Veldrid.Key.Keypad0 and <= Veldrid.Key.KeypadEnter)
+        {
+            return Key.Keypad0 + (key - Veldrid.Key.Keypad0);
+        }
+
+        if (key is >= Veldrid.Key.A and <= Veldrid.Key.Z)
+        {
+            return Key.A + (key - Veldrid.Key.A);
+        }
+
+        if (key is >= Veldrid.Key.Number0 and <= Veldrid.Key.Number9)
+        {
+            return Key.Number0 + (key - Veldrid.Key.Number0);
+        }
+
+        return DirectMap.TryGetValue(key, out var result)
+            ? result
+            : Key.Unknown;
+    }
+
+    public static MouseButton ToEngineButton(Veldrid.MouseButton button)
+    {
+        return (MouseButton)button;
     }
 }
 ```
@@ -4285,7 +4332,7 @@ public struct VertexPositionColor
 ### `Cherris\RenderingInterface\IGameWindow.cs`
 
 ```csharp
-namespace Cherris.Rendering;
+namespace Cherris.RenderingInterface;
 
 public interface IGameWindow : IDisposable
 {
@@ -4296,7 +4343,8 @@ public interface IGameWindow : IDisposable
     void ProcessEvents();
     void SwapBuffers();
     event Action Resized;
-    Func<bool> ShouldIgnoreImGuiCapture { get; set; }
+
+    Func<bool> IsViewportActive { get; set; }
 }
 ```
 
@@ -4373,6 +4421,8 @@ public interface IUIController : IDisposable
 ### `Cherris\RenderingInterface\RenderingInterface.cs`
 
 ```csharp
+using Cherris.RenderingInterface;
+
 namespace Cherris.Rendering;
 
 public interface RenderingInterface : IDisposable
@@ -6924,6 +6974,7 @@ void main()
 ```csharp
 using Cherris.Rendering;
 using Cherris.Rendering.OpenTK;
+using Cherris.RenderingInterface;
 
 namespace Cherris.OpenTK
 {
@@ -6965,8 +7016,7 @@ namespace Cherris.OpenTK
 ### `Cherris\Rendering\OpenTK\OpenTKGameWindow.cs`
 
 ```csharp
-using Cherris.Rendering;
-using Cherris.Rendering.OpenTK;
+using Cherris.RenderingInterface;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -6975,7 +7025,7 @@ using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 
-namespace Cherris.OpenTK;
+namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKGameWindow : IGameWindow
 {
@@ -6988,8 +7038,9 @@ public class OpenTKGameWindow : IGameWindow
     public float Height => _window.ClientSize.Y;
     public event Action Resized;
 
+    public Func<bool> IsViewportActive { get; set; } = () => false;
+
     public unsafe IntPtr Handle => (IntPtr)_window.WindowPtr;
-    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 
     public bool IsMouseLocked
     {
@@ -7004,9 +7055,9 @@ public class OpenTKGameWindow : IGameWindow
         {
             ClientSize = new Vector2i(width, height),
             Title = title,
-            NumberOfSamples = 4, // Request 4x MSAA
-            StencilBits = 8, // Request an 8-bit stencil buffer for the default framebuffer
-            AlphaBits = 8 // Request an 8-bit alpha channel for transparency compositing
+            NumberOfSamples = 4,
+            StencilBits = 8,
+            AlphaBits = 8
         };
         _window = new OTKGameWindow(gameWindowSettings, nativeWindowSettings);
 
@@ -7021,8 +7072,6 @@ public class OpenTKGameWindow : IGameWindow
         _window.MouseWheel += OnMouseWheel;
         Input.OnLockStateChanged += OnLockStateChanged;
 
-
-        // This makes the OpenGL context current on this thread.
         _window.MakeCurrent();
 
         IsMouseLocked = startWithMouseLocked;
@@ -7042,7 +7091,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnLoad()
     {
-        Input.ClearState(); // Ensure clean state on startup
+        Input.ClearState();
         _lastMousePos = new Vector2(_window.MouseState.X, _window.MouseState.Y);
     }
 
@@ -7056,9 +7105,6 @@ public class OpenTKGameWindow : IGameWindow
     public void ProcessEvents()
     {
         Input.FrameStarted();
-        // OpenTK's GameWindow processes events on its own thread via Run(),
-        // but we need to process them manually for our game loop. A timeout of 0
-        // processes all pending events and returns immediately.
         _window.ProcessEvents(0);
     }
 
@@ -7075,7 +7121,7 @@ public class OpenTKGameWindow : IGameWindow
 
         if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
-            _lastMousePos = currentPos; // Still update last pos to prevent jump if they click right after
+            _lastMousePos = currentPos;
             return;
         }
 
@@ -7087,7 +7133,6 @@ public class OpenTKGameWindow : IGameWindow
             Input.SetMouseDelta(delta);
         }
 
-        // Always update the last mouse position for the next frame's calculation.
         _lastMousePos = currentPos;
     }
 
@@ -7101,8 +7146,6 @@ public class OpenTKGameWindow : IGameWindow
             return;
         }
 
-        // When a pan begins, we MUST reset the "last position" to the current mouse position.
-        // This establishes a correct baseline for the first delta calculation in OnMouseMove.
         if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right)
         {
             _lastMousePos = new Vector2(_window.MouseState.X, _window.MouseState.Y);
@@ -7127,14 +7170,22 @@ public class OpenTKGameWindow : IGameWindow
     private void OnKeyDown(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, true);
-        if (ImGui.GetIO().WantCaptureKeyboard) return;
+        if (ImGui.GetIO().WantCaptureKeyboard)
+        {
+            return;
+        }
+
         Input.SetKeyState(MapKey(e.Key), true);
     }
 
     private void OnKeyUp(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, false);
-        if (ImGui.GetIO().WantCaptureKeyboard) return;
+        if (ImGui.GetIO().WantCaptureKeyboard)
+        {
+            return;
+        }
+
         Input.SetKeyState(MapKey(e.Key), false);
     }
 
@@ -7147,7 +7198,7 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
 
-        bool ignoreImGui = ShouldIgnoreImGuiCapture?.Invoke() ?? false;
+        bool ignoreImGui = IsViewportActive?.Invoke() ?? false;
 
         if (ImGui.GetIO().WantCaptureMouse && !ignoreImGui)
         {
@@ -7163,21 +7214,19 @@ public class OpenTKGameWindow : IGameWindow
         _window?.Dispose();
     }
 
-    // --- Input Mapping ---
-    private static Cherris.MouseButton MapButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button)
+    private static MouseButton MapButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button)
     {
         return button switch
         {
             global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left => Cherris.MouseButton.Left,
             global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right => Cherris.MouseButton.Right,
             global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Middle => Cherris.MouseButton.Middle,
-            _ => Cherris.MouseButton.LastButton // Indicates an unhandled button
+            _ => Cherris.MouseButton.LastButton
         };
     }
 
     private static Key MapKey(OpenTKKey key)
     {
-        // This is a partial mapping. A full implementation would be much larger.
         return key switch
         {
             OpenTKKey.Space => Key.Space,
@@ -8080,7 +8129,7 @@ using Cherris;
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
-using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using CherrisEditor.Core;
 using CherrisEditor.Undo;
@@ -8270,30 +8319,27 @@ public class Editor : Engine
 
     private void ConfigureWindowInputHandling()
     {
-        if (_backend.GameWindow is not IGameWindow window || window.ShouldIgnoreImGuiCapture is null)
+        if (_backend.GameWindow is not IGameWindow window)
         {
             return;
         }
 
-        window.ShouldIgnoreImGuiCapture = () => IsViewportHovered;
+        window.IsViewportActive = () => IsViewportHovered;
     }
 
     private void MarkActiveSceneDirty()
     {
-        if (SceneManager.ActiveScene is not null)
-        {
-            SceneManager.ActiveScene.IsDirty = true;
-        }
+        SceneManager.ActiveScene?.IsDirty = true;
     }
 
     private void RegisterBuiltInComponents()
     {
         ScriptManager.AvailableScriptTypes.Clear();
 
-        var scriptTypes = typeof(Script).Assembly.GetTypes()
+        IEnumerable<Type> scriptTypes = typeof(Script).Assembly.GetTypes()
             .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(Script) && t != typeof(EditorController));
 
-        foreach (var type in scriptTypes)
+        foreach (Type type in scriptTypes)
         {
             ScriptManager.RegisterScriptComponent(type);
         }
@@ -8311,6 +8357,7 @@ using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
 using CherrisEditor.UI;
+using CherrisEditor.UI.Viewport;
 using CherrisEditor.Undo;
 using ImGuiNET;
 using ImGuizmoNET;
@@ -8664,14 +8711,17 @@ public class EditorController : Script
         {
             localMove.Z -= 1;
         }
+
         if (Input.IsKeyDown(Key.S))
         {
             localMove.Z += 1;
         }
+
         if (Input.IsKeyDown(Key.A))
         {
             localMove.X -= 1;
         }
+
         if (Input.IsKeyDown(Key.D))
         {
             localMove.X += 1;
@@ -8682,6 +8732,7 @@ public class EditorController : Script
         {
             worldVerticalMove += 1;
         }
+
         if (Input.IsKeyDown(Key.Q))
         {
             worldVerticalMove -= 1;
@@ -8754,23 +8805,13 @@ using StbImageSharp;
 
 namespace CherrisEditor;
 
-/// <summary>
-/// A helper class to load, cache, and manage editor textures (icons and thumbnails).
-/// </summary>
 public class EditorTextureManager : IDisposable
 {
     private readonly Dictionary<string, int> _textures = [];
     public static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".tga" };
-    private static readonly string[] ScriptExtensions = { ".cs" };
     public static readonly string[] PrefabExtensions = { ".prefab" };
     public static readonly string[] MeshExtensions = { ".obj", ".gltf", ".glb", ".fbx", ".dae" };
 
-
-    /// <summary>
-    /// Loads an image from a file into an OpenGL texture and caches it.
-    /// </summary>
-    /// <param name="key">A unique key to identify the texture (e.g., "Folder" or a file path).</param>
-    /// <param name="path">The file path to the image.</param>
     public void LoadTexture(string key, string path)
     {
         if (_textures.ContainsKey(key) || !File.Exists(path))
@@ -8779,7 +8820,6 @@ public class EditorTextureManager : IDisposable
             {
                 Console.WriteLine($"[TextureManager] Icon not found at path: {path}");
             }
-
             return;
         }
 
@@ -8790,22 +8830,11 @@ public class EditorTextureManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Gets the GPU texture handle for a loaded texture.
-    /// </summary>
-    /// <param name="key">The key of the texture to retrieve.</param>
-    /// <returns>An IntPtr to the texture, or IntPtr.Zero if not found.</returns>
     public IntPtr GetTexture(string key)
     {
         return _textures.TryGetValue(key, out int handle) ? handle : IntPtr.Zero;
     }
 
-    /// <summary>
-    /// Gets a texture handle for a given asset path. If it's a supported image,
-    /// it loads it as a thumbnail. If not, it returns a default icon.
-    /// </summary>
-    /// <param name="path">The full file path of the asset.</param>
-    /// <returns>An IntPtr to the appropriate texture.</returns>
     public IntPtr GetTextureForPath(string path)
     {
         if (Directory.Exists(path))
@@ -8815,7 +8844,7 @@ public class EditorTextureManager : IDisposable
 
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        if (ScriptExtensions.Contains(extension))
+        if (extension == ".cs")
         {
             return GetTexture("Script");
         }
@@ -8827,13 +8856,11 @@ public class EditorTextureManager : IDisposable
 
         if (ImageExtensions.Contains(extension))
         {
-            // It's an image file, try to load it as a thumbnail.
             if (_textures.TryGetValue(path, out int handle))
             {
-                return handle; // Return cached thumbnail
+                return handle;
             }
 
-            // Not cached, load it now.
             int newHandle = LoadTextureFromFile(path);
             if (newHandle != 0)
             {
@@ -8842,14 +8869,13 @@ public class EditorTextureManager : IDisposable
             }
         }
 
-        return GetTexture("File"); // Fallback for any other file type
+        return GetTexture("File");
     }
 
     private int LoadTextureFromFile(string path)
     {
         try
         {
-            // We don't need to flip UI textures
             StbImage.stbi_set_flip_vertically_on_load(0);
             using var stream = File.OpenRead(path);
             ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
@@ -9874,21 +9900,21 @@ public sealed class DefaultInspector
         ImGui.TableNextRow();
 
         ImGui.TableSetColumnIndex(0);
-        ImGui.Text(SplitPascalCase(prop.Name));
+        ImGui.Text(FormatPropertyName(prop.Name));
 
         ImGui.TableSetColumnIndex(1);
         ImGui.PushItemWidth(-1);
 
-        bool changed = _propertyDrawer.Draw(component, prop, out _, out _);
+        _propertyDrawer.Draw(component, prop);
         ImGui.PopItemWidth();
 
         ImGui.TableSetColumnIndex(2);
         if (DrawResetButton(component, prop))
         {
-            changed = true;
+            return true;
         }
 
-        return changed;
+        return ImGui.IsItemDeactivatedAfterEdit();
     }
 
     private bool DrawResetButton(Component component, PropertyInfo prop)
@@ -9925,7 +9951,7 @@ public sealed class DefaultInspector
         }
     }
 
-    private static string SplitPascalCase(string input)
+    private static string FormatPropertyName(string input)
     {
         return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
     }
@@ -9939,6 +9965,7 @@ public sealed class DefaultInspector
 ```csharp
 using Cherris.Attributes;
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -9949,188 +9976,295 @@ namespace CherrisEditor.Inspectors;
 
 public sealed class PropertyDrawer
 {
+    private readonly Editor _editor;
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private readonly UndoTracker _undo;
-    private readonly ResourceNameSynchronizer _resourceSync;
-    private readonly TexturePropertyDrawer _textureDrawer;
 
     public PropertyDrawer(Editor editor, EditorTextureManager textures, HistoryManager history)
     {
+        _editor = editor;
+        _textures = textures;
         _history = history;
-        _undo = new UndoTracker(history);
-        _resourceSync = new ResourceNameSynchronizer(editor);
-        _textureDrawer = new TexturePropertyDrawer(editor, textures);
     }
 
-    public bool Draw(Component component, PropertyInfo prop, out bool activated, out bool deactivated)
+    public void Draw(Component component, PropertyInfo prop)
     {
-        activated = false;
-        deactivated = false;
+        object currentValue = prop.GetValue(component) ?? CreateDefault(prop.PropertyType);
+        bool changed = false;
 
-        object currentValue = prop.GetValue(component)
-            ?? PropertyDrawingPrimitives.CreateDefault(prop.PropertyType);
+        ImGui.PushID(prop.Name);
 
-        bool changed = DispatchDraw(component, prop, currentValue, out activated, out deactivated);
+        if (prop.PropertyType == typeof(float))
+        {
+            changed = DrawFloat(component, prop, (float)currentValue);
+        }
+        else if (prop.PropertyType == typeof(int))
+        {
+            changed = DrawInt(component, prop, (int)currentValue);
+        }
+        else if (prop.PropertyType == typeof(bool))
+        {
+            changed = DrawBool(component, prop, (bool)currentValue);
+        }
+        else if (prop.PropertyType == typeof(string))
+        {
+            changed = DrawString(component, prop, (string)currentValue);
+        }
+        else if (prop.PropertyType.IsEnum)
+        {
+            changed = DrawEnum(component, prop, (Enum)currentValue);
+        }
+        else if (prop.PropertyType == typeof(Vector2))
+        {
+            changed = DrawVector2(component, prop, (Vector2)currentValue);
+        }
+        else if (prop.PropertyType == typeof(Vector3))
+        {
+            changed = DrawVector3(component, prop, (Vector3)currentValue);
+        }
+        else if (prop.PropertyType == typeof(ITexture))
+        {
+            changed = DrawTexture(component, prop, (ITexture)currentValue);
+        }
 
-        _undo.Track(component, prop.Name, activated, deactivated);
+        ImGui.PopID();
+
+        if (changed && ImGui.IsItemDeactivatedAfterEdit())
+        {
+            RecordUndo(component, prop, currentValue);
+        }
+    }
+
+    private bool DrawFloat(Component component, PropertyInfo prop, float value)
+    {
+        var range = prop.GetCustomAttribute<RangeAttribute>();
+        float newValue = value;
+
+        bool changed = range != null
+            ? ImGui.SliderFloat("##val", ref newValue, range.Min, range.Max)
+            : ImGui.DragFloat("##val", ref newValue, 0.01f);
+
+        if (changed)
+        {
+            prop.SetValue(component, newValue);
+        }
+
         return changed;
     }
 
-    private bool DispatchDraw(Component component, PropertyInfo prop, object currentValue, out bool activated, out bool deactivated)
+    private bool DrawInt(Component component, PropertyInfo prop, int value)
     {
-        activated = false;
-        deactivated = false;
-
-        return prop.PropertyType switch
+        int newValue = value;
+        bool changed = ImGui.DragInt("##val", ref newValue);
+        if (changed)
         {
-            Type t when t == typeof(float) => DrawFloat(component, prop, (float)currentValue, out activated, out deactivated),
-            Type t when t == typeof(int) => DrawInt(component, prop, (int)currentValue, out activated, out deactivated),
-            Type t when t == typeof(bool) => DrawBool(component, prop, (bool)currentValue, out activated, out deactivated),
-            Type t when t == typeof(string) => DrawString(component, prop, (string)currentValue, out activated, out deactivated),
-            _ when prop.PropertyType.IsEnum => DrawEnum(component, prop, (Enum)currentValue, out activated, out deactivated),
-            Type t when t == typeof(Vector2) => DrawVector2(component, prop, (Vector2)currentValue, out activated, out deactivated),
-            Type t when t == typeof(Vector3) => DrawVector3(component, prop, (Vector3)currentValue, out activated, out deactivated),
-            Type t when t == typeof(ITexture) => _textureDrawer.Draw(component, prop, (ITexture)currentValue, prop.GetCustomAttribute<DragDropTargetAttribute>(), out activated, out deactivated),
-            _ => DrawFallback(currentValue)
+            prop.SetValue(component, newValue);
+        }
+
+        return changed;
+    }
+
+    private bool DrawBool(Component component, PropertyInfo prop, bool value)
+    {
+        bool newValue = value;
+        bool changed = ImGui.Checkbox("##val", ref newValue);
+        if (changed)
+        {
+            prop.SetValue(component, newValue);
+        }
+
+        return changed;
+    }
+
+    private bool DrawString(Component component, PropertyInfo prop, string value)
+    {
+        string newValue = value ?? "";
+        bool changed = ImGui.InputText("##val", ref newValue, 256);
+
+        if (changed)
+        {
+            prop.SetValue(component, newValue);
+
+            if (prop.GetCustomAttribute<DragDropTargetAttribute>() is not null
+                && prop.Name.EndsWith("Name"))
+            {
+                SyncResource(component, prop.Name, newValue);
+            }
+        }
+
+        DrawDragDropTarget(component, prop);
+        return changed;
+    }
+
+    private bool DrawEnum(Component component, PropertyInfo prop, Enum value)
+    {
+        var names = Enum.GetNames(value.GetType());
+        int index = Array.IndexOf(names, value.ToString());
+
+        bool changed = ImGui.Combo("##val", ref index, names, names.Length);
+        if (changed)
+        {
+            prop.SetValue(component, Enum.Parse(value.GetType(), names[index]));
+        }
+        return changed;
+    }
+
+    private bool DrawVector2(Component component, PropertyInfo prop, Vector2 value)
+    {
+        System.Numerics.Vector2 vec = value;
+        bool changed = ImGui.DragFloat2("##val", ref vec, 0.1f);
+        if (changed)
+        {
+            prop.SetValue(component, vec);
+        }
+
+        return changed;
+    }
+
+    private bool DrawVector3(Component component, PropertyInfo prop, Vector3 value)
+    {
+        bool isColor = prop.GetCustomAttribute<ColorUsageAttribute>() is not null;
+        System.Numerics.Vector3 vec = value;
+
+        bool changed = isColor
+            ? ImGui.ColorEdit3("##val", ref vec, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR)
+            : ImGui.DragFloat3("##val", ref vec, 0.1f);
+
+        if (changed)
+        {
+            prop.SetValue(component, vec);
+        }
+
+        return changed;
+    }
+
+    private bool DrawTexture(Component component, PropertyInfo prop, ITexture texture)
+    {
+        IntPtr handle = ResolveTextureHandle(texture);
+        bool changed = false;
+
+        if (ImGui.ImageButton($"tex_{prop.Name}", handle, new(64, 64), new(0, 1), new(1, 0)))
+        {
+        }
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
+            unsafe
+            {
+                if (payload.NativePtr != null)
+                {
+                    string path = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(payload.Data) ?? "";
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        string textureName = Path.GetFileNameWithoutExtension(path);
+                        var newTexture = _editor.ResourceManager.GetTexture(textureName);
+                        if (newTexture is not null)
+                        {
+                            prop.SetValue(component, newTexture);
+                            var nameProp = component.GetType().GetProperty($"{prop.Name}Name");
+                            nameProp?.SetValue(component, textureName);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        return changed;
+    }
+
+    private IntPtr ResolveTextureHandle(ITexture? texture)
+    {
+        if (texture?.GetBackendHandle() is int handle && handle != 0)
+        {
+            return handle;
+        }
+
+        return _textures.GetTexture("File");
+    }
+
+    private void DrawDragDropTarget(Component component, PropertyInfo prop)
+    {
+        var attr = prop.GetCustomAttribute<DragDropTargetAttribute>();
+        if (attr is null || !ImGui.BeginDragDropTarget())
+        {
+            return;
+        }
+
+        var payload = ImGui.AcceptDragDropPayload(attr.PayloadType);
+        unsafe
+        {
+            if (payload.NativePtr != null)
+            {
+                string path = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(payload.Data) ?? "";
+                if (!string.IsNullOrEmpty(path))
+                {
+                    string value = Path.GetFileNameWithoutExtension(path);
+                    prop.SetValue(component, value);
+                    SyncResource(component, prop.Name, value);
+                }
+            }
+        }
+        ImGui.EndDragDropTarget();
+    }
+
+    private void SyncResource(Component component, string nameProperty, string resourceName)
+    {
+        if (!nameProperty.EndsWith("Name"))
+        {
+            return;
+        }
+
+        string targetName = nameProperty[..^4];
+        var targetProp = component.GetType().GetProperty(targetName);
+        if (targetProp is null)
+        {
+            return;
+        }
+
+        object? resource = targetProp.PropertyType switch
+        {
+            Type t when t == typeof(ITexture) => _editor.ResourceManager.GetTexture(resourceName),
+            Type t when t == typeof(AudioClip) => _editor.ResourceManager.GetAudioClip(resourceName),
+            Type t when t == typeof(Mesh) => _editor.ResourceManager.GetMesh(resourceName),
+            _ => null
         };
+
+        if (resource is not null)
+        {
+            targetProp.SetValue(component, resource);
+        }
     }
 
-    private static bool DrawFloat(Component component, PropertyInfo prop, float currentValue, out bool activated, out bool deactivated)
+    private void RecordUndo(Component component, PropertyInfo prop, object oldValue)
     {
-        ImGui.PushID(prop.Name);
-        var rangeAttr = prop.GetCustomAttribute<RangeAttribute>();
-        float newValue = currentValue;
-
-        bool changed = rangeAttr != null
-            ? PropertyDrawingPrimitives.SliderFloat("##val", currentValue, rangeAttr.Min, rangeAttr.Max, out newValue, out activated, out deactivated)
-            : PropertyDrawingPrimitives.Float("##val", currentValue, 0.01f, float.MinValue, float.MaxValue, out newValue, out activated, out deactivated);
-
-        if (changed)
+        object? newValue = prop.GetValue(component);
+        if (newValue is not null && !Equals(oldValue, newValue))
         {
-            prop.SetValue(component, newValue);
+            _history.Execute(new Undo.Commands.ChangePropertyCommand(component, prop, oldValue, newValue));
         }
-
-        ImGui.PopID();
-        return changed;
     }
 
-    private static bool DrawInt(Component component, PropertyInfo prop, int currentValue, out bool activated, out bool deactivated)
+    private static object CreateDefault(Type type)
     {
-        ImGui.PushID(prop.Name);
-        int newValue = currentValue;
-
-        bool changed = PropertyDrawingPrimitives.Int("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
+        if (type == typeof(string))
         {
-            prop.SetValue(component, newValue);
+            return "";
         }
 
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawBool(Component component, PropertyInfo prop, bool currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-        bool newValue = currentValue;
-
-        bool changed = PropertyDrawingPrimitives.Bool("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
+        if (type == typeof(Vector2))
         {
-            prop.SetValue(component, newValue);
+            return Vector2.Zero;
         }
 
-        ImGui.PopID();
-        return changed;
-    }
-
-    private bool DrawString(Component component, PropertyInfo prop, string currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-
-        var dragDropAttr = prop.GetCustomAttribute<DragDropTargetAttribute>();
-        string newValue;
-        bool changed;
-
-        if (dragDropAttr != null)
+        if (type == typeof(Vector3))
         {
-            changed = PropertyDrawingPrimitives.DragDropString("##val", currentValue, dragDropAttr.PayloadType, out newValue, out activated, out deactivated);
-
-            if (changed)
-            {
-                prop.SetValue(component, newValue);
-                _resourceSync.Sync(component, prop.Name, newValue);
-            }
-        }
-        else
-        {
-            changed = PropertyDrawingPrimitives.String("##val", currentValue, out newValue, out activated, out deactivated);
-
-            if (changed)
-            {
-                prop.SetValue(component, newValue);
-            }
+            return Vector3.Zero;
         }
 
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawEnum(Component component, PropertyInfo prop, Enum currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-        Enum newValue = currentValue;
-
-        bool changed = PropertyDrawingPrimitives.EnumField("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
-        {
-            prop.SetValue(component, newValue);
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawVector2(Component component, PropertyInfo prop, Vector2 currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-
-        bool changed = PropertyDrawingPrimitives.Vector2Field("##val", currentValue, out Vector2 newValue, out activated, out deactivated);
-
-        if (changed)
-        {
-            prop.SetValue(component, newValue);
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawVector3(Component component, PropertyInfo prop, Vector3 currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-        var colorAttr = prop.GetCustomAttribute<ColorUsageAttribute>();
-
-        bool changed = colorAttr != null
-            ? PropertyDrawingPrimitives.Color3("##val", currentValue, out Vector3 newValue, out activated, out deactivated)
-            : PropertyDrawingPrimitives.Vector3Field("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
-        {
-            prop.SetValue(component, newValue);
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawFallback(object currentValue)
-    {
-        ImGui.Text(currentValue.ToString() ?? "null");
-        return false;
+        return Activator.CreateInstance(type) ?? new object();
     }
 }
 ```
@@ -10886,11 +11020,6 @@ public class ContentBrowserPanel : IDisposable
 
         _currentDirectory = projectRoot;
 
-        LoadIcons();
-    }
-
-    private void LoadIcons()
-    {
         LoadIcon(IconFolder, "Icons/Folder.png");
         LoadIcon(IconFile, "Icons/File.png");
         LoadIcon(IconScript, "Icons/Components/Script.png");
@@ -10900,13 +11029,11 @@ public class ContentBrowserPanel : IDisposable
     private void LoadIcon(string key, string relativePath)
     {
         string? path = EditorResources.Find(relativePath);
-
         if (path is null)
         {
             Logger.Warning($"[ContentBrowser] Icon not found: '{relativePath}'");
             return;
         }
-
         _textureManager.LoadTexture(key, path);
     }
 
@@ -10925,9 +11052,7 @@ public class ContentBrowserPanel : IDisposable
     {
         string projectRoot = _editor.ProjectManager.CurrentProject?.RootPath ?? _currentDirectory;
 
-        ImGuiTableFlags flags = ImGuiTableFlags.SizingFixedFit;
-
-        if (ImGui.BeginTable("ContentBrowserHeader", 2, flags))
+        if (ImGui.BeginTable("ContentBrowserHeader", 2, ImGuiTableFlags.SizingFixedFit))
         {
             ImGui.TableSetupColumn("BackButton", ImGuiTableColumnFlags.WidthFixed, 80.0f);
             ImGui.TableSetupColumn("PathText", ImGuiTableColumnFlags.WidthStretch);
@@ -10938,9 +11063,7 @@ public class ContentBrowserPanel : IDisposable
 
             ImGui.TableSetColumnIndex(1);
             ImGui.AlignTextToFramePadding();
-
-            string displayPath = GetDisplayPath(projectRoot);
-            ImGui.Text($"Path: {displayPath}");
+            ImGui.Text($"Path: {GetDisplayPath(projectRoot)}");
 
             ImGui.EndTable();
         }
@@ -11010,7 +11133,7 @@ public class ContentBrowserPanel : IDisposable
 
         if (ImGui.BeginDragDropSource())
         {
-            HandleItemDrag(path, name, icon);
+            SendPayload(path, name, icon);
             ImGui.EndDragDropSource();
         }
 
@@ -11020,17 +11143,15 @@ public class ContentBrowserPanel : IDisposable
         ImGui.Text(name);
     }
 
-    private void HandleItemDrag(string path, string name, IntPtr icon)
+    private void SendPayload(string path, string name, IntPtr icon)
     {
-        string? payloadType = GetPayloadType(path);
-
-        if (payloadType is null)
+        string? type = GetPayloadType(path);
+        if (type is null)
         {
             return;
         }
 
-        SendStringPayload(payloadType, path);
-
+        DragDropPayload.SendString(type, path);
         ImGui.Image(icon, new(50, 50));
         ImGui.SameLine();
         ImGui.Text(name);
@@ -11038,21 +11159,21 @@ public class ContentBrowserPanel : IDisposable
 
     private static string? GetPayloadType(string path)
     {
-        string extension = Path.GetExtension(path).ToLowerInvariant();
+        string ext = Path.GetExtension(path).ToLowerInvariant();
 
-        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        if (EditorTextureManager.ImageExtensions.Contains(ext))
         {
-            return (string?)EditorConstants.DragDropPayloads.Texture;
+            return EditorConstants.DragDropPayloads.Texture;
         }
 
-        if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        if (EditorTextureManager.PrefabExtensions.Contains(ext))
         {
-            return (string?)EditorConstants.DragDropPayloads.Prefab;
+            return EditorConstants.DragDropPayloads.Prefab;
         }
 
-        if (EditorTextureManager.MeshExtensions.Contains(extension))
+        if (EditorTextureManager.MeshExtensions.Contains(ext))
         {
-            return (string?)EditorConstants.DragDropPayloads.Mesh;
+            return EditorConstants.DragDropPayloads.Mesh;
         }
 
         return null;
@@ -11068,29 +11189,10 @@ public class ContentBrowserPanel : IDisposable
         if (isDirectory)
         {
             _currentDirectory = path;
-            return;
         }
-
-        if (!path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        else if (path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            return;
-        }
-
-        _editor.SceneOperations.LoadSceneFromFile(path);
-    }
-
-    private static void SendStringPayload(string payloadType, string data)
-    {
-        IntPtr ptr = Marshal.StringToHGlobalAnsi(data);
-
-        try
-        {
-            uint size = (uint)(data.Length + 1);
-            ImGui.SetDragDropPayload(payloadType, ptr, size);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(ptr);
+            _editor.SceneOperations.LoadSceneFromFile(path);
         }
     }
 
@@ -11109,50 +11211,30 @@ public class ContentBrowserPanel : IDisposable
 
     private unsafe void AcceptGameObjectDrop()
     {
-        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
-
-        if (payload.NativePtr is null)
+        var payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
+        if (payload.NativePtr is null || payload.DataSize != 16)
         {
             return;
         }
 
-        Guid? objectId = TryExtractGuidPayload(payload);
+        byte[] data = new byte[16];
+        Marshal.Copy(payload.Data, data, 0, 16);
+        Guid objectId = new(data);
 
-        if (!objectId.HasValue)
-        {
-            return;
-        }
-
-        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId.Value);
-
+        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId);
         if (gameObject is null)
         {
             return;
         }
 
         string prefabPath = Path.Combine(_currentDirectory, $"{gameObject.Name}.prefab");
-
         _editor.SceneOperations.CreatePrefabFromGameObject(gameObject, prefabPath);
-    }
-
-    private static unsafe Guid? TryExtractGuidPayload(ImGuiPayloadPtr payload)
-    {
-        if (payload.DataSize != 16)
-        {
-            return null;
-        }
-
-        byte[] data = new byte[16];
-        Marshal.Copy(payload.Data, data, 0, 16);
-
-        return new(data);
     }
 
     private static void CenterAlignItem(float itemWidth)
     {
         float columnWidth = ImGui.GetColumnWidth();
         float offsetX = (columnWidth - itemWidth) * 0.5f;
-
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 
@@ -11161,13 +11243,39 @@ public class ContentBrowserPanel : IDisposable
         float columnWidth = ImGui.GetColumnWidth();
         float textWidth = ImGui.CalcTextSize(text).X;
         float offsetX = (columnWidth - textWidth) * 0.5f;
-
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\DragDropPayload.cs`
+
+```csharp
+using System.Runtime.InteropServices;
+
+namespace CherrisEditor.UI;
+
+public static class DragDropPayload
+{
+    public static unsafe void SendString(string type, string data)
+    {
+        IntPtr ptr = Marshal.StringToHGlobalAnsi(data);
+        try
+        {
+            uint size = (uint)(data.Length + 1);
+            ImGuiNET.ImGui.SetDragDropPayload(type, ptr, size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 }
 ```
@@ -12081,243 +12189,6 @@ public class Toolbar
 
 ---
 
-### `CherrisEditor\UI\ViewportPanel.cs`
-
-```csharp
-using Cherris;
-using Cherris.Core;
-using CherrisEditor.Undo;
-using ImGuiNET;
-using System.Numerics;
-
-namespace CherrisEditor.UI;
-
-public class ViewportPanel
-{
-    private readonly Editor _editor;
-    private readonly GizmoController _gizmoController;
-    private readonly ViewportSurface _viewportSurface;
-
-    public ViewportPanel(Editor editor, HistoryManager history)
-    {
-        _editor = editor;
-        _gizmoController = new GizmoController(editor, history);
-        _viewportSurface = new ViewportSurface();
-    }
-
-    public void Update()
-    {
-        _gizmoController.Update();
-    }
-
-    public void Draw()
-    {
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-
-        DrawSceneTabs();
-
-        ImGui.End();
-        ImGui.PopStyleVar();
-    }
-
-    private void DrawSceneTabs()
-    {
-        var openScenes = _editor.SceneManager.OpenScenes.ToList();
-        var activeScene = _editor.SceneManager.ActiveScene;
-
-        if (!ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
-        {
-            return;
-        }
-
-        if (openScenes.Count == 0)
-        {
-            DrawEmptyTab();
-        }
-
-        foreach (var scene in openScenes)
-        {
-            DrawSceneTab(scene, activeScene);
-        }
-
-        ImGui.EndTabBar();
-    }
-
-    private static void DrawEmptyTab()
-    {
-        if (ImGui.BeginTabItem("No Scene"))
-        {
-            ImGui.Text("No scene loaded. Open a scene from the Content Browser.");
-            ImGui.EndTabItem();
-        }
-    }
-
-    private void DrawSceneTab(Scene scene, Scene activeScene)
-    {
-        bool isOpen = true;
-        var flags = CalculateTabFlags(scene, activeScene);
-
-        if (!ImGui.BeginTabItem(scene.Name, ref isOpen, flags))
-        {
-            return;
-        }
-
-        if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
-        {
-            _editor.SceneManager.SetActiveScene(scene);
-        }
-
-        if (scene == activeScene)
-        {
-            DrawActiveSceneViewport();
-        }
-
-        ImGui.EndTabItem();
-
-        if (!isOpen)
-        {
-            _editor.SceneManager.CloseScene(scene);
-        }
-    }
-
-    private static ImGuiTabItemFlags CalculateTabFlags(Scene scene, Scene activeScene)
-    {
-        var flags = scene.IsDirty ? ImGuiTabItemFlags.UnsavedDocument : ImGuiTabItemFlags.None;
-        if (scene == activeScene)
-        {
-            flags |= ImGuiTabItemFlags.SetSelected;
-        }
-
-        return flags;
-    }
-
-    private void DrawActiveSceneViewport()
-    {
-        DrawToolbar();
-
-        Vector2 viewportPos = ImGui.GetCursorScreenPos();
-        Vector2 viewportSize = ImGui.GetContentRegionAvail();
-
-        if (_editor.Renderer is not OpenTKRenderer otkRenderer)
-        {
-            return;
-        }
-
-        _viewportSurface.Draw(otkRenderer, viewportSize);
-        _editor.IsViewportHovered = _viewportSurface.IsHovered;
-
-        if (_viewportSurface.IsHovered)
-        {
-            HandleViewportInput(viewportPos, _viewportSurface.Size);
-        }
-
-        _gizmoController.Draw(viewportPos, _viewportSurface.Size);
-    }
-
-    private void DrawToolbar()
-    {
-        ImGui.BeginChild("ViewportToolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()), false,
-            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
-        DrawOptionsDropdown();
-        ImGui.PopStyleVar();
-
-        ImGui.EndChild();
-    }
-
-    private void DrawOptionsDropdown()
-    {
-        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.2f, 0.2f, 0.8f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.3f, 0.3f, 0.3f, 0.9f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.25f, 0.25f, 0.25f, 0.9f));
-
-        if (ImGui.Button("Options"))
-        {
-            ImGui.OpenPopup("ViewportOptionsPopup");
-        }
-
-        if (ImGui.BeginPopup("ViewportOptionsPopup"))
-        {
-            DrawOptionsMenu();
-            ImGui.EndPopup();
-        }
-
-        ImGui.PopStyleColor(3);
-    }
-
-    private void DrawOptionsMenu()
-    {
-        bool showGrid = _editor.Renderer.ShowGrid;
-        if (ImGui.Checkbox("Show Grid", ref showGrid))
-        {
-            _editor.Renderer.ShowGrid = showGrid;
-        }
-    }
-
-    private void HandleViewportInput(Vector2 viewportPos, Vector2 viewportSize)
-    {
-        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || ImGuizmoNET.ImGuizmo.IsUsing() || ImGuizmoNET.ImGuizmo.IsOver())
-        {
-            return;
-        }
-
-        Vector2 mousePos = ImGui.GetMousePos();
-        var selected = _editor.Selection.PickObject(mousePos, viewportPos, viewportSize);
-        _editor.SetSelectedGameObject(selected);
-    }
-}
-```
-
----
-
-### `CherrisEditor\UI\ViewportSurface.cs`
-
-```csharp
-using Cherris;
-using ImGuiNET;
-using System.Numerics;
-
-namespace CherrisEditor.UI;
-
-public class ViewportSurface
-{
-    private Vector2 _currentSize;
-
-    public bool IsHovered { get; private set; }
-    public Vector2 Size => _currentSize;
-
-    public void Draw(OpenTKRenderer renderer, Vector2 availableSize)
-    {
-        IsHovered = false;
-
-        if (availableSize.X <= 0 || availableSize.Y <= 0)
-        {
-            return;
-        }
-
-        if (availableSize != _currentSize)
-        {
-            _currentSize = availableSize;
-            renderer.SetViewportSize(_currentSize);
-        }
-
-        IntPtr textureHandle = renderer.GetSceneTextureHandle();
-
-        if (textureHandle == IntPtr.Zero)
-        {
-            return;
-        }
-
-        ImGui.Image(textureHandle, _currentSize, new Vector2(0, 1), new Vector2(1, 0));
-        IsHovered = ImGui.IsItemHovered();
-    }
-}
-```
-
----
-
 ### `CherrisEditor\Undo\HistoryManager.cs`
 
 ```csharp
@@ -12715,6 +12586,280 @@ public class ComponentTypeMenuBuilder
     public ImmutableArray<MenuEntry> GetBuiltInEntries()
     {
         return _builtInEntries.ToImmutableArray();
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\Viewport\SceneTabsController.cs`
+
+```csharp
+using Cherris.Core;
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.UI.Viewport;
+
+public class SceneTabsController
+{
+    private readonly Editor _editor;
+
+    public SceneTabsController(Editor editor)
+    {
+        _editor = editor;
+    }
+
+    public bool DrawTabs(out Vector2 viewportPos, out Vector2 viewportSize)
+    {
+        viewportPos = Vector2.Zero;
+        viewportSize = Vector2.Zero;
+
+        var openScenes = _editor.SceneManager.OpenScenes.ToList();
+
+        if (!ImGui.BeginTabBar("SceneTabBar", ImGuiTabBarFlags.Reorderable))
+        {
+            return false;
+        }
+
+        bool hasActiveViewport = false;
+
+        foreach (var scene in openScenes)
+        {
+            if (DrawSceneTab(scene))
+            {
+                hasActiveViewport = true;
+                viewportPos = ImGui.GetCursorScreenPos();
+                viewportSize = ImGui.GetContentRegionAvail();
+            }
+        }
+
+        ImGui.EndTabBar();
+        return hasActiveViewport;
+    }
+
+    private bool DrawSceneTab(Scene scene)
+    {
+        bool isOpen = true;
+        var flags = scene.IsDirty ? ImGuiTabItemFlags.UnsavedDocument : ImGuiTabItemFlags.None;
+
+        if (scene == _editor.SceneManager.ActiveScene)
+        {
+            flags |= ImGuiTabItemFlags.SetSelected;
+        }
+
+        bool visible = ImGui.BeginTabItem(scene.Name, ref isOpen, flags);
+
+        if (ImGui.IsItemClicked())
+        {
+            _editor.SceneManager.SetActiveScene(scene);
+        }
+
+        if (visible)
+        {
+            if (scene != _editor.SceneManager.ActiveScene)
+            {
+                ImGui.EndTabItem();
+                return false;
+            }
+            return true;
+        }
+
+        if (!isOpen)
+        {
+            _editor.SceneManager.CloseScene(scene);
+        }
+
+        return false;
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\Viewport\ViewportPanel.cs`
+
+```csharp
+using Cherris;
+using CherrisEditor.Undo;
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.UI.Viewport;
+
+public class ViewportPanel
+{
+    private readonly Editor _editor;
+    private readonly GizmoController _gizmoController;
+    private readonly SceneTabsController _tabsController;
+    private readonly ViewportToolbar _toolbar;
+
+    public ViewportPanel(Editor editor, HistoryManager history)
+    {
+        _editor = editor;
+        _gizmoController = new GizmoController(editor, history);
+        _tabsController = new SceneTabsController(editor);
+        _toolbar = new ViewportToolbar(editor);
+    }
+
+    public void Update()
+    {
+        _gizmoController.Update();
+    }
+
+    public void Draw()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.Begin("Viewport", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
+        if (_tabsController.DrawTabs(out Vector2 viewportPos, out Vector2 viewportSize))
+        {
+            DrawActiveViewport(viewportPos, viewportSize);
+        }
+
+        ImGui.End();
+        ImGui.PopStyleVar();
+    }
+
+    private void DrawActiveViewport(Vector2 pos, Vector2 size)
+    {
+        _toolbar.Draw();
+
+        if (_editor.Renderer is not OpenTKRenderer otkRenderer)
+        {
+            return;
+        }
+
+        var surface = new ViewportSurface();
+        surface.Draw(otkRenderer, size);
+        _editor.IsViewportHovered = surface.IsHovered;
+
+        if (surface.IsHovered)
+        {
+            HandleViewportClick(pos, surface.Size);
+        }
+
+        _gizmoController.Draw(pos, surface.Size);
+    }
+
+    private void HandleViewportClick(Vector2 viewportPos, Vector2 viewportSize)
+    {
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || ImGuizmoNET.ImGuizmo.IsOver())
+        {
+            return;
+        }
+
+        Vector2 mousePos = ImGui.GetMousePos();
+        var selected = _editor.Selection.PickObject(mousePos, viewportPos, viewportSize);
+        _editor.SetSelectedGameObject(selected);
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\Viewport\ViewportSurface.cs`
+
+```csharp
+using Cherris;
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.UI.Viewport;
+
+public class ViewportSurface
+{
+    private Vector2 _currentSize;
+
+    public bool IsHovered { get; private set; }
+    public Vector2 Size => _currentSize;
+
+    public void Draw(OpenTKRenderer renderer, Vector2 availableSize)
+    {
+        IsHovered = false;
+
+        if (availableSize.X <= 0 || availableSize.Y <= 0)
+        {
+            return;
+        }
+
+        if (availableSize != _currentSize)
+        {
+            _currentSize = availableSize;
+            renderer.SetViewportSize(_currentSize);
+        }
+
+        IntPtr textureHandle = renderer.GetSceneTextureHandle();
+
+        if (textureHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        ImGui.Image(textureHandle, _currentSize, new Vector2(0, 1), new Vector2(1, 0));
+        IsHovered = ImGui.IsItemHovered();
+    }
+}
+```
+
+---
+
+### `CherrisEditor\UI\Viewport\ViewportToolbar.cs`
+
+```csharp
+using ImGuiNET;
+using System.Numerics;
+
+namespace CherrisEditor.UI.Viewport;
+
+public class ViewportToolbar
+{
+    private readonly Editor _editor;
+
+    public ViewportToolbar(Editor editor)
+    {
+        _editor = editor;
+    }
+
+    public void Draw()
+    {
+        ImGui.BeginChild("ViewportToolbar", new Vector2(0, ImGui.GetFrameHeightWithSpacing()), false,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4, 4));
+        DrawOptionsDropdown();
+        ImGui.PopStyleVar();
+
+        ImGui.EndChild();
+    }
+
+    private void DrawOptionsDropdown()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.2f, 0.2f, 0.8f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.3f, 0.3f, 0.3f, 0.9f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.25f, 0.25f, 0.25f, 0.9f));
+
+        if (ImGui.Button("Options"))
+        {
+            ImGui.OpenPopup("ViewportOptionsPopup");
+        }
+
+        if (ImGui.BeginPopup("ViewportOptionsPopup"))
+        {
+            DrawOptionsMenu();
+            ImGui.EndPopup();
+        }
+
+        ImGui.PopStyleColor(3);
+    }
+
+    private void DrawOptionsMenu()
+    {
+        bool showGrid = _editor.Renderer.ShowGrid;
+        if (ImGui.Checkbox("Show Grid", ref showGrid))
+        {
+            _editor.Renderer.ShowGrid = showGrid;
+        }
     }
 }
 ```

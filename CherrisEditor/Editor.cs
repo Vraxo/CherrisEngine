@@ -209,10 +209,10 @@ public class Editor : Engine
     {
         ScriptManager.AvailableScriptTypes.Clear();
 
-        var scriptTypes = typeof(Script).Assembly.GetTypes()
+        IEnumerable<Type> scriptTypes = typeof(Script).Assembly.GetTypes()
             .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(Script) && t != typeof(EditorController));
 
-        foreach (var type in scriptTypes)
+        foreach (Type type in scriptTypes)
         {
             ScriptManager.RegisterScriptComponent(type);
         }
