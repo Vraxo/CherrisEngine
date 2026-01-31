@@ -2,7 +2,7 @@
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
-namespace Cherris;
+namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLSkyboxRenderer : IDisposable
 {
@@ -14,32 +14,7 @@ internal class OpenGLSkyboxRenderer : IDisposable
 
     public OpenGLSkyboxRenderer()
     {
-        const string skyboxVert = @"
-#version 330 core
-layout (location = 0) in vec3 aPosition;
-
-out vec3 TexCoords;
-
-uniform mat4 view;
-uniform mat4 projection;
-
-void main()
-{
-    TexCoords = aPosition;
-    vec4 pos = projection * view * vec4(aPosition, 1.0);
-    gl_Position = pos.xyww;
-}";
-        const string skyboxFrag = @"
-#version 330 core
-out vec4 FragColor;
-in vec3 TexCoords;
-uniform samplerCube skybox;
-
-void main()
-{    
-    FragColor = texture(skybox, TexCoords);
-}";
-        _skyboxShaderProgram = new ShaderProgram(skyboxVert, skyboxFrag);
+        _skyboxShaderProgram = ShaderProgram.FromFiles("Shaders/skybox.vert", "Shaders/skybox.frag");
         _skyboxViewLocation = _skyboxShaderProgram.GetUniformLocation("view");
         _skyboxProjectionLocation = _skyboxShaderProgram.GetUniformLocation("projection");
         _skyboxSamplerLocation = _skyboxShaderProgram.GetUniformLocation("skybox");
@@ -47,6 +22,7 @@ void main()
         _skyboxCubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
     }
 
+    [Obsolete]
     public void Render(Skybox skybox, Matrix4 view, Matrix4 projection)
     {
         GL.DepthFunc(DepthFunction.Lequal);
@@ -55,7 +31,7 @@ void main()
         _skyboxShaderProgram.Use();
 
         var skyboxView = view;
-        skyboxView.Row3 = new Vector4(0, 0, 0, 1); // Remove translation
+        skyboxView.Row3 = new Vector4(0, 0, 0, 1);
 
         GL.UniformMatrix4(_skyboxViewLocation, false, ref skyboxView);
         GL.UniformMatrix4(_skyboxProjectionLocation, false, ref projection);
