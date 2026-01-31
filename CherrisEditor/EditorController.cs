@@ -78,14 +78,17 @@ public class EditorController : Script
         {
             localMove.Z -= 1;
         }
+
         if (Input.IsKeyDown(Key.S))
         {
             localMove.Z += 1;
         }
+
         if (Input.IsKeyDown(Key.A))
         {
             localMove.X -= 1;
         }
+
         if (Input.IsKeyDown(Key.D))
         {
             localMove.X += 1;
@@ -96,6 +99,7 @@ public class EditorController : Script
         {
             worldVerticalMove += 1;
         }
+
         if (Input.IsKeyDown(Key.Q))
         {
             worldVerticalMove -= 1;

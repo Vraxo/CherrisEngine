@@ -30,11 +30,6 @@ public class ContentBrowserPanel : IDisposable
 
         _currentDirectory = projectRoot;
 
-        LoadIcons();
-    }
-
-    private void LoadIcons()
-    {
         LoadIcon(IconFolder, "Icons/Folder.png");
         LoadIcon(IconFile, "Icons/File.png");
         LoadIcon(IconScript, "Icons/Components/Script.png");
@@ -44,13 +39,11 @@ public class ContentBrowserPanel : IDisposable
     private void LoadIcon(string key, string relativePath)
     {
         string? path = EditorResources.Find(relativePath);
-
         if (path is null)
         {
             Logger.Warning($"[ContentBrowser] Icon not found: '{relativePath}'");
             return;
         }
-
         _textureManager.LoadTexture(key, path);
     }
 
@@ -69,9 +62,7 @@ public class ContentBrowserPanel : IDisposable
     {
         string projectRoot = _editor.ProjectManager.CurrentProject?.RootPath ?? _currentDirectory;
 
-        ImGuiTableFlags flags = ImGuiTableFlags.SizingFixedFit;
-
-        if (ImGui.BeginTable("ContentBrowserHeader", 2, flags))
+        if (ImGui.BeginTable("ContentBrowserHeader", 2, ImGuiTableFlags.SizingFixedFit))
         {
             ImGui.TableSetupColumn("BackButton", ImGuiTableColumnFlags.WidthFixed, 80.0f);
             ImGui.TableSetupColumn("PathText", ImGuiTableColumnFlags.WidthStretch);
@@ -82,9 +73,7 @@ public class ContentBrowserPanel : IDisposable
 
             ImGui.TableSetColumnIndex(1);
             ImGui.AlignTextToFramePadding();
-
-            string displayPath = GetDisplayPath(projectRoot);
-            ImGui.Text($"Path: {displayPath}");
+            ImGui.Text($"Path: {GetDisplayPath(projectRoot)}");
 
             ImGui.EndTable();
         }
@@ -154,7 +143,7 @@ public class ContentBrowserPanel : IDisposable
 
         if (ImGui.BeginDragDropSource())
         {
-            HandleItemDrag(path, name, icon);
+            SendPayload(path, name, icon);
             ImGui.EndDragDropSource();
         }
 
@@ -164,17 +153,15 @@ public class ContentBrowserPanel : IDisposable
         ImGui.Text(name);
     }
 
-    private void HandleItemDrag(string path, string name, IntPtr icon)
+    private void SendPayload(string path, string name, IntPtr icon)
     {
-        string? payloadType = GetPayloadType(path);
-
-        if (payloadType is null)
+        string? type = GetPayloadType(path);
+        if (type is null)
         {
             return;
         }
 
-        SendStringPayload(payloadType, path);
-
+        DragDropPayload.SendString(type, path);
         ImGui.Image(icon, new(50, 50));
         ImGui.SameLine();
         ImGui.Text(name);
@@ -182,21 +169,21 @@ public class ContentBrowserPanel : IDisposable
 
     private static string? GetPayloadType(string path)
     {
-        string extension = Path.GetExtension(path).ToLowerInvariant();
+        string ext = Path.GetExtension(path).ToLowerInvariant();
 
-        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        if (EditorTextureManager.ImageExtensions.Contains(ext))
         {
-            return (string?)EditorConstants.DragDropPayloads.Texture;
+            return EditorConstants.DragDropPayloads.Texture;
         }
 
-        if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        if (EditorTextureManager.PrefabExtensions.Contains(ext))
         {
-            return (string?)EditorConstants.DragDropPayloads.Prefab;
+            return EditorConstants.DragDropPayloads.Prefab;
         }
 
-        if (EditorTextureManager.MeshExtensions.Contains(extension))
+        if (EditorTextureManager.MeshExtensions.Contains(ext))
         {
-            return (string?)EditorConstants.DragDropPayloads.Mesh;
+            return EditorConstants.DragDropPayloads.Mesh;
         }
 
         return null;
@@ -212,29 +199,10 @@ public class ContentBrowserPanel : IDisposable
         if (isDirectory)
         {
             _currentDirectory = path;
-            return;
         }
-
-        if (!path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        else if (path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            return;
-        }
-
-        _editor.SceneOperations.LoadSceneFromFile(path);
-    }
-
-    private static void SendStringPayload(string payloadType, string data)
-    {
-        IntPtr ptr = Marshal.StringToHGlobalAnsi(data);
-
-        try
-        {
-            uint size = (uint)(data.Length + 1);
-            ImGui.SetDragDropPayload(payloadType, ptr, size);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(ptr);
+            _editor.SceneOperations.LoadSceneFromFile(path);
         }
     }
 
@@ -253,50 +221,30 @@ public class ContentBrowserPanel : IDisposable
 
     private unsafe void AcceptGameObjectDrop()
     {
-        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
-
-        if (payload.NativePtr is null)
+        var payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
+        if (payload.NativePtr is null || payload.DataSize != 16)
         {
             return;
         }
 
-        Guid? objectId = TryExtractGuidPayload(payload);
+        byte[] data = new byte[16];
+        Marshal.Copy(payload.Data, data, 0, 16);
+        Guid objectId = new(data);
 
-        if (!objectId.HasValue)
-        {
-            return;
-        }
-
-        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId.Value);
-
+        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId);
         if (gameObject is null)
         {
             return;
         }
 
         string prefabPath = Path.Combine(_currentDirectory, $"{gameObject.Name}.prefab");
-
         _editor.SceneOperations.CreatePrefabFromGameObject(gameObject, prefabPath);
-    }
-
-    private static unsafe Guid? TryExtractGuidPayload(ImGuiPayloadPtr payload)
-    {
-        if (payload.DataSize != 16)
-        {
-            return null;
-        }
-
-        byte[] data = new byte[16];
-        Marshal.Copy(payload.Data, data, 0, 16);
-
-        return new(data);
     }
 
     private static void CenterAlignItem(float itemWidth)
     {
         float columnWidth = ImGui.GetColumnWidth();
         float offsetX = (columnWidth - itemWidth) * 0.5f;
-
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 
@@ -305,7 +253,6 @@ public class ContentBrowserPanel : IDisposable
         float columnWidth = ImGui.GetColumnWidth();
         float textWidth = ImGui.CalcTextSize(text).X;
         float offsetX = (columnWidth - textWidth) * 0.5f;
-
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
     }
 

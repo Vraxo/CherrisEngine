@@ -1,4 +1,4 @@
-﻿namespace Cherris.Rendering;
+﻿namespace Cherris.RenderingInterface;
 
 public interface IGameWindow : IDisposable
 {
@@ -9,5 +9,6 @@ public interface IGameWindow : IDisposable
     void ProcessEvents();
     void SwapBuffers();
     event Action Resized;
-    Func<bool> ShouldIgnoreImGuiCapture { get; set; }
+
+    Func<bool> IsViewportActive { get; set; }
 }

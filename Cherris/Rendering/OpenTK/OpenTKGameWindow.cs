@@ -1,5 +1,4 @@
-﻿using Cherris.Rendering;
-using Cherris.Rendering.OpenTK;
+﻿using Cherris.RenderingInterface;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -8,7 +7,7 @@ using OpenTK.Windowing.Desktop;
 using OpenTKKey = OpenTK.Windowing.GraphicsLibraryFramework.Keys;
 using OTKGameWindow = OpenTK.Windowing.Desktop.GameWindow;
 
-namespace Cherris.OpenTK;
+namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKGameWindow : IGameWindow
 {
@@ -21,8 +20,9 @@ public class OpenTKGameWindow : IGameWindow
     public float Height => _window.ClientSize.Y;
     public event Action Resized;
 
+    public Func<bool> IsViewportActive { get; set; } = () => false;
+
     public unsafe IntPtr Handle => (IntPtr)_window.WindowPtr;
-    public Func<bool> ShouldIgnoreImGuiCapture { get; set; }
 
     public bool IsMouseLocked
     {
@@ -37,9 +37,9 @@ public class OpenTKGameWindow : IGameWindow
         {
             ClientSize = new Vector2i(width, height),
             Title = title,
-            NumberOfSamples = 4, // Request 4x MSAA
-            StencilBits = 8, // Request an 8-bit stencil buffer for the default framebuffer
-            AlphaBits = 8 // Request an 8-bit alpha channel for transparency compositing
+            NumberOfSamples = 4,
+            StencilBits = 8,
+            AlphaBits = 8
         };
         _window = new OTKGameWindow(gameWindowSettings, nativeWindowSettings);
 
@@ -54,8 +54,6 @@ public class OpenTKGameWindow : IGameWindow
         _window.MouseWheel += OnMouseWheel;
         Input.OnLockStateChanged += OnLockStateChanged;
 
-
-        // This makes the OpenGL context current on this thread.
         _window.MakeCurrent();
 
         IsMouseLocked = startWithMouseLocked;
@@ -75,7 +73,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnLoad()
     {
-        Input.ClearState(); // Ensure clean state on startup
+        Input.ClearState();
         _lastMousePos = new Vector2(_window.MouseState.X, _window.MouseState.Y);
     }
 
@@ -89,9 +87,6 @@ public class OpenTKGameWindow : IGameWindow
     public void ProcessEvents()
     {
         Input.FrameStarted();
-        // OpenTK's GameWindow processes events on its own thread via Run(),
-        // but we need to process them manually for our game loop. A timeout of 0
-        // processes all pending events and returns immediately.
         _window.ProcessEvents(0);
     }
 
@@ -108,7 +103,7 @@ public class OpenTKGameWindow : IGameWindow
 
         if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
-            _lastMousePos = currentPos; // Still update last pos to prevent jump if they click right after
+            _lastMousePos = currentPos;
             return;
         }
 
@@ -120,7 +115,6 @@ public class OpenTKGameWindow : IGameWindow
             Input.SetMouseDelta(delta);
         }
 
-        // Always update the last mouse position for the next frame's calculation.
         _lastMousePos = currentPos;
     }
 
@@ -134,8 +128,6 @@ public class OpenTKGameWindow : IGameWindow
             return;
         }
 
-        // When a pan begins, we MUST reset the "last position" to the current mouse position.
-        // This establishes a correct baseline for the first delta calculation in OnMouseMove.
         if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right)
         {
             _lastMousePos = new Vector2(_window.MouseState.X, _window.MouseState.Y);
@@ -160,14 +152,22 @@ public class OpenTKGameWindow : IGameWindow
     private void OnKeyDown(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, true);
-        if (ImGui.GetIO().WantCaptureKeyboard) return;
+        if (ImGui.GetIO().WantCaptureKeyboard)
+        {
+            return;
+        }
+
         Input.SetKeyState(MapKey(e.Key), true);
     }
 
     private void OnKeyUp(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, false);
-        if (ImGui.GetIO().WantCaptureKeyboard) return;
+        if (ImGui.GetIO().WantCaptureKeyboard)
+        {
+            return;
+        }
+
         Input.SetKeyState(MapKey(e.Key), false);
     }
 
@@ -180,7 +180,7 @@ public class OpenTKGameWindow : IGameWindow
     {
         _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
 
-        bool ignoreImGui = ShouldIgnoreImGuiCapture?.Invoke() ?? false;
+        bool ignoreImGui = IsViewportActive?.Invoke() ?? false;
 
         if (ImGui.GetIO().WantCaptureMouse && !ignoreImGui)
         {
@@ -196,21 +196,19 @@ public class OpenTKGameWindow : IGameWindow
         _window?.Dispose();
     }
 
-    // --- Input Mapping ---
-    private static Cherris.MouseButton MapButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button)
+    private static MouseButton MapButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button)
     {
         return button switch
         {
             global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left => Cherris.MouseButton.Left,
             global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Right => Cherris.MouseButton.Right,
             global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Middle => Cherris.MouseButton.Middle,
-            _ => Cherris.MouseButton.LastButton // Indicates an unhandled button
+            _ => Cherris.MouseButton.LastButton
         };
     }
 
     private static Key MapKey(OpenTKKey key)
     {
-        // This is a partial mapping. A full implementation would be much larger.
         return key switch
         {
             OpenTKKey.Space => Key.Space,

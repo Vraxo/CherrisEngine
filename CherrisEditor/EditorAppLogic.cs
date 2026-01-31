@@ -3,6 +3,7 @@ using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
 using CherrisEditor.UI;
+using CherrisEditor.UI.Viewport;
 using CherrisEditor.Undo;
 using ImGuiNET;
 using ImGuizmoNET;

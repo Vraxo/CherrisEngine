@@ -9326,13 +9326,21 @@ public class EditorSelection
 
     public GameObject? PickObject(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
-        Ray ray = CreateRayFromViewport(mousePos, viewportPos, viewportSize);
+        Ray? ray = CreateRayFromViewport(mousePos, viewportPos, viewportSize);
+
+        return ray is null
+            ? null
+            : FindClosestIntersection(ray.Value);
+    }
+
+    private GameObject? FindClosestIntersection(Ray ray)
+    {
         GameObject? closestObject = null;
         float closestDistance = float.MaxValue;
 
         foreach (GameObject gameObject in _sceneManager.GameObjects)
         {
-            if (gameObject.GetComponent<Skybox>() is not null || gameObject.GetComponent<Camera>() is not null)
+            if (!IsSelectable(gameObject))
             {
                 continue;
             }
@@ -9356,46 +9364,80 @@ public class EditorSelection
         return closestObject;
     }
 
-    public Ray CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
+    private Ray? CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
-        Camera? camera = _sceneManager.MainCamera;
-        if (camera is null || viewportSize.X <= 0 || viewportSize.Y <= 0)
+        if (_sceneManager.MainCamera is not Camera camera)
         {
-            return new Ray(new Vector3(float.MaxValue), Vector3.Zero);
+            return null;
+        }
+
+        if (viewportSize.X <= 0 || viewportSize.Y <= 0)
+        {
+            return null;
         }
 
         Vector2 relativeMouse = mousePos - viewportPos;
 
-        bool isOutsideViewport = relativeMouse.X < 0
+        return IsOutsideViewport(relativeMouse, viewportSize)
+            ? null
+            : BuildViewportRay(relativeMouse, viewportSize, camera);
+    }
+
+    private static bool IsSelectable(GameObject gameObject)
+    {
+        return gameObject.GetComponent<Skybox>() is null
+            && gameObject.GetComponent<Camera>() is null;
+    }
+
+    private static bool IsOutsideViewport(Vector2 relativeMouse, Vector2 viewportSize)
+    {
+        return relativeMouse.X < 0
             || relativeMouse.Y < 0
             || relativeMouse.X > viewportSize.X
             || relativeMouse.Y > viewportSize.Y;
-
-        return isOutsideViewport
-            ? new Ray(new Vector3(float.MaxValue), Vector3.Zero)
-            : ViewportToWorldRay(relativeMouse, viewportSize, camera);
     }
 
-    private Ray ViewportToWorldRay(Vector2 relativeMouse, Vector2 viewportSize, Camera camera)
+    private static Ray? BuildViewportRay(Vector2 relativeMouse, Vector2 viewportSize, Camera camera)
+    {
+        Vector4 clipSpaceRay = CalculateClipSpaceRay(relativeMouse, viewportSize);
+        Vector3? worldDirection = TransformToWorldDirection(clipSpaceRay, viewportSize, camera);
+
+        return worldDirection is null || camera.GameObject is not GameObject gameObject
+            ? null
+            : (Ray?)new(gameObject.Transform.Position, worldDirection.Value);
+    }
+
+    private static Vector4 CalculateClipSpaceRay(Vector2 relativeMouse, Vector2 viewportSize)
     {
         float normalizedX = (2.0f * relativeMouse.X / viewportSize.X) - 1.0f;
         float normalizedY = 1.0f - (2.0f * relativeMouse.Y / viewportSize.Y);
-        Vector4 clipSpaceRay = new(normalizedX, normalizedY, 1.0f, 1.0f);
 
+        return new Vector4(normalizedX, normalizedY, 1.0f, 1.0f);
+    }
+
+    private static Vector3? TransformToWorldDirection(Vector4 clipSpaceRay, Vector2 viewportSize, Camera camera)
+    {
         Matrix4x4 projectionMatrix = camera.GetProjectionMatrix(viewportSize.X / viewportSize.Y);
-        Matrix4x4.Invert(projectionMatrix, out Matrix4x4 inverseProjection);
+
+        if (!Matrix4x4.Invert(projectionMatrix, out Matrix4x4 inverseProjection))
+        {
+            return null;
+        }
+
         Vector4 viewSpaceRay = Vector4.Transform(clipSpaceRay, inverseProjection);
         viewSpaceRay.Z = -1.0f;
         viewSpaceRay.W = 0.0f;
 
         Matrix4x4 viewMatrix = camera.GetViewMatrix();
-        Matrix4x4.Invert(viewMatrix, out Matrix4x4 inverseView);
+
+        if (!Matrix4x4.Invert(viewMatrix, out Matrix4x4 inverseView))
+        {
+            return null;
+        }
+
         Vector4 worldSpaceRay = Vector4.Transform(viewSpaceRay, inverseView);
 
-        Vector3 rayDirection = Vector3.Normalize(new Vector3(worldSpaceRay.X, worldSpaceRay.Y, worldSpaceRay.Z));
-        Vector3 rayOrigin = camera.GameObject.Transform.Position;
-
-        return new Ray(rayOrigin, rayDirection);
+        return Vector3.Normalize(new(worldSpaceRay.X, worldSpaceRay.Y, worldSpaceRay.Z));
     }
 }
 ```
@@ -9812,10 +9854,10 @@ public sealed class DefaultInspector
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        IEnumerable<PropertyInfo> properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.CanWrite && !p.IsDefined(typeof(HideInInspectorAttribute), false));
 
-        foreach (var prop in properties)
+        foreach (PropertyInfo? prop in properties)
         {
             if (DrawPropertyRow(component, prop))
             {
@@ -9860,6 +9902,7 @@ public sealed class DefaultInspector
         }
 
         object? defaultValue = GetDefaultValue(component.GetType(), prop.Name);
+
         if (defaultValue == null)
         {
             return false;
@@ -9873,7 +9916,7 @@ public sealed class DefaultInspector
     {
         try
         {
-            var instance = Activator.CreateInstance(componentType);
+            object? instance = Activator.CreateInstance(componentType);
             return componentType.GetProperty(propertyName)?.GetValue(instance);
         }
         catch
@@ -10168,12 +10211,14 @@ public static class PropertyDrawingPrimitives
 
         if (ImGui.BeginDragDropTarget())
         {
-            var payload = ImGui.AcceptDragDropPayload(payloadType);
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(payloadType);
+
             unsafe
             {
                 if (payload.NativePtr != null)
                 {
                     string? path = Marshal.PtrToStringAnsi(payload.Data);
+
                     if (!string.IsNullOrEmpty(path))
                     {
                         newValue = Path.GetFileNameWithoutExtension(path);
@@ -10181,6 +10226,7 @@ public static class PropertyDrawingPrimitives
                     }
                 }
             }
+
             ImGui.EndDragDropTarget();
         }
 
@@ -10364,10 +10410,12 @@ public sealed class ResourceNameSynchronizer
             _ => null
         };
 
-        if (resource != null)
+        if (resource == null)
         {
-            targetProp.SetValue(component, resource);
+            return;
         }
+
+        targetProp.SetValue(component, resource);
     }
 }
 ```
@@ -10381,7 +10429,6 @@ using Cherris.Attributes;
 using Cherris.Components;
 using Cherris.Rendering;
 using ImGuiNET;
-using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -10400,45 +10447,79 @@ public sealed class TexturePropertyDrawer
 
     public bool Draw(Component component, PropertyInfo prop, ITexture texture, DragDropTargetAttribute? dragDropAttr, out bool activated, out bool deactivated)
     {
-        IntPtr handle = IntPtr.Zero;
-        handle = texture?.GetBackendHandle() is int h && h != 0 ? h : _textureManager.GetTexture("File");
+        IntPtr handle = ResolveTextureHandle(texture);
 
-        ImGui.ImageButton($"tex_{prop.Name}", handle, new Vector2(64, 64), new Vector2(0, 1), new Vector2(1, 0));
-        bool changed = false;
+        ImGui.ImageButton($"tex_{prop.Name}", handle, new(64, 64), new(0, 1), new(1, 0));
+
         activated = ImGui.IsItemActivated();
         deactivated = ImGui.IsItemDeactivatedAfterEdit();
 
-        if (dragDropAttr != null && ImGui.BeginDragDropTarget())
-        {
-            var payload = ImGui.AcceptDragDropPayload(dragDropAttr.PayloadType);
-            unsafe
-            {
-                if (payload.NativePtr != null)
-                {
-                    string? path = Marshal.PtrToStringAnsi(payload.Data);
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        string name = Path.GetFileNameWithoutExtension(path);
-                        var newTex = _editor.ResourceManager.GetTexture(name);
-                        if (newTex != null)
-                        {
-                            prop.SetValue(component, newTex);
-
-                            var textureNameProp = component.GetType().GetProperty(prop.Name + "Name");
-                            if (textureNameProp != null && textureNameProp.PropertyType == typeof(string))
-                            {
-                                textureNameProp.SetValue(component, name);
-                            }
-
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            ImGui.EndDragDropTarget();
-        }
+        bool changed = ProcessDragDropTarget(component, prop, dragDropAttr);
 
         return changed || activated || deactivated;
+    }
+
+    private IntPtr ResolveTextureHandle(ITexture? texture)
+    {
+        if (texture?.GetBackendHandle() is int handle && handle != 0)
+        {
+            return handle;
+        }
+
+        return _textureManager.GetTexture("File");
+    }
+
+    private bool ProcessDragDropTarget(Component component, PropertyInfo prop, DragDropTargetAttribute? dragDropAttr)
+    {
+        if (dragDropAttr is null || !ImGui.BeginDragDropTarget())
+        {
+            return false;
+        }
+
+        string? textureName = AcceptDragDropPayload(dragDropAttr);
+        ImGui.EndDragDropTarget();
+
+        if (string.IsNullOrEmpty(textureName))
+        {
+            return false;
+        }
+
+        ITexture? newTexture = _editor.ResourceManager.GetTexture(textureName);
+
+        if (newTexture is null)
+        {
+            return false;
+        }
+
+        AssignTextureAndSyncName(component, prop, newTexture, textureName);
+        return true;
+    }
+
+    private unsafe string? AcceptDragDropPayload(DragDropTargetAttribute dragDropAttr)
+    {
+        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(dragDropAttr.PayloadType);
+
+        if (payload.NativePtr == null)
+        {
+            return null;
+        }
+
+        string? path = Marshal.PtrToStringAnsi(payload.Data);
+        return string.IsNullOrEmpty(path) ? null : Path.GetFileNameWithoutExtension(path);
+    }
+
+    private static void AssignTextureAndSyncName(Component component, PropertyInfo prop, ITexture newTexture, string textureName)
+    {
+        prop.SetValue(component, newTexture);
+
+        PropertyInfo? nameProp = component.GetType().GetProperty($"{prop.Name}Name");
+
+        if ((nameProp?.PropertyType) != typeof(string))
+        {
+            return;
+        }
+
+        nameProp.SetValue(component, textureName);
     }
 }
 ```
@@ -10552,12 +10633,12 @@ public sealed class TransformInspector
         bool changed = false;
         float[] components = { value.X, value.Y, value.Z };
         string[] labels = { "X", "Y", "Z" };
-        System.Numerics.Vector4[] colors =
-        {
+        Vector4[] colors =
+        [
             new(0.8f, 0.2f, 0.2f, 1),
             new(0.2f, 0.8f, 0.2f, 1),
             new(0.2f, 0.3f, 0.8f, 1)
-        };
+        ];
 
         for (int i = 0; i < 3; i++)
         {
@@ -10619,6 +10700,7 @@ public sealed class TransformInspector
 ```csharp
 using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
+using System.Reflection;
 
 namespace CherrisEditor.Inspectors;
 
@@ -10639,7 +10721,8 @@ public sealed class UndoTracker
             return;
         }
 
-        var property = target.GetType().GetProperty(propertyName);
+        PropertyInfo? property = target.GetType().GetProperty(propertyName);
+
         if (property == null || !property.CanWrite)
         {
             return;
@@ -10647,21 +10730,25 @@ public sealed class UndoTracker
 
         if (activated)
         {
-            var value = property.GetValue(target);
+            object? value = property.GetValue(target);
             _stack.Push(value ?? new object());
         }
 
-        if (deactivated && _stack.Count > 0)
+        if (!deactivated || _stack.Count <= 0)
         {
-            var initial = _stack.Pop();
-            var currentValue = property.GetValue(target);
-
-            if (!Equals(initial, currentValue))
-            {
-                property.SetValue(target, initial);
-                _history.Execute(new ChangePropertyCommand(target, property, initial, currentValue ?? new object()));
-            }
+            return;
         }
+
+        object initial = _stack.Pop();
+        object? currentValue = property.GetValue(target);
+
+        if (Equals(initial, currentValue))
+        {
+            return;
+        }
+
+        property.SetValue(target, initial);
+        _history.Execute(new ChangePropertyCommand(target, property, initial, currentValue ?? new object()));
     }
 
     public void Reset()
@@ -10741,9 +10828,9 @@ public class ConsolePanel
     {
         return level switch
         {
-            LogLevel.Warning => new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
-            LogLevel.Error => new Vector4(1.0f, 0.2f, 0.2f, 1.0f),
-            _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
+            LogLevel.Warning => new(1.0f, 1.0f, 0.0f, 1.0f),
+            LogLevel.Error => new(1.0f, 0.2f, 0.2f, 1.0f),
+            _ => new(1.0f, 1.0f, 1.0f, 1.0f)
         };
     }
 
@@ -10943,6 +11030,7 @@ public class ContentBrowserPanel : IDisposable
         }
 
         SendStringPayload(payloadType, path);
+
         ImGui.Image(icon, new(50, 50));
         ImGui.SameLine();
         ImGui.Text(name);
@@ -10952,13 +11040,22 @@ public class ContentBrowserPanel : IDisposable
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        return EditorTextureManager.ImageExtensions.Contains(extension)
-            ? EditorConstants.DragDropPayloads.Texture
-            : EditorTextureManager.PrefabExtensions.Contains(extension)
-            ? EditorConstants.DragDropPayloads.Prefab
-            : EditorTextureManager.MeshExtensions.Contains(extension)
-            ? EditorConstants.DragDropPayloads.Mesh
-            : null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            return (string?)EditorConstants.DragDropPayloads.Texture;
+        }
+
+        if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        {
+            return (string?)EditorConstants.DragDropPayloads.Prefab;
+        }
+
+        if (EditorTextureManager.MeshExtensions.Contains(extension))
+        {
+            return (string?)EditorConstants.DragDropPayloads.Mesh;
+        }
+
+        return null;
     }
 
     private void HandleItemInteraction(string path, bool isDirectory)
@@ -10974,15 +11071,18 @@ public class ContentBrowserPanel : IDisposable
             return;
         }
 
-        if (path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        if (!path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            _editor.SceneOperations.LoadSceneFromFile(path);
+            return;
         }
+
+        _editor.SceneOperations.LoadSceneFromFile(path);
     }
 
     private static void SendStringPayload(string payloadType, string data)
     {
         IntPtr ptr = Marshal.StringToHGlobalAnsi(data);
+
         try
         {
             uint size = (uint)(data.Length + 1);

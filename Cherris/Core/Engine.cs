@@ -2,6 +2,7 @@
 using Cherris.Core.Logging;
 using Cherris.OpenTK;
 using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using System.Numerics;
 

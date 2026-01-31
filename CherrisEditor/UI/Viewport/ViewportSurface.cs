@@ -2,7 +2,7 @@
 using ImGuiNET;
 using System.Numerics;
 
-namespace CherrisEditor.UI;
+namespace CherrisEditor.UI.Viewport;
 
 public class ViewportSurface
 {

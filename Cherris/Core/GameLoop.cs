@@ -1,4 +1,4 @@
-﻿using Cherris.Rendering;
+﻿using Cherris.RenderingInterface;
 using System.Diagnostics;
 
 namespace Cherris;

@@ -1,5 +1,6 @@
 ﻿using Cherris.Attributes;
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Rendering;
 using CherrisEditor.Undo;
 using ImGuiNET;
@@ -10,187 +11,294 @@ namespace CherrisEditor.Inspectors;
 
 public sealed class PropertyDrawer
 {
+    private readonly Editor _editor;
+    private readonly EditorTextureManager _textures;
     private readonly HistoryManager _history;
-    private readonly UndoTracker _undo;
-    private readonly ResourceNameSynchronizer _resourceSync;
-    private readonly TexturePropertyDrawer _textureDrawer;
 
     public PropertyDrawer(Editor editor, EditorTextureManager textures, HistoryManager history)
     {
+        _editor = editor;
+        _textures = textures;
         _history = history;
-        _undo = new UndoTracker(history);
-        _resourceSync = new ResourceNameSynchronizer(editor);
-        _textureDrawer = new TexturePropertyDrawer(editor, textures);
     }
 
-    public bool Draw(Component component, PropertyInfo prop, out bool activated, out bool deactivated)
+    public void Draw(Component component, PropertyInfo prop)
     {
-        activated = false;
-        deactivated = false;
+        object currentValue = prop.GetValue(component) ?? CreateDefault(prop.PropertyType);
+        bool changed = false;
 
-        object currentValue = prop.GetValue(component)
-            ?? PropertyDrawingPrimitives.CreateDefault(prop.PropertyType);
+        ImGui.PushID(prop.Name);
 
-        bool changed = DispatchDraw(component, prop, currentValue, out activated, out deactivated);
+        if (prop.PropertyType == typeof(float))
+        {
+            changed = DrawFloat(component, prop, (float)currentValue);
+        }
+        else if (prop.PropertyType == typeof(int))
+        {
+            changed = DrawInt(component, prop, (int)currentValue);
+        }
+        else if (prop.PropertyType == typeof(bool))
+        {
+            changed = DrawBool(component, prop, (bool)currentValue);
+        }
+        else if (prop.PropertyType == typeof(string))
+        {
+            changed = DrawString(component, prop, (string)currentValue);
+        }
+        else if (prop.PropertyType.IsEnum)
+        {
+            changed = DrawEnum(component, prop, (Enum)currentValue);
+        }
+        else if (prop.PropertyType == typeof(Vector2))
+        {
+            changed = DrawVector2(component, prop, (Vector2)currentValue);
+        }
+        else if (prop.PropertyType == typeof(Vector3))
+        {
+            changed = DrawVector3(component, prop, (Vector3)currentValue);
+        }
+        else if (prop.PropertyType == typeof(ITexture))
+        {
+            changed = DrawTexture(component, prop, (ITexture)currentValue);
+        }
 
-        _undo.Track(component, prop.Name, activated, deactivated);
+        ImGui.PopID();
+
+        if (changed && ImGui.IsItemDeactivatedAfterEdit())
+        {
+            RecordUndo(component, prop, currentValue);
+        }
+    }
+
+    private bool DrawFloat(Component component, PropertyInfo prop, float value)
+    {
+        var range = prop.GetCustomAttribute<RangeAttribute>();
+        float newValue = value;
+
+        bool changed = range != null
+            ? ImGui.SliderFloat("##val", ref newValue, range.Min, range.Max)
+            : ImGui.DragFloat("##val", ref newValue, 0.01f);
+
+        if (changed)
+        {
+            prop.SetValue(component, newValue);
+        }
+
         return changed;
     }
 
-    private bool DispatchDraw(Component component, PropertyInfo prop, object currentValue, out bool activated, out bool deactivated)
+    private bool DrawInt(Component component, PropertyInfo prop, int value)
     {
-        activated = false;
-        deactivated = false;
-
-        return prop.PropertyType switch
+        int newValue = value;
+        bool changed = ImGui.DragInt("##val", ref newValue);
+        if (changed)
         {
-            Type t when t == typeof(float) => DrawFloat(component, prop, (float)currentValue, out activated, out deactivated),
-            Type t when t == typeof(int) => DrawInt(component, prop, (int)currentValue, out activated, out deactivated),
-            Type t when t == typeof(bool) => DrawBool(component, prop, (bool)currentValue, out activated, out deactivated),
-            Type t when t == typeof(string) => DrawString(component, prop, (string)currentValue, out activated, out deactivated),
-            _ when prop.PropertyType.IsEnum => DrawEnum(component, prop, (Enum)currentValue, out activated, out deactivated),
-            Type t when t == typeof(Vector2) => DrawVector2(component, prop, (Vector2)currentValue, out activated, out deactivated),
-            Type t when t == typeof(Vector3) => DrawVector3(component, prop, (Vector3)currentValue, out activated, out deactivated),
-            Type t when t == typeof(ITexture) => _textureDrawer.Draw(component, prop, (ITexture)currentValue, prop.GetCustomAttribute<DragDropTargetAttribute>(), out activated, out deactivated),
-            _ => DrawFallback(currentValue)
+            prop.SetValue(component, newValue);
+        }
+
+        return changed;
+    }
+
+    private bool DrawBool(Component component, PropertyInfo prop, bool value)
+    {
+        bool newValue = value;
+        bool changed = ImGui.Checkbox("##val", ref newValue);
+        if (changed)
+        {
+            prop.SetValue(component, newValue);
+        }
+
+        return changed;
+    }
+
+    private bool DrawString(Component component, PropertyInfo prop, string value)
+    {
+        string newValue = value ?? "";
+        bool changed = ImGui.InputText("##val", ref newValue, 256);
+
+        if (changed)
+        {
+            prop.SetValue(component, newValue);
+
+            if (prop.GetCustomAttribute<DragDropTargetAttribute>() is not null
+                && prop.Name.EndsWith("Name"))
+            {
+                SyncResource(component, prop.Name, newValue);
+            }
+        }
+
+        DrawDragDropTarget(component, prop);
+        return changed;
+    }
+
+    private bool DrawEnum(Component component, PropertyInfo prop, Enum value)
+    {
+        var names = Enum.GetNames(value.GetType());
+        int index = Array.IndexOf(names, value.ToString());
+
+        bool changed = ImGui.Combo("##val", ref index, names, names.Length);
+        if (changed)
+        {
+            prop.SetValue(component, Enum.Parse(value.GetType(), names[index]));
+        }
+        return changed;
+    }
+
+    private bool DrawVector2(Component component, PropertyInfo prop, Vector2 value)
+    {
+        System.Numerics.Vector2 vec = value;
+        bool changed = ImGui.DragFloat2("##val", ref vec, 0.1f);
+        if (changed)
+        {
+            prop.SetValue(component, vec);
+        }
+
+        return changed;
+    }
+
+    private bool DrawVector3(Component component, PropertyInfo prop, Vector3 value)
+    {
+        bool isColor = prop.GetCustomAttribute<ColorUsageAttribute>() is not null;
+        System.Numerics.Vector3 vec = value;
+
+        bool changed = isColor
+            ? ImGui.ColorEdit3("##val", ref vec, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR)
+            : ImGui.DragFloat3("##val", ref vec, 0.1f);
+
+        if (changed)
+        {
+            prop.SetValue(component, vec);
+        }
+
+        return changed;
+    }
+
+    private bool DrawTexture(Component component, PropertyInfo prop, ITexture texture)
+    {
+        IntPtr handle = ResolveTextureHandle(texture);
+        bool changed = false;
+
+        if (ImGui.ImageButton($"tex_{prop.Name}", handle, new(64, 64), new(0, 1), new(1, 0)))
+        {
+        }
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload("ASSET_PATH_TEXTURE");
+            unsafe
+            {
+                if (payload.NativePtr != null)
+                {
+                    string path = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(payload.Data) ?? "";
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        string textureName = Path.GetFileNameWithoutExtension(path);
+                        var newTexture = _editor.ResourceManager.GetTexture(textureName);
+                        if (newTexture is not null)
+                        {
+                            prop.SetValue(component, newTexture);
+                            var nameProp = component.GetType().GetProperty($"{prop.Name}Name");
+                            nameProp?.SetValue(component, textureName);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        return changed;
+    }
+
+    private IntPtr ResolveTextureHandle(ITexture? texture)
+    {
+        if (texture?.GetBackendHandle() is int handle && handle != 0)
+        {
+            return handle;
+        }
+
+        return _textures.GetTexture("File");
+    }
+
+    private void DrawDragDropTarget(Component component, PropertyInfo prop)
+    {
+        var attr = prop.GetCustomAttribute<DragDropTargetAttribute>();
+        if (attr is null || !ImGui.BeginDragDropTarget())
+        {
+            return;
+        }
+
+        var payload = ImGui.AcceptDragDropPayload(attr.PayloadType);
+        unsafe
+        {
+            if (payload.NativePtr != null)
+            {
+                string path = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(payload.Data) ?? "";
+                if (!string.IsNullOrEmpty(path))
+                {
+                    string value = Path.GetFileNameWithoutExtension(path);
+                    prop.SetValue(component, value);
+                    SyncResource(component, prop.Name, value);
+                }
+            }
+        }
+        ImGui.EndDragDropTarget();
+    }
+
+    private void SyncResource(Component component, string nameProperty, string resourceName)
+    {
+        if (!nameProperty.EndsWith("Name"))
+        {
+            return;
+        }
+
+        string targetName = nameProperty[..^4];
+        var targetProp = component.GetType().GetProperty(targetName);
+        if (targetProp is null)
+        {
+            return;
+        }
+
+        object? resource = targetProp.PropertyType switch
+        {
+            Type t when t == typeof(ITexture) => _editor.ResourceManager.GetTexture(resourceName),
+            Type t when t == typeof(AudioClip) => _editor.ResourceManager.GetAudioClip(resourceName),
+            Type t when t == typeof(Mesh) => _editor.ResourceManager.GetMesh(resourceName),
+            _ => null
         };
+
+        if (resource is not null)
+        {
+            targetProp.SetValue(component, resource);
+        }
     }
 
-    private static bool DrawFloat(Component component, PropertyInfo prop, float currentValue, out bool activated, out bool deactivated)
+    private void RecordUndo(Component component, PropertyInfo prop, object oldValue)
     {
-        ImGui.PushID(prop.Name);
-        var rangeAttr = prop.GetCustomAttribute<RangeAttribute>();
-        float newValue = currentValue;
-
-        bool changed = rangeAttr != null
-            ? PropertyDrawingPrimitives.SliderFloat("##val", currentValue, rangeAttr.Min, rangeAttr.Max, out newValue, out activated, out deactivated)
-            : PropertyDrawingPrimitives.Float("##val", currentValue, 0.01f, float.MinValue, float.MaxValue, out newValue, out activated, out deactivated);
-
-        if (changed)
+        object? newValue = prop.GetValue(component);
+        if (newValue is not null && !Equals(oldValue, newValue))
         {
-            prop.SetValue(component, newValue);
+            _history.Execute(new Undo.Commands.ChangePropertyCommand(component, prop, oldValue, newValue));
         }
-
-        ImGui.PopID();
-        return changed;
     }
 
-    private static bool DrawInt(Component component, PropertyInfo prop, int currentValue, out bool activated, out bool deactivated)
+    private static object CreateDefault(Type type)
     {
-        ImGui.PushID(prop.Name);
-        int newValue = currentValue;
-
-        bool changed = PropertyDrawingPrimitives.Int("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
+        if (type == typeof(string))
         {
-            prop.SetValue(component, newValue);
+            return "";
         }
 
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawBool(Component component, PropertyInfo prop, bool currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-        bool newValue = currentValue;
-
-        bool changed = PropertyDrawingPrimitives.Bool("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
+        if (type == typeof(Vector2))
         {
-            prop.SetValue(component, newValue);
+            return Vector2.Zero;
         }
 
-        ImGui.PopID();
-        return changed;
-    }
-
-    private bool DrawString(Component component, PropertyInfo prop, string currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-
-        var dragDropAttr = prop.GetCustomAttribute<DragDropTargetAttribute>();
-        string newValue;
-        bool changed;
-
-        if (dragDropAttr != null)
+        if (type == typeof(Vector3))
         {
-            changed = PropertyDrawingPrimitives.DragDropString("##val", currentValue, dragDropAttr.PayloadType, out newValue, out activated, out deactivated);
-
-            if (changed)
-            {
-                prop.SetValue(component, newValue);
-                _resourceSync.Sync(component, prop.Name, newValue);
-            }
-        }
-        else
-        {
-            changed = PropertyDrawingPrimitives.String("##val", currentValue, out newValue, out activated, out deactivated);
-
-            if (changed)
-            {
-                prop.SetValue(component, newValue);
-            }
+            return Vector3.Zero;
         }
 
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawEnum(Component component, PropertyInfo prop, Enum currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-        Enum newValue = currentValue;
-
-        bool changed = PropertyDrawingPrimitives.EnumField("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
-        {
-            prop.SetValue(component, newValue);
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawVector2(Component component, PropertyInfo prop, Vector2 currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-
-        bool changed = PropertyDrawingPrimitives.Vector2Field("##val", currentValue, out Vector2 newValue, out activated, out deactivated);
-
-        if (changed)
-        {
-            prop.SetValue(component, newValue);
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawVector3(Component component, PropertyInfo prop, Vector3 currentValue, out bool activated, out bool deactivated)
-    {
-        ImGui.PushID(prop.Name);
-        var colorAttr = prop.GetCustomAttribute<ColorUsageAttribute>();
-
-        bool changed = colorAttr != null
-            ? PropertyDrawingPrimitives.Color3("##val", currentValue, out Vector3 newValue, out activated, out deactivated)
-            : PropertyDrawingPrimitives.Vector3Field("##val", currentValue, out newValue, out activated, out deactivated);
-
-        if (changed)
-        {
-            prop.SetValue(component, newValue);
-        }
-
-        ImGui.PopID();
-        return changed;
-    }
-
-    private static bool DrawFallback(object currentValue)
-    {
-        ImGui.Text(currentValue.ToString() ?? "null");
-        return false;
+        return Activator.CreateInstance(type) ?? new object();
     }
 }

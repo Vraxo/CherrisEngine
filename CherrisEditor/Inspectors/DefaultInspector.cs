@@ -55,21 +55,21 @@ public sealed class DefaultInspector
         ImGui.TableNextRow();
 
         ImGui.TableSetColumnIndex(0);
-        ImGui.Text(SplitPascalCase(prop.Name));
+        ImGui.Text(FormatPropertyName(prop.Name));
 
         ImGui.TableSetColumnIndex(1);
         ImGui.PushItemWidth(-1);
 
-        bool changed = _propertyDrawer.Draw(component, prop, out _, out _);
+        _propertyDrawer.Draw(component, prop);
         ImGui.PopItemWidth();
 
         ImGui.TableSetColumnIndex(2);
         if (DrawResetButton(component, prop))
         {
-            changed = true;
+            return true;
         }
 
-        return changed;
+        return ImGui.IsItemDeactivatedAfterEdit();
     }
 
     private bool DrawResetButton(Component component, PropertyInfo prop)
@@ -106,7 +106,7 @@ public sealed class DefaultInspector
         }
     }
 
-    private static string SplitPascalCase(string input)
+    private static string FormatPropertyName(string input)
     {
         return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
     }

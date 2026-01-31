@@ -2,7 +2,7 @@
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
-using Cherris.Rendering;
+using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using CherrisEditor.Core;
 using CherrisEditor.Undo;
@@ -192,20 +192,17 @@ public class Editor : Engine
 
     private void ConfigureWindowInputHandling()
     {
-        if (_backend.GameWindow is not IGameWindow window || window.ShouldIgnoreImGuiCapture is null)
+        if (_backend.GameWindow is not IGameWindow window)
         {
             return;
         }
 
-        window.ShouldIgnoreImGuiCapture = () => IsViewportHovered;
+        window.IsViewportActive = () => IsViewportHovered;
     }
 
     private void MarkActiveSceneDirty()
     {
-        if (SceneManager.ActiveScene is not null)
-        {
-            SceneManager.ActiveScene.IsDirty = true;
-        }
+        SceneManager.ActiveScene?.IsDirty = true;
     }
 
     private void RegisterBuiltInComponents()
