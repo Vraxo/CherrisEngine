@@ -83,12 +83,13 @@ public class EditorController : Script
     private void HandleKeyboardMovement(float deltaTime)
     {
         float currentSpeed = Speed;
+
         if (Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight))
         {
             currentSpeed *= 3.0f;
         }
 
-        var localMove = Vector3.Zero;
+        Vector3 localMove = Vector3.Zero;
 
         if (Input.IsKeyDown(Key.W))
         {
@@ -111,6 +112,7 @@ public class EditorController : Script
         }
 
         float worldVerticalMove = 0f;
+
         if (Input.IsKeyDown(Key.E))
         {
             worldVerticalMove += 1;
@@ -128,12 +130,14 @@ public class EditorController : Script
 
         Quaternion yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
         Vector3 worldHorizontalMove = Vector3.Transform(localMove, yawRotation);
-        var finalMove = new Vector3(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
+        Vector3 finalMove = new(worldHorizontalMove.X, worldVerticalMove, worldHorizontalMove.Z);
 
-        if (finalMove.LengthSquared() > 0)
+        if (finalMove.LengthSquared() <= 0)
         {
-            GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
+            return;
         }
+
+        GameObject.Transform.Position += Vector3.Normalize(finalMove) * currentSpeed * deltaTime;
     }
 
     private void HandleMouseLook()
@@ -144,6 +148,7 @@ public class EditorController : Script
         }
 
         Vector2 mouseDelta = Input.MouseDelta;
+
         if (mouseDelta == Vector2.Zero)
         {
             return;
@@ -151,7 +156,7 @@ public class EditorController : Script
 
         _yaw -= mouseDelta.X * MouseSensitivity;
         _pitch -= mouseDelta.Y * MouseSensitivity;
-        _pitch = Math.Clamp(_pitch, (-MathF.PI / 2.0f) + 0.001f, (MathF.PI / 2.0f) - 0.001f);
+        _pitch = float.Clamp(_pitch, (-MathF.PI / 2.0f) + 0.001f, (MathF.PI / 2.0f) - 0.001f);
 
         GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
     }
