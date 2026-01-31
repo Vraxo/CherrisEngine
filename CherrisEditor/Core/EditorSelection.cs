@@ -18,7 +18,9 @@ public class EditorSelection
     {
         Ray? ray = CreateRayFromViewport(mousePos, viewportPos, viewportSize);
 
-        return ray is null ? null : FindClosestIntersection(ray.Value);
+        return ray is null
+            ? null
+            : FindClosestIntersection(ray.Value);
     }
 
     private GameObject? FindClosestIntersection(Ray ray)
@@ -52,12 +54,6 @@ public class EditorSelection
         return closestObject;
     }
 
-    private static bool IsSelectable(GameObject gameObject)
-    {
-        return gameObject.GetComponent<Skybox>() is null
-            && gameObject.GetComponent<Camera>() is null;
-    }
-
     private Ray? CreateRayFromViewport(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize)
     {
         if (_sceneManager.MainCamera is not Camera camera)
@@ -72,7 +68,15 @@ public class EditorSelection
 
         Vector2 relativeMouse = mousePos - viewportPos;
 
-        return IsOutsideViewport(relativeMouse, viewportSize) ? null : BuildViewportRay(relativeMouse, viewportSize, camera);
+        return IsOutsideViewport(relativeMouse, viewportSize)
+            ? null
+            : BuildViewportRay(relativeMouse, viewportSize, camera);
+    }
+
+    private static bool IsSelectable(GameObject gameObject)
+    {
+        return gameObject.GetComponent<Skybox>() is null
+            && gameObject.GetComponent<Camera>() is null;
     }
 
     private static bool IsOutsideViewport(Vector2 relativeMouse, Vector2 viewportSize)
@@ -90,7 +94,7 @@ public class EditorSelection
 
         return worldDirection is null || camera.GameObject is not GameObject gameObject
             ? null
-            : (Ray?)new Ray(gameObject.Transform.Position, worldDirection.Value);
+            : (Ray?)new(gameObject.Transform.Position, worldDirection.Value);
     }
 
     private static Vector4 CalculateClipSpaceRay(Vector2 relativeMouse, Vector2 viewportSize)

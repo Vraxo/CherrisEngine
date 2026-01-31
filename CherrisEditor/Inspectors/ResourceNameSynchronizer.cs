@@ -37,9 +37,11 @@ public sealed class ResourceNameSynchronizer
             _ => null
         };
 
-        if (resource != null)
+        if (resource == null)
         {
-            targetProp.SetValue(component, resource);
+            return;
         }
+
+        targetProp.SetValue(component, resource);
     }
 }

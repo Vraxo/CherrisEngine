@@ -102,12 +102,12 @@ public sealed class TransformInspector
         bool changed = false;
         float[] components = { value.X, value.Y, value.Z };
         string[] labels = { "X", "Y", "Z" };
-        System.Numerics.Vector4[] colors =
-        {
+        Vector4[] colors =
+        [
             new(0.8f, 0.2f, 0.2f, 1),
             new(0.2f, 0.8f, 0.2f, 1),
             new(0.2f, 0.3f, 0.8f, 1)
-        };
+        ];
 
         for (int i = 0; i < 3; i++)
         {

@@ -1,5 +1,6 @@
 ﻿using CherrisEditor.Undo;
 using CherrisEditor.Undo.Commands;
+using System.Reflection;
 
 namespace CherrisEditor.Inspectors;
 
@@ -20,7 +21,8 @@ public sealed class UndoTracker
             return;
         }
 
-        var property = target.GetType().GetProperty(propertyName);
+        PropertyInfo? property = target.GetType().GetProperty(propertyName);
+
         if (property == null || !property.CanWrite)
         {
             return;
@@ -28,21 +30,25 @@ public sealed class UndoTracker
 
         if (activated)
         {
-            var value = property.GetValue(target);
+            object? value = property.GetValue(target);
             _stack.Push(value ?? new object());
         }
 
-        if (deactivated && _stack.Count > 0)
+        if (!deactivated || _stack.Count <= 0)
         {
-            var initial = _stack.Pop();
-            var currentValue = property.GetValue(target);
-
-            if (!Equals(initial, currentValue))
-            {
-                property.SetValue(target, initial);
-                _history.Execute(new ChangePropertyCommand(target, property, initial, currentValue ?? new object()));
-            }
+            return;
         }
+
+        object initial = _stack.Pop();
+        object? currentValue = property.GetValue(target);
+
+        if (Equals(initial, currentValue))
+        {
+            return;
+        }
+
+        property.SetValue(target, initial);
+        _history.Execute(new ChangePropertyCommand(target, property, initial, currentValue ?? new object()));
     }
 
     public void Reset()

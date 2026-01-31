@@ -184,13 +184,22 @@ public class ContentBrowserPanel : IDisposable
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
-        return EditorTextureManager.ImageExtensions.Contains(extension)
-            ? EditorConstants.DragDropPayloads.Texture
-            : EditorTextureManager.PrefabExtensions.Contains(extension)
-            ? EditorConstants.DragDropPayloads.Prefab
-            : EditorTextureManager.MeshExtensions.Contains(extension)
-            ? EditorConstants.DragDropPayloads.Mesh
-            : null;
+        if (EditorTextureManager.ImageExtensions.Contains(extension))
+        {
+            return (string?)EditorConstants.DragDropPayloads.Texture;
+        }
+
+        if (EditorTextureManager.PrefabExtensions.Contains(extension))
+        {
+            return (string?)EditorConstants.DragDropPayloads.Prefab;
+        }
+
+        if (EditorTextureManager.MeshExtensions.Contains(extension))
+        {
+            return (string?)EditorConstants.DragDropPayloads.Mesh;
+        }
+
+        return null;
     }
 
     private void HandleItemInteraction(string path, bool isDirectory)
@@ -206,15 +215,18 @@ public class ContentBrowserPanel : IDisposable
             return;
         }
 
-        if (path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        if (!path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
         {
-            _editor.SceneOperations.LoadSceneFromFile(path);
+            return;
         }
+
+        _editor.SceneOperations.LoadSceneFromFile(path);
     }
 
     private static void SendStringPayload(string payloadType, string data)
     {
         IntPtr ptr = Marshal.StringToHGlobalAnsi(data);
+
         try
         {
             uint size = (uint)(data.Length + 1);

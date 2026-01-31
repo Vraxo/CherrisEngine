@@ -35,10 +35,10 @@ public sealed class DefaultInspector
         ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 0.475f);
         ImGui.TableSetupColumn("##Reset", ImGuiTableColumnFlags.WidthStretch, 0.05f);
 
-        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        IEnumerable<PropertyInfo> properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.CanWrite && !p.IsDefined(typeof(HideInInspectorAttribute), false));
 
-        foreach (var prop in properties)
+        foreach (PropertyInfo? prop in properties)
         {
             if (DrawPropertyRow(component, prop))
             {
@@ -83,6 +83,7 @@ public sealed class DefaultInspector
         }
 
         object? defaultValue = GetDefaultValue(component.GetType(), prop.Name);
+
         if (defaultValue == null)
         {
             return false;
@@ -96,7 +97,7 @@ public sealed class DefaultInspector
     {
         try
         {
-            var instance = Activator.CreateInstance(componentType);
+            object? instance = Activator.CreateInstance(componentType);
             return componentType.GetProperty(propertyName)?.GetValue(instance);
         }
         catch

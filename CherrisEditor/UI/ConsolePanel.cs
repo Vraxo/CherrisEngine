@@ -63,9 +63,9 @@ public class ConsolePanel
     {
         return level switch
         {
-            LogLevel.Warning => new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
-            LogLevel.Error => new Vector4(1.0f, 0.2f, 0.2f, 1.0f),
-            _ => new Vector4(1.0f, 1.0f, 1.0f, 1.0f)
+            LogLevel.Warning => new(1.0f, 1.0f, 0.0f, 1.0f),
+            LogLevel.Error => new(1.0f, 0.2f, 0.2f, 1.0f),
+            _ => new(1.0f, 1.0f, 1.0f, 1.0f)
         };
     }
 

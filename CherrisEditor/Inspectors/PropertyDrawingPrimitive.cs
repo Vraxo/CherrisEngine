@@ -69,12 +69,14 @@ public static class PropertyDrawingPrimitives
 
         if (ImGui.BeginDragDropTarget())
         {
-            var payload = ImGui.AcceptDragDropPayload(payloadType);
+            ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(payloadType);
+
             unsafe
             {
                 if (payload.NativePtr != null)
                 {
                     string? path = Marshal.PtrToStringAnsi(payload.Data);
+
                     if (!string.IsNullOrEmpty(path))
                     {
                         newValue = Path.GetFileNameWithoutExtension(path);
@@ -82,6 +84,7 @@ public static class PropertyDrawingPrimitives
                     }
                 }
             }
+
             ImGui.EndDragDropTarget();
         }
 
