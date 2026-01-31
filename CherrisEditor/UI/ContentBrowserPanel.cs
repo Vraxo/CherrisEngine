@@ -2,7 +2,6 @@
 using Cherris.Core.Logging;
 using Cherris.Utils;
 using ImGuiNET;
-using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace CherrisEditor.UI;
@@ -13,7 +12,6 @@ public class ContentBrowserPanel : IDisposable
     private const string IconFile = "File";
     private const string IconScript = "Script";
     private const string IconPrefab = "Prefab";
-
     private const float ThumbnailSize = 80.0f;
     private const float CellPadding = 16.0f;
     private const float CellSize = ThumbnailSize + CellPadding;
@@ -27,10 +25,11 @@ public class ContentBrowserPanel : IDisposable
         _editor = editor;
         _textureManager = textureManager;
 
-        var projectRoot = editor.ProjectManager.CurrentProject?.RootPath
+        string projectRoot = editor.ProjectManager.CurrentProject?.RootPath
             ?? throw new InvalidOperationException("ContentBrowserPanel requires an active project.");
 
         _currentDirectory = projectRoot;
+
         LoadIcons();
     }
 
@@ -45,19 +44,19 @@ public class ContentBrowserPanel : IDisposable
     private void LoadIcon(string key, string relativePath)
     {
         string? path = EditorResources.Find(relativePath);
-        if (path is not null)
-        {
-            _textureManager.LoadTexture(key, path);
-        }
-        else
+
+        if (path is null)
         {
             Logger.Warning($"[ContentBrowser] Icon not found: '{relativePath}'");
+            return;
         }
+
+        _textureManager.LoadTexture(key, path);
     }
 
     public void Draw()
     {
-        _ = ImGui.Begin("Content Browser");
+        ImGui.Begin("Content Browser");
 
         DrawHeader();
         DrawGrid();
@@ -71,6 +70,7 @@ public class ContentBrowserPanel : IDisposable
         string projectRoot = _editor.ProjectManager.CurrentProject?.RootPath ?? _currentDirectory;
 
         ImGuiTableFlags flags = ImGuiTableFlags.SizingFixedFit;
+
         if (ImGui.BeginTable("ContentBrowserHeader", 2, flags))
         {
             ImGui.TableSetupColumn("BackButton", ImGuiTableColumnFlags.WidthFixed, 80.0f);
@@ -78,26 +78,36 @@ public class ContentBrowserPanel : IDisposable
             ImGui.TableNextRow();
 
             ImGui.TableSetColumnIndex(0);
-            if (_currentDirectory != projectRoot)
-            {
-                if (ImGui.Button("<- Back"))
-                {
-                    _currentDirectory = Directory.GetParent(_currentDirectory)?.FullName ?? projectRoot;
-                }
-            }
+            DrawBackButton(projectRoot);
 
             ImGui.TableSetColumnIndex(1);
             ImGui.AlignTextToFramePadding();
 
-            string displayPath = _currentDirectory == projectRoot
-                ? _editor.ProjectManager.CurrentProject?.Name ?? "Project"
-                : _currentDirectory.Replace(projectRoot, _editor.ProjectManager.CurrentProject?.Name ?? "Project");
-
+            string displayPath = GetDisplayPath(projectRoot);
             ImGui.Text($"Path: {displayPath}");
+
             ImGui.EndTable();
         }
 
         ImGui.Separator();
+    }
+
+    private string GetDisplayPath(string projectRoot)
+    {
+        return _currentDirectory == projectRoot
+            ? _editor.ProjectManager.CurrentProject?.Name ?? "Project"
+            : _currentDirectory.Replace(projectRoot, _editor.ProjectManager.CurrentProject?.Name ?? "Project");
+    }
+
+    private void DrawBackButton(string projectRoot)
+    {
+        if (_currentDirectory == projectRoot || !ImGui.Button("<- Back"))
+        {
+            return;
+        }
+
+        string? parent = Directory.GetParent(_currentDirectory)?.FullName;
+        _currentDirectory = parent ?? projectRoot;
     }
 
     private void DrawGrid()
@@ -110,100 +120,96 @@ public class ContentBrowserPanel : IDisposable
             return;
         }
 
-        var directories = Directory.GetDirectories(_currentDirectory);
-        var files = Directory.GetFiles(_currentDirectory)
-            .Where(f => !IsProjectMetadata(f))
-            .ToArray();
-
-        foreach (var directory in directories)
+        foreach (var directory in Directory.GetDirectories(_currentDirectory))
         {
-            _ = ImGui.TableNextColumn();
-            RenderDirectory(directory);
+            ImGui.TableNextColumn();
+            RenderContentItem(directory, isDirectory: true);
         }
 
-        foreach (var file in files)
+        foreach (var file in Directory.GetFiles(_currentDirectory).Where(IsNotMetadata))
         {
-            _ = ImGui.TableNextColumn();
-            RenderFile(file);
+            ImGui.TableNextColumn();
+            RenderContentItem(file, isDirectory: false);
         }
 
         ImGui.EndTable();
     }
 
-    private static bool IsProjectMetadata(string path)
+    private static bool IsNotMetadata(string path)
     {
         string fileName = Path.GetFileName(path).ToLowerInvariant();
-        return fileName is "project.yaml" or "project.yml";
+        return fileName is not "project.yaml" and not "project.yml";
     }
 
-    private void RenderDirectory(string path)
+    private void RenderContentItem(string path, bool isDirectory)
     {
         string name = Path.GetFileName(path);
-        IntPtr icon = _textureManager.GetTexture(IconFolder);
+        IntPtr icon = isDirectory
+            ? _textureManager.GetTexture(IconFolder)
+            : _textureManager.GetTextureForPath(path);
 
         CenterAlignItem(ThumbnailSize);
 
-        if (ImGui.ImageButton($"##dir_{path}", icon, new(ThumbnailSize, ThumbnailSize)))
+        ImGui.ImageButton($"##item_{path}", icon, new(ThumbnailSize, ThumbnailSize));
+
+        if (ImGui.BeginDragDropSource())
         {
+            HandleItemDrag(path, name, icon);
+            ImGui.EndDragDropSource();
         }
 
-        if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-        {
-            _currentDirectory = path;
-        }
+        HandleItemInteraction(path, isDirectory);
 
         CenterAlignText(name);
         ImGui.Text(name);
     }
 
-    private void RenderFile(string path)
+    private void HandleItemDrag(string path, string name, IntPtr icon)
     {
-        string name = Path.GetFileName(path);
-        IntPtr icon = _textureManager.GetTextureForPath(path);
+        string? payloadType = GetPayloadType(path);
 
-        CenterAlignItem(ThumbnailSize);
-
-        if (ImGui.ImageButton($"##file_{path}", icon, new(ThumbnailSize, ThumbnailSize)))
-        {
-        }
-
-        HandleFileDragDrop(path, name, icon);
-        HandleFileDoubleClick(path, name);
-
-        CenterAlignText(name);
-        ImGui.Text(name);
-    }
-
-    private static void HandleFileDragDrop(string path, string name, IntPtr icon)
-    {
-        if (!ImGui.BeginDragDropSource())
+        if (payloadType is null)
         {
             return;
         }
 
-        string? payloadType = DeterminePayloadType(path);
+        SendStringPayload(payloadType, path);
 
-        if (payloadType is not null)
-        {
-            SendStringPayload(payloadType, path);
-
-            ImGui.Image(icon, new Vector2(50, 50));
-            ImGui.SameLine();
-            ImGui.Text(name);
-        }
-
-        ImGui.EndDragDropSource();
+        ImGui.Image(icon, new(50, 50));
+        ImGui.SameLine();
+        ImGui.Text(name);
     }
 
-    private static string? DeterminePayloadType(string path)
+    private static string? GetPayloadType(string path)
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();
 
         return EditorTextureManager.ImageExtensions.Contains(extension)
-            ? (string?)EditorConstants.DragDropPayloads.Texture
+            ? EditorConstants.DragDropPayloads.Texture
             : EditorTextureManager.PrefabExtensions.Contains(extension)
             ? EditorConstants.DragDropPayloads.Prefab
-            : EditorTextureManager.MeshExtensions.Contains(extension) ? EditorConstants.DragDropPayloads.Mesh : null;
+            : EditorTextureManager.MeshExtensions.Contains(extension)
+            ? EditorConstants.DragDropPayloads.Mesh
+            : null;
+    }
+
+    private void HandleItemInteraction(string path, bool isDirectory)
+    {
+        if (!ImGui.IsItemHovered() || !ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        {
+            return;
+        }
+
+        if (isDirectory)
+        {
+            _currentDirectory = path;
+            return;
+        }
+
+        if (path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+        {
+            _editor.SceneOperations.LoadSceneFromFile(path);
+        }
     }
 
     private static void SendStringPayload(string payloadType, string data)
@@ -220,21 +226,6 @@ public class ContentBrowserPanel : IDisposable
         }
     }
 
-    private void HandleFileDoubleClick(string path, string name)
-    {
-        if (!ImGui.IsItemHovered() || !ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-        {
-            return;
-        }
-
-        if (!name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        _editor.SceneOperations.LoadSceneFromFile(path);
-    }
-
     private void DrawDropTarget()
     {
         ImGui.InvisibleButton("ContentDropZone", ImGui.GetContentRegionAvail());
@@ -244,12 +235,11 @@ public class ContentBrowserPanel : IDisposable
             return;
         }
 
-        HandleGameObjectDrop();
-
+        AcceptGameObjectDrop();
         ImGui.EndDragDropTarget();
     }
 
-    private unsafe void HandleGameObjectDrop()
+    private unsafe void AcceptGameObjectDrop()
     {
         ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
 
@@ -258,11 +248,14 @@ public class ContentBrowserPanel : IDisposable
             return;
         }
 
-        byte[] data = new byte[payload.DataSize];
-        Marshal.Copy(payload.Data, data, 0, payload.DataSize);
-        Guid objectId = new(data);
+        Guid? objectId = TryExtractGuidPayload(payload);
 
-        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId);
+        if (!objectId.HasValue)
+        {
+            return;
+        }
+
+        GameObject? gameObject = _editor.SceneManager.GameObjects.FirstOrDefault(g => g.Id == objectId.Value);
 
         if (gameObject is null)
         {
@@ -270,7 +263,21 @@ public class ContentBrowserPanel : IDisposable
         }
 
         string prefabPath = Path.Combine(_currentDirectory, $"{gameObject.Name}.prefab");
+
         _editor.SceneOperations.CreatePrefabFromGameObject(gameObject, prefabPath);
+    }
+
+    private static unsafe Guid? TryExtractGuidPayload(ImGuiPayloadPtr payload)
+    {
+        if (payload.DataSize != 16)
+        {
+            return null;
+        }
+
+        byte[] data = new byte[16];
+        Marshal.Copy(payload.Data, data, 0, 16);
+
+        return new(data);
     }
 
     private static void CenterAlignItem(float itemWidth)
