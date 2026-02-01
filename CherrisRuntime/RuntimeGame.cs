@@ -1,7 +1,7 @@
 ﻿using Cherris;
+using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
-using Cherris.Rendering.OpenTK;
 using Cherris.Serialization;
 using System.Reflection;
 using YamlDotNet.Serialization;
@@ -16,25 +16,17 @@ public class RuntimeGame : Engine
 
     public RuntimeGame() : base("Cherris Game", true, GraphicsAPI.OpenTK)
     {
-        // Enable direct-to-screen presentation for the Runtime
-        if (Renderer is OpenTKRenderer otkRenderer)
-        {
-            otkRenderer.PresentToScreen = true;
-            // Hide debugging visualizations in the shipping game
-            otkRenderer.ShowGrid = false;
-            otkRenderer.ShowPhysicsColliders = false;
-        }
     }
 
     protected override void LoadContent()
     {
         ResourceManager.LoadInitialAssets();
 
-        // 1. Load User Scripts (Assembly only, registration happens in Step 2 via deserializer lookup)
-        LoadGameScriptsAssembly();
-
-        // 2. Register internal components + generic "Script" handling
+        // 1. Register internal components (Camera, Light, etc.)
         RegisterInternalComponents();
+
+        // 2. Load and register user scripts
+        LoadGameScripts();
 
         // 3. Load project config and start scene
         LoadProjectAndScene();
@@ -42,10 +34,11 @@ public class RuntimeGame : Engine
 
     private void RegisterInternalComponents()
     {
+        // These are the same basic types the editor supports
         ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
     }
 
-    private void LoadGameScriptsAssembly()
+    private void LoadGameScripts()
     {
         string dllPath = Path.Combine(AppContext.BaseDirectory, GameScriptsDll);
 
@@ -57,9 +50,16 @@ public class RuntimeGame : Engine
 
         try
         {
-            // Just loading into the AppDomain is enough for ComponentDeserializer.FindTypeInAssemblies to find them
-            Assembly.LoadFrom(dllPath);
-            Logger.Info($"[Runtime] Loaded game assembly: {GameScriptsDll}");
+            Assembly assembly = Assembly.LoadFrom(dllPath);
+            var scriptTypes = assembly.GetTypes()
+                .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
+
+            foreach (Type type in scriptTypes)
+            {
+                // Register the factory for this script type
+                SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
+                Logger.Info($"[Runtime] Registered script: {type.Name}");
+            }
         }
         catch (Exception ex)
         {
@@ -70,7 +70,7 @@ public class RuntimeGame : Engine
     private void LoadProjectAndScene()
     {
         string configPath = Path.Combine(AppContext.BaseDirectory, ConfigFile);
-        string startScenePath = "Assets/Scenes/Main.yaml";
+        string startScenePath = "Assets/Scenes/Main.yaml"; // Default fallback
 
         if (File.Exists(configPath))
         {

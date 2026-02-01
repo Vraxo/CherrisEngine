@@ -22,10 +22,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
 
-    // When true, the final scene is blitted to the default framebuffer (0).
-    // Set this to true for Runtime, false for Editor (where scene is an ImGui image).
-    public bool PresentToScreen { get; set; } = false;
-
     public OpenTKRenderer(ImGuiController imGuiController)
     {
         _imGuiController = imGuiController;
@@ -58,34 +54,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        // In Runtime mode (PresentToScreen), we must ensure the viewport matches the window
-        if (PresentToScreen)
-        {
-            SetViewportSize(new System.Numerics.Vector2(windowWidth, windowHeight));
-        }
-
         bool isViewportValid = _viewportSize.X > 1 && _viewportSize.Y > 1;
 
         if (mainCamera is not null && isViewportValid)
         {
             RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
-        }
-        else
-        {
-            // Clear to black if no camera
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            GL.ClearColor(0, 0, 0, 1);
-            GL.Clear(ClearBufferMask.ColorBufferBit);
-        }
-
-        // If we are in Runtime, blit the FBO result to the backbuffer
-        if (PresentToScreen && isViewportValid)
-        {
-            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _postProcessor.FinalSceneTextureFboHandle);
-            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
-            GL.BlitFramebuffer(0, 0, _viewportSize.X, _viewportSize.Y,
-                               0, 0, (int)windowWidth, (int)windowHeight,
-                               ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
         }
 
         RenderUIPass((int)windowWidth, (int)windowHeight);
@@ -141,26 +114,15 @@ public class OpenTKRenderer : IRenderer, IDisposable
         // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
-
-        // In Runtime (PresentToScreen), we don't clear because we just blitted the game view.
-        // In Editor, we clear background for ImGui docking area.
-        if (!PresentToScreen)
-        {
-            GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
-            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        }
-
+        GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
+        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
 
         _imGuiController.Render();
     }
 
-    public void OnWindowResized()
-    {
-        // Handled in RenderFrame for runtime scaling
-    }
-
+    public void OnWindowResized() { }
     public void RequestSnapshot(string path) { /* Not implemented */ }
     public void ProcessSnapshot() { /* Not implemented */ }
 
