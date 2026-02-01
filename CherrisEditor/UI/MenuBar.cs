@@ -1,5 +1,6 @@
 ﻿using Cherris.Core;
 using Cherris.Serialization;
+using CherrisEditor.Core;
 using CherrisEditor.Undo;
 using ImGuiNET;
 
@@ -38,6 +39,12 @@ public class MenuBar
                     Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
                 }
             }
+
+            if (ImGui.MenuItem("Export Game..."))
+            {
+                ExportManager.Export(_editor.ProjectManager.CurrentProject);
+            }
+
             ImGui.Separator();
 
             if (ImGui.MenuItem("Exit"))

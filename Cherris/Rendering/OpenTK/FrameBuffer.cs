@@ -19,6 +19,7 @@ internal sealed class Framebuffer : IDisposable
     {
         GL.DeleteFramebuffer(Handle);
         GL.DeleteTexture(ColorTexture);
+
         if (DepthStencilRenderbuffer.HasValue)
         {
             GL.DeleteRenderbuffer(DepthStencilRenderbuffer.Value);
