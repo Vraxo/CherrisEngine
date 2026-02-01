@@ -9,6 +9,17 @@ internal class OpenGLGizmoRenderer
 {
     private readonly OpenGLDebugRenderer _debugRenderer;
 
+    private static readonly Vector3 DirectionalLightColor = new(1.0f, 0.9f, 0.2f);
+    private static readonly Vector3 SpotlightColor = new(1.0f, 0.9f, 0.2f);
+    private static readonly Vector3 StaticBodyColor = new(0.2f, 0.8f, 0.2f);
+    private static readonly Vector3 DynamicBodyColor = new(0.8f, 0.2f, 0.8f);
+
+    private const float GizmoScale = 2.0f;
+    private const float ArrowHeadSize = 0.25f;
+    private const float ArrowLength = 1.0f * GizmoScale;
+    private const float CircleRadius = 0.5f * GizmoScale;
+    private const int CircleSegments = 16;
+
     public OpenGLGizmoRenderer(OpenGLDebugRenderer debugRenderer)
     {
         _debugRenderer = debugRenderer;
@@ -23,126 +34,126 @@ internal class OpenGLGizmoRenderer
             DrawLightGizmo(light);
         }
 
-        if (showPhysicsColliders)
+        if (!showPhysicsColliders)
         {
-            foreach (var go in gameObjects)
-            {
-                DrawRigidBodyGizmo(go);
-            }
+            return;
+        }
+
+        foreach (GameObject gameObject in gameObjects)
+        {
+            DrawRigidBodyGizmo(gameObject);
         }
     }
 
     private void DrawLightGizmo(Light light)
     {
-        if (light.Type == LightType.Directional)
+        switch (light.Type)
         {
-            DrawDirectionalLightGizmo(light);
-        }
-        else if (light.Type == LightType.Spot)
-        {
-            DrawSpotlightGizmo(light);
+            case LightType.Directional:
+                DrawDirectionalLightGizmo(light);
+                break;
+            case LightType.Spot:
+                DrawSpotlightGizmo(light);
+                break;
         }
     }
 
     private void DrawDirectionalLightGizmo(Light light)
     {
-        var transform = light.GameObject.Transform;
-        var color = new Vector3(1.0f, 0.9f, 0.2f); // Yellow
-        float gizmoSize = 2.0f;
-        float arrowHeadSize = 0.25f;
-        float arrowLength = 1.0f * gizmoSize;
+        Transform transform = light.GameObject.Transform;
+        Vector3 color = DirectionalLightColor;
 
-        var direction = Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
-        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
-        var right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
+        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
+        Vector3 up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        Vector3 right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
 
-        var start = transform.Position;
-        var end = start + (direction * arrowLength);
+        Vector3 start = transform.Position;
+        Vector3 end = start + (direction * ArrowLength);
 
         _debugRenderer.AddLine(start, end, color);
-
-        // Arrow head
-        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) + (right * arrowHeadSize), color);
-        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) - (right * arrowHeadSize), color);
-        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) + (up * arrowHeadSize), color);
-        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) - (up * arrowHeadSize), color);
-
-        // Ring
-        const int circleSegments = 16;
-        float circleRadius = 0.5f * gizmoSize;
-        for (int i = 0; i < circleSegments; i++)
-        {
-            float angle1 = i / (float)circleSegments * 2.0f * MathF.PI;
-            float angle2 = (i + 1) / (float)circleSegments * 2.0f * MathF.PI;
-
-            var p1 = transform.Position + (((right * MathF.Cos(angle1)) + (up * MathF.Sin(angle1))) * circleRadius);
-            var p2 = transform.Position + (((right * MathF.Cos(angle2)) + (up * MathF.Sin(angle2))) * circleRadius);
-            _debugRenderer.AddLine(p1, p2, color);
-        }
+        DrawArrowHead(end, direction, right, up, color);
+        DrawCircle(start, right, up, CircleRadius, color);
     }
 
     private void DrawSpotlightGizmo(Light light)
     {
-        var transform = light.GameObject.Transform;
-        var color = new Vector3(1.0f, 0.9f, 0.2f); // Yellow
+        Transform transform = light.GameObject.Transform;
+        Vector3 color = SpotlightColor;
 
-        var origin = transform.Position;
-        var direction = transform.Forward;
-        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
-        var right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
+        Vector3 origin = transform.Position;
+        Vector3 direction = transform.Forward;
+        Vector3 up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        Vector3 right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
 
-        float range = light.Range;
-        float outerAngleRad = light.OuterConeAngle * MathF.PI / 180.0f;
-        float outerRadius = range * MathF.Tan(outerAngleRad);
+        float outerAngleRad = light.OuterConeAngle * float.Pi / 180.0f;
+        float outerRadius = light.Range * float.Tan(outerAngleRad);
+        Vector3 circleCenter = origin + (direction * light.Range);
 
-        var circleCenter = origin + (direction * range);
-
-        // Cone edges
         _debugRenderer.AddLine(origin, circleCenter + (right * outerRadius), color);
         _debugRenderer.AddLine(origin, circleCenter - (right * outerRadius), color);
         _debugRenderer.AddLine(origin, circleCenter + (up * outerRadius), color);
         _debugRenderer.AddLine(origin, circleCenter - (up * outerRadius), color);
 
-        // Base circle
-        const int circleSegments = 16;
-        for (int i = 0; i < circleSegments; i++)
-        {
-            float angle1 = i / (float)circleSegments * 2.0f * MathF.PI;
-            float angle2 = (i + 1) / (float)circleSegments * 2.0f * MathF.PI;
+        DrawCircle(circleCenter, right, up, outerRadius, color);
+    }
 
-            var p1 = circleCenter + (((right * MathF.Cos(angle1)) + (up * MathF.Sin(angle1))) * outerRadius);
-            var p2 = circleCenter + (((right * MathF.Cos(angle2)) + (up * MathF.Sin(angle2))) * outerRadius);
-            _debugRenderer.AddLine(p1, p2, color);
+    private void DrawArrowHead(Vector3 tip, Vector3 direction, Vector3 right, Vector3 up, Vector3 color)
+    {
+        Vector3 baseCenter = tip - (direction * ArrowHeadSize);
+
+        _debugRenderer.AddLine(tip, baseCenter + (right * ArrowHeadSize), color);
+        _debugRenderer.AddLine(tip, baseCenter - (right * ArrowHeadSize), color);
+        _debugRenderer.AddLine(tip, baseCenter + (up * ArrowHeadSize), color);
+        _debugRenderer.AddLine(tip, baseCenter - (up * ArrowHeadSize), color);
+    }
+
+    private void DrawCircle(Vector3 center, Vector3 right, Vector3 up, float radius, Vector3 color)
+    {
+        float step = 2.0f * float.Pi / CircleSegments;
+
+        for (int i = 0; i < CircleSegments; i++)
+        {
+            float angle1 = i * step;
+            float angle2 = (i + 1) * step;
+
+            Vector3 offset1 = ((right * float.Cos(angle1)) + (up * float.Sin(angle1))) * radius;
+            Vector3 offset2 = ((right * float.Cos(angle2)) + (up * float.Sin(angle2))) * radius;
+
+            _debugRenderer.AddLine(center + offset1, center + offset2, color);
         }
     }
 
-    private void DrawRigidBodyGizmo(GameObject go)
+    private void DrawRigidBodyGizmo(GameObject gameObject)
     {
-        var rb = go.GetComponent<RigidBody>();
-        if (rb?.JitterBody is null)
+        RigidBody? rigidBody = gameObject.GetComponent<RigidBody>();
+
+        if (rigidBody?.JitterBody is null)
         {
             return;
         }
 
-        // Green for static, purple for dynamic
-        var color = rb.JitterBody.IsStatic
-            ? new Vector3(0.2f, 0.8f, 0.2f)
-            : new Vector3(0.8f, 0.2f, 0.8f);
+        Vector3 color = GetRigidBodyGizmoColor(rigidBody);
+        Vector3 position = rigidBody.JitterBody.Position.ToNumerics();
+        Quaternion orientation = rigidBody.JitterBody.Orientation.ToNumerics();
 
-        var position = rb.JitterBody.Position.ToNumerics();
-        var orientation = rb.JitterBody.Orientation.ToNumerics();
-
-        switch (rb.JitterBody.Shape)
+        switch (rigidBody.JitterBody.Shape)
         {
             case BoxShape box:
                 _debugRenderer.AddBox(position, orientation, box.Size.ToNumerics(), color);
                 break;
+
             case SphereShape sphere:
                 _debugRenderer.AddSphere(position, sphere.Radius, color);
                 break;
+
             case CapsuleShape capsule:
                 _debugRenderer.AddCapsule(position, orientation, capsule.Length, capsule.Radius, color);
                 break;
         }
+    }
+
+    private static Vector3 GetRigidBodyGizmoColor(RigidBody rigidBody)
+    {
+        return rigidBody.JitterBody.IsStatic ? StaticBodyColor : DynamicBodyColor;
     }
 }
