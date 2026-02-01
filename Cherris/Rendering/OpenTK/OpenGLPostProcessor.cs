@@ -22,8 +22,12 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
     public int FinalSceneTexture => _compositeFbo?.ColorTexture ?? 0;
 
+    // NEW: Expose FBO handle for blitting
+    public int FinalSceneTextureFboHandle => _compositeFbo?.Handle ?? 0;
+
     public OpenGLPostProcessor()
     {
+        // ... (existing constructor code)
         _brightPassShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
         _blurShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_blur.frag");
         _compositeShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_composite.frag");
@@ -31,6 +35,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
         (_quadVao, _quadVbo) = CreateFullscreenQuad();
         CreateFramebuffers();
     }
+
+    // ... (rest of class remains identical, just included needed changes)
 
     private static ShaderProgram LoadShaderOrThrow(string vert, string frag)
     {
@@ -89,10 +95,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
-
         PerformBrightPass();
         PerformBlurPass();
-
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.CullFace);
     }
@@ -112,8 +116,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Clear(ClearBufferMask.ColorBufferBit);
 
         _compositeShader.Use();
-
-        // Pass 1: Draw Scene
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("image"), 0);
@@ -121,14 +123,11 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 0);
         DrawQuad();
 
-        // Pass 2: Add Bloom
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
-
         GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[0]!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 1);
         DrawQuad();
-
         GL.Disable(EnableCap.Blend);
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
@@ -136,11 +135,11 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Enable(EnableCap.CullFace);
     }
 
+    // ... (private methods remain identical)
     private void PerformBrightPass()
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);
         GL.Viewport(0, 0, Math.Max(1, _width / 2), Math.Max(1, _height / 2));
-
         _brightPassShader.Use();
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
@@ -152,7 +151,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
         bool horizontal = true;
         const int blurIterations = 10;
         int horizontalLoc = _blurShader.GetUniformLocation("horizontal");
-
         _blurShader.Use();
         GL.Uniform1(_blurShader.GetUniformLocation("image"), 0);
 
@@ -160,8 +158,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
         {
             int sourceIdx = horizontal ? 0 : 1;
             int targetIdx = horizontal ? 1 : 0;
-
-            // First iteration reads from Bloom0 (result of bright pass)
             if (i == 0)
             {
                 sourceIdx = 0;
@@ -169,10 +165,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIdx]!.Handle);
             GL.Uniform1(horizontalLoc, horizontal ? 1 : 0);
-
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[sourceIdx]!.ColorTexture);
-
             DrawQuad();
             horizontal = !horizontal;
         }
@@ -187,69 +181,32 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
     private void CreateFramebuffers()
     {
-        _msaaFbo = new FramebufferBuilder(_width, _height)
-            .WithMultisampling(4)
-            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
-            .WithDepthStencil()
-            .Build("MSAA");
-
-        _resolvedFbo = new FramebufferBuilder(_width, _height)
-            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
-            .Build("Resolved");
-
-        // Bloom buffers are half size
+        _msaaFbo = new FramebufferBuilder(_width, _height).WithMultisampling(4).WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float).WithDepthStencil().Build("MSAA");
+        _resolvedFbo = new FramebufferBuilder(_width, _height).WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float).Build("Resolved");
         for (int i = 0; i < 2; i++)
         {
-            _bloomFbos[i] = new FramebufferBuilder(_width, _height)
-                .WithHalfSize()
-                .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
-                .WithWrapMode(TextureWrapMode.ClampToEdge)
-                .Build($"Bloom{i}");
+            _bloomFbos[i] = new FramebufferBuilder(_width, _height).WithHalfSize().WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float).WithWrapMode(TextureWrapMode.ClampToEdge).Build($"Bloom{i}");
         }
-
-        _compositeFbo = new FramebufferBuilder(_width, _height)
-            .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
-            .Build("Composite");
+        _compositeFbo = new FramebufferBuilder(_width, _height).WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte).Build("Composite");
     }
 
     private void DisposeFramebuffers()
     {
-        _msaaFbo?.Dispose();
-        _resolvedFbo?.Dispose();
-        _bloomFbos[0]?.Dispose();
-        _bloomFbos[1]?.Dispose();
+        _msaaFbo?.Dispose(); _resolvedFbo?.Dispose();
+        _bloomFbos[0]?.Dispose(); _bloomFbos[1]?.Dispose();
         _compositeFbo?.Dispose();
-
-        _msaaFbo = null;
-        _resolvedFbo = null;
-        _bloomFbos[0] = null;
-        _bloomFbos[1] = null;
-        _compositeFbo = null;
+        _msaaFbo = null; _resolvedFbo = null;
+        _bloomFbos[0] = null; _bloomFbos[1] = null; _compositeFbo = null;
     }
 
     private static (int vao, int vbo) CreateFullscreenQuad()
     {
-        float[] quadVertices = {
-            -1.0f,  1.0f,  0.0f, 1.0f,
-            -1.0f, -1.0f,  0.0f, 0.0f,
-             1.0f, -1.0f,  1.0f, 0.0f,
-            -1.0f,  1.0f,  0.0f, 1.0f,
-             1.0f, -1.0f,  1.0f, 0.0f,
-             1.0f,  1.0f,  1.0f, 1.0f
-        };
-
-        int vao = GL.GenVertexArray();
-        int vbo = GL.GenBuffer();
-
-        GL.BindVertexArray(vao);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+        float[] quadVertices = { -1.0f, 1.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f, -1.0f, 1.0f, 0.0f, 1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        int vao = GL.GenVertexArray(); int vbo = GL.GenBuffer();
+        GL.BindVertexArray(vao); GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
         GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * quadVertices.Length, quadVertices, BufferUsageHint.StaticDraw);
-
-        GL.EnableVertexAttribArray(0);
-        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
-        GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
-
+        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
+        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
         GL.BindVertexArray(0);
         return (vao, vbo);
     }

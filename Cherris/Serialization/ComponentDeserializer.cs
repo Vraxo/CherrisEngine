@@ -11,6 +11,8 @@ namespace Cherris.Serialization;
 
 public static class ComponentDeserializer
 {
+    private static readonly Dictionary<string, Type> _scriptTypeCache = [];
+
     public static void RegisterFactories(SceneLoader sceneLoader, IResourceManager resourceManager)
     {
         sceneLoader.RegisterComponentFactory("MeshRenderer", props => CreateMeshRendererComponent(props, resourceManager));
@@ -20,7 +22,64 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
         sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
+
+        // NEW: Register factory for generic "Script" key in YAML
+        sceneLoader.RegisterComponentFactory("Script", props => CreateGenericScriptComponent(props, sceneLoader));
     }
+
+    private static Component? CreateGenericScriptComponent(object properties, SceneLoader sceneLoader)
+    {
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return null;
+        }
+
+        // 1. Identify the script type from the 'Type' property
+        if (!propsDict.TryGetValue("Type", out var typeObj) || typeObj is not string typeName)
+        {
+            Logger.Warning("[Deserializer] Script component missing 'Type' property.");
+            return null;
+        }
+
+        // 2. Resolve the Type
+        if (!_scriptTypeCache.TryGetValue(typeName, out Type? scriptType))
+        {
+            scriptType = FindTypeInAssemblies(typeName);
+            if (scriptType != null)
+            {
+                _scriptTypeCache[typeName] = scriptType;
+            }
+        }
+
+        if (scriptType == null)
+        {
+            Logger.Warning($"[Deserializer] Could not find script type '{typeName}'.");
+            return null;
+        }
+
+        // 3. Instantiate and Populate
+        try
+        {
+            var component = (Component)Activator.CreateInstance(scriptType)!;
+            PopulateComponentProperties(component, propsDict);
+            return component;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Deserializer] Failed to instantiate script '{typeName}': {ex.Message}");
+            return null;
+        }
+    }
+
+    private static Type? FindTypeInAssemblies(string typeName)
+    {
+        // Check loaded assemblies (including the dynamically loaded GameScripts.dll)
+        return AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => a.GetTypes())
+            .FirstOrDefault(t => t.FullName == typeName || t.Name == typeName);
+    }
+
+    // ... (rest of the file remains unchanged)
 
     private static MeshRenderer? CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
     {
@@ -115,6 +174,12 @@ public static class ComponentDeserializer
         foreach (var (key, value) in propsDict)
         {
             if (key is not string propName)
+            {
+                continue;
+            }
+
+            // Skip special "Type" property used for identification
+            if (propName == "Type")
             {
                 continue;
             }
