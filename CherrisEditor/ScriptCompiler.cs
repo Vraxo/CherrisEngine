@@ -36,39 +36,6 @@ public static class ScriptCompiler
         return EmitAssembly(compilation, context);
     }
 
-    public static bool CompileToFile(string rootAssetPath, string outputPath)
-    {
-        string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
-
-        if (!TryGetScriptFiles(scriptsPath, out var files))
-        {
-            return false;
-        }
-
-        List<SyntaxTree> syntaxTrees = ParseSyntaxTrees(files);
-        IEnumerable<MetadataReference> references = CreateMetadataReferences();
-        CSharpCompilation compilation = CreateCompilation(syntaxTrees, references);
-
-        try
-        {
-            EmitResult result = compilation.Emit(outputPath);
-
-            if (!result.Success)
-            {
-                LogCompilationErrors(result);
-                return false;
-            }
-
-            Logger.Info($"[ScriptCompiler] Successfully compiled to {outputPath}");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"[ScriptCompiler] Failed to emit assembly: {ex.Message}");
-            return false;
-        }
-    }
-
     private static bool TryGetScriptFiles(string scriptsPath, out string[] files)
     {
         files = Array.Empty<string>();

@@ -6331,17 +6331,6 @@ internal class OpenGLGizmoRenderer
 {
     private readonly OpenGLDebugRenderer _debugRenderer;
 
-    private static readonly Vector3 DirectionalLightColor = new(1.0f, 0.9f, 0.2f);
-    private static readonly Vector3 SpotlightColor = new(1.0f, 0.9f, 0.2f);
-    private static readonly Vector3 StaticBodyColor = new(0.2f, 0.8f, 0.2f);
-    private static readonly Vector3 DynamicBodyColor = new(0.8f, 0.2f, 0.8f);
-
-    private const float GizmoScale = 2.0f;
-    private const float ArrowHeadSize = 0.25f;
-    private const float ArrowLength = 1.0f * GizmoScale;
-    private const float CircleRadius = 0.5f * GizmoScale;
-    private const int CircleSegments = 16;
-
     public OpenGLGizmoRenderer(OpenGLDebugRenderer debugRenderer)
     {
         _debugRenderer = debugRenderer;
@@ -6356,139 +6345,127 @@ internal class OpenGLGizmoRenderer
             DrawLightGizmo(light);
         }
 
-        if (!showPhysicsColliders)
+        if (showPhysicsColliders)
         {
-            return;
-        }
-
-        foreach (GameObject gameObject in gameObjects)
-        {
-            DrawRigidBodyGizmo(gameObject);
+            foreach (var go in gameObjects)
+            {
+                DrawRigidBodyGizmo(go);
+            }
         }
     }
 
     private void DrawLightGizmo(Light light)
     {
-        switch (light.Type)
+        if (light.Type == LightType.Directional)
         {
-            case LightType.Directional:
-                DrawDirectionalLightGizmo(light);
-                break;
-            case LightType.Spot:
-                DrawSpotlightGizmo(light);
-                break;
+            DrawDirectionalLightGizmo(light);
+        }
+        else if (light.Type == LightType.Spot)
+        {
+            DrawSpotlightGizmo(light);
         }
     }
 
     private void DrawDirectionalLightGizmo(Light light)
     {
-        if (light.GameObject is null)
-        {
-            return;
-        }
+        var transform = light.GameObject.Transform;
+        var color = new Vector3(1.0f, 0.9f, 0.2f); // Yellow
+        float gizmoSize = 2.0f;
+        float arrowHeadSize = 0.25f;
+        float arrowLength = 1.0f * gizmoSize;
 
-        Transform transform = light.GameObject.Transform;
-        Vector3 color = DirectionalLightColor;
+        var direction = Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
+        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        var right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
 
-        Vector3 direction = Vector3.Transform(-Vector3.UnitZ, transform.Rotation);
-        Vector3 up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
-        Vector3 right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
-
-        Vector3 start = transform.Position;
-        Vector3 end = start + (direction * ArrowLength);
+        var start = transform.Position;
+        var end = start + (direction * arrowLength);
 
         _debugRenderer.AddLine(start, end, color);
-        DrawArrowHead(end, direction, right, up, color);
-        DrawCircle(start, right, up, CircleRadius, color);
+
+        // Arrow head
+        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) + (right * arrowHeadSize), color);
+        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) - (right * arrowHeadSize), color);
+        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) + (up * arrowHeadSize), color);
+        _debugRenderer.AddLine(end, end - (direction * arrowHeadSize) - (up * arrowHeadSize), color);
+
+        // Ring
+        const int circleSegments = 16;
+        float circleRadius = 0.5f * gizmoSize;
+        for (int i = 0; i < circleSegments; i++)
+        {
+            float angle1 = i / (float)circleSegments * 2.0f * MathF.PI;
+            float angle2 = (i + 1) / (float)circleSegments * 2.0f * MathF.PI;
+
+            var p1 = transform.Position + (((right * MathF.Cos(angle1)) + (up * MathF.Sin(angle1))) * circleRadius);
+            var p2 = transform.Position + (((right * MathF.Cos(angle2)) + (up * MathF.Sin(angle2))) * circleRadius);
+            _debugRenderer.AddLine(p1, p2, color);
+        }
     }
 
     private void DrawSpotlightGizmo(Light light)
     {
-        if (light.GameObject is null)
-        {
-            return;
-        }
+        var transform = light.GameObject.Transform;
+        var color = new Vector3(1.0f, 0.9f, 0.2f); // Yellow
 
-        Transform transform = light.GameObject.Transform;
-        Vector3 color = SpotlightColor;
+        var origin = transform.Position;
+        var direction = transform.Forward;
+        var up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
+        var right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
 
-        Vector3 origin = transform.Position;
-        Vector3 direction = transform.Forward;
-        Vector3 up = Vector3.Transform(Vector3.UnitY, transform.Rotation);
-        Vector3 right = Vector3.Transform(Vector3.UnitX, transform.Rotation);
+        float range = light.Range;
+        float outerAngleRad = light.OuterConeAngle * MathF.PI / 180.0f;
+        float outerRadius = range * MathF.Tan(outerAngleRad);
 
-        float outerAngleRad = light.OuterConeAngle * float.Pi / 180.0f;
-        float outerRadius = light.Range * float.Tan(outerAngleRad);
-        Vector3 circleCenter = origin + (direction * light.Range);
+        var circleCenter = origin + (direction * range);
 
+        // Cone edges
         _debugRenderer.AddLine(origin, circleCenter + (right * outerRadius), color);
         _debugRenderer.AddLine(origin, circleCenter - (right * outerRadius), color);
         _debugRenderer.AddLine(origin, circleCenter + (up * outerRadius), color);
         _debugRenderer.AddLine(origin, circleCenter - (up * outerRadius), color);
 
-        DrawCircle(circleCenter, right, up, outerRadius, color);
-    }
-
-    private void DrawArrowHead(Vector3 tip, Vector3 direction, Vector3 right, Vector3 up, Vector3 color)
-    {
-        Vector3 baseCenter = tip - (direction * ArrowHeadSize);
-
-        _debugRenderer.AddLine(tip, baseCenter + (right * ArrowHeadSize), color);
-        _debugRenderer.AddLine(tip, baseCenter - (right * ArrowHeadSize), color);
-        _debugRenderer.AddLine(tip, baseCenter + (up * ArrowHeadSize), color);
-        _debugRenderer.AddLine(tip, baseCenter - (up * ArrowHeadSize), color);
-    }
-
-    private void DrawCircle(Vector3 center, Vector3 right, Vector3 up, float radius, Vector3 color)
-    {
-        float step = 2.0f * float.Pi / CircleSegments;
-
-        for (int i = 0; i < CircleSegments; i++)
+        // Base circle
+        const int circleSegments = 16;
+        for (int i = 0; i < circleSegments; i++)
         {
-            float angle1 = i * step;
-            float angle2 = (i + 1) * step;
+            float angle1 = i / (float)circleSegments * 2.0f * MathF.PI;
+            float angle2 = (i + 1) / (float)circleSegments * 2.0f * MathF.PI;
 
-            Vector3 offset1 = ((right * float.Cos(angle1)) + (up * float.Sin(angle1))) * radius;
-            Vector3 offset2 = ((right * float.Cos(angle2)) + (up * float.Sin(angle2))) * radius;
-
-            _debugRenderer.AddLine(center + offset1, center + offset2, color);
+            var p1 = circleCenter + (((right * MathF.Cos(angle1)) + (up * MathF.Sin(angle1))) * outerRadius);
+            var p2 = circleCenter + (((right * MathF.Cos(angle2)) + (up * MathF.Sin(angle2))) * outerRadius);
+            _debugRenderer.AddLine(p1, p2, color);
         }
     }
 
-    private void DrawRigidBodyGizmo(GameObject gameObject)
+    private void DrawRigidBodyGizmo(GameObject go)
     {
-        RigidBody? rigidBody = gameObject.GetComponent<RigidBody>();
-
-        if (rigidBody?.JitterBody is null)
+        var rb = go.GetComponent<RigidBody>();
+        if (rb?.JitterBody is null)
         {
             return;
         }
 
-        Vector3 color = GetRigidBodyGizmoColor(rigidBody);
-        Vector3 position = rigidBody.JitterBody.Position.ToNumerics();
-        Quaternion orientation = rigidBody.JitterBody.Orientation.ToNumerics();
+        // Green for static, purple for dynamic
+        var color = rb.JitterBody.IsStatic
+            ? new Vector3(0.2f, 0.8f, 0.2f)
+            : new Vector3(0.8f, 0.2f, 0.8f);
 
-        switch (rigidBody.JitterBody.Shape)
+        var position = rb.JitterBody.Position.ToNumerics();
+        var orientation = rb.JitterBody.Orientation.ToNumerics();
+
+        switch (rb.JitterBody.Shape)
         {
             case BoxShape box:
                 _debugRenderer.AddBox(position, orientation, box.Size.ToNumerics(), color);
                 break;
-
             case SphereShape sphere:
                 _debugRenderer.AddSphere(position, sphere.Radius, color);
                 break;
-
             case CapsuleShape capsule:
                 _debugRenderer.AddCapsule(position, orientation, capsule.Length, capsule.Radius, color);
                 break;
         }
-    }
-
-    private static Vector3 GetRigidBodyGizmoColor(RigidBody rigidBody)
-    {
-        return rigidBody.JitterBody?.IsStatic == true
-            ? StaticBodyColor
-            : DynamicBodyColor;
     }
 }
 ```
@@ -6656,11 +6633,13 @@ internal class OpenGLMeshRendererData : IDisposable
 ```csharp
 using Cherris.Core.Logging;
 using OpenTK.Graphics.OpenGL4;
+using System.Diagnostics;
 
 namespace Cherris.Rendering.OpenTK;
 
 internal sealed class OpenGLPostProcessor : IDisposable
 {
+    // -- Resources --
     private Framebuffer? _msaaFbo;
     private Framebuffer? _resolvedFbo;
     private readonly Framebuffer?[] _bloomFbos = new Framebuffer[2];
@@ -6680,18 +6659,22 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
     public OpenGLPostProcessor()
     {
-        _brightPassShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
-        _blurShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_blur.frag");
-        _compositeShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_composite.frag");
+        // Load Shaders
+        _brightPassShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_brightpass.frag")
+            ?? throw new InvalidOperationException("Failed to load brightpass shader");
 
+        _blurShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_blur.frag")
+            ?? throw new InvalidOperationException("Failed to load blur shader");
+
+        _compositeShader = ShaderProgram.FromFiles("Shaders/post_quad.vert", "Shaders/post_composite.frag")
+            ?? throw new InvalidOperationException("Failed to load composite shader");
+
+        // Create Quad
         (_quadVao, _quadVbo) = CreateFullscreenQuad();
-        CreateFramebuffers();
-    }
 
-    private static ShaderProgram LoadShaderOrThrow(string vert, string frag)
-    {
-        return ShaderProgram.FromFiles(vert, frag)
-               ?? throw new InvalidOperationException($"Failed to load shader: {vert}, {frag}");
+        // Create Initial Framebuffers
+        CreateFramebuffers();
+        CheckGLError("Constructor end");
     }
 
     public void OnResize(int width, int height)
@@ -6710,6 +6693,7 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         DisposeFramebuffers();
         CreateFramebuffers();
+        CheckGLError("Resize end");
     }
 
     public void BeginFrame()
@@ -6746,8 +6730,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
 
-        PerformBrightPass();
-        PerformBlurPass();
+        RenderBrightPass();
+        RenderBlur();
 
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.CullFace);
@@ -6769,21 +6753,23 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         _compositeShader.Use();
 
-        // Pass 1: Draw Scene
+        // Main scene pass
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("image"), 0);
         GL.Uniform1(_compositeShader.GetUniformLocation("exposure"), exposure);
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 0);
-        DrawQuad();
 
-        // Pass 2: Add Bloom
+        RenderQuad();
+
+        // Bloom additive pass
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
 
         GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[0]!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 1);
-        DrawQuad();
+
+        RenderQuad();
 
         GL.Disable(EnableCap.Blend);
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
@@ -6792,7 +6778,7 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Enable(EnableCap.CullFace);
     }
 
-    private void PerformBrightPass()
+    private void RenderBrightPass()
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);
         GL.Viewport(0, 0, Math.Max(1, _width / 2), Math.Max(1, _height / 2));
@@ -6800,41 +6786,41 @@ internal sealed class OpenGLPostProcessor : IDisposable
         _brightPassShader.Use();
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
-        DrawQuad();
+
+        RenderQuad();
     }
 
-    private void PerformBlurPass()
+    private void RenderBlur()
     {
         bool horizontal = true;
-        const int blurIterations = 10;
+        bool firstIteration = true;
+        const int amount = 10;
+
+        int imageLoc = _blurShader.GetUniformLocation("image");
         int horizontalLoc = _blurShader.GetUniformLocation("horizontal");
 
         _blurShader.Use();
-        GL.Uniform1(_blurShader.GetUniformLocation("image"), 0);
+        GL.Uniform1(imageLoc, 0);
 
-        for (int i = 0; i < blurIterations; i++)
+        for (int i = 0; i < amount; i++)
         {
-            int sourceIdx = horizontal ? 0 : 1;
-            int targetIdx = horizontal ? 1 : 0;
+            int targetIndex = horizontal ? 1 : 0;
+            int sourceIndex = firstIteration ? 0 : (horizontal ? 0 : 1);
 
-            // First iteration reads from Bloom0 (result of bright pass)
-            if (i == 0)
-            {
-                sourceIdx = 0;
-            }
-
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIdx]!.Handle);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIndex]!.Handle);
             GL.Uniform1(horizontalLoc, horizontal ? 1 : 0);
 
             GL.ActiveTexture(TextureUnit.Texture0);
-            GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[sourceIdx]!.ColorTexture);
+            GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[sourceIndex]!.ColorTexture);
 
-            DrawQuad();
+            RenderQuad();
+
             horizontal = !horizontal;
+            firstIteration = false;
         }
     }
 
-    private void DrawQuad()
+    private void RenderQuad()
     {
         GL.BindVertexArray(_quadVao);
         GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
@@ -6853,15 +6839,17 @@ internal sealed class OpenGLPostProcessor : IDisposable
             .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
             .Build("Resolved");
 
-        // Bloom buffers are half size
-        for (int i = 0; i < 2; i++)
-        {
-            _bloomFbos[i] = new FramebufferBuilder(_width, _height)
-                .WithHalfSize()
-                .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
-                .WithWrapMode(TextureWrapMode.ClampToEdge)
-                .Build($"Bloom{i}");
-        }
+        _bloomFbos[0] = new FramebufferBuilder(_width, _height)
+            .WithHalfSize()
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .WithWrapMode(TextureWrapMode.ClampToEdge)
+            .Build("Bloom0");
+
+        _bloomFbos[1] = new FramebufferBuilder(_width, _height)
+            .WithHalfSize()
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .WithWrapMode(TextureWrapMode.ClampToEdge)
+            .Build("Bloom1");
 
         _compositeFbo = new FramebufferBuilder(_width, _height)
             .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
@@ -6903,6 +6891,7 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
+
         GL.EnableVertexAttribArray(1);
         GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
 
@@ -6918,6 +6907,16 @@ internal sealed class OpenGLPostProcessor : IDisposable
         _compositeShader.Dispose();
         GL.DeleteVertexArray(_quadVao);
         GL.DeleteBuffer(_quadVbo);
+    }
+
+    [Conditional("DEBUG")]
+    private void CheckGLError(string context)
+    {
+        ErrorCode error;
+        while ((error = GL.GetError()) != ErrorCode.NoError)
+        {
+            Logger.Error($"[GL ERROR] {context}: {error}");
+        }
     }
 }
 ```
@@ -6937,118 +6936,82 @@ namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLSceneRenderer : IDisposable
 {
-    private const int MaxPointLights = 4;
-    private const int MaxSpotLights = 4;
+    private const int MAX_POINT_LIGHTS = 4;
+    private const int MAX_SPOT_LIGHTS = 4;
 
     private readonly ShaderProgram _shader;
 
-    private struct MatrixUniforms
-    {
-        public int Model;
-        public int View;
-        public int Projection;
-        public int ViewPosition;
-    }
+    // Uniform Locations
+    private readonly int _modelLoc, _viewLoc, _projLoc, _viewPosLoc;
+    private readonly int _tilingLoc, _emissiveLoc, _specularLoc, _shininessLoc, _textureLoc;
 
-    private struct MaterialUniforms
-    {
-        public int Texture;
-        public int Tiling;
-        public int Emissive;
-        public int Specular;
-        public int Shininess;
-    }
+    // Light Uniforms
+    private readonly int _hasDirLightLoc;
+    private readonly int _dirLightDirLoc, _dirLightColorLoc, _dirLightIntLoc, _dirLightAmbLoc;
 
-    private struct DirLightUniforms
-    {
-        public int HasLight;
-        public int Direction;
-        public int Color;
-        public int Intensity;
-        public int Ambient;
-    }
+    private readonly int _numPointLightsLoc;
+    private readonly LightUniforms[] _pointLightUniforms = new LightUniforms[MAX_POINT_LIGHTS];
 
-    private struct PointLightUniforms
+    private readonly int _numSpotLightsLoc;
+    private readonly SpotLightUniforms[] _spotLightUniforms = new SpotLightUniforms[MAX_SPOT_LIGHTS];
+
+    private struct LightUniforms
     {
-        public int Position;
-        public int Color;
-        public int Intensity;
-        public int Range;
+        public int Pos, Color, Intensity, Range;
     }
 
     private struct SpotLightUniforms
     {
-        public int Position;
-        public int Direction;
-        public int Color;
-        public int Intensity;
-        public int Range;
-        public int InnerCut;
-        public int OuterCut;
+        public int Pos, Dir, Color, Intensity, Range, InnerCut, OuterCut;
     }
-
-    private readonly MatrixUniforms _matrices;
-    private readonly MaterialUniforms _material;
-    private readonly DirLightUniforms _dirLight;
-
-    private readonly int _numPointLightsLoc;
-    private readonly PointLightUniforms[] _pointLights = new PointLightUniforms[MaxPointLights];
-
-    private readonly int _numSpotLightsLoc;
-    private readonly SpotLightUniforms[] _spotLights = new SpotLightUniforms[MaxSpotLights];
 
     public OpenGLSceneRenderer()
     {
-        _shader = ShaderProgram.FromFiles("Shaders/scene.vert", "Shaders/scene.frag")
-                 ?? throw new InvalidOperationException("Failed to load scene shaders.");
+        _shader = ShaderProgram.FromFiles("Shaders/scene.vert", "Shaders/scene.frag");
 
-        _matrices = new()
-        {
-            Model = _shader.GetUniformLocation("model"),
-            View = _shader.GetUniformLocation("view"),
-            Projection = _shader.GetUniformLocation("projection"),
-            ViewPosition = _shader.GetUniformLocation("uViewPos")
-        };
+        // Matrices
+        _modelLoc = _shader.GetUniformLocation("model");
+        _viewLoc = _shader.GetUniformLocation("view");
+        _projLoc = _shader.GetUniformLocation("projection");
+        _viewPosLoc = _shader.GetUniformLocation("uViewPos");
 
-        _material = new()
-        {
-            Texture = _shader.GetUniformLocation("uMaterial.texture_diffuse"),
-            Tiling = _shader.GetUniformLocation("uTiling"),
-            Emissive = _shader.GetUniformLocation("uEmissive"),
-            Specular = _shader.GetUniformLocation("uMaterial.specularIntensity"),
-            Shininess = _shader.GetUniformLocation("uMaterial.shininess")
-        };
+        // Material
+        _textureLoc = _shader.GetUniformLocation("uMaterial.texture_diffuse");
+        _tilingLoc = _shader.GetUniformLocation("uTiling");
+        _emissiveLoc = _shader.GetUniformLocation("uEmissive");
+        _specularLoc = _shader.GetUniformLocation("uMaterial.specularIntensity");
+        _shininessLoc = _shader.GetUniformLocation("uMaterial.shininess");
 
-        _dirLight = new()
-        {
-            HasLight = _shader.GetUniformLocation("uHasDirLight"),
-            Direction = _shader.GetUniformLocation("uDirLight.direction"),
-            Color = _shader.GetUniformLocation("uDirLight.color"),
-            Intensity = _shader.GetUniformLocation("uDirLight.intensity"),
-            Ambient = _shader.GetUniformLocation("uDirLight.ambientStrength")
-        };
+        // Directional Light
+        _hasDirLightLoc = _shader.GetUniformLocation("uHasDirLight");
+        _dirLightDirLoc = _shader.GetUniformLocation("uDirLight.direction");
+        _dirLightColorLoc = _shader.GetUniformLocation("uDirLight.color");
+        _dirLightIntLoc = _shader.GetUniformLocation("uDirLight.intensity");
+        _dirLightAmbLoc = _shader.GetUniformLocation("uDirLight.ambientStrength");
 
+        // Point Lights
         _numPointLightsLoc = _shader.GetUniformLocation("uNumPointLights");
-        for (int i = 0; i < MaxPointLights; i++)
+        for (int i = 0; i < MAX_POINT_LIGHTS; i++)
         {
             string baseName = $"uPointLights[{i}]";
-            _pointLights[i] = new PointLightUniforms
+            _pointLightUniforms[i] = new LightUniforms
             {
-                Position = _shader.GetUniformLocation($"{baseName}.position"),
+                Pos = _shader.GetUniformLocation($"{baseName}.position"),
                 Color = _shader.GetUniformLocation($"{baseName}.color"),
                 Intensity = _shader.GetUniformLocation($"{baseName}.intensity"),
                 Range = _shader.GetUniformLocation($"{baseName}.range")
             };
         }
 
+        // Spot Lights
         _numSpotLightsLoc = _shader.GetUniformLocation("uNumSpotLights");
-        for (int i = 0; i < MaxSpotLights; i++)
+        for (int i = 0; i < MAX_SPOT_LIGHTS; i++)
         {
             string baseName = $"uSpotLights[{i}]";
-            _spotLights[i] = new SpotLightUniforms
+            _spotLightUniforms[i] = new SpotLightUniforms
             {
-                Position = _shader.GetUniformLocation($"{baseName}.position"),
-                Direction = _shader.GetUniformLocation($"{baseName}.direction"),
+                Pos = _shader.GetUniformLocation($"{baseName}.position"),
+                Dir = _shader.GetUniformLocation($"{baseName}.direction"),
                 Color = _shader.GetUniformLocation($"{baseName}.color"),
                 Intensity = _shader.GetUniformLocation($"{baseName}.intensity"),
                 Range = _shader.GetUniformLocation($"{baseName}.range"),
@@ -7062,66 +7025,73 @@ internal class OpenGLSceneRenderer : IDisposable
     {
         _shader.Use();
 
-        SetupGlobalUniforms(view, projection);
-        UploadLights(lights);
-        DrawObjects(gameObjects);
-    }
-
-    private void SetupGlobalUniforms(Matrix4 view, Matrix4 projection)
-    {
-        GL.Uniform1(_material.Texture, 0);
-        GL.UniformMatrix4(_matrices.View, false, ref view);
-        GL.UniformMatrix4(_matrices.Projection, false, ref projection);
+        // 1. Global Uniforms
+        GL.Uniform1(_textureLoc, 0);
+        GL.UniformMatrix4(_viewLoc, false, ref view);
+        GL.UniformMatrix4(_projLoc, false, ref projection);
 
         var viewPos = view.Inverted().Row3.Xyz;
-        GL.Uniform3(_matrices.ViewPosition, viewPos.X, viewPos.Y, viewPos.Z);
+        GL.Uniform3(_viewPosLoc, viewPos.X, viewPos.Y, viewPos.Z);
+
+        // 2. Lights
+        UploadLights(lights);
+
+        // 3. Objects
+        foreach (var go in gameObjects)
+        {
+            var mr = go.GetComponent<MeshRenderer>();
+            if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null)
+            {
+                continue;
+            }
+
+            DrawObject(go, mr);
+        }
     }
 
     private void UploadLights(IEnumerable<Light> lights)
     {
-        // Directional Light
         var dirLight = lights.FirstOrDefault(l => l.Type == LightType.Directional);
+
         if (dirLight != null)
         {
-            GL.Uniform1(_dirLight.HasLight, 1);
+            GL.Uniform1(_hasDirLightLoc, 1);
             var dir = Vector3.Normalize(Vector3.Transform(-Vector3.UnitZ, dirLight.GameObject.Transform.Rotation.ToOpenTK()));
 
-            GL.Uniform3(_dirLight.Direction, -dir); // Direction *to* light
-            GL.Uniform3(_dirLight.Color, dirLight.Color.ToOpenTK());
-            GL.Uniform1(_dirLight.Intensity, dirLight.Intensity);
-            GL.Uniform1(_dirLight.Ambient, dirLight.AmbientStrength);
+            GL.Uniform3(_dirLightDirLoc, -dir); // Direction *to* light
+            GL.Uniform3(_dirLightColorLoc, dirLight.Color.ToOpenTK());
+            GL.Uniform1(_dirLightIntLoc, dirLight.Intensity);
+            GL.Uniform1(_dirLightAmbLoc, dirLight.AmbientStrength);
         }
         else
         {
-            GL.Uniform1(_dirLight.HasLight, 0);
+            GL.Uniform1(_hasDirLightLoc, 0);
         }
 
-        // Point Lights
-        var points = lights.Where(l => l.Type == LightType.Point).Take(MaxPointLights).ToList();
+        var points = lights.Where(l => l.Type == LightType.Point).Take(MAX_POINT_LIGHTS).ToList();
         GL.Uniform1(_numPointLightsLoc, points.Count);
 
         for (int i = 0; i < points.Count; i++)
         {
             var l = points[i];
-            var u = _pointLights[i];
-            GL.Uniform3(u.Position, l.GameObject.Transform.Position.ToOpenTK());
+            var u = _pointLightUniforms[i];
+            GL.Uniform3(u.Pos, l.GameObject.Transform.Position.ToOpenTK());
             GL.Uniform3(u.Color, l.Color.ToOpenTK());
             GL.Uniform1(u.Intensity, l.Intensity);
             GL.Uniform1(u.Range, l.Range);
         }
 
-        // Spot Lights
-        var spots = lights.Where(l => l.Type == LightType.Spot).Take(MaxSpotLights).ToList();
+        var spots = lights.Where(l => l.Type == LightType.Spot).Take(MAX_SPOT_LIGHTS).ToList();
         GL.Uniform1(_numSpotLightsLoc, spots.Count);
 
         for (int i = 0; i < spots.Count; i++)
         {
             var l = spots[i];
-            var u = _spotLights[i];
+            var u = _spotLightUniforms[i];
             var transform = l.GameObject.Transform;
 
-            GL.Uniform3(u.Position, transform.Position.ToOpenTK());
-            GL.Uniform3(u.Direction, transform.Forward.ToOpenTK());
+            GL.Uniform3(u.Pos, transform.Position.ToOpenTK());
+            GL.Uniform3(u.Dir, transform.Forward.ToOpenTK());
             GL.Uniform3(u.Color, l.Color.ToOpenTK());
             GL.Uniform1(u.Intensity, l.Intensity);
             GL.Uniform1(u.Range, l.Range);
@@ -7130,28 +7100,12 @@ internal class OpenGLSceneRenderer : IDisposable
         }
     }
 
-    private void DrawObjects(IEnumerable<GameObject> gameObjects)
-    {
-        foreach (var go in gameObjects)
-        {
-            var mr = go.GetComponent<MeshRenderer>();
-
-            // Skip invalid meshes or skyboxes (skyboxes are handled by SkyboxRenderer)
-            if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null)
-            {
-                continue;
-            }
-
-            DrawSingleObject(go, mr);
-        }
-    }
-
-    private void DrawSingleObject(GameObject go, MeshRenderer mr)
+    private void DrawObject(GameObject go, MeshRenderer mr)
     {
         var data = GetOrCreateBackendData(mr);
         var mat = mr.Material;
 
-        // Texture binding
+        // Texture
         if (mat.Texture is OpenTKTexture glTexture)
         {
             glTexture.Bind(TextureUnit.Texture0);
@@ -7161,15 +7115,15 @@ internal class OpenGLSceneRenderer : IDisposable
             GL.BindTexture(TextureTarget.Texture2D, 0);
         }
 
-        // Material uniforms
+        // Material Uniforms
         var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
-        GL.UniformMatrix4(_matrices.Model, false, ref model);
-        GL.Uniform2(_material.Tiling, mat.TextureTiling.X, mat.TextureTiling.Y);
-        GL.Uniform3(_material.Emissive, mat.EmissiveColor.X, mat.EmissiveColor.Y, mat.EmissiveColor.Z);
-        GL.Uniform1(_material.Specular, mat.SpecularIntensity);
-        GL.Uniform1(_material.Shininess, mat.Shininess);
+        GL.UniformMatrix4(_modelLoc, false, ref model);
+        GL.Uniform2(_tilingLoc, mat.TextureTiling.X, mat.TextureTiling.Y);
+        GL.Uniform3(_emissiveLoc, mat.EmissiveColor.X, mat.EmissiveColor.Y, mat.EmissiveColor.Z);
+        GL.Uniform1(_specularLoc, mat.SpecularIntensity);
+        GL.Uniform1(_shininessLoc, mat.Shininess);
 
-        // Draw call
+        // Draw
         GL.BindVertexArray(data.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
         GL.BindVertexArray(0);
@@ -7216,6 +7170,7 @@ internal class OpenGLSceneRenderer : IDisposable
     }
 }
 
+// Helpers Extensions for this file
 file static class MathExtensions
 {
     public static Vector3 ToOpenTK(this System.Numerics.Vector3 v)
@@ -7243,22 +7198,20 @@ namespace Cherris.Rendering.OpenTK;
 
 internal class OpenGLSkyboxRenderer : IDisposable
 {
-    private readonly ShaderProgram _shader;
-    private readonly int _viewLoc;
-    private readonly int _projLoc;
-    private readonly int _samplerLoc;
-    private readonly OpenGLMeshRendererData _cubeData;
+    private readonly ShaderProgram _skyboxShaderProgram;
+    private readonly int _skyboxViewLocation;
+    private readonly int _skyboxProjectionLocation;
+    private readonly int _skyboxSamplerLocation;
+    private readonly OpenGLMeshRendererData _skyboxCubeData;
 
     public OpenGLSkyboxRenderer()
     {
-        _shader = ShaderProgram.FromFiles("Shaders/skybox.vert", "Shaders/skybox.frag")
-                 ?? throw new InvalidOperationException("Failed to load skybox shaders.");
+        _skyboxShaderProgram = ShaderProgram.FromFiles("Shaders/skybox.vert", "Shaders/skybox.frag");
+        _skyboxViewLocation = _skyboxShaderProgram.GetUniformLocation("view");
+        _skyboxProjectionLocation = _skyboxShaderProgram.GetUniformLocation("projection");
+        _skyboxSamplerLocation = _skyboxShaderProgram.GetUniformLocation("skybox");
 
-        _viewLoc = _shader.GetUniformLocation("view");
-        _projLoc = _shader.GetUniformLocation("projection");
-        _samplerLoc = _shader.GetUniformLocation("skybox");
-
-        _cubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
+        _skyboxCubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
     }
 
     [Obsolete]
@@ -7267,36 +7220,34 @@ internal class OpenGLSkyboxRenderer : IDisposable
         GL.DepthFunc(DepthFunction.Lequal);
         GL.CullFace(CullFaceMode.Front);
 
-        _shader.Use();
+        _skyboxShaderProgram.Use();
 
-        // Remove translation from view matrix (skybox stays at origin)
         var skyboxView = view;
         skyboxView.Row3 = new Vector4(0, 0, 0, 1);
 
-        GL.UniformMatrix4(_viewLoc, false, ref skyboxView);
-        GL.UniformMatrix4(_projLoc, false, ref projection);
+        GL.UniformMatrix4(_skyboxViewLocation, false, ref skyboxView);
+        GL.UniformMatrix4(_skyboxProjectionLocation, false, ref projection);
 
         if (skybox.CubeMapTexture is OpenTKTexture glSkyboxTexture)
         {
             glSkyboxTexture.Bind(TextureUnit.Texture0);
-            GL.Uniform1(_samplerLoc, 0);
+            GL.Uniform1(_skyboxSamplerLocation, 0);
         }
 
-        GL.BindVertexArray(_cubeData.VaoHandle);
-        GL.DrawElements(PrimitiveType.Triangles, _cubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
+        GL.BindVertexArray(_skyboxCubeData.VaoHandle);
+        GL.DrawElements(PrimitiveType.Triangles, _skyboxCubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
 
         GL.BindVertexArray(0);
         GL.BindTexture(TextureTarget.TextureCubeMap, 0);
 
-        // Restore default state
         GL.CullFace(CullFaceMode.Back);
         GL.DepthFunc(DepthFunction.Less);
     }
 
     public void Dispose()
     {
-        _shader?.Dispose();
-        _cubeData?.Dispose();
+        _skyboxShaderProgram?.Dispose();
+        _skyboxCubeData?.Dispose();
     }
 }
 ```
@@ -7602,18 +7553,15 @@ namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKRenderer : IRenderer, IDisposable
 {
-    private readonly ImGuiController _imGuiController;
-
-    // Sub-renderers
     private readonly OpenGLSceneRenderer _sceneRenderer;
     private readonly OpenGLSkyboxRenderer _skyboxRenderer;
     private readonly OpenGLPostProcessor _postProcessor;
+    private readonly ImGuiController _imGuiController;
     private readonly OpenGLDebugRenderer _debugRenderer;
     private readonly OpenGLGizmoRenderer _gizmoRenderer;
     private readonly OpenGLGridRenderer _gridRenderer;
 
     private Vector2i _viewportSize = new(1, 1);
-
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
 
@@ -7621,6 +7569,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     {
         _imGuiController = imGuiController;
 
+        // Sub-renderers
         _sceneRenderer = new OpenGLSceneRenderer();
         _skyboxRenderer = new OpenGLSkyboxRenderer();
         _postProcessor = new OpenGLPostProcessor();
@@ -7649,20 +7598,19 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        bool isViewportValid = _viewportSize.X > 1 && _viewportSize.Y > 1;
-
-        if (mainCamera is not null && isViewportValid)
+        // 1. Scene Pass (if viewport visible)
+        if (mainCamera is not null && _viewportSize.X > 1 && _viewportSize.Y > 1)
         {
             RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
         }
 
+        // 2. UI Pass (Screen)
         RenderUIPass((int)windowWidth, (int)windowHeight);
     }
 
     [Obsolete]
     private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure)
     {
-        // 1. Prepare Framebuffer & State
         GL.Enable(EnableCap.FramebufferSrgb);
         _postProcessor.BeginFrame();
 
@@ -7671,7 +7619,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.CullFace(CullFaceMode.Back);
         GL.Disable(EnableCap.Blend);
 
-        // 2. Calculate Matrices
         var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
         var projection = Matrix4.CreatePerspectiveFieldOfView(
             mainCamera.FieldOfView * (float)Math.PI / 180.0f,
@@ -7679,24 +7626,27 @@ public class OpenTKRenderer : IRenderer, IDisposable
             mainCamera.NearClipPlane,
             mainCamera.FarClipPlane);
 
-        // 3. Render Passes
+        // Render Skybox
         if (skybox?.CubeMapTexture is not null)
         {
             _skyboxRenderer.Render(skybox, view, projection);
         }
 
+        // Render Grid
         if (ShowGrid)
         {
             var cameraPos = view.Inverted().Row3.Xyz;
             _gridRenderer.Render(view, projection, cameraPos);
         }
 
+        // Render Scene Objects
         _sceneRenderer.Render(gameObjects, lights, view, projection);
 
+        // Render Gizmos & Debug Lines
         _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
         _debugRenderer.Render(view, projection);
 
-        // 4. Post Processing
+        // Post Processing
         _postProcessor.ResolveMsaa();
         _postProcessor.RenderBloom();
         _postProcessor.Composite(exposure);
@@ -7706,20 +7656,17 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
     private void RenderUIPass(int width, int height)
     {
-        // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
         GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        GL.Disable(EnableCap.DepthTest);
-        GL.Disable(EnableCap.CullFace);
 
         _imGuiController.Render();
     }
 
     public void OnWindowResized() { }
-    public void RequestSnapshot(string path) { /* Not implemented */ }
-    public void ProcessSnapshot() { /* Not implemented */ }
+    public void RequestSnapshot(string path) { /* Not implemented for OpenTK */ }
+    public void ProcessSnapshot() { /* Not implemented for OpenTK */ }
 
     public void Dispose()
     {
@@ -7952,7 +7899,7 @@ public class OpenTKTexture : ITexture
 ```csharp
 using Cherris.Core.Logging;
 using Cherris.Utils;
-using OpenTK.Graphics.OpenGL4;
+using OpenTK.Graphics.OpenGL;
 
 namespace Cherris.Rendering.OpenTK;
 
@@ -8033,12 +7980,7 @@ public class ShaderProgram : IDisposable
 
     public int GetUniformLocation(string name)
     {
-        int location = GL.GetUniformLocation(Handle, name);
-        if (location == -1)
-        {
-            Logger.Warning($"[ShaderProgram] Uniform '{name}' not found or optimized out.");
-        }
-        return location;
+        return GL.GetUniformLocation(Handle, name);
     }
 
     public void Dispose()
