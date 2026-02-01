@@ -1,5 +1,6 @@
 ﻿using Cherris.Core;
 using Cherris.Serialization;
+using CherrisEditor.Build;
 using CherrisEditor.Undo;
 using ImGuiNET;
 
@@ -38,6 +39,21 @@ public class MenuBar
                     Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
                 }
             }
+
+            ImGui.Separator();
+
+            if (ImGui.MenuItem("Build Game..."))
+            {
+                if (_editor.ProjectManager.CurrentProject is not null)
+                {
+                    GameBuilder.BuildGame(_editor.ProjectManager.CurrentProject);
+                }
+                else
+                {
+                    Console.WriteLine("[Editor] Cannot build: No project loaded.");
+                }
+            }
+
             ImGui.Separator();
 
             if (ImGui.MenuItem("Exit"))

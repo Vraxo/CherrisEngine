@@ -22,6 +22,50 @@ public static class ScriptCompiler
 
     public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
     {
+        var compilation = PrepareCompilation(rootAssetPath);
+        if (compilation is null)
+        {
+            return null;
+        }
+
+        using MemoryStream stream = new();
+        EmitResult result = compilation.Emit(stream);
+
+        if (!result.Success)
+        {
+            LogCompilationErrors(result);
+            return null;
+        }
+
+        Logger.Info("[ScriptCompiler] In-memory compilation successful.");
+        stream.Position = 0;
+        return context.LoadFromStream(stream);
+    }
+
+    public static bool CompileToFile(string rootAssetPath, string outputPath)
+    {
+        var compilation = PrepareCompilation(rootAssetPath);
+        if (compilation is null)
+        {
+            return false;
+        }
+
+        // We emit to a file stream instead of memory
+        using var stream = new FileStream(outputPath, FileMode.Create);
+        EmitResult result = compilation.Emit(stream);
+
+        if (!result.Success)
+        {
+            LogCompilationErrors(result);
+            return false;
+        }
+
+        Logger.Info($"[ScriptCompiler] Compiled scripts to '{outputPath}'.");
+        return true;
+    }
+
+    private static CSharpCompilation? PrepareCompilation(string rootAssetPath)
+    {
         string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
 
         if (!TryGetScriptFiles(scriptsPath, out var files))
@@ -31,9 +75,12 @@ public static class ScriptCompiler
 
         List<SyntaxTree> syntaxTrees = ParseSyntaxTrees(files);
         IEnumerable<MetadataReference> references = CreateMetadataReferences();
-        CSharpCompilation compilation = CreateCompilation(syntaxTrees, references);
 
-        return EmitAssembly(compilation, context);
+        return CSharpCompilation.Create(
+            CompiledAssemblyName,
+            syntaxTrees,
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
     private static bool TryGetScriptFiles(string scriptsPath, out string[] files)
@@ -42,7 +89,8 @@ public static class ScriptCompiler
 
         if (!Directory.Exists(scriptsPath))
         {
-            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found. No scripts to compile.");
+            // Just a warning for runtime build, but info for editor
+            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found.");
             return false;
         }
 
@@ -54,7 +102,6 @@ public static class ScriptCompiler
             return false;
         }
 
-        Logger.Info($"[ScriptCompiler] Found {files.Length} script(s). Starting compilation...");
         return true;
     }
 
@@ -77,35 +124,18 @@ public static class ScriptCompiler
 
         foreach (string assemblyName in RequiredAssemblies)
         {
-            _ = assemblyPaths.Add(Assembly.Load(assemblyName).Location);
+            try
+            {
+                var asm = Assembly.Load(assemblyName);
+                _ = assemblyPaths.Add(asm.Location);
+            }
+            catch
+            {
+                // Ignore if not found, standard lib might be implicitly loaded
+            }
         }
 
         return assemblyPaths.Select(path => MetadataReference.CreateFromFile(path));
-    }
-
-    private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> syntaxTrees, IEnumerable<MetadataReference> references)
-    {
-        return CSharpCompilation.Create(
-            CompiledAssemblyName,
-            syntaxTrees,
-            references,
-            new(OutputKind.DynamicallyLinkedLibrary));
-    }
-
-    private static Assembly? EmitAssembly(CSharpCompilation compilation, AssemblyLoadContext context)
-    {
-        using MemoryStream stream = new();
-        EmitResult result = compilation.Emit(stream);
-
-        if (!result.Success)
-        {
-            LogCompilationErrors(result);
-            return null;
-        }
-
-        Logger.Info("[ScriptCompiler] Compilation successful.");
-        stream.Position = 0;
-        return context.LoadFromStream(stream);
     }
 
     private static void LogCompilationErrors(EmitResult result)
