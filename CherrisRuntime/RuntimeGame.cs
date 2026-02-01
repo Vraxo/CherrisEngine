@@ -3,6 +3,7 @@ using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering.OpenTK;
 using Cherris.Serialization;
+using Cherris.Utils;
 using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -16,6 +17,9 @@ public class RuntimeGame : Engine
 
     public RuntimeGame() : base("Cherris Game", true, GraphicsAPI.OpenTK)
     {
+        // 1. Set the ProjectRoot to the executable's directory so asset lookups work.
+        ProjectFiles.ProjectRoot = AppContext.BaseDirectory;
+
         // Enable direct-to-screen presentation for the Runtime
         if (Renderer is OpenTKRenderer otkRenderer)
         {
@@ -30,14 +34,23 @@ public class RuntimeGame : Engine
     {
         ResourceManager.LoadInitialAssets();
 
-        // 1. Load User Scripts (Assembly only, registration happens in Step 2 via deserializer lookup)
+        // 2. Load User Scripts (Assembly only, registration happens via deserializer lookup)
         LoadGameScriptsAssembly();
 
-        // 2. Register internal components + generic "Script" handling
+        // 3. Register internal components + generic "Script" handling
         RegisterInternalComponents();
 
-        // 3. Load project config and start scene
+        // 4. Load project config and start scene
         LoadProjectAndScene();
+    }
+
+    protected override void Update(float deltaTime)
+    {
+        base.Update(deltaTime);
+
+        // Essential: Update the SceneManager to step physics, update scripts, and manage audio.
+        // Without this, the game world is static.
+        SceneManager.Update(deltaTime);
     }
 
     private void RegisterInternalComponents()
@@ -57,7 +70,7 @@ public class RuntimeGame : Engine
 
         try
         {
-            // Just loading into the AppDomain is enough for ComponentDeserializer.FindTypeInAssemblies to find them
+            // Loading into the AppDomain allows ComponentDeserializer to find types via reflection
             Assembly.LoadFrom(dllPath);
             Logger.Info($"[Runtime] Loaded game assembly: {GameScriptsDll}");
         }
