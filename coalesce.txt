@@ -4460,8 +4460,6 @@ namespace Cherris.Serialization;
 
 public static class ComponentDeserializer
 {
-    private static readonly Dictionary<string, Type> _scriptTypeCache = [];
-
     public static void RegisterFactories(SceneLoader sceneLoader, IResourceManager resourceManager)
     {
         sceneLoader.RegisterComponentFactory("MeshRenderer", props => CreateMeshRendererComponent(props, resourceManager));
@@ -4471,64 +4469,7 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
         sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
-
-        // NEW: Register factory for generic "Script" key in YAML
-        sceneLoader.RegisterComponentFactory("Script", props => CreateGenericScriptComponent(props, sceneLoader));
     }
-
-    private static Component? CreateGenericScriptComponent(object properties, SceneLoader sceneLoader)
-    {
-        if (properties is not Dictionary<object, object> propsDict)
-        {
-            return null;
-        }
-
-        // 1. Identify the script type from the 'Type' property
-        if (!propsDict.TryGetValue("Type", out var typeObj) || typeObj is not string typeName)
-        {
-            Logger.Warning("[Deserializer] Script component missing 'Type' property.");
-            return null;
-        }
-
-        // 2. Resolve the Type
-        if (!_scriptTypeCache.TryGetValue(typeName, out Type? scriptType))
-        {
-            scriptType = FindTypeInAssemblies(typeName);
-            if (scriptType != null)
-            {
-                _scriptTypeCache[typeName] = scriptType;
-            }
-        }
-
-        if (scriptType == null)
-        {
-            Logger.Warning($"[Deserializer] Could not find script type '{typeName}'.");
-            return null;
-        }
-
-        // 3. Instantiate and Populate
-        try
-        {
-            var component = (Component)Activator.CreateInstance(scriptType)!;
-            PopulateComponentProperties(component, propsDict);
-            return component;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"[Deserializer] Failed to instantiate script '{typeName}': {ex.Message}");
-            return null;
-        }
-    }
-
-    private static Type? FindTypeInAssemblies(string typeName)
-    {
-        // Check loaded assemblies (including the dynamically loaded GameScripts.dll)
-        return AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => a.GetTypes())
-            .FirstOrDefault(t => t.FullName == typeName || t.Name == typeName);
-    }
-
-    // ... (rest of the file remains unchanged)
 
     private static MeshRenderer? CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
     {
@@ -4623,12 +4564,6 @@ public static class ComponentDeserializer
         foreach (var (key, value) in propsDict)
         {
             if (key is not string propName)
-            {
-                continue;
-            }
-
-            // Skip special "Type" property used for identification
-            if (propName == "Type")
             {
                 continue;
             }
@@ -6743,12 +6678,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
     public int FinalSceneTexture => _compositeFbo?.ColorTexture ?? 0;
 
-    // NEW: Expose FBO handle for blitting
-    public int FinalSceneTextureFboHandle => _compositeFbo?.Handle ?? 0;
-
     public OpenGLPostProcessor()
     {
-        // ... (existing constructor code)
         _brightPassShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_brightpass.frag");
         _blurShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_blur.frag");
         _compositeShader = LoadShaderOrThrow("Shaders/post_quad.vert", "Shaders/post_composite.frag");
@@ -6756,8 +6687,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
         (_quadVao, _quadVbo) = CreateFullscreenQuad();
         CreateFramebuffers();
     }
-
-    // ... (rest of class remains identical, just included needed changes)
 
     private static ShaderProgram LoadShaderOrThrow(string vert, string frag)
     {
@@ -6816,8 +6745,10 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
+
         PerformBrightPass();
         PerformBlurPass();
+
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.CullFace);
     }
@@ -6837,6 +6768,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Clear(ClearBufferMask.ColorBufferBit);
 
         _compositeShader.Use();
+
+        // Pass 1: Draw Scene
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("image"), 0);
@@ -6844,11 +6777,14 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 0);
         DrawQuad();
 
+        // Pass 2: Add Bloom
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
+
         GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[0]!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 1);
         DrawQuad();
+
         GL.Disable(EnableCap.Blend);
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
@@ -6856,11 +6792,11 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Enable(EnableCap.CullFace);
     }
 
-    // ... (private methods remain identical)
     private void PerformBrightPass()
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);
         GL.Viewport(0, 0, Math.Max(1, _width / 2), Math.Max(1, _height / 2));
+
         _brightPassShader.Use();
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
@@ -6872,6 +6808,7 @@ internal sealed class OpenGLPostProcessor : IDisposable
         bool horizontal = true;
         const int blurIterations = 10;
         int horizontalLoc = _blurShader.GetUniformLocation("horizontal");
+
         _blurShader.Use();
         GL.Uniform1(_blurShader.GetUniformLocation("image"), 0);
 
@@ -6879,6 +6816,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
         {
             int sourceIdx = horizontal ? 0 : 1;
             int targetIdx = horizontal ? 1 : 0;
+
+            // First iteration reads from Bloom0 (result of bright pass)
             if (i == 0)
             {
                 sourceIdx = 0;
@@ -6886,8 +6825,10 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIdx]!.Handle);
             GL.Uniform1(horizontalLoc, horizontal ? 1 : 0);
+
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _bloomFbos[sourceIdx]!.ColorTexture);
+
             DrawQuad();
             horizontal = !horizontal;
         }
@@ -6902,32 +6843,69 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
     private void CreateFramebuffers()
     {
-        _msaaFbo = new FramebufferBuilder(_width, _height).WithMultisampling(4).WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float).WithDepthStencil().Build("MSAA");
-        _resolvedFbo = new FramebufferBuilder(_width, _height).WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float).Build("Resolved");
+        _msaaFbo = new FramebufferBuilder(_width, _height)
+            .WithMultisampling(4)
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .WithDepthStencil()
+            .Build("MSAA");
+
+        _resolvedFbo = new FramebufferBuilder(_width, _height)
+            .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+            .Build("Resolved");
+
+        // Bloom buffers are half size
         for (int i = 0; i < 2; i++)
         {
-            _bloomFbos[i] = new FramebufferBuilder(_width, _height).WithHalfSize().WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float).WithWrapMode(TextureWrapMode.ClampToEdge).Build($"Bloom{i}");
+            _bloomFbos[i] = new FramebufferBuilder(_width, _height)
+                .WithHalfSize()
+                .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
+                .WithWrapMode(TextureWrapMode.ClampToEdge)
+                .Build($"Bloom{i}");
         }
-        _compositeFbo = new FramebufferBuilder(_width, _height).WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte).Build("Composite");
+
+        _compositeFbo = new FramebufferBuilder(_width, _height)
+            .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
+            .Build("Composite");
     }
 
     private void DisposeFramebuffers()
     {
-        _msaaFbo?.Dispose(); _resolvedFbo?.Dispose();
-        _bloomFbos[0]?.Dispose(); _bloomFbos[1]?.Dispose();
+        _msaaFbo?.Dispose();
+        _resolvedFbo?.Dispose();
+        _bloomFbos[0]?.Dispose();
+        _bloomFbos[1]?.Dispose();
         _compositeFbo?.Dispose();
-        _msaaFbo = null; _resolvedFbo = null;
-        _bloomFbos[0] = null; _bloomFbos[1] = null; _compositeFbo = null;
+
+        _msaaFbo = null;
+        _resolvedFbo = null;
+        _bloomFbos[0] = null;
+        _bloomFbos[1] = null;
+        _compositeFbo = null;
     }
 
     private static (int vao, int vbo) CreateFullscreenQuad()
     {
-        float[] quadVertices = { -1.0f, 1.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, 0.0f, -1.0f, 1.0f, 0.0f, 1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-        int vao = GL.GenVertexArray(); int vbo = GL.GenBuffer();
-        GL.BindVertexArray(vao); GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+        float[] quadVertices = {
+            -1.0f,  1.0f,  0.0f, 1.0f,
+            -1.0f, -1.0f,  0.0f, 0.0f,
+             1.0f, -1.0f,  1.0f, 0.0f,
+            -1.0f,  1.0f,  0.0f, 1.0f,
+             1.0f, -1.0f,  1.0f, 0.0f,
+             1.0f,  1.0f,  1.0f, 1.0f
+        };
+
+        int vao = GL.GenVertexArray();
+        int vbo = GL.GenBuffer();
+
+        GL.BindVertexArray(vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
         GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * quadVertices.Length, quadVertices, BufferUsageHint.StaticDraw);
-        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
-        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
+
+        GL.EnableVertexAttribArray(0);
+        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 0);
+        GL.EnableVertexAttribArray(1);
+        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), 2 * sizeof(float));
+
         GL.BindVertexArray(0);
         return (vao, vbo);
     }
@@ -7639,10 +7617,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
 
-    // When true, the final scene is blitted to the default framebuffer (0).
-    // Set this to true for Runtime, false for Editor (where scene is an ImGui image).
-    public bool PresentToScreen { get; set; } = false;
-
     public OpenTKRenderer(ImGuiController imGuiController)
     {
         _imGuiController = imGuiController;
@@ -7675,34 +7649,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        // In Runtime mode (PresentToScreen), we must ensure the viewport matches the window
-        if (PresentToScreen)
-        {
-            SetViewportSize(new System.Numerics.Vector2(windowWidth, windowHeight));
-        }
-
         bool isViewportValid = _viewportSize.X > 1 && _viewportSize.Y > 1;
 
         if (mainCamera is not null && isViewportValid)
         {
             RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
-        }
-        else
-        {
-            // Clear to black if no camera
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            GL.ClearColor(0, 0, 0, 1);
-            GL.Clear(ClearBufferMask.ColorBufferBit);
-        }
-
-        // If we are in Runtime, blit the FBO result to the backbuffer
-        if (PresentToScreen && isViewportValid)
-        {
-            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _postProcessor.FinalSceneTextureFboHandle);
-            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
-            GL.BlitFramebuffer(0, 0, _viewportSize.X, _viewportSize.Y,
-                               0, 0, (int)windowWidth, (int)windowHeight,
-                               ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
         }
 
         RenderUIPass((int)windowWidth, (int)windowHeight);
@@ -7758,26 +7709,15 @@ public class OpenTKRenderer : IRenderer, IDisposable
         // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
-
-        // In Runtime (PresentToScreen), we don't clear because we just blitted the game view.
-        // In Editor, we clear background for ImGui docking area.
-        if (!PresentToScreen)
-        {
-            GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
-            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        }
-
+        GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
+        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
 
         _imGuiController.Render();
     }
 
-    public void OnWindowResized()
-    {
-        // Handled in RenderFrame for runtime scaling
-    }
-
+    public void OnWindowResized() { }
     public void RequestSnapshot(string path) { /* Not implemented */ }
     public void ProcessSnapshot() { /* Not implemented */ }
 
@@ -9512,50 +9452,6 @@ public static class ScriptCompiler
 
     public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
     {
-        var compilation = PrepareCompilation(rootAssetPath);
-        if (compilation is null)
-        {
-            return null;
-        }
-
-        using MemoryStream stream = new();
-        EmitResult result = compilation.Emit(stream);
-
-        if (!result.Success)
-        {
-            LogCompilationErrors(result);
-            return null;
-        }
-
-        Logger.Info("[ScriptCompiler] In-memory compilation successful.");
-        stream.Position = 0;
-        return context.LoadFromStream(stream);
-    }
-
-    public static bool CompileToFile(string rootAssetPath, string outputPath)
-    {
-        var compilation = PrepareCompilation(rootAssetPath);
-        if (compilation is null)
-        {
-            return false;
-        }
-
-        // We emit to a file stream instead of memory
-        using var stream = new FileStream(outputPath, FileMode.Create);
-        EmitResult result = compilation.Emit(stream);
-
-        if (!result.Success)
-        {
-            LogCompilationErrors(result);
-            return false;
-        }
-
-        Logger.Info($"[ScriptCompiler] Compiled scripts to '{outputPath}'.");
-        return true;
-    }
-
-    private static CSharpCompilation? PrepareCompilation(string rootAssetPath)
-    {
         string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
 
         if (!TryGetScriptFiles(scriptsPath, out var files))
@@ -9565,12 +9461,9 @@ public static class ScriptCompiler
 
         List<SyntaxTree> syntaxTrees = ParseSyntaxTrees(files);
         IEnumerable<MetadataReference> references = CreateMetadataReferences();
+        CSharpCompilation compilation = CreateCompilation(syntaxTrees, references);
 
-        return CSharpCompilation.Create(
-            CompiledAssemblyName,
-            syntaxTrees,
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        return EmitAssembly(compilation, context);
     }
 
     private static bool TryGetScriptFiles(string scriptsPath, out string[] files)
@@ -9579,8 +9472,7 @@ public static class ScriptCompiler
 
         if (!Directory.Exists(scriptsPath))
         {
-            // Just a warning for runtime build, but info for editor
-            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found.");
+            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found. No scripts to compile.");
             return false;
         }
 
@@ -9592,6 +9484,7 @@ public static class ScriptCompiler
             return false;
         }
 
+        Logger.Info($"[ScriptCompiler] Found {files.Length} script(s). Starting compilation...");
         return true;
     }
 
@@ -9614,18 +9507,35 @@ public static class ScriptCompiler
 
         foreach (string assemblyName in RequiredAssemblies)
         {
-            try
-            {
-                var asm = Assembly.Load(assemblyName);
-                _ = assemblyPaths.Add(asm.Location);
-            }
-            catch
-            {
-                // Ignore if not found, standard lib might be implicitly loaded
-            }
+            _ = assemblyPaths.Add(Assembly.Load(assemblyName).Location);
         }
 
         return assemblyPaths.Select(path => MetadataReference.CreateFromFile(path));
+    }
+
+    private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> syntaxTrees, IEnumerable<MetadataReference> references)
+    {
+        return CSharpCompilation.Create(
+            CompiledAssemblyName,
+            syntaxTrees,
+            references,
+            new(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static Assembly? EmitAssembly(CSharpCompilation compilation, AssemblyLoadContext context)
+    {
+        using MemoryStream stream = new();
+        EmitResult result = compilation.Emit(stream);
+
+        if (!result.Success)
+        {
+            LogCompilationErrors(result);
+            return null;
+        }
+
+        Logger.Info("[ScriptCompiler] Compilation successful.");
+        stream.Position = 0;
+        return context.LoadFromStream(stream);
     }
 
     private static void LogCompilationErrors(EmitResult result)
@@ -9672,223 +9582,6 @@ public class {scriptName} : Script
     }}
 }}
 ";
-    }
-}
-```
-
----
-
-### `CherrisEditor\Build\GameBuilder.cs`
-
-```csharp
-using Cherris.Core.Logging;
-using NativeFileDialogNET;
-using System.Diagnostics;
-
-namespace CherrisEditor.Build;
-
-public static class GameBuilder
-{
-    public static async void BuildGame(Project project)
-    {
-        if (project is null)
-        {
-            Logger.Error("[GameBuilder] No project loaded.");
-            return;
-        }
-
-        using var dialog = new NativeFileDialog().SelectFolder();
-        if (dialog.Open(out string? outputDir) != DialogResult.Okay || string.IsNullOrEmpty(outputDir))
-        {
-            return;
-        }
-
-        Logger.Info($"[GameBuilder] Starting build process...");
-        Logger.Info($"[GameBuilder] Output Directory: {outputDir}");
-
-        await Task.Run(() =>
-        {
-            try
-            {
-                if (!PublishRuntime(outputDir))
-                {
-                    Logger.Error("[GameBuilder] Build aborted due to Runtime publish failure.");
-                    return;
-                }
-
-                if (!CompileScripts(project, outputDir))
-                {
-                    Logger.Error("[GameBuilder] Build aborted due to Script compilation failure.");
-                    return;
-                }
-
-                CopyEngineResources(outputDir);
-                CopyProjectContent(project, outputDir);
-                CopyConfigFile(project, outputDir);
-
-                Logger.Info("[GameBuilder] Build completed successfully!");
-                Logger.Info($"[GameBuilder] Opening folder: {outputDir}");
-
-                Process.Start("explorer.exe", outputDir);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"[GameBuilder] Critical Build Error: {ex.Message}");
-            }
-        });
-    }
-
-    private static bool PublishRuntime(string outputDir)
-    {
-        string runtimeProjPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../CherrisRuntime/CherrisRuntime.csproj"));
-
-        if (!File.Exists(runtimeProjPath))
-        {
-            runtimeProjPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../CherrisRuntime/CherrisRuntime.csproj"));
-        }
-
-        if (!File.Exists(runtimeProjPath))
-        {
-            Logger.Error($"[GameBuilder] Could not find CherrisRuntime.csproj at '{runtimeProjPath}'.");
-            return false;
-        }
-
-        Logger.Info("[GameBuilder] Step 1/5: Publishing Runtime...");
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            Arguments = $"publish \"{runtimeProjPath}\" -c Release -o \"{outputDir}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = new Process { StartInfo = startInfo };
-
-        process.OutputDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Info($"[DotNet] {e.Data}"); } };
-        process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Warning($"[DotNet] {e.Data}"); } };
-
-        if (!process.Start())
-        {
-            return false;
-        }
-
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        process.WaitForExit();
-
-        return process.ExitCode == 0;
-    }
-
-    private static bool CompileScripts(Project project, string outputDir)
-    {
-        Logger.Info("[GameBuilder] Step 2/5: Compiling Game Scripts...");
-        string dllPath = Path.Combine(outputDir, "GameScripts.dll");
-        return ScriptCompiler.CompileToFile(project.RootPath, dllPath);
-    }
-
-    private static void CopyEngineResources(string outputDir)
-    {
-        // Copy built-in resources (Shaders, Fonts, Default Textures) from the Editor's execution directory
-        Logger.Info("[GameBuilder] Step 3/5: Copying Engine Resources...");
-
-        string sourceDir = Path.Combine(AppContext.BaseDirectory, "EditorResources");
-        string destDir = Path.Combine(outputDir, "EditorResources");
-
-        if (Directory.Exists(sourceDir))
-        {
-            CopyDirectoryRecursively(sourceDir, destDir);
-        }
-        else
-        {
-            Logger.Warning("[GameBuilder] 'EditorResources' folder not found in Editor directory. Runtime visuals might fail.");
-        }
-    }
-
-    private static void CopyProjectContent(Project project, string outputDir)
-    {
-        Logger.Info("[GameBuilder] Step 4/5: Copying Project Content...");
-
-        // Exclude build artifacts, source control, and source code
-        var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "bin", "obj", ".git", ".vs", ".idea", "Builds", "Logs"
-        };
-
-        var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".csproj", ".sln", ".pdb", ".user", ".cs"
-        };
-
-        string fullOutputDir = Path.GetFullPath(outputDir);
-        string fullProjectRoot = Path.GetFullPath(project.RootPath);
-
-        void CopyRecursive(string source, string dest)
-        {
-            Directory.CreateDirectory(dest);
-
-            foreach (var file in Directory.GetFiles(source))
-            {
-                if (excludedExtensions.Contains(Path.GetExtension(file)))
-                {
-                    continue;
-                }
-
-                // Don't overwrite the main executable or dlls we just built
-                string destFile = Path.Combine(dest, Path.GetFileName(file));
-                if (File.Exists(destFile))
-                {
-                    continue;
-                }
-
-                File.Copy(file, destFile, true);
-            }
-
-            foreach (var subDir in Directory.GetDirectories(source))
-            {
-                string dirName = Path.GetFileName(subDir);
-                if (excludedDirs.Contains(dirName))
-                {
-                    continue;
-                }
-
-                string fullSubPath = Path.GetFullPath(subDir);
-
-                // Prevent recursive copy if output dir is inside project
-                if (fullOutputDir.StartsWith(fullSubPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                CopyRecursive(subDir, Path.Combine(dest, dirName));
-            }
-        }
-
-        CopyRecursive(fullProjectRoot, outputDir);
-    }
-
-    private static void CopyConfigFile(Project project, string outputDir)
-    {
-        Logger.Info("[GameBuilder] Step 5/5: Copying Configuration...");
-        string destPath = Path.Combine(outputDir, "project.yaml");
-        File.Copy(project.ConfigPath, destPath, true);
-    }
-
-    private static void CopyDirectoryRecursively(string sourceDir, string destDir)
-    {
-        Directory.CreateDirectory(destDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), true);
-        }
-
-        foreach (var subDir in Directory.GetDirectories(sourceDir))
-        {
-            CopyDirectoryRecursively(subDir, Path.Combine(destDir, Path.GetFileName(subDir)));
-        }
     }
 }
 ```
@@ -12401,7 +12094,6 @@ internal class InspectorPanel
 ```csharp
 using Cherris.Core;
 using Cherris.Serialization;
-using CherrisEditor.Build;
 using CherrisEditor.Undo;
 using ImGuiNET;
 
@@ -12440,21 +12132,6 @@ public class MenuBar
                     Console.WriteLine($"[Editor] Scene saved to '{activeScene.FilePath}'");
                 }
             }
-
-            ImGui.Separator();
-
-            if (ImGui.MenuItem("Build Game..."))
-            {
-                if (_editor.ProjectManager.CurrentProject is not null)
-                {
-                    GameBuilder.BuildGame(_editor.ProjectManager.CurrentProject);
-                }
-                else
-                {
-                    Console.WriteLine("[Editor] Cannot build: No project loaded.");
-                }
-            }
-
             ImGui.Separator();
 
             if (ImGui.MenuItem("Exit"))
@@ -12853,6 +12530,98 @@ public class HistoryManager
         _undoStack.Clear();
         _redoStack.Clear();
         OnHistoryChanged?.Invoke();
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Assets\Scripts\PlayerController.cs`
+
+```csharp
+using Cherris;
+using Cherris.Components;
+using System;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class PlayerController : Script
+{
+    public float Speed { get; set; } = 3.0f;
+    public float MouseSensitivity { get; set; } = 0.0015f;
+
+    private float _yaw;
+    private float _pitch;
+
+    public override void Update(float deltaTime)
+    {
+        // --- Mouse Look ---
+        Vector2 mouseDelta = Input.MouseDelta;
+        _yaw -= mouseDelta.X * MouseSensitivity;
+        _pitch -= mouseDelta.Y * MouseSensitivity;
+
+        // Clamp the pitch to prevent the camera from flipping upside down
+        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
+
+        // Update rotation from yaw and pitch using the standard engine function
+        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
+
+        // --- Keyboard Movement ---
+        Vector3 moveDirection = Vector3.Zero;
+
+        if (Input.IsKeyDown(Key.W))
+        {
+            moveDirection -= Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.S))
+        {
+            moveDirection += Vector3.UnitZ;
+        }
+        if (Input.IsKeyDown(Key.A))
+        {
+            moveDirection -= Vector3.UnitX;
+        }
+        if (Input.IsKeyDown(Key.D))
+        {
+            moveDirection += Vector3.UnitX;
+        }
+
+        if (moveDirection != Vector3.Zero)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
+
+            // Create a rotation that only includes the horizontal (yaw) component.
+            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
+
+            // Transform the local direction vector by the horizontal-only rotation.
+            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
+            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
+        }
+    }
+}
+```
+
+---
+
+### `CherrisEditor\Assets\Scripts\Spinner.cs`
+
+```csharp
+using Cherris;
+using Cherris.Components;
+using System.Numerics;
+
+namespace Apexverse;
+
+public class Spinner : Script
+{
+    private float _totalTime;
+
+    public override void Update(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
+                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
 ```
