@@ -60,6 +60,11 @@ internal class OpenGLGizmoRenderer
 
     private void DrawDirectionalLightGizmo(Light light)
     {
+        if (light.GameObject is null)
+        {
+            return;
+        }
+
         Transform transform = light.GameObject.Transform;
         Vector3 color = DirectionalLightColor;
 
@@ -77,6 +82,11 @@ internal class OpenGLGizmoRenderer
 
     private void DrawSpotlightGizmo(Light light)
     {
+        if (light.GameObject is null)
+        {
+            return;
+        }
+
         Transform transform = light.GameObject.Transform;
         Vector3 color = SpotlightColor;
 
@@ -154,6 +164,8 @@ internal class OpenGLGizmoRenderer
 
     private static Vector3 GetRigidBodyGizmoColor(RigidBody rigidBody)
     {
-        return rigidBody.JitterBody.IsStatic ? StaticBodyColor : DynamicBodyColor;
+        return rigidBody.JitterBody?.IsStatic == true
+            ? StaticBodyColor
+            : DynamicBodyColor;
     }
 }
