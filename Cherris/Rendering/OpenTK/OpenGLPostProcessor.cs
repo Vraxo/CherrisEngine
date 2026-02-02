@@ -136,6 +136,19 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Enable(EnableCap.CullFace);
     }
 
+    public void BlitToScreen()
+    {
+        if (_compositeFbo == null)
+        {
+            return;
+        }
+
+        // Blit from Composite FBO to Default Framebuffer (0)
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _compositeFbo.Handle);
+        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+    }
+
     private void PerformBrightPass()
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);

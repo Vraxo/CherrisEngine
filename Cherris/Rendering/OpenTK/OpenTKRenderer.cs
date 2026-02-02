@@ -18,6 +18,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLGridRenderer _gridRenderer;
 
     private Vector2i _viewportSize = new(1, 1);
+    private bool _viewportConfiguredThisFrame;
 
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
@@ -49,19 +50,49 @@ public class OpenTKRenderer : IRenderer, IDisposable
             _viewportSize = newSize;
             _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
         }
+        _viewportConfiguredThisFrame = true;
     }
 
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        bool isViewportValid = _viewportSize.X > 1 && _viewportSize.Y > 1;
+        // If SetViewportSize was not called this frame, we assume we are running in standalone/runtime mode
+        // and must use the full window size.
+        bool isRuntimeMode = !_viewportConfiguredThisFrame;
 
-        if (mainCamera is not null && isViewportValid)
+        if (isRuntimeMode)
         {
-            RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
+            var newSize = new Vector2i((int)Math.Max(windowWidth, 1), (int)Math.Max(windowHeight, 1));
+            if (_viewportSize != newSize)
+            {
+                _viewportSize = newSize;
+                _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
+            }
         }
 
-        RenderUIPass((int)windowWidth, (int)windowHeight);
+        bool sceneRendered = false;
+
+        // Only render the scene if we have a valid camera
+        if (mainCamera is not null)
+        {
+            RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
+            sceneRendered = true;
+        }
+
+        // In Runtime mode, we must manually blit the offscreen buffer to the backbuffer (screen)
+        // since there is no ImGui viewport to display the texture.
+        if (isRuntimeMode && sceneRendered)
+        {
+            _postProcessor.BlitToScreen();
+        }
+
+        // If we are in Runtime mode AND the scene was rendered, we should NOT clear the screen
+        // in the UI pass, or we will overwrite the game view with a solid color.
+        bool shouldClearScreen = !isRuntimeMode || !sceneRendered;
+
+        RenderUIPass((int)windowWidth, (int)windowHeight, shouldClearScreen);
+
+        _viewportConfiguredThisFrame = false;
     }
 
     [Obsolete]
@@ -109,13 +140,23 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.Disable(EnableCap.FramebufferSrgb);
     }
 
-    private void RenderUIPass(int width, int height)
+    private void RenderUIPass(int width, int height, bool clearScreen)
     {
         // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
-        GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
-        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+        if (clearScreen)
+        {
+            GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
+            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        }
+        else
+        {
+            // If not clearing color, we typically don't need to clear depth for ImGui
+            // as it usually draws with depth test disabled anyway.
+        }
+
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
 
