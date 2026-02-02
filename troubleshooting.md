@@ -52,3 +52,68 @@ _resources.RenderQuad();
 GL.Enable(EnableCap.CullFace);
 GL.Enable(EnableCap.DepthTest);
 ```
+
+---
+
+## 🎮 2. Runtime Input & Logic Freeze
+
+**Problem:**
+In the exported game (Runtime), the game appears frozen on the first frame, or input (Mouse Look / WASD) does not work, despite working perfectly in the Editor's "Play Mode".
+
+**Observed Behavior:**
+
+- The game launches, but objects (e.g., falling physics bodies) stay suspended in mid-air.
+- The mouse cursor disappears (locks) correctly, but moving the mouse does not rotate the camera.
+- Keyboard input seems unresponsive.
+- Logs show initialization is successful, but scripts do not seem to execute.
+
+### 🩺 Symptoms
+
+- **🧊 Physics/Logic:** No movement, animations, or physics updates occur.
+- **🖱️ Mouse:** `Input.MouseDelta` returns `(0,0)` even when moving the mouse.
+- **📜 Scripts:** Custom scripts (like `PlayerController`) are not registered or running.
+
+### 🔍 Root Causes
+
+1. **Passive Engine Loop (Frozen Logic):** The base `Engine` class relied on the `Editor` to manually call `SceneManager.Update()`. In the Runtime, nothing was driving the scene logic.
+2. **Editor-Biased Input (Input Blocking):** The low-level `OpenTKGameWindow` calculated `MouseDelta` **only** when the Right Mouse Button was held (an Editor-specific behavior). This prevented scripts from receiving delta data in the Runtime where the mouse is locked but buttons aren't held.
+3. **Missing Script Discovery:** The Runtime lacked logic to search for and load the external `GameScripts.dll` at startup.
+
+### 💉 Solution
+
+**1. Auto-Update Default in Engine:**
+The `Engine` class must drive the update loop by default. The Editor explicitly disables this to handle its own Edit/Play state.
+
+```csharp
+// In Engine.cs
+protected bool AutoUpdateScene { get; set; } = true; // Default to true
+
+protected virtual void Update(float deltaTime)
+{
+    if (AutoUpdateScene)
+    {
+        SceneManager.Update(deltaTime);
+    }
+}
+```
+
+**2. Unconditional Input Calculation:**
+Input deltas must be calculated based on hardware events, not high-level logic. Scripts should filter input, not the windowing system.
+
+```csharp
+// In OpenTKGameWindow.cs -> OnMouseMove
+// Calculate delta regardless of button state
+var deltaX = currentPos.X - _lastMousePos.X;
+Input.SetMouseDelta(new Vector2(deltaX, deltaY));
+```
+
+**3. Automatic Runtime Script Loading:**
+The `Engine` constructor must assume it is in Runtime mode and attempt to load the game assembly.
+
+```csharp
+// In Engine.cs -> LoadRuntimeScripts()
+if (File.Exists("GameScripts.dll")) {
+    Assembly.LoadFrom("GameScripts.dll");
+    // Register components...
+}
+```
