@@ -202,6 +202,12 @@ public class SceneLoader
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
+        // Support the generic "Script" key where the actual type is defined in the properties
+        if (componentType == "Script" && properties is Dictionary<object, object> dict && dict.TryGetValue("Type", out var typeObj))
+        {
+            componentType = typeObj.ToString() ?? "";
+        }
+
         if (string.IsNullOrEmpty(componentType))
         {
             return;

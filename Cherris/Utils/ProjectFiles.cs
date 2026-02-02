@@ -6,18 +6,24 @@ public static class ProjectFiles
 
     public static string? Find(string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(relativePath) || string.IsNullOrWhiteSpace(ProjectRoot))
+        if (string.IsNullOrWhiteSpace(relativePath))
         {
             return null;
         }
 
-        string fullPath = Path.Combine(ProjectRoot, relativePath);
+        // Use ProjectRoot if set (Editor), otherwise default to the executable directory (Runtime)
+        string root = !string.IsNullOrWhiteSpace(ProjectRoot)
+            ? ProjectRoot
+            : AppContext.BaseDirectory;
+
+        string fullPath = Path.Combine(root, relativePath);
 
         if (File.Exists(fullPath))
         {
             return fullPath;
         }
 
+        // If the path has no extension, try to find a file with any extension (e.g. texture.png vs texture)
         if (!Path.HasExtension(fullPath))
         {
             string? directory = Path.GetDirectoryName(fullPath);
@@ -25,7 +31,7 @@ public static class ProjectFiles
 
             if (directory is not null && Directory.Exists(directory))
             {
-                var files = Directory.GetFiles(directory, $"{fileName}.*");
+                string[] files = Directory.GetFiles(directory, $"{fileName}.*");
                 if (files.Any())
                 {
                     return files[0];

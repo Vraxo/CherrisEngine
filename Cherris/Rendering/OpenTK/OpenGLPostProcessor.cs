@@ -220,8 +220,11 @@ internal sealed class OpenGLPostProcessor : IDisposable
                 .Build($"Bloom{i}");
         }
 
+        // Use Rgba8 instead of Srgb8Alpha8 to avoid implicit linear conversion when sampled by ImGui.
+        // This ensures the Editor viewport (Linear -> ImGui -> Screen) matches the Runtime (Linear -> Blit -> Screen).
+        // Note: This disables hardware gamma correction on write, so the output will be Linear (darker) unless manually corrected in shader.
         _compositeFbo = new FramebufferBuilder(_width, _height)
-            .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
+            .WithColorFormat(PixelInternalFormat.Rgba8, PixelType.UnsignedByte)
             .Build("Composite");
     }
 
