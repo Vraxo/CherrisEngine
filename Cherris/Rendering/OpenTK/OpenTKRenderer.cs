@@ -56,8 +56,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        // If SetViewportSize was not called this frame, we assume we are running in standalone/runtime mode
-        // and must use the full window size.
         bool isRuntimeMode = !_viewportConfiguredThisFrame;
 
         if (isRuntimeMode)
@@ -72,22 +70,17 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
         bool sceneRendered = false;
 
-        // Only render the scene if we have a valid camera
         if (mainCamera is not null)
         {
             RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure, isRuntimeMode);
             sceneRendered = true;
         }
 
-        // In Runtime mode, we must manually blit the offscreen buffer to the backbuffer (screen)
-        // since there is no ImGui viewport to display the texture.
         if (isRuntimeMode && sceneRendered)
         {
             _postProcessor.BlitToScreen();
         }
 
-        // If we are in Runtime mode AND the scene was rendered, we should NOT clear the screen
-        // in the UI pass, or we will overwrite the game view with a solid color.
         bool shouldClearScreen = !isRuntimeMode || !sceneRendered;
 
         RenderUIPass((int)windowWidth, (int)windowHeight, shouldClearScreen);
@@ -98,7 +91,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure, bool isRuntimeMode)
     {
-        // 1. Prepare Framebuffer & State
         GL.Enable(EnableCap.FramebufferSrgb);
         _postProcessor.BeginFrame();
 
@@ -107,7 +99,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.CullFace(CullFaceMode.Back);
         GL.Disable(EnableCap.Blend);
 
-        // 2. Calculate Matrices
         var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
         var projection = Matrix4.CreatePerspectiveFieldOfView(
             mainCamera.FieldOfView * (float)Math.PI / 180.0f,
@@ -115,13 +106,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
             mainCamera.NearClipPlane,
             mainCamera.FarClipPlane);
 
-        // 3. Render Passes
         if (skybox?.CubeMapTexture is not null)
         {
             _skyboxRenderer.Render(skybox, view, projection);
         }
 
-        // Only render debug visuals (Grid, Gizmos) if NOT in runtime mode
         if (!isRuntimeMode)
         {
             if (ShowGrid)
@@ -139,7 +128,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
             _debugRenderer.Render(view, projection);
         }
 
-        // 4. Post Processing
         _postProcessor.ResolveMsaa();
         _postProcessor.RenderBloom();
         _postProcessor.Composite(exposure);
@@ -149,7 +137,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
     private void RenderUIPass(int width, int height, bool clearScreen)
     {
-        // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
 
@@ -163,6 +150,10 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.Disable(EnableCap.CullFace);
 
         _imGuiController.Render();
+
+        // Defensive: reset clear color to prevent leakage to next frame
+        // ImGui or other external code may have modified GL state
+        GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     public void OnWindowResized() { }
