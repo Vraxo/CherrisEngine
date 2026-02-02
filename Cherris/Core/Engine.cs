@@ -5,6 +5,7 @@ using Cherris.Rendering.OpenTK;
 using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using System.Numerics;
+using System.Reflection;
 
 namespace Cherris.Core;
 
@@ -20,6 +21,10 @@ public abstract class Engine
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly IRenderingInterface _backend;
+
+    // Default to true so runtimes work out-of-the-box. 
+    // The Editor will set this to false to manage the update loop manually.
+    protected bool AutoUpdateScene { get; set; } = true;
 
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
@@ -77,6 +82,7 @@ public abstract class Engine
         _gameWindow.Resized += OnWindowResized;
 
         ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
+        LoadRuntimeScripts();
     }
 
     protected virtual void Update(float deltaTime)
@@ -94,6 +100,11 @@ public abstract class Engine
                 $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
                 $"Press F12 to toggle.");
         }
+
+        if (AutoUpdateScene)
+        {
+            SceneManager.Update(deltaTime);
+        }
     }
 
     protected virtual void OnStart() { }
@@ -108,6 +119,34 @@ public abstract class Engine
             GraphicsAPI.OpenTK => new OpenTKBackend(),
             _ => throw new ArgumentOutOfRangeException(nameof(api), api, null),
         };
+    }
+
+    private void LoadRuntimeScripts()
+    {
+        string dllPath = Path.Combine(AppContext.BaseDirectory, "GameScripts.dll");
+        if (!File.Exists(dllPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Assembly asm = Assembly.LoadFrom(dllPath);
+            var scriptTypes = asm.GetTypes().Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
+            int count = 0;
+
+            foreach (var type in scriptTypes)
+            {
+                SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
+                count++;
+            }
+
+            Logger.Info($"[Engine] Automatically loaded {count} scripts from GameScripts.dll");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Engine] Failed to load runtime scripts: {ex.Message}");
+        }
     }
 
     public void Run()

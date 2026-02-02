@@ -28,6 +28,8 @@ public class Editor : Engine
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
+        AutoUpdateScene = false; // Editor handles scene updates manually (Edit/Play/Pause)
+
         Exposure = 0.5f;
         _sceneSerializer = new SceneSerializer();
         ProjectManager = new ProjectManager();

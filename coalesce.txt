@@ -4886,6 +4886,12 @@ public class SceneLoader
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
+        // Support the generic "Script" key where the actual type is defined in the properties
+        if (componentType == "Script" && properties is Dictionary<object, object> dict && dict.TryGetValue("Type", out var typeObj))
+        {
+            componentType = typeObj.ToString() ?? "";
+        }
+
         if (string.IsNullOrEmpty(componentType))
         {
             return;
@@ -5343,18 +5349,24 @@ public static class ProjectFiles
 
     public static string? Find(string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(relativePath) || string.IsNullOrWhiteSpace(ProjectRoot))
+        if (string.IsNullOrWhiteSpace(relativePath))
         {
             return null;
         }
 
-        string fullPath = Path.Combine(ProjectRoot, relativePath);
+        // Use ProjectRoot if set (Editor), otherwise default to the executable directory (Runtime)
+        string root = !string.IsNullOrWhiteSpace(ProjectRoot)
+            ? ProjectRoot
+            : AppContext.BaseDirectory;
+
+        string fullPath = Path.Combine(root, relativePath);
 
         if (File.Exists(fullPath))
         {
             return fullPath;
         }
 
+        // If the path has no extension, try to find a file with any extension (e.g. texture.png vs texture)
         if (!Path.HasExtension(fullPath))
         {
             string? directory = Path.GetDirectoryName(fullPath);
@@ -5362,7 +5374,7 @@ public static class ProjectFiles
 
             if (directory is not null && Directory.Exists(directory))
             {
-                var files = Directory.GetFiles(directory, $"{fileName}.*");
+                string[] files = Directory.GetFiles(directory, $"{fileName}.*");
                 if (files.Any())
                 {
                     return files[0];
@@ -6792,6 +6804,19 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Enable(EnableCap.CullFace);
     }
 
+    public void BlitToScreen()
+    {
+        if (_compositeFbo == null)
+        {
+            return;
+        }
+
+        // Blit from Composite FBO to Default Framebuffer (0)
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _compositeFbo.Handle);
+        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+    }
+
     private void PerformBrightPass()
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);
@@ -6863,8 +6888,11 @@ internal sealed class OpenGLPostProcessor : IDisposable
                 .Build($"Bloom{i}");
         }
 
+        // Use Rgba8 instead of Srgb8Alpha8 to avoid implicit linear conversion when sampled by ImGui.
+        // This ensures the Editor viewport (Linear -> ImGui -> Screen) matches the Runtime (Linear -> Blit -> Screen).
+        // Note: This disables hardware gamma correction on write, so the output will be Linear (darker) unless manually corrected in shader.
         _compositeFbo = new FramebufferBuilder(_width, _height)
-            .WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
+            .WithColorFormat(PixelInternalFormat.Rgba8, PixelType.UnsignedByte)
             .Build("Composite");
     }
 
@@ -7613,6 +7641,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLGridRenderer _gridRenderer;
 
     private Vector2i _viewportSize = new(1, 1);
+    private bool _viewportConfiguredThisFrame;
 
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
@@ -7644,23 +7673,53 @@ public class OpenTKRenderer : IRenderer, IDisposable
             _viewportSize = newSize;
             _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
         }
+        _viewportConfiguredThisFrame = true;
     }
 
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
-        bool isViewportValid = _viewportSize.X > 1 && _viewportSize.Y > 1;
+        // If SetViewportSize was not called this frame, we assume we are running in standalone/runtime mode
+        // and must use the full window size.
+        bool isRuntimeMode = !_viewportConfiguredThisFrame;
 
-        if (mainCamera is not null && isViewportValid)
+        if (isRuntimeMode)
         {
-            RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
+            var newSize = new Vector2i((int)Math.Max(windowWidth, 1), (int)Math.Max(windowHeight, 1));
+            if (_viewportSize != newSize)
+            {
+                _viewportSize = newSize;
+                _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
+            }
         }
 
-        RenderUIPass((int)windowWidth, (int)windowHeight);
+        bool sceneRendered = false;
+
+        // Only render the scene if we have a valid camera
+        if (mainCamera is not null)
+        {
+            RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure, isRuntimeMode);
+            sceneRendered = true;
+        }
+
+        // In Runtime mode, we must manually blit the offscreen buffer to the backbuffer (screen)
+        // since there is no ImGui viewport to display the texture.
+        if (isRuntimeMode && sceneRendered)
+        {
+            _postProcessor.BlitToScreen();
+        }
+
+        // If we are in Runtime mode AND the scene was rendered, we should NOT clear the screen
+        // in the UI pass, or we will overwrite the game view with a solid color.
+        bool shouldClearScreen = !isRuntimeMode || !sceneRendered;
+
+        RenderUIPass((int)windowWidth, (int)windowHeight, shouldClearScreen);
+
+        _viewportConfiguredThisFrame = false;
     }
 
     [Obsolete]
-    private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure)
+    private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure, bool isRuntimeMode)
     {
         // 1. Prepare Framebuffer & State
         GL.Enable(EnableCap.FramebufferSrgb);
@@ -7685,16 +7744,23 @@ public class OpenTKRenderer : IRenderer, IDisposable
             _skyboxRenderer.Render(skybox, view, projection);
         }
 
-        if (ShowGrid)
+        // Only render debug visuals (Grid, Gizmos) if NOT in runtime mode
+        if (!isRuntimeMode)
         {
-            var cameraPos = view.Inverted().Row3.Xyz;
-            _gridRenderer.Render(view, projection, cameraPos);
+            if (ShowGrid)
+            {
+                var cameraPos = view.Inverted().Row3.Xyz;
+                _gridRenderer.Render(view, projection, cameraPos);
+            }
         }
 
         _sceneRenderer.Render(gameObjects, lights, view, projection);
 
-        _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
-        _debugRenderer.Render(view, projection);
+        if (!isRuntimeMode)
+        {
+            _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
+            _debugRenderer.Render(view, projection);
+        }
 
         // 4. Post Processing
         _postProcessor.ResolveMsaa();
@@ -7704,13 +7770,18 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.Disable(EnableCap.FramebufferSrgb);
     }
 
-    private void RenderUIPass(int width, int height)
+    private void RenderUIPass(int width, int height, bool clearScreen)
     {
         // Reset state for UI rendering
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
-        GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
-        GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+        if (clearScreen)
+        {
+            GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
+            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        }
+
         GL.Disable(EnableCap.DepthTest);
         GL.Disable(EnableCap.CullFace);
 
@@ -12793,98 +12864,6 @@ public class HistoryManager
         _undoStack.Clear();
         _redoStack.Clear();
         OnHistoryChanged?.Invoke();
-    }
-}
-```
-
----
-
-### `CherrisEditor\Assets\Scripts\PlayerController.cs`
-
-```csharp
-using Cherris;
-using Cherris.Components;
-using System;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class PlayerController : Script
-{
-    public float Speed { get; set; } = 3.0f;
-    public float MouseSensitivity { get; set; } = 0.0015f;
-
-    private float _yaw;
-    private float _pitch;
-
-    public override void Update(float deltaTime)
-    {
-        // --- Mouse Look ---
-        Vector2 mouseDelta = Input.MouseDelta;
-        _yaw -= mouseDelta.X * MouseSensitivity;
-        _pitch -= mouseDelta.Y * MouseSensitivity;
-
-        // Clamp the pitch to prevent the camera from flipping upside down
-        _pitch = Math.Clamp(_pitch, -MathF.PI / 2.0f + 0.001f, MathF.PI / 2.0f - 0.001f);
-
-        // Update rotation from yaw and pitch using the standard engine function
-        GameObject.Transform.Rotation = Quaternion.CreateFromYawPitchRoll(_yaw, _pitch, 0);
-
-        // --- Keyboard Movement ---
-        Vector3 moveDirection = Vector3.Zero;
-
-        if (Input.IsKeyDown(Key.W))
-        {
-            moveDirection -= Vector3.UnitZ;
-        }
-        if (Input.IsKeyDown(Key.S))
-        {
-            moveDirection += Vector3.UnitZ;
-        }
-        if (Input.IsKeyDown(Key.A))
-        {
-            moveDirection -= Vector3.UnitX;
-        }
-        if (Input.IsKeyDown(Key.D))
-        {
-            moveDirection += Vector3.UnitX;
-        }
-
-        if (moveDirection != Vector3.Zero)
-        {
-            moveDirection = Vector3.Normalize(moveDirection);
-
-            // Create a rotation that only includes the horizontal (yaw) component.
-            var yawRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw);
-
-            // Transform the local direction vector by the horizontal-only rotation.
-            Vector3 worldDirection = Vector3.Transform(moveDirection, yawRotation);
-            GameObject.Transform.Position += worldDirection * Speed * deltaTime;
-        }
-    }
-}
-```
-
----
-
-### `CherrisEditor\Assets\Scripts\Spinner.cs`
-
-```csharp
-using Cherris;
-using Cherris.Components;
-using System.Numerics;
-
-namespace Apexverse;
-
-public class Spinner : Script
-{
-    private float _totalTime;
-
-    public override void Update(float deltaTime)
-    {
-        _totalTime += deltaTime;
-        GameObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _totalTime) *
-                                           Quaternion.CreateFromAxisAngle(Vector3.UnitX, _totalTime * 0.7f);
     }
 }
 ```

@@ -101,18 +101,27 @@ public class OpenTKGameWindow : IGameWindow
         _imGuiController?.MouseMove(currentPos);
         Input.SetMousePosition(new System.Numerics.Vector2(currentPos.X, currentPos.Y));
 
-        if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
+        // If ImGui wants the mouse, we suppress input unless the mouse is locked for gameplay.
+        // In locked mode, we prioritize the game receiving raw deltas (e.g. for camera control).
+        bool mouseLocked = Input.IsMouseLocked;
+
+        if (!mouseLocked && ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
             _lastMousePos = currentPos;
             return;
         }
 
+        // Always calculate delta. Scripts/Controllers are responsible for deciding when to use it
+        // (e.g., checking for Right Mouse Button or IsMouseLocked).
+        var deltaX = currentPos.X - _lastMousePos.X;
+        var deltaY = currentPos.Y - _lastMousePos.Y;
+        var delta = new System.Numerics.Vector2(deltaX, deltaY);
+        Input.SetMouseDelta(delta);
+
         if (Input.IsMouseButtonDown(MouseButton.Right))
         {
-            var deltaX = currentPos.X - _lastMousePos.X;
-            var deltaY = currentPos.Y - _lastMousePos.Y;
-            var delta = new System.Numerics.Vector2(deltaX, deltaY);
-            Input.SetMouseDelta(delta);
+            // Optional: You could still have special handling here if needed, 
+            // but the general delta is now set above.
         }
 
         _lastMousePos = currentPos;
