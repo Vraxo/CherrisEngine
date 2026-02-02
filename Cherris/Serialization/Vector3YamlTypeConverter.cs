@@ -4,7 +4,7 @@ using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class Vector3YamlTypeConverter : IYamlTypeConverter
 {
@@ -19,9 +19,9 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         // We are expecting a sequence (e.g., [x, y, z])
         parser.Consume<SequenceStart>();
 
-        var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var z = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float z = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
 
         parser.Consume<SequenceEnd>();
 
@@ -31,7 +31,7 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
     // The nestedObjectSerializer parameter is required by the interface, even if unused here.
     public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
     {
-        var vector = (Vector3)value;
+        Vector3 vector = (Vector3)value;
         emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow));
         emitter.Emit(new Scalar(vector.X.ToString(CultureInfo.InvariantCulture)));
         emitter.Emit(new Scalar(vector.Y.ToString(CultureInfo.InvariantCulture)));

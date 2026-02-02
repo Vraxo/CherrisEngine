@@ -30,8 +30,7 @@ public static class GameBuilder
         {
             try
             {
-                // Step 1: Publish the runtime with the custom assembly name
-                // We assume the runtime project is where we expect it relative to the editor
+                // Step 1: Publish the runtime
                 if (!PublishRuntime(outputDir, gameName))
                 {
                     Logger.Error("[GameBuilder] Build aborted due to Runtime publish failure.");
@@ -91,15 +90,12 @@ public static class GameBuilder
         string originalContent = File.ReadAllText(runtimeProjPath);
         string modifiedContent = originalContent;
 
-        // Inject AssemblyName into the project file temporarily.
-        // We look for the first PropertyGroup to inject the name.
         if (!originalContent.Contains("<AssemblyName>"))
         {
             modifiedContent = originalContent.Replace("<PropertyGroup>", $"<PropertyGroup>\n    <AssemblyName>{gameName}</AssemblyName>");
         }
         else
         {
-            // If it already exists (unlikely given our codebase), regex replace it
             modifiedContent = Regex.Replace(originalContent, @"<AssemblyName>.*?</AssemblyName>", $"<AssemblyName>{gameName}</AssemblyName>");
         }
 
@@ -107,7 +103,6 @@ public static class GameBuilder
         {
             File.WriteAllText(runtimeProjPath, modifiedContent);
 
-            // Publish WITHOUT the global /p flag, relying on the project file modification
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
@@ -136,7 +131,6 @@ public static class GameBuilder
         }
         finally
         {
-            // Always restore the project file, even if the build fails
             File.WriteAllText(runtimeProjPath, originalContent);
         }
     }
@@ -144,10 +138,6 @@ public static class GameBuilder
     private static void CleanupBuildArtifacts(string outputDir, string gameName)
     {
         Logger.Info("[GameBuilder] Step 2/5: Cleaning up editor artifacts...");
-
-        // We clean up files that shouldn't be there.
-        // Note: CherrisRuntime.dll is now named {gameName}.dll by the build process itself.
-        // We must be careful not to delete the game executable.
 
         string[] filesToDelete =
         {
@@ -182,6 +172,7 @@ public static class GameBuilder
     private static bool CompileScripts(Project project, string outputDir)
     {
         Logger.Info("[GameBuilder] Step 3/5: Compiling Game Scripts...");
+        // Scripts DLL must remain in root for the engine to load it
         string dllPath = Path.Combine(outputDir, "GameScripts.dll");
         return ScriptCompiler.CompileToFile(project.RootPath, dllPath);
     }
@@ -205,7 +196,10 @@ public static class GameBuilder
 
     private static void CopyProjectContent(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 5/5: Copying Project Content...");
+        Logger.Info("[GameBuilder] Step 5/5: Copying Project Content to Assets/...");
+
+        string assetsDir = Path.Combine(outputDir, "Assets");
+        Directory.CreateDirectory(assetsDir);
 
         var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -215,6 +209,12 @@ public static class GameBuilder
         var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ".csproj", ".sln", ".pdb", ".user", ".cs"
+        };
+
+        // Explicitly exclude project.yaml as it is copied to Root separately
+        var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "project.yaml"
         };
 
         string fullOutputDir = Path.GetFullPath(outputDir);
@@ -231,7 +231,13 @@ public static class GameBuilder
                     continue;
                 }
 
+                if (excludedFiles.Contains(Path.GetFileName(file)))
+                {
+                    continue;
+                }
+
                 string destFile = Path.Combine(dest, Path.GetFileName(file));
+
                 if (File.Exists(destFile))
                 {
                     continue;
@@ -249,6 +255,7 @@ public static class GameBuilder
                 }
 
                 string fullSubPath = Path.GetFullPath(subDir);
+
                 if (fullOutputDir.StartsWith(fullSubPath, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -258,12 +265,12 @@ public static class GameBuilder
             }
         }
 
-        CopyRecursive(fullProjectRoot, outputDir);
+        CopyRecursive(fullProjectRoot, assetsDir);
     }
 
     private static void CopyConfigFile(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Finalizing...");
+        Logger.Info("[GameBuilder] Finalizing configuration...");
         string destPath = Path.Combine(outputDir, "project.yaml");
         File.Copy(project.ConfigPath, destPath, true);
     }

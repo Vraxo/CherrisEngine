@@ -2,6 +2,7 @@
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
+using CherrisEditor.Build;
 
 namespace CherrisEditor.Core;
 

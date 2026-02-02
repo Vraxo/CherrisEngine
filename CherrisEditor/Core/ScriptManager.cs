@@ -1,6 +1,7 @@
 ﻿using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
+using CherrisEditor.Build;
 using System.Reflection;
 using System.Runtime.Loader;
 

@@ -4725,6 +4725,7 @@ using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
+using Cherris.Utils;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
@@ -4760,7 +4761,10 @@ public class SceneLoader
 
     public List<GameObject> LoadPrefab(string filePath)
     {
-        var input = new StringReader(File.ReadAllText(filePath));
+        // Resolve path to handle Runtime "Assets/" redirection
+        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
+
+        var input = new StringReader(File.ReadAllText(resolvedPath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
@@ -4836,7 +4840,10 @@ public class SceneLoader
 
     public List<GameObject> LoadScene(string filePath)
     {
-        var input = new StringReader(File.ReadAllText(filePath));
+        // Resolve path to handle Runtime "Assets/" redirection
+        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
+
+        var input = new StringReader(File.ReadAllText(resolvedPath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
@@ -5191,7 +5198,7 @@ using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class Vector2YamlTypeConverter : IYamlTypeConverter
 {
@@ -5203,15 +5210,15 @@ public class Vector2YamlTypeConverter : IYamlTypeConverter
     public object ReadYaml(IParser parser, Type type, ObjectDeserializer nestedObjectDeserializer)
     {
         parser.Consume<SequenceStart>();
-        var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
         parser.Consume<SequenceEnd>();
         return new Vector2(x, y);
     }
 
     public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
     {
-        var vector = (Vector2)value;
+        Vector2 vector = (Vector2)value;
         emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow));
         emitter.Emit(new Scalar(vector.X.ToString(CultureInfo.InvariantCulture)));
         emitter.Emit(new Scalar(vector.Y.ToString(CultureInfo.InvariantCulture)));
@@ -5231,7 +5238,7 @@ using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
 
-namespace Cherris;
+namespace Cherris.Serialization;
 
 public class Vector3YamlTypeConverter : IYamlTypeConverter
 {
@@ -5246,9 +5253,9 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
         // We are expecting a sequence (e.g., [x, y, z])
         parser.Consume<SequenceStart>();
 
-        var x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
-        var z = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float x = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float y = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
+        float z = float.Parse(parser.Consume<Scalar>().Value, CultureInfo.InvariantCulture);
 
         parser.Consume<SequenceEnd>();
 
@@ -5258,7 +5265,7 @@ public class Vector3YamlTypeConverter : IYamlTypeConverter
     // The nestedObjectSerializer parameter is required by the interface, even if unused here.
     public void WriteYaml(IEmitter emitter, object value, Type type, ObjectSerializer nestedObjectSerializer)
     {
-        var vector = (Vector3)value;
+        Vector3 vector = (Vector3)value;
         emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow));
         emitter.Emit(new Scalar(vector.X.ToString(CultureInfo.InvariantCulture)));
         emitter.Emit(new Scalar(vector.Y.ToString(CultureInfo.InvariantCulture)));
@@ -5386,26 +5393,52 @@ public static class ProjectFiles
 {
     public static string? ProjectRoot { get; set; }
 
-    public static string? Find(string relativePath)
+    public static string? Find(string path)
     {
-        if (string.IsNullOrWhiteSpace(relativePath))
+        if (string.IsNullOrWhiteSpace(path))
         {
             return null;
         }
 
-        // Use ProjectRoot if set (Editor), otherwise default to the executable directory (Runtime)
+        // 1. If path is absolute and exists, return it.
+        if (Path.IsPathRooted(path) && File.Exists(path))
+        {
+            return path;
+        }
+
+        // 2. If path is absolute but missing, try to make it relative to the BaseDirectory.
+        //    This handles cases where the Runtime naively constructs paths like "BaseDir/Scenes/Scene.yaml"
+        //    but the file is actually in "BaseDir/Assets/Scenes/Scene.yaml".
+        string searchPath = path;
+        if (Path.IsPathRooted(path))
+        {
+            string baseDir = AppContext.BaseDirectory;
+            if (path.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+            {
+                // Strip the base directory to get the relative part
+                searchPath = path[baseDir.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            else
+            {
+                // If it's absolute but not inside BaseDirectory, we can't easily fix it. 
+                // Return null to indicate failure.
+                return null;
+            }
+        }
+
+        // 3. Resolve using the correct Content Root (Editor Project Root or Runtime Assets/)
         string root = !string.IsNullOrWhiteSpace(ProjectRoot)
             ? ProjectRoot
-            : AppContext.BaseDirectory;
+            : GetRuntimeContentRoot();
 
-        string fullPath = Path.Combine(root, relativePath);
+        string fullPath = Path.Combine(root, searchPath);
 
         if (File.Exists(fullPath))
         {
             return fullPath;
         }
 
-        // If the path has no extension, try to find a file with any extension (e.g. texture.png vs texture)
+        // 4. Fuzzy search (extensions) if exact match failed
         if (!Path.HasExtension(fullPath))
         {
             string? directory = Path.GetDirectoryName(fullPath);
@@ -5422,6 +5455,16 @@ public static class ProjectFiles
         }
 
         return null;
+    }
+
+    private static string GetRuntimeContentRoot()
+    {
+        // Check for "Assets" folder next to the executable
+        string assetsPath = Path.Combine(AppContext.BaseDirectory, "Assets");
+
+        return Directory.Exists(assetsPath)
+            ? assetsPath
+            : AppContext.BaseDirectory;
     }
 }
 ```
@@ -9647,6 +9690,7 @@ public class {scriptName} : Script
 using Cherris.Core.Logging;
 using NativeFileDialogNET;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace CherrisEditor.Build;
 
@@ -9669,22 +9713,31 @@ public static class GameBuilder
         Logger.Info($"[GameBuilder] Starting build process...");
         Logger.Info($"[GameBuilder] Output Directory: {outputDir}");
 
+        string gameName = SanitizeGameName(project.Name);
+
         await Task.Run(() =>
         {
             try
             {
-                if (!PublishRuntime(outputDir))
+                // Step 1: Publish the runtime
+                if (!PublishRuntime(outputDir, gameName))
                 {
                     Logger.Error("[GameBuilder] Build aborted due to Runtime publish failure.");
                     return;
                 }
 
+                // Step 2: Clean up editor-only files
+                CleanupBuildArtifacts(outputDir, gameName);
+
+                // Step 3: Compile game scripts
                 if (!CompileScripts(project, outputDir))
                 {
                     Logger.Error("[GameBuilder] Build aborted due to Script compilation failure.");
                     return;
                 }
 
+                // Step 4: Copy assets
+                CopyEngineResources(outputDir);
                 CopyProjectContent(project, outputDir);
                 CopyConfigFile(project, outputDir);
 
@@ -9700,7 +9753,13 @@ public static class GameBuilder
         });
     }
 
-    private static bool PublishRuntime(string outputDir)
+    private static string SanitizeGameName(string name)
+    {
+        string cleanName = Regex.Replace(name, @"[^a-zA-Z0-9_]", "");
+        return string.IsNullOrEmpty(cleanName) ? "Game" : cleanName;
+    }
+
+    private static bool PublishRuntime(string outputDir, string gameName)
     {
         string runtimeProjPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../CherrisRuntime/CherrisRuntime.csproj"));
 
@@ -9715,45 +9774,121 @@ public static class GameBuilder
             return false;
         }
 
-        Logger.Info("[GameBuilder] Step 1/4: Publishing Runtime...");
+        Logger.Info($"[GameBuilder] Step 1/5: Publishing Runtime as '{gameName}.exe'...");
 
-        var startInfo = new ProcessStartInfo
+        string originalContent = File.ReadAllText(runtimeProjPath);
+        string modifiedContent = originalContent;
+
+        if (!originalContent.Contains("<AssemblyName>"))
         {
-            FileName = "dotnet",
-            Arguments = $"publish \"{runtimeProjPath}\" -c Release -o \"{outputDir}\" --self-contained false",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = new Process { StartInfo = startInfo };
-
-        process.OutputDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Info($"[DotNet] {e.Data}"); } };
-        process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Warning($"[DotNet] {e.Data}"); } };
-
-        if (!process.Start())
+            modifiedContent = originalContent.Replace("<PropertyGroup>", $"<PropertyGroup>\n    <AssemblyName>{gameName}</AssemblyName>");
+        }
+        else
         {
-            return false;
+            modifiedContent = Regex.Replace(originalContent, @"<AssemblyName>.*?</AssemblyName>", $"<AssemblyName>{gameName}</AssemblyName>");
         }
 
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        process.WaitForExit();
+        try
+        {
+            File.WriteAllText(runtimeProjPath, modifiedContent);
 
-        return process.ExitCode == 0;
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"publish \"{runtimeProjPath}\" -c Release -o \"{outputDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = startInfo };
+
+            process.OutputDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Info($"[DotNet] {e.Data}"); } };
+            process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Warning($"[DotNet] {e.Data}"); } };
+
+            if (!process.Start())
+            {
+                return false;
+            }
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            process.WaitForExit();
+
+            return process.ExitCode == 0;
+        }
+        finally
+        {
+            File.WriteAllText(runtimeProjPath, originalContent);
+        }
+    }
+
+    private static void CleanupBuildArtifacts(string outputDir, string gameName)
+    {
+        Logger.Info("[GameBuilder] Step 2/5: Cleaning up editor artifacts...");
+
+        string[] filesToDelete =
+        {
+            "CherrisEditor.exe",
+            "CherrisEditor.dll",
+            "CherrisEditor.pdb",
+            "CherrisEditor.runtimeconfig.json",
+            "ImGuizmo.NET.dll",
+            "NativeFileDialogNET.dll",
+            "Microsoft.CodeAnalysis.dll",
+            "Microsoft.CodeAnalysis.CSharp.dll",
+            "Microsoft.CodeAnalysis.VisualBasic.dll"
+        };
+
+        foreach (var file in filesToDelete)
+        {
+            string path = Path.Combine(outputDir, file);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    File.Delete(path);
+                }
+                catch
+                {
+                    Logger.Warning($"[GameBuilder] Failed to delete artifact: {file}");
+                }
+            }
+        }
     }
 
     private static bool CompileScripts(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 2/4: Compiling Game Scripts...");
+        Logger.Info("[GameBuilder] Step 3/5: Compiling Game Scripts...");
+        // Scripts DLL must remain in root for the engine to load it
         string dllPath = Path.Combine(outputDir, "GameScripts.dll");
         return ScriptCompiler.CompileToFile(project.RootPath, dllPath);
     }
 
+    private static void CopyEngineResources(string outputDir)
+    {
+        Logger.Info("[GameBuilder] Step 4/5: Copying Engine Resources...");
+
+        string sourceDir = Path.Combine(AppContext.BaseDirectory, "EditorResources");
+        string destDir = Path.Combine(outputDir, "EditorResources");
+
+        if (Directory.Exists(sourceDir))
+        {
+            CopyDirectoryRecursively(sourceDir, destDir);
+        }
+        else
+        {
+            Logger.Warning("[GameBuilder] 'EditorResources' folder not found in Editor directory. Runtime visuals might fail.");
+        }
+    }
+
     private static void CopyProjectContent(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 3/4: Copying Project Content...");
+        Logger.Info("[GameBuilder] Step 5/5: Copying Project Content to Assets/...");
+
+        string assetsDir = Path.Combine(outputDir, "Assets");
+        Directory.CreateDirectory(assetsDir);
 
         var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -9763,6 +9898,12 @@ public static class GameBuilder
         var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ".csproj", ".sln", ".pdb", ".user", ".cs"
+        };
+
+        // Explicitly exclude project.yaml as it is copied to Root separately
+        var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "project.yaml"
         };
 
         string fullOutputDir = Path.GetFullPath(outputDir);
@@ -9779,7 +9920,13 @@ public static class GameBuilder
                     continue;
                 }
 
+                if (excludedFiles.Contains(Path.GetFileName(file)))
+                {
+                    continue;
+                }
+
                 string destFile = Path.Combine(dest, Path.GetFileName(file));
+
                 if (File.Exists(destFile))
                 {
                     continue;
@@ -9807,14 +9954,29 @@ public static class GameBuilder
             }
         }
 
-        CopyRecursive(fullProjectRoot, outputDir);
+        CopyRecursive(fullProjectRoot, assetsDir);
     }
 
     private static void CopyConfigFile(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 4/4: Copying Configuration...");
+        Logger.Info("[GameBuilder] Finalizing configuration...");
         string destPath = Path.Combine(outputDir, "project.yaml");
         File.Copy(project.ConfigPath, destPath, true);
+    }
+
+    private static void CopyDirectoryRecursively(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), true);
+        }
+
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            CopyDirectoryRecursively(subDir, Path.Combine(destDir, Path.GetFileName(subDir)));
+        }
     }
 }
 ```
@@ -10083,6 +10245,7 @@ using Cherris;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
+using CherrisEditor.Build;
 
 namespace CherrisEditor.Core;
 
@@ -10178,6 +10341,7 @@ public class SceneOperations
 using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
+using CherrisEditor.Build;
 using System.Reflection;
 using System.Runtime.Loader;
 

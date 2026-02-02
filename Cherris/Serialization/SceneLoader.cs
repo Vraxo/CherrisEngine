@@ -2,6 +2,7 @@
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
+using Cherris.Utils;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
@@ -37,7 +38,10 @@ public class SceneLoader
 
     public List<GameObject> LoadPrefab(string filePath)
     {
-        var input = new StringReader(File.ReadAllText(filePath));
+        // Resolve path to handle Runtime "Assets/" redirection
+        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
+
+        var input = new StringReader(File.ReadAllText(resolvedPath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
@@ -113,7 +117,10 @@ public class SceneLoader
 
     public List<GameObject> LoadScene(string filePath)
     {
-        var input = new StringReader(File.ReadAllText(filePath));
+        // Resolve path to handle Runtime "Assets/" redirection
+        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
+
+        var input = new StringReader(File.ReadAllText(resolvedPath));
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
 
         if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
