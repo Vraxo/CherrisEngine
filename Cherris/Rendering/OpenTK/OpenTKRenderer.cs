@@ -75,7 +75,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         // Only render the scene if we have a valid camera
         if (mainCamera is not null)
         {
-            RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure);
+            RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure, isRuntimeMode);
             sceneRendered = true;
         }
 
@@ -96,7 +96,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     }
 
     [Obsolete]
-    private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure)
+    private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure, bool isRuntimeMode)
     {
         // 1. Prepare Framebuffer & State
         GL.Enable(EnableCap.FramebufferSrgb);
@@ -121,16 +121,23 @@ public class OpenTKRenderer : IRenderer, IDisposable
             _skyboxRenderer.Render(skybox, view, projection);
         }
 
-        if (ShowGrid)
+        // Only render debug visuals (Grid, Gizmos) if NOT in runtime mode
+        if (!isRuntimeMode)
         {
-            var cameraPos = view.Inverted().Row3.Xyz;
-            _gridRenderer.Render(view, projection, cameraPos);
+            if (ShowGrid)
+            {
+                var cameraPos = view.Inverted().Row3.Xyz;
+                _gridRenderer.Render(view, projection, cameraPos);
+            }
         }
 
         _sceneRenderer.Render(gameObjects, lights, view, projection);
 
-        _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
-        _debugRenderer.Render(view, projection);
+        if (!isRuntimeMode)
+        {
+            _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
+            _debugRenderer.Render(view, projection);
+        }
 
         // 4. Post Processing
         _postProcessor.ResolveMsaa();
@@ -150,11 +157,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
         {
             GL.ClearColor(0.1f, 0.105f, 0.11f, 1.00f);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        }
-        else
-        {
-            // If not clearing color, we typically don't need to clear depth for ImGui
-            // as it usually draws with depth test disabled anyway.
         }
 
         GL.Disable(EnableCap.DepthTest);
