@@ -212,7 +212,12 @@ public class Editor : Engine
         ScriptManager.AvailableScriptTypes.Clear();
 
         IEnumerable<Type> scriptTypes = typeof(Script).Assembly.GetTypes()
-            .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(Script) && t != typeof(EditorController));
+            .Where(t =>
+            {
+                return typeof(Script).IsAssignableFrom(t)
+                    && !t.IsAbstract && t != typeof(Script)
+                    && t != typeof(EditorController);
+            });
 
         foreach (Type type in scriptTypes)
         {

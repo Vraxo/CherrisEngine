@@ -65,6 +65,7 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo.Handle);
         GL.Viewport(0, 0, _width, _height);
+        GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
     }
 
@@ -109,11 +110,11 @@ internal sealed class OpenGLPostProcessor : IDisposable
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _compositeFbo.Handle);
         GL.Viewport(0, 0, _width, _height);
+        GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         GL.Clear(ClearBufferMask.ColorBufferBit);
 
         _compositeShader.Use();
 
-        // Pass 1: Draw Scene
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _resolvedFbo!.ColorTexture);
         GL.Uniform1(_compositeShader.GetUniformLocation("image"), 0);
@@ -121,7 +122,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
         GL.Uniform1(_compositeShader.GetUniformLocation("isBloomPass"), 0);
         DrawQuad();
 
-        // Pass 2: Add Bloom
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
 
@@ -143,7 +143,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
             return;
         }
 
-        // Blit from Composite FBO to Default Framebuffer (0)
         GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _compositeFbo.Handle);
         GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
         GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
@@ -153,6 +152,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
     {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[0]!.Handle);
         GL.Viewport(0, 0, Math.Max(1, _width / 2), Math.Max(1, _height / 2));
+        GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        GL.Clear(ClearBufferMask.ColorBufferBit);
 
         _brightPassShader.Use();
         GL.ActiveTexture(TextureUnit.Texture0);
@@ -174,13 +175,14 @@ internal sealed class OpenGLPostProcessor : IDisposable
             int sourceIdx = horizontal ? 0 : 1;
             int targetIdx = horizontal ? 1 : 0;
 
-            // First iteration reads from Bloom0 (result of bright pass)
             if (i == 0)
             {
                 sourceIdx = 0;
             }
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFbos[targetIdx]!.Handle);
+            GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            GL.Clear(ClearBufferMask.ColorBufferBit);
             GL.Uniform1(horizontalLoc, horizontal ? 1 : 0);
 
             GL.ActiveTexture(TextureUnit.Texture0);
@@ -210,7 +212,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
             .WithColorFormat(PixelInternalFormat.Rgba16f, PixelType.Float)
             .Build("Resolved");
 
-        // Bloom buffers are half size
         for (int i = 0; i < 2; i++)
         {
             _bloomFbos[i] = new FramebufferBuilder(_width, _height)
@@ -220,9 +221,6 @@ internal sealed class OpenGLPostProcessor : IDisposable
                 .Build($"Bloom{i}");
         }
 
-        // Use Rgba8 instead of Srgb8Alpha8 to avoid implicit linear conversion when sampled by ImGui.
-        // This ensures the Editor viewport (Linear -> ImGui -> Screen) matches the Runtime (Linear -> Blit -> Screen).
-        // Note: This disables hardware gamma correction on write, so the output will be Linear (darker) unless manually corrected in shader.
         _compositeFbo = new FramebufferBuilder(_width, _height)
             .WithColorFormat(PixelInternalFormat.Rgba8, PixelType.UnsignedByte)
             .Build("Composite");

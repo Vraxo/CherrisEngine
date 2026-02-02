@@ -1177,6 +1177,7 @@ using Cherris.Rendering.OpenTK;
 using Cherris.RenderingInterface;
 using Cherris.Serialization;
 using System.Numerics;
+using System.Reflection;
 
 namespace Cherris.Core;
 
@@ -1192,6 +1193,10 @@ public abstract class Engine
 
     protected GameObject? SelectedGameObject { get; set; }
     protected readonly IRenderingInterface _backend;
+
+    // Default to true so runtimes work out-of-the-box. 
+    // The Editor will set this to false to manage the update loop manually.
+    protected bool AutoUpdateScene { get; set; } = true;
 
     private readonly IGameWindow _gameWindow;
     private readonly GameLoop _gameLoop;
@@ -1249,6 +1254,7 @@ public abstract class Engine
         _gameWindow.Resized += OnWindowResized;
 
         ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
+        LoadRuntimeScripts();
     }
 
     protected virtual void Update(float deltaTime)
@@ -1266,6 +1272,11 @@ public abstract class Engine
                 $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
                 $"Press F12 to toggle.");
         }
+
+        if (AutoUpdateScene)
+        {
+            SceneManager.Update(deltaTime);
+        }
     }
 
     protected virtual void OnStart() { }
@@ -1280,6 +1291,34 @@ public abstract class Engine
             GraphicsAPI.OpenTK => new OpenTKBackend(),
             _ => throw new ArgumentOutOfRangeException(nameof(api), api, null),
         };
+    }
+
+    private void LoadRuntimeScripts()
+    {
+        string dllPath = Path.Combine(AppContext.BaseDirectory, "GameScripts.dll");
+        if (!File.Exists(dllPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Assembly asm = Assembly.LoadFrom(dllPath);
+            var scriptTypes = asm.GetTypes().Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
+            int count = 0;
+
+            foreach (var type in scriptTypes)
+            {
+                SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
+                count++;
+            }
+
+            Logger.Info($"[Engine] Automatically loaded {count} scripts from GameScripts.dll");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Engine] Failed to load runtime scripts: {ex.Message}");
+        }
     }
 
     public void Run()
@@ -5481,6 +5520,465 @@ public class Spinner : Script
 
 ---
 
+### `Cherris\Assets\Shaders\debug.frag`
+
+```
+#version 330 core
+in vec3 f_color;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(f_color, 1.0);
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\debug.vert`
+
+```
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aColor;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 f_color;
+
+void main()
+{
+    gl_Position = projection * view * vec4(aPosition, 1.0);
+    f_color = aColor;
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\post_blur.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec2 TexCoords;
+uniform sampler2D image;
+uniform bool horizontal;
+
+// 5-tap Gaussian blur (Veldrid equivalent)
+const float weights[3] = float[](0.227027, 0.316216, 0.070270);
+const float offsets[3] = float[](0.0, 1.384615, 3.230769);
+
+void main()
+{
+    vec2 texelSize = 1.0 / textureSize(image, 0);
+    vec3 result = texture(image, TexCoords).rgb * weights[0];
+    vec2 dir = horizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
+
+    for (int i = 1; i < 3; i++) {
+        result += texture(image, TexCoords + offsets[i] * dir).rgb * weights[i];
+        result += texture(image, TexCoords - offsets[i] * dir).rgb * weights[i];
+    }
+    FragColor = vec4(result, 1.0);
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\post_brightpass.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec2 TexCoords;
+uniform sampler2D image;
+const float threshold = 1.1;
+void main()
+{
+    vec3 color = texture(image, TexCoords).rgb;
+    vec3 finalColor = max(vec3(0.0), color - threshold);
+    FragColor = vec4(finalColor, 1.0);
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\post_composite.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec2 TexCoords;
+uniform sampler2D image;
+uniform float exposure;
+uniform bool isBloomPass;
+
+vec3 tonemap_reinhard(vec3 color) {
+    return color / (color + vec3(1.0));
+}
+
+void main()
+{
+    vec3 color = texture(image, TexCoords).rgb;
+    if (!isBloomPass) { // This is the main scene pass
+        color *= exposure;
+        color = tonemap_reinhard(color);
+    }
+    // else, this is the bloom pass, so we output the raw color for additive blending.
+    
+    FragColor = vec4(color, 1.0);
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\post_quad.vert`
+
+```
+#version 330 core
+layout (location = 0) in vec2 aPosition;
+layout (location = 1) in vec2 aTexCoords;
+out vec2 TexCoords;
+void main()
+{
+    TexCoords = aTexCoords;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\scene.frag`
+
+```
+#version 330 core
+#define MAX_POINT_LIGHTS 4
+#define MAX_SPOT_LIGHTS 4
+
+in vec4 fsin_Color;
+in vec2 fsin_TexCoord;
+in vec3 FragPos;
+in vec3 Normal;
+
+struct Material {
+    sampler2D texture_diffuse;
+    float shininess;
+    float specularIntensity;
+};
+
+struct DirLight {
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float ambientStrength;
+};
+
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float intensity;
+    float range;
+};
+
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float range;
+    float innerCutOff;
+    float outerCutOff;
+};
+
+out vec4 FragColor;
+
+// --- Uniforms ---
+uniform vec3 uViewPos;
+uniform vec3 uEmissive;
+
+uniform Material uMaterial;
+uniform DirLight uDirLight;
+uniform bool uHasDirLight;
+
+uniform PointLight uPointLights[MAX_POINT_LIGHTS];
+uniform int uNumPointLights;
+
+uniform SpotLight uSpotLights[MAX_SPOT_LIGHTS];
+uniform int uNumSpotLights;
+
+
+// --- Function Declarations ---
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo);
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+
+void main()
+{
+    vec3 albedo = texture(uMaterial.texture_diffuse, fsin_TexCoord).rgb * fsin_Color.rgb;
+    vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(uViewPos - FragPos);
+
+    // Start with the ambient term, which acts as a base light level.
+    vec3 finalColor = vec3(0.0);
+    if(uHasDirLight) {
+        finalColor = uDirLight.ambientStrength * uDirLight.color * uDirLight.intensity * albedo;
+    }
+
+    // Additively blend the diffuse and specular contributions of each light.
+    if(uHasDirLight) {
+        finalColor += CalcDirLight(uDirLight, norm, viewDir, albedo);
+    }
+
+    for(int i = 0; i < uNumPointLights; i++) {
+        finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
+    }
+
+    for(int i = 0; i < uNumSpotLights; i++) {
+        finalColor += CalcSpotLight(uSpotLights[i], norm, FragPos, viewDir, albedo);
+    }
+
+    // If there are no lights at all, render with the base texture color.
+    if (!uHasDirLight && uNumPointLights == 0 && uNumSpotLights == 0) {
+        finalColor = albedo;
+    }
+
+    // Finally, add any emissive color.
+    finalColor += uEmissive;
+
+    FragColor = vec4(finalColor, texture(uMaterial.texture_diffuse, fsin_TexCoord).a * fsin_Color.a);
+}
+
+// Calculates only the diffuse and specular parts of a directional light.
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.direction);
+    
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color * light.intensity;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
+
+    return (diffuse * albedo) + specular;
+}
+
+// Calculates the diffuse and specular parts of a point light, including attenuation.
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
+
+    // Attenuation based on range
+    float distance = length(light.position - fragPos);
+    // Use a squared falloff for a more natural look (bright center, fades quickly at the edge)
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
+    
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff;
+
+    return lightContribution;
+}
+
+// Calculates the diffuse and specular parts of a spot light.
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Spotlight intensity (cone)
+    float theta = dot(lightDir, normalize(-light.direction));
+    float epsilon = light.innerCutOff - light.outerCutOff;
+    float spotIntensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
+    if (spotIntensity <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Attenuation (range)
+    float distance = length(light.position - fragPos);
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
+    if (falloff <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
+
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff * spotIntensity;
+
+    return lightContribution;
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\scene.vert`
+
+```
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec4 aColor;
+layout (location = 3) in vec2 aTexCoord;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+uniform vec2 uTiling;
+
+out vec3 FragPos;
+out vec3 Normal;
+out vec4 fsin_Color;
+out vec2 fsin_TexCoord;
+
+void main()
+{
+    FragPos = vec3(model * vec4(aPosition, 1.0));
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+    
+    gl_Position = projection * view * vec4(FragPos, 1.0);
+    fsin_Color = aColor;
+    fsin_TexCoord = aTexCoord * uTiling;
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\skybox.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec3 TexCoords;
+uniform samplerCube skybox;
+
+void main()
+{    
+    FragColor = texture(skybox, TexCoords);
+}
+```
+
+---
+
+### `Cherris\Assets\Shaders\skybox.vert`
+
+```
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+
+out vec3 TexCoords;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+void main()
+{
+    TexCoords = aPosition;
+    vec4 pos = projection * view * vec4(aPosition, 1.0);
+    gl_Position = pos.xyww;
+}```
+
+**MODIFIED** `Cherris\Rendering\OpenTK\OpenGLDebugRenderer.cs` � Loads shaders from external files.
+```csharp
+using Cherris;
+using OpenTK.Graphics.OpenGL4;
+using OpenTK.Mathematics;
+
+namespace Cherris.OpenTK;
+
+internal struct DebugVertex
+{
+    public Vector3 Position;
+    public Vector3 Color;
+    public static readonly int Size = Vector3.SizeInBytes * 2;
+}
+
+internal class OpenGLDebugRenderer : IDisposable
+{
+    private readonly ShaderProgram _shader;
+    private readonly int _viewLocation, _projectionLocation;
+    private readonly List<DebugVertex> _vertices = new();
+    private readonly int _vao;
+    private readonly int _vbo;
+
+    public OpenGLDebugRenderer()
+    {
+        _shader = ShaderProgram.FromFiles("Shaders/debug.vert", "Shaders/debug.frag");
+        _viewLocation = _shader.GetUniformLocation("view");
+        _projectionLocation = _shader.GetUniformLocation("projection");
+
+        _vao = GL.GenVertexArray();
+        _vbo = GL.GenBuffer();
+
+        GL.BindVertexArray(_vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+        // Position
+        GL.EnableVertexAttribArray(0);
+        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, 0);
+        // Color
+        GL.EnableVertexAttribArray(1);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, Vector3.SizeInBytes);
+        GL.BindVertexArray(0);
+    }
+
+    public void AddLine(System.Numerics.Vector3 start, System.Numerics.Vector3 end, System.Numerics.Vector3 color)
+    {
+        _vertices.Add(new DebugVertex { Position = ToOpenTKVector(start), Color = ToOpenTKVector(color) });
+        _vertices.Add(new DebugVertex { Position = ToOpenTKVector(end), Color = ToOpenTKVector(color) });
+    }
+
+    public void Clear()
+    {
+        _vertices.Clear();
+    }
+
+    public void Render(Matrix4 view, Matrix4 projection)
+    {
+        if (_vertices.Count == 0) return;
+
+        _shader.Use();
+        GL.UniformMatrix4(_viewLocation, false, ref view);
+        GL.UniformMatrix4(_projectionLocation, false, ref projection);
+
+        GL.BindVertexArray(_vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, _vertices.Count * DebugVertex.Size, _vertices.ToArray(), BufferUsageHint.DynamicDraw);
+
+        GL.Disable(EnableCap.DepthTest);
+        GL.DrawArrays(PrimitiveType.Lines, 0, _vertices.Count);
+        GL.Enable(EnableCap.DepthTest);
+
+        GL.BindVertexArray(0);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+    }
+
+    private static Vector3 ToOpenTKVector(System.Numerics.Vector3 v)
+    {
+        return new Vector3(v.X, v.Y, v.Z);
+    }
+
+    public void Dispose()
+    {
+        _shader?.Dispose();
+        GL.DeleteVertexArray(_vao);
+        GL.DeleteBuffer(_vbo);
+    }
+}
+```
+
+---
+
 ### `Cherris\Core\Logging\Logger.cs`
 
 ```csharp
@@ -7480,18 +7978,27 @@ public class OpenTKGameWindow : IGameWindow
         _imGuiController?.MouseMove(currentPos);
         Input.SetMousePosition(new System.Numerics.Vector2(currentPos.X, currentPos.Y));
 
-        if (ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
+        // If ImGui wants the mouse, we suppress input unless the mouse is locked for gameplay.
+        // In locked mode, we prioritize the game receiving raw deltas (e.g. for camera control).
+        bool mouseLocked = Input.IsMouseLocked;
+
+        if (!mouseLocked && ImGui.GetIO().WantCaptureMouse && !Input.IsMouseButtonDown(MouseButton.Right))
         {
             _lastMousePos = currentPos;
             return;
         }
 
+        // Always calculate delta. Scripts/Controllers are responsible for deciding when to use it
+        // (e.g., checking for Right Mouse Button or IsMouseLocked).
+        var deltaX = currentPos.X - _lastMousePos.X;
+        var deltaY = currentPos.Y - _lastMousePos.Y;
+        var delta = new System.Numerics.Vector2(deltaX, deltaY);
+        Input.SetMouseDelta(delta);
+
         if (Input.IsMouseButtonDown(MouseButton.Right))
         {
-            var deltaX = currentPos.X - _lastMousePos.X;
-            var deltaY = currentPos.Y - _lastMousePos.Y;
-            var delta = new System.Numerics.Vector2(deltaX, deltaY);
-            Input.SetMouseDelta(delta);
+            // Optional: You could still have special handling here if needed, 
+            // but the general delta is now set above.
         }
 
         _lastMousePos = currentPos;
@@ -8467,6 +8974,8 @@ public class Editor : Engine
 
     public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
     {
+        AutoUpdateScene = false; // Editor handles scene updates manually (Edit/Play/Pause)
+
         Exposure = 0.5f;
         _sceneSerializer = new SceneSerializer();
         ProjectManager = new ProjectManager();
@@ -8649,7 +9158,12 @@ public class Editor : Engine
         ScriptManager.AvailableScriptTypes.Clear();
 
         IEnumerable<Type> scriptTypes = typeof(Script).Assembly.GetTypes()
-            .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract && t != typeof(Script) && t != typeof(EditorController));
+            .Where(t =>
+            {
+                return typeof(Script).IsAssignableFrom(t)
+                    && !t.IsAbstract && t != typeof(Script)
+                    && t != typeof(EditorController);
+            });
 
         foreach (Type type in scriptTypes)
         {
@@ -12865,6 +13379,457 @@ public class HistoryManager
         _redoStack.Clear();
         OnHistoryChanged?.Invoke();
     }
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\debug.frag`
+
+```
+#version 410 core
+in vec3 f_color;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(f_color, 1.0);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\debug.vert`
+
+```
+#version 410 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aColor;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 f_color;
+
+void main()
+{
+    gl_Position = projection * view * vec4(aPosition, 1.0);
+    f_color = aColor;
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\grid.frag`
+
+```
+#version 410 core
+in vec3 vWorldPos;
+in vec3 vToCamera;
+
+out vec4 FragColor;
+
+void main()
+{
+    float dist = length(vToCamera);
+    
+    float spacing = 1.0;
+    if (dist > 200.0) spacing = 10.0;
+    else if (dist > 50.0) spacing = 5.0;
+
+    vec2 coord = vWorldPos.xz / spacing;
+    
+    vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+    float line = min(grid.x, grid.y);
+    
+    vec2 coord_major = vWorldPos.xz / (spacing * 10.0);
+    vec2 grid_major = abs(fract(coord_major - 0.5) - 0.5) / fwidth(coord_major);
+    float line_major = min(grid_major.x, grid_major.y);
+    
+    float axis_width = 1.5;
+    vec2 axis_d = fwidth(vWorldPos.xz);
+    float x_axis_alpha = smoothstep(axis_width * axis_d.y, 0.0, abs(vWorldPos.z));
+    float z_axis_alpha = smoothstep(axis_width * axis_d.x, 0.0, abs(vWorldPos.x));
+    float axes_alpha = max(x_axis_alpha, z_axis_alpha);
+    
+    float fade_start = 250.0;
+    float fade_end = 350.0;
+    float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
+    
+    float grid_alpha = 1.0 - min(line, 1.0);
+    float grid_major_alpha = 1.0 - min(line_major, 1.0);
+    
+    float final_alpha = (max(grid_alpha, axes_alpha) + grid_major_alpha) * fade;
+    
+    if (final_alpha < 0.01)
+        discard;
+    
+    vec3 color = vec3(0.3);
+    color = mix(color, vec3(0.4), grid_major_alpha);
+    color = mix(color, vec3(0.8, 0.2, 0.2), x_axis_alpha);
+    color = mix(color, vec3(0.2, 0.3, 0.8), z_axis_alpha);
+
+    FragColor = vec4(color, final_alpha);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\grid.vert`
+
+```
+#version 410 core
+layout (location = 0) in vec3 aPosition;
+
+uniform mat4 view;
+uniform mat4 projection;
+uniform vec3 uCameraPos;
+
+out vec3 vWorldPos;
+out vec3 vToCamera;
+
+void main()
+{
+    vWorldPos = aPosition;
+    vToCamera = uCameraPos - vWorldPos;
+    gl_Position = projection * view * vec4(aPosition, 1.0);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\post_blur.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec2 TexCoords;
+uniform sampler2D image;
+uniform bool horizontal;
+
+// 5-tap Gaussian blur (Veldrid equivalent)
+const float weights[3] = float[](0.227027, 0.316216, 0.070270);
+const float offsets[3] = float[](0.0, 1.384615, 3.230769);
+
+void main()
+{
+    vec2 texelSize = 1.0 / textureSize(image, 0);
+    vec3 result = texture(image, TexCoords).rgb * weights[0];
+    vec2 dir = horizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
+
+    for (int i = 1; i < 3; i++) {
+        result += texture(image, TexCoords + offsets[i] * dir).rgb * weights[i];
+        result += texture(image, TexCoords - offsets[i] * dir).rgb * weights[i];
+    }
+    FragColor = vec4(result, 1.0);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\post_brightpass.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec2 TexCoords;
+uniform sampler2D image;
+const float threshold = 1.1;
+void main()
+{
+    vec3 color = texture(image, TexCoords).rgb;
+    vec3 finalColor = max(vec3(0.0), color - threshold);
+    FragColor = vec4(finalColor, 1.0);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\post_composite.frag`
+
+```
+#version 330 core
+out vec4 FragColor;
+in vec2 TexCoords;
+uniform sampler2D image;
+uniform float exposure;
+uniform bool isBloomPass;
+
+vec3 tonemap_reinhard(vec3 color) {
+    return color / (color + vec3(1.0));
+}
+
+void main()
+{
+    vec3 color = texture(image, TexCoords).rgb;
+    if (!isBloomPass) { // This is the main scene pass
+        color *= exposure;
+        color = tonemap_reinhard(color);
+    }
+    // else, this is the bloom pass, so we output the raw color for additive blending.
+    
+    FragColor = vec4(color, 1.0);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\post_quad.vert`
+
+```
+#version 330 core
+layout (location = 0) in vec2 aPosition;
+layout (location = 1) in vec2 aTexCoords;
+out vec2 TexCoords;
+void main()
+{
+    TexCoords = aTexCoords;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\scene.frag`
+
+```
+#version 330 core
+#define MAX_POINT_LIGHTS 4
+#define MAX_SPOT_LIGHTS 4
+
+in vec4 fsin_Color;
+in vec2 fsin_TexCoord;
+in vec3 FragPos;
+in vec3 Normal;
+
+struct Material {
+    sampler2D texture_diffuse;
+    float shininess;
+    float specularIntensity;
+};
+
+struct DirLight {
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float ambientStrength;
+};
+
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float intensity;
+    float range;
+};
+
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float range;
+    float innerCutOff;
+    float outerCutOff;
+};
+
+out vec4 FragColor;
+
+// --- Uniforms ---
+uniform vec3 uViewPos;
+uniform vec3 uEmissive;
+
+uniform Material uMaterial;
+uniform DirLight uDirLight;
+uniform bool uHasDirLight;
+
+uniform PointLight uPointLights[MAX_POINT_LIGHTS];
+uniform int uNumPointLights;
+
+uniform SpotLight uSpotLights[MAX_SPOT_LIGHTS];
+uniform int uNumSpotLights;
+
+
+// --- Function Declarations ---
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo);
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo);
+
+void main()
+{
+    vec3 albedo = texture(uMaterial.texture_diffuse, fsin_TexCoord).rgb * fsin_Color.rgb;
+    vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(uViewPos - FragPos);
+
+    // Start with the ambient term, which acts as a base light level.
+    vec3 finalColor = vec3(0.0);
+    if(uHasDirLight) {
+        finalColor = uDirLight.ambientStrength * uDirLight.color * uDirLight.intensity * albedo;
+    }
+
+    // Additively blend the diffuse and specular contributions of each light.
+    if(uHasDirLight) {
+        finalColor += CalcDirLight(uDirLight, norm, viewDir, albedo);
+    }
+
+    for(int i = 0; i < uNumPointLights; i++) {
+        finalColor += CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo);
+    }
+
+    for(int i = 0; i < uNumSpotLights; i++) {
+        finalColor += CalcSpotLight(uSpotLights[i], norm, FragPos, viewDir, albedo);
+    }
+
+    // If there are no lights at all, render with the base texture color.
+    if (!uHasDirLight && uNumPointLights == 0 && uNumSpotLights == 0) {
+        finalColor = albedo;
+    }
+
+    // Finally, add any emissive color.
+    finalColor += uEmissive;
+
+    FragColor = vec4(finalColor, texture(uMaterial.texture_diffuse, fsin_TexCoord).a * fsin_Color.a);
+}
+
+// Calculates only the diffuse and specular parts of a directional light.
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.direction);
+    
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color * light.intensity;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color * light.intensity;
+
+    return (diffuse * albedo) + specular;
+}
+
+// Calculates the diffuse and specular parts of a point light, including attenuation.
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
+
+    // Attenuation based on range
+    float distance = length(light.position - fragPos);
+    // Use a squared falloff for a more natural look (bright center, fades quickly at the edge)
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
+    
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff;
+
+    return lightContribution;
+}
+
+// Calculates the diffuse and specular parts of a spot light.
+vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    // Spotlight intensity (cone)
+    float theta = dot(lightDir, normalize(-light.direction));
+    float epsilon = light.innerCutOff - light.outerCutOff;
+    float spotIntensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
+    if (spotIntensity <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Attenuation (range)
+    float distance = length(light.position - fragPos);
+    float falloff = pow(clamp(1.0 - (distance / light.range), 0.0, 1.0), 2.0);
+    if (falloff <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Diffuse
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    // Specular
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), uMaterial.shininess);
+    vec3 specular = uMaterial.specularIntensity * spec * light.color;
+
+    vec3 lightContribution = (diffuse * albedo + specular) * light.intensity * falloff * spotIntensity;
+
+    return lightContribution;
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\scene.vert`
+
+```
+#version 330 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec4 aColor;
+layout (location = 3) in vec2 aTexCoord;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+uniform vec2 uTiling;
+
+out vec3 FragPos;
+out vec3 Normal;
+out vec4 fsin_Color;
+out vec2 fsin_TexCoord;
+
+void main()
+{
+    FragPos = vec3(model * vec4(aPosition, 1.0));
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+    
+    gl_Position = projection * view * vec4(FragPos, 1.0);
+    fsin_Color = aColor;
+    fsin_TexCoord = aTexCoord * uTiling;
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\skybox.frag`
+
+```
+#version 410 core
+in vec3 TexCoords;
+out vec4 FragColor;
+
+uniform samplerCube skybox;
+
+void main()
+{    
+    FragColor = texture(skybox, TexCoords);
+}
+```
+
+---
+
+### `CherrisEditor\EditorResources\Shaders\skybox.vert`
+
+```
+#version 410 core
+layout (location = 0) in vec3 aPosition;
+
+out vec3 TexCoords;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+void main()
+{
+    TexCoords = aPosition;
+    vec4 pos = projection * view * vec4(aPosition, 1.0);
+    gl_Position = pos.xyww;
 }
 ```
 

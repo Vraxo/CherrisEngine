@@ -18,6 +18,8 @@ includeExtensions:
   - .css
   - .js
   - .ts
+  - .frag
+  - .vert
 excludeExtensions: []
 excludeDirectoryNames:
   - bin
