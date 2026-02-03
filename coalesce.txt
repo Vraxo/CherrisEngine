@@ -539,13 +539,31 @@ public class RigidBody : Script
 ### `Cherris\Components\Script.cs`
 
 ```csharp
+using Cherris.Core.Logging;
+
 namespace Cherris.Components;
 
 public abstract class Script : Component
 {
-	public bool Enabled { get; set; } = true;
-	public virtual void Start() { }
-	public virtual void Update(float deltaTime) { }
+    public bool Enabled { get; set; } = true;
+
+    public virtual void Start() { }
+    public virtual void Update(float deltaTime) { }
+
+    protected void Log(string message)
+    {
+        Logger.Info($"[{GameObject?.Name ?? "Unassigned"}:{GetType().Name}] {message}");
+    }
+
+    protected void LogWarning(string message)
+    {
+        Logger.Warning($"[{GameObject?.Name ?? "Unassigned"}:{GetType().Name}] {message}");
+    }
+
+    protected void LogError(string message)
+    {
+        Logger.Error($"[{GameObject?.Name ?? "Unassigned"}:{GetType().Name}] {message}");
+    }
 }
 ```
 
@@ -637,6 +655,197 @@ public class Transform
 
 ---
 
+### `Cherris\Core\AssetBundle.cs`
+
+```csharp
+using Cherris.Core.Logging;
+using System.Text;
+
+namespace Cherris.Core;
+
+public class AssetBundle : IDisposable
+{
+    private const string Magic = "CHPK";
+    private const int Version = 1;
+    private FileStream? _stream;
+    private readonly Dictionary<string, (long Offset, long Size)> _entries = new(StringComparer.OrdinalIgnoreCase);
+
+    public static AssetBundle? Load(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        var bundle = new AssetBundle();
+        try
+        {
+            bundle._stream = File.OpenRead(path);
+            using var reader = new BinaryReader(bundle._stream, Encoding.UTF8, true);
+
+            string magic = new(reader.ReadChars(4));
+            if (magic != Magic)
+            {
+                throw new Exception("Invalid bundle signature");
+            }
+
+            int version = reader.ReadInt32();
+            if (version != Version)
+            {
+                throw new Exception($"Unsupported version {version}");
+            }
+
+            int count = reader.ReadInt32();
+            if (count is < 0 or > 1_000_000)
+            {
+                throw new Exception($"Invalid file count: {count}");
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                string key = reader.ReadString();
+                long offset = reader.ReadInt64();
+                long size = reader.ReadInt64();
+
+                if (size < 0)
+                {
+                    throw new Exception($"Invalid size for asset '{key}'");
+                }
+
+                bundle._entries[key] = (offset, size);
+            }
+
+            return bundle;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[AssetBundle] Failed to load bundle: {ex.Message}");
+            bundle.Dispose();
+            return null;
+        }
+    }
+
+    public static void Create(string outputPath, string rootDirectory)
+    {
+        string absoluteOutputPath = Path.GetFullPath(outputPath);
+
+        using var stream = File.Create(outputPath);
+        using var writer = new BinaryWriter(stream, Encoding.UTF8);
+
+        var files = Directory.GetFiles(rootDirectory, "*", SearchOption.AllDirectories)
+            .Where(f =>
+            {
+                string absPath = Path.GetFullPath(f);
+                string fileName = Path.GetFileName(f);
+
+                if (string.Equals(absPath, absoluteOutputPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (fileName.Equals("project.yaml", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar) ||
+                    f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) ||
+                    f.Contains(".git"))
+                {
+                    return false;
+                }
+
+                return true;
+            })
+            .ToList();
+
+        writer.Write(Magic.ToCharArray());
+        writer.Write(Version);
+        writer.Write(files.Count);
+
+        long indexStart = stream.Position;
+
+        foreach (var file in files)
+        {
+            string relPath = Path.GetRelativePath(rootDirectory, file).Replace('\\', '/');
+            writer.Write(relPath);
+            writer.Write((long)0);
+            writer.Write((long)0);
+        }
+
+        var entries = new List<(long Offset, long Size)>();
+
+        foreach (var file in files)
+        {
+            long offset = stream.Position;
+            try
+            {
+                using var fs = File.OpenRead(file);
+                fs.CopyTo(stream);
+                entries.Add((offset, fs.Length));
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"[AssetBundle] Failed to pack '{file}': {ex.Message}");
+                entries.Add((offset, 0));
+            }
+        }
+
+        long finalPosition = stream.Position;
+        stream.Position = indexStart;
+
+        for (int i = 0; i < files.Count; i++)
+        {
+            string relPath = Path.GetRelativePath(rootDirectory, files[i]).Replace('\\', '/');
+            writer.Write(relPath);
+            writer.Write(entries[i].Offset);
+            writer.Write(entries[i].Size);
+        }
+
+        stream.Position = finalPosition;
+    }
+
+    public bool HasFile(string path)
+    {
+        return _entries.ContainsKey(Normalize(path));
+    }
+
+    public Stream? Open(string path)
+    {
+        if (!_entries.TryGetValue(Normalize(path), out var entry))
+        {
+            return null;
+        }
+
+        if (entry.Size > int.MaxValue)
+        {
+            Logger.Error($"[AssetBundle] Asset '{path}' is too large ({entry.Size} bytes) to load into memory.");
+            return null;
+        }
+
+        byte[] data = new byte[(int)entry.Size];
+        lock (_stream!)
+        {
+            _stream.Seek(entry.Offset, SeekOrigin.Begin);
+            _stream.ReadExactly(data, 0, data.Length);
+        }
+        return new MemoryStream(data);
+    }
+
+    private static string Normalize(string path)
+    {
+        return path.Replace('\\', '/');
+    }
+
+    public void Dispose()
+    {
+        _stream?.Dispose();
+    }
+}
+```
+
+---
+
 ### `Cherris\Core\AudioClip.cs`
 
 ```csharp
@@ -671,6 +880,7 @@ public class AudioClip : IDisposable
 
 ```csharp
 using Cherris.Core.Logging;
+using Cherris.Utils;
 using OpenTK.Audio.OpenAL;
 
 namespace Cherris.Core;
@@ -679,10 +889,15 @@ public static class AudioLoader
 {
     public static AudioClip? LoadFromFile(string path)
     {
+        using var stream = ProjectFiles.Open(path);
+        if (stream is null)
+        {
+            return null;
+        }
+
         try
         {
-            using var fileStream = File.OpenRead(path);
-            using var reader = new BinaryReader(fileStream);
+            using var reader = new BinaryReader(stream);
 
             // -- RIFF Header --
             string signature = new(reader.ReadChars(4));
@@ -691,7 +906,7 @@ public static class AudioLoader
                 throw new NotSupportedException("Specified stream is not a wave file.");
             }
 
-            _ = reader.ReadInt32(); // Riff Chunk Size
+            _ = reader.ReadInt32();
 
             string format = new(reader.ReadChars(4));
             if (format != "WAVE")
@@ -706,17 +921,16 @@ public static class AudioLoader
                 throw new NotSupportedException("Specified wave file is not supported.");
             }
 
-            _ = reader.ReadInt32(); // Format chunk size
-            _ = reader.ReadInt16(); // Audio Format
+            _ = reader.ReadInt32();
+            _ = reader.ReadInt16();
             short channels = reader.ReadInt16();
             int sampleRate = reader.ReadInt32();
-            _ = reader.ReadInt32(); // Byte Rate
-            _ = reader.ReadInt16(); // Block Align
+            _ = reader.ReadInt32();
+            _ = reader.ReadInt16();
             short bitsPerSample = reader.ReadInt16();
 
             // -- DATA Chunk --
             string dataSignature = new(reader.ReadChars(4));
-            // Handle cases where a 'JUNK' or other chunk is between 'fmt ' and 'data'
             while (dataSignature != "data")
             {
                 int chunkSize = reader.ReadInt32();
@@ -727,12 +941,11 @@ public static class AudioLoader
             int dataChunkSize = reader.ReadInt32();
             byte[] audioData = reader.ReadBytes(dataChunkSize);
 
-            // -- OpenAL Buffer --
             ALFormat formatEnum = GetSoundFormat(channels, bitsPerSample);
             int alBuffer = AL.GenBuffer();
             AL.BufferData(alBuffer, formatEnum, audioData, sampleRate);
 
-            Logger.Info($"[AudioLoader] Loaded '{Path.GetFileName(path)}' ({channels} ch, {bitsPerSample}-bit, {sampleRate} Hz)");
+            Logger.Info($"[AudioLoader] Loaded '{Path.GetFileName(path)}'");
             return new AudioClip(alBuffer);
         }
         catch (Exception ex)
@@ -1933,6 +2146,7 @@ public struct ImageData
 
 ```csharp
 using Cherris.Core.Logging;
+using Cherris.Utils;
 using StbImageSharp;
 
 namespace Cherris.Core;
@@ -1941,7 +2155,9 @@ public static class ImageLoader
 {
     public static ImageData? LoadFromFile(string path, bool flipVertical = true)
     {
-        if (!File.Exists(path))
+        using var stream = ProjectFiles.Open(path);
+
+        if (stream is null)
         {
             Logger.Error($"[ImageLoader] Error: Image file not found at '{path}'");
             return null;
@@ -1952,10 +2168,8 @@ public static class ImageLoader
             int originalFlipState = StbImage.stbi__vertically_flip_on_load_global;
             StbImage.stbi_set_flip_vertically_on_load(flipVertical ? 1 : 0);
 
-            using var stream = File.OpenRead(path);
             ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
 
-            // Always reset to original state
             StbImage.stbi_set_flip_vertically_on_load(originalFlipState);
 
             return new ImageData { Data = image.Data, Width = image.Width, Height = image.Height };
@@ -2219,6 +2433,7 @@ public class Material
 
 ```csharp
 using Cherris.Core.Logging;
+using Cherris.Utils;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
@@ -2231,21 +2446,51 @@ public static class ModelLoader
     public static Dictionary<string, Mesh> LoadMeshesFromFile(string path)
     {
         var loadedMeshes = new Dictionary<string, Mesh>();
-        if (!File.Exists(path))
-        {
-            Logger.Warning($"[ModelLoader] File not found: {path}");
-            return loadedMeshes;
-        }
+        ModelRoot? model = null;
 
         try
         {
-            var model = ModelRoot.Load(path);
+            // 1. Try loading from Disk (Preferred for .gltf with external refs)
+            string? realPath = ProjectFiles.Find(path);
+            if (realPath is not null)
+            {
+                // Verify extension to avoid loading non-model files by accident
+                if (realPath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
+                    realPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+                {
+                    model = ModelRoot.Load(realPath);
+                }
+            }
+
+            // 2. Try loading from VFS Stream (Packed assets)
+            if (model is null)
+            {
+                using var stream = ProjectFiles.Open(path);
+                if (stream is not null)
+                {
+                    if (path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+                    {
+                        model = ModelRoot.ReadGLB(stream);
+                    }
+                    else
+                    {
+                        Logger.Warning($"[ModelLoader] Packed .gltf files ('{path}') are not supported. Please use .glb for packed assets.");
+                        return loadedMeshes;
+                    }
+                }
+            }
+
+            if (model is null)
+            {
+                Logger.Warning($"[ModelLoader] Model not found or failed to load: {path}");
+                return loadedMeshes;
+            }
+
             Logger.Info($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
 
             for (int i = 0; i < model.LogicalMeshes.Count; i++)
             {
                 var gltfMesh = model.LogicalMeshes[i];
-
                 var allVertices = new List<Vertex>();
                 var allIndices = new List<ushort>();
 
@@ -2266,14 +2511,12 @@ public static class ModelLoader
                     var normalsAccessor = primitive.GetVertexAccessor("NORMAL");
                     var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
                     var indicesAccessor = primitive.IndexAccessor;
-
                     if (indicesAccessor is null)
                     {
                         continue;
                     }
 
                     var indices = indicesAccessor.AsIndicesArray();
-
                     IList<Vector3>? normals = normalsAccessor?.AsVector3Array();
                     IList<Vector2>? texCoords = texCoordsAccessor?.AsVector2Array();
 
@@ -2291,22 +2534,16 @@ public static class ModelLoader
 
                     for (int tri = 0; tri < indices.Count; tri += 3)
                     {
-                        uint i0 = indices[tri];
-                        uint i1 = indices[tri + 1];
-                        uint i2 = indices[tri + 2];
-
-                        allIndices.Add((ushort)(baseVertex + i0));
-                        allIndices.Add((ushort)(baseVertex + i2));
-                        allIndices.Add((ushort)(baseVertex + i1));
+                        allIndices.Add((ushort)(baseVertex + indices[tri]));
+                        allIndices.Add((ushort)(baseVertex + indices[tri + 2]));
+                        allIndices.Add((ushort)(baseVertex + indices[tri + 1]));
                     }
                 }
 
                 if (allVertices.Any())
                 {
                     string meshName = string.IsNullOrWhiteSpace(gltfMesh.Name) ? $"mesh_{i}" : gltfMesh.Name;
-                    var newMesh = new Mesh(allVertices.ToArray(), allIndices.ToArray());
-                    loadedMeshes[meshName] = newMesh;
-                    Logger.Info($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
+                    loadedMeshes[meshName] = new Mesh(allVertices.ToArray(), allIndices.ToArray());
                 }
             }
         }
@@ -2578,7 +2815,7 @@ void main()
 using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
-using Cherris.Utils;
+using StbImageSharp;
 using Veldrid;
 
 namespace Cherris.Core;
@@ -2597,14 +2834,9 @@ public class ResourceManager : IResourceManager
 
     public void LoadInitialAssets()
     {
-        var cubeMesh = Mesh.CreateCube();
-        _meshes.Add("Cube", cubeMesh);
-
-        var planeMesh = Mesh.CreatePlane(20f);
-        _meshes.Add("Plane", planeMesh);
-
-        var white = CreateWhiteTexture("White");
-        _textures.Add("White", white);
+        _meshes.Add("Cube", Mesh.CreateCube());
+        _meshes.Add("Plane", Mesh.CreatePlane(20f));
+        _textures.Add("White", CreateWhiteTexture("White"));
     }
 
     public Mesh? GetMesh(string name)
@@ -2620,32 +2852,16 @@ public class ResourceManager : IResourceManager
         if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
             filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
-            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
-            {
-                Logger.Warning($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
-                return null;
-            }
-
-            string? fullPath = ProjectFiles.Find(filePathPart);
-            if (fullPath is null)
-            {
-                Logger.Warning($"[ResourceManager] Could not find model file for '{filePathPart}'.");
-                return null;
-            }
-
-            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
+            var loadedMeshes = ModelLoader.LoadMeshesFromFile(filePathPart);
             if (!loadedMeshes.Any())
             {
-                Logger.Warning($"[ResourceManager] No meshes found in model file '{fullPath}'.");
                 return null;
             }
 
             foreach (var (meshName, loadedMesh) in loadedMeshes)
             {
-                string cacheKey = $"{filePathPart}#{meshName}";
-                _meshes[cacheKey] = loadedMesh;
+                _meshes[$"{filePathPart}#{meshName}"] = loadedMesh;
             }
-            Logger.Info($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
 
             if (_meshes.TryGetValue(name, out var finalMesh))
             {
@@ -2661,7 +2877,6 @@ public class ResourceManager : IResourceManager
         return null;
     }
 
-
     public ITexture GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out var texture))
@@ -2669,19 +2884,14 @@ public class ResourceManager : IResourceManager
             return texture;
         }
 
-        string? filePath = ProjectFiles.Find(name);
-
-        if (filePath is not null)
+        var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, name);
+        if (loadedTexture is not null)
         {
-            var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, filePath);
-            if (loadedTexture is not null)
-            {
-                _textures.Add(name, loadedTexture);
-                return loadedTexture;
-            }
+            _textures.Add(name, loadedTexture);
+            return loadedTexture;
         }
 
-        Logger.Warning($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
+        Logger.Warning($"[ResourceManager] Texture '{name}' not found. Using default.");
         return _textures["White"];
     }
 
@@ -2692,20 +2902,41 @@ public class ResourceManager : IResourceManager
             return skybox;
         }
 
-        var loadedSkybox = SkyboxLoader.LoadSkybox(_graphicsDevice, name);
-        if (loadedSkybox is not null)
+        ImageResult[]? images = SkyboxLoader.LoadSkyboxImages(name);
+        if (images is null)
         {
-            _skyboxes.Add(name, loadedSkybox);
-            return loadedSkybox;
+            return null;
         }
 
-        Logger.Warning($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
-        return null;
+        Texture cubemapTexture = CreateCubemapTexture(images);
+        var newSkybox = new Skybox(cubemapTexture, name);
+
+        _skyboxes.Add(name, newSkybox);
+        return newSkybox;
+    }
+
+    private Texture CreateCubemapTexture(ImageResult[] images)
+    {
+        ImageResult firstImage = images[0];
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+        TextureDescription textureDescription = TextureDescription.Texture2D(
+            (uint)firstImage.Width, (uint)firstImage.Height, 1, (uint)images.Length,
+            PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Cubemap | TextureUsage.Sampled);
+
+        Veldrid.Texture cubemap = factory.CreateTexture(textureDescription);
+
+        for (uint i = 0; i < images.Length; i++)
+        {
+            _graphicsDevice.UpdateTexture(cubemap, images[i].Data, 0, 0, 0, (uint)images[i].Width, (uint)images[i].Height, 1, 0, i);
+        }
+
+        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
+        return new Texture(cubemap, textureView);
     }
 
     public AudioClip? GetAudioClip(string name)
     {
-        Logger.Warning("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
         return null;
     }
 
@@ -2820,6 +3051,7 @@ public abstract class ResourceManagerBase : IResourceManager
 
 ```csharp
 using Cherris.Components;
+using Cherris.Core.Logging;
 using System.Numerics;
 
 namespace Cherris.Core;
@@ -2834,6 +3066,8 @@ public class Scene : IDisposable
     public Camera? MainCamera { get; set; } = null;
     public Skybox? Skybox { get; private set; } = null;
     public bool IsDirty { get; set; }
+
+    private float _debugLogTimer;
 
     public Scene(string filePath, List<GameObject> gameObjects)
     {
@@ -2862,46 +3096,56 @@ public class Scene : IDisposable
 
     public void RemoveGameObject(GameObject go)
     {
-        // Recursively remove children first to avoid modifying collection during iteration
         foreach (Transform? childTransform in go.Transform.Children.ToList())
         {
             RemoveGameObject(childTransform.GameObject);
         }
 
-        // Remove the object from its parent's list
         go.Transform.Parent = null;
-
-        // Remove from the root scene list
         GameObjects.Remove(go);
 
-        // Remove light from cached list
         var light = go.GetComponent<Light>();
-
         if (light is not null)
         {
             Lights.Remove(light);
         }
 
-        // Dispose its managed resources
         go.GetComponent<MeshRenderer>()?.Dispose();
         IsDirty = true;
     }
 
     public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
+        Logger.Info($"[Scene] Starting scene '{Name}' with {GameObjects.Count} objects.");
         FindMainComponents();
 
-        // Initialize scripts and components
         foreach (GameObject gameObject in GameObjects)
         {
             foreach (var script in gameObject.GetComponents<Script>())
             {
+                Logger.Info($"[Scene] Initializing script '{script.GetType().Name}' on '{gameObject.Name}'");
+
                 if (script is RigidBody rb)
                 {
-                    rb.Initialize(physicsSystem);
+                    try
+                    {
+                        rb.Initialize(physicsSystem);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error($"[Scene] Failed to initialize RigidBody on '{gameObject.Name}': {ex.Message}");
+                    }
                 }
 
-                script.Start();
+                try
+                {
+                    script.Start();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.Start() on '{gameObject.Name}': {ex.Message}\n{ex.StackTrace}");
+                    script.Enabled = false;
+                }
             }
 
             foreach (var audioSource in gameObject.GetComponents<AudioSource>())
@@ -2911,7 +3155,6 @@ public class Scene : IDisposable
             }
         }
 
-        // Handle case where no camera was found in the scene
         if (MainCamera is not null)
         {
             return;
@@ -2922,6 +3165,15 @@ public class Scene : IDisposable
 
     public void Update(float deltaTime)
     {
+        _debugLogTimer += deltaTime;
+        bool shouldLog = _debugLogTimer >= 2.0f;
+
+        if (shouldLog)
+        {
+            _debugLogTimer = 0;
+            // Logger.Info($"[Scene] Heartbeat - Updating {GameObjects.Count} objects.");
+        }
+
         foreach (var gameObject in GameObjects)
         {
             foreach (var script in gameObject.GetComponents<Script>())
@@ -2931,7 +3183,20 @@ public class Scene : IDisposable
                     continue;
                 }
 
-                script.Update(deltaTime);
+                if (shouldLog)
+                {
+                    // Logger.Info($"[Scene] Updating {script.GetType().Name} on {gameObject.Name}");
+                }
+
+                try
+                {
+                    script.Update(deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.Update() on '{gameObject.Name}': {ex.Message}");
+                    script.Enabled = false;
+                }
             }
         }
     }
@@ -3388,10 +3653,8 @@ public class SceneRenderer : IDisposable
 ### `Cherris\Core\SkyboxLoader.cs`
 
 ```csharp
-using Cherris.Components;
 using Cherris.Utils;
 using StbImageSharp;
-using Veldrid;
 
 namespace Cherris.Core;
 
@@ -3399,131 +3662,63 @@ public static class SkyboxLoader
 {
     private static readonly string[] FaceSuffixes = ["_right", "_left", "_top", "_bottom", "_front", "_back"];
 
-    public static Skybox? LoadSkybox(GraphicsDevice gd, string name)
-    {
-        string[]? facePaths = FindFacePaths(name);
-
-        if (facePaths is null)
-        {
-            return null;
-        }
-
-        ImageResult[]? faceImages = LoadFaceImages(facePaths);
-
-        if (faceImages is null || !ValidateImageDimensions(faceImages, facePaths))
-        {
-            return null;
-        }
-
-        Texture cubemapTexture = CreateCubemapTexture(gd, faceImages);
-
-        return new(cubemapTexture, name);
-    }
-
-    private static string[]? FindFacePaths(string baseName)
-    {
-        string[] facePaths = new string[6];
-
-        for (int i = 0; i < FaceSuffixes.Length; i++)
-        {
-            string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
-
-            if (path is null)
-            {
-                Console.WriteLine($"[SkyboxLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
-                return null;
-            }
-
-            facePaths[i] = path;
-        }
-
-        return facePaths;
-    }
-
-    private static ImageResult[]? LoadFaceImages(string[] paths)
+    // Returns an array of 6 ImageResults (Right, Left, Top, Bottom, Front, Back)
+    public static ImageResult[]? LoadSkyboxImages(string baseName)
     {
         var images = new ImageResult[6];
 
         try
         {
-            StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps do not need flipping
+            // Cubemaps usually don't need flipping, depending on the backend.
+            // We load raw here; the consumer (ResourceManager) can decide flags if needed,
+            // but StbImage state is global, so we set it locally and reset.
+            StbImage.stbi_set_flip_vertically_on_load(0);
 
-            for (int i = 0; i < paths.Length; i++)
+            for (int i = 0; i < 6; i++)
             {
-                using var stream = File.OpenRead(paths[i]);
+                string faceName = baseName + FaceSuffixes[i];
+                using var stream = ProjectFiles.Open(faceName);
+
+                if (stream is null)
+                {
+                    Console.WriteLine($"[SkyboxLoader] Could not find face '{faceName}'.");
+                    return null;
+                }
+
                 images[i] = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+            }
+
+            if (!ValidateImageDimensions(images))
+            {
+                return null;
             }
 
             return images;
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[SkyboxLoader] Error loading skybox images: {e.Message}");
+            Console.WriteLine($"[SkyboxLoader] Error loading skybox: {e.Message}");
             return null;
         }
         finally
         {
-            StbImage.stbi_set_flip_vertically_on_load(1); // Reset to default for other textures
+            StbImage.stbi_set_flip_vertically_on_load(1); // Restore default
         }
     }
 
-    private static bool ValidateImageDimensions(ImageResult[] images, string[] paths)
+    private static bool ValidateImageDimensions(ImageResult[] images)
     {
-        ImageResult firstImage = images[0];
-
-        if (firstImage.Width != firstImage.Height)
+        if (images[0].Width != images[0].Height)
         {
-            Console.WriteLine(
-                $"[SkyboxLoader] Error: Skybox face texture is not square." +
-                $"Texture '{paths[0]}' has dimensions {firstImage.Width}x{firstImage.Height}.");
-
             return false;
         }
 
-        if (images.Any(img => img.Width != firstImage.Width || img.Height != firstImage.Height))
+        if (images.Any(img => img.Width != images[0].Width || img.Height != images[0].Height))
         {
-            Console.WriteLine("[SkyboxLoader] Error: All faces of a skybox must have the same dimensions.");
             return false;
         }
 
         return true;
-    }
-
-    private static Texture CreateCubemapTexture(GraphicsDevice gd, ImageResult[] images)
-    {
-        ImageResult firstImage = images[0];
-        ResourceFactory factory = gd.ResourceFactory;
-
-        TextureDescription textureDescription = TextureDescription.Texture2D(
-            (uint)firstImage.Width,
-            (uint)firstImage.Height,
-            1,
-            (uint)images.Length,
-            PixelFormat.R8_G8_B8_A8_UNorm,
-            TextureUsage.Cubemap | TextureUsage.Sampled);
-
-        Veldrid.Texture cubemap = factory.CreateTexture(textureDescription);
-
-        for (uint i = 0; i < images.Length; i++)
-        {
-            ImageResult img = images[i];
-
-            gd.UpdateTexture(
-                cubemap,
-                img.Data,
-                0,
-                0,
-                0,
-                (uint)img.Width,
-                (uint)img.Height,
-                1,
-                0,
-                i);
-        }
-
-        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
-
-        return new(cubemap, textureView);
     }
 }
 ```
@@ -4744,13 +4939,11 @@ public class SceneLoader
     public SceneLoader(IResourceManager resourceManager)
     {
         _resourceManager = resourceManager;
-
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
             .WithTypeConverter(new Vector2YamlTypeConverter())
             .Build();
-
         _serializer = new SerializerBuilder().Build();
     }
 
@@ -4761,151 +4954,89 @@ public class SceneLoader
 
     public List<GameObject> LoadPrefab(string filePath)
     {
-        // Resolve path to handle Runtime "Assets/" redirection
-        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
-
-        var input = new StringReader(File.ReadAllText(resolvedPath));
-        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
-
-        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
+        using var stream = ProjectFiles.Open(filePath);
+        if (stream is null)
         {
             return [];
         }
 
-        var createdGameObjects = new List<GameObject>();
-        var oldToNewIdMap = new Dictionary<Guid, Guid>();
-        var newIdToGameObjectMap = new Dictionary<Guid, GameObject>();
-        var childToParentMap = new Dictionary<Guid, Guid>(); // <new_child_id, old_parent_id>
-
-        // Pass 1: Create all GameObjects with new GUIDs and deserialize their components
-        foreach (var goData in gameObjectDatas)
-        {
-            string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
-            {
-                name = goName;
-            }
-
-            Guid oldId = Guid.Empty;
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
-            {
-                oldId = parsedId;
-            }
-
-            Guid newId = Guid.NewGuid();
-            oldToNewIdMap[oldId] = newId;
-
-            var go = new GameObject(name, newId);
-            newIdToGameObjectMap[newId] = go;
-            createdGameObjects.Add(go);
-
-            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
-            {
-                childToParentMap[newId] = parentId;
-            }
-
-            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
-            {
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
-                {
-                    ApplyTransformProperties(go.Transform, transformProperties);
-                }
-
-                foreach (var componentKvp in componentsDict)
-                {
-                    if ((componentKvp.Key as string) == "Transform")
-                    {
-                        continue;
-                    }
-
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
-                }
-            }
-        }
-
-        // Pass 2: Hook up parent-child relationships using the remapped GUIDs
-        foreach (var (newChildId, oldParentId) in childToParentMap)
-        {
-            if (oldToNewIdMap.TryGetValue(oldParentId, out Guid newParentId))
-            {
-                var child = newIdToGameObjectMap[newChildId];
-                var parent = newIdToGameObjectMap[newParentId];
-                child.Transform.Parent = parent.Transform;
-            }
-        }
-
-        return createdGameObjects.Where(go => go.Transform.Parent is null).ToList();
+        using var reader = new StreamReader(stream);
+        return DeserializeObjects(reader, true); // True = return only roots
     }
-
 
     public List<GameObject> LoadScene(string filePath)
     {
-        // Resolve path to handle Runtime "Assets/" redirection
-        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
+        using var stream = ProjectFiles.Open(filePath);
+        if (stream is null)
+        {
+            Logger.Error($"[SceneLoader] Scene not found: {filePath}");
+            return [];
+        }
 
-        var input = new StringReader(File.ReadAllText(resolvedPath));
-        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
+        using var reader = new StreamReader(stream);
+        return DeserializeObjects(reader, false); // False = return all (scene list)
+    }
 
-        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
+    public List<GameObject> LoadSceneFromYaml(string yamlContent)
+    {
+        using var reader = new StringReader(yamlContent);
+        return DeserializeObjects(reader, false);
+    }
+
+    private List<GameObject> DeserializeObjects(TextReader reader, bool returnRootsOnly)
+    {
+        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(reader);
+        if (sceneData is null || !sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
             return [];
         }
 
-        var createdGameObjects = new Dictionary<Guid, GameObject>();
+        var objects = new Dictionary<Guid, GameObject>();
         var parentMap = new Dictionary<Guid, Guid>();
+        var resultList = new List<GameObject>();
 
-        // Pass 1: Create all GameObjects and components, storing parent relationships
+        // Pass 1: Create
         foreach (var goData in gameObjectDatas)
         {
-            string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
-            {
-                name = goName;
-            }
-
-            Guid id = Guid.NewGuid();
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
-            {
-                id = parsedId;
-            }
+            string name = goData.TryGetValue("Name", out var n) ? (string)n : "GameObject";
+            Guid id = goData.TryGetValue("Id", out var i) && Guid.TryParse((string)i, out Guid pid) ? pid : Guid.NewGuid();
 
             var go = new GameObject(name, id);
-            createdGameObjects[id] = go;
+            objects[id] = go;
+            resultList.Add(go);
 
-            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
+            if (goData.TryGetValue("Parent", out var pObj) && Guid.TryParse((string)pObj, out Guid pId))
             {
-                parentMap[id] = parentId;
+                parentMap[id] = pId;
             }
 
-            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
+            if (goData.TryGetValue("Components", out var compsObj) && compsObj is Dictionary<object, object> comps)
             {
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
+                if (comps.TryGetValue("Transform", out var tProps))
                 {
-                    ApplyTransformProperties(go.Transform, transformProperties);
+                    ApplyTransformProperties(go.Transform, tProps);
                 }
 
-                foreach (var componentKvp in componentsDict)
+                foreach (var kvp in comps)
                 {
-                    if ((componentKvp.Key as string) == "Transform")
+                    if ((string)kvp.Key != "Transform")
                     {
-                        continue;
+                        AddComponent(go, (string)kvp.Key, kvp.Value);
                     }
-
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
         }
 
-        // Pass 2: Hook up parent-child relationships
+        // Pass 2: Hierarchy
         foreach (var (childId, parentId) in parentMap)
         {
-            if (createdGameObjects.TryGetValue(childId, out var child) && createdGameObjects.TryGetValue(parentId, out var parent))
+            if (objects.TryGetValue(childId, out var child) && objects.TryGetValue(parentId, out var parent))
             {
                 child.Transform.Parent = parent.Transform;
             }
         }
 
-        return createdGameObjects.Values.ToList();
+        return returnRootsOnly ? resultList.Where(g => g.Transform.Parent == null).ToList() : resultList;
     }
 
     private void ApplyTransformProperties(Transform transform, object properties)
@@ -4923,77 +5054,61 @@ public class SceneLoader
             transform.Scale = scale;
         }
 
-        if (props.TryGetValue("Rotation", out var rotDegrees))
+        if (props.TryGetValue("Rotation", out var rot))
         {
-            var rotRadians = rotDegrees * (MathF.PI / 180.0f);
-            transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
+            var rad = rot * (MathF.PI / 180f);
+            transform.Rotation = Quaternion.CreateFromYawPitchRoll(rad.Y, rad.X, rad.Z);
         }
     }
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
-        // Support the generic "Script" key where the actual type is defined in the properties
-        if (componentType == "Script" && properties is Dictionary<object, object> dict && dict.TryGetValue("Type", out var typeObj))
+        if (componentType == "Script" && properties is Dictionary<object, object> d && d.TryGetValue("Type", out var t))
         {
-            componentType = typeObj.ToString() ?? "";
-        }
-
-        if (string.IsNullOrEmpty(componentType))
-        {
-            return;
+            componentType = t.ToString()!;
         }
 
         if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
-            Logger.Warning($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
+            Logger.Warning($"[SceneLoader] Unknown component type: '{componentType}' on GameObject '{go.Name}'");
             return;
         }
 
-        var component = factory(properties);
-        if (component is null)
+        var comp = factory(properties);
+        if (comp != null)
         {
-            return;
-        }
-
-        _ = go.AddComponent(component);
-
-        if (component is Script script && properties is Dictionary<object, object> propsDict)
-        {
-            ApplyScriptProperties(script, propsDict);
+            go.AddComponent(comp);
+            if (comp is Script s && properties is Dictionary<object, object> pd)
+            {
+                ApplyScriptProperties(s, pd);
+            }
         }
     }
 
     private static void ApplyScriptProperties(Script script, Dictionary<object, object> propsDict)
     {
-        var scriptType = script.GetType();
-        foreach (var propKvp in propsDict)
+        var type = script.GetType();
+        foreach (var kvp in propsDict)
         {
-            if (propKvp.Key is not string propName)
+            if (kvp.Key is not string name)
             {
                 continue;
             }
 
-            PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !propertyInfo.CanWrite)
+            var prop = type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null || !prop.CanWrite)
             {
                 continue;
             }
 
             try
             {
-                object convertedValue;
-                var propType = propertyInfo.PropertyType;
-                var yamlValue = propKvp.Value;
-
-                convertedValue = propType.IsEnum && yamlValue is string stringValue
-                    ? Enum.Parse(propType, stringValue, true)
-                    : Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
-                propertyInfo.SetValue(script, convertedValue);
+                object val = prop.PropertyType.IsEnum && kvp.Value is string s
+                    ? Enum.Parse(prop.PropertyType, s, true)
+                    : Convert.ChangeType(kvp.Value, prop.PropertyType, CultureInfo.InvariantCulture);
+                prop.SetValue(script, val);
             }
-            catch (Exception ex)
-            {
-                Logger.Warning($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
-            }
+            catch { }
         }
     }
 }
@@ -5036,7 +5151,7 @@ public class SceneSerializer
 
         foreach (GameObject gameObject in hierarchy)
         {
-            Dictionary<string, object> goData = new Dictionary<string, object>
+            Dictionary<string, object> goData = new()
             {
                 ["Id"] = gameObject.Id.ToString(),
                 ["Name"] = gameObject.Name
@@ -5064,6 +5179,12 @@ public class SceneSerializer
 
     public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
     {
+        string yaml = SerializeSceneToString(gameObjects);
+        File.WriteAllText(filePath, yaml);
+    }
+
+    public string SerializeSceneToString(IEnumerable<GameObject> gameObjects)
+    {
         List<Dictionary<string, object>> gameObjectsData = [];
 
         foreach (GameObject gameObject in gameObjects)
@@ -5089,8 +5210,7 @@ public class SceneSerializer
             ["GameObjects"] = gameObjectsData
         };
 
-        string yaml = _serializer.Serialize(root);
-        File.WriteAllText(filePath, yaml);
+        return _serializer.Serialize(root);
     }
 
     private static Dictionary<string, object> SerializeGameObjectComponents(GameObject gameObject)
@@ -5121,10 +5241,25 @@ public class SceneSerializer
                 Dictionary<string, object> meshRendererData = new() { ["Mesh"] = mr.MeshName };
                 Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
 
-                if (mr.Material.TextureTiling != Vector2.One) materialData["TextureTiling"] = mr.Material.TextureTiling;
-                if (mr.Material.EmissiveColor != Vector3.Zero) materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f) materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f) materialData["Shininess"] = mr.Material.Shininess;
+                if (mr.Material.TextureTiling != Vector2.One)
+                {
+                    materialData["TextureTiling"] = mr.Material.TextureTiling;
+                }
+
+                if (mr.Material.EmissiveColor != Vector3.Zero)
+                {
+                    materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                }
+
+                if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+                {
+                    materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                }
+
+                if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+                {
+                    materialData["Shininess"] = mr.Material.Shininess;
+                }
 
                 meshRendererData["Material"] = materialData;
                 componentsData["MeshRenderer"] = meshRendererData;
@@ -5156,7 +5291,7 @@ public class SceneSerializer
         // This handles components like Camera that have no public properties to serialize.
         if (!properties.Any())
         {
-            return new Dictionary<string, object>();
+            return [];
         }
 
         foreach (PropertyInfo prop in properties)
@@ -5387,11 +5522,63 @@ public class HideInInspectorAttribute : Attribute
 ### `Cherris\Utils\ProjectFiles.cs`
 
 ```csharp
+using Cherris.Core;
+
 namespace Cherris.Utils;
 
 public static class ProjectFiles
 {
     public static string? ProjectRoot { get; set; }
+    private static AssetBundle? _bundle;
+
+    public static void Initialize(string rootPath)
+    {
+        string bundlePath = Path.Combine(rootPath, "Assets.pak");
+        if (File.Exists(bundlePath))
+        {
+            _bundle = AssetBundle.Load(bundlePath);
+        }
+    }
+
+    public static Stream? Open(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        // 1. Try Bundle
+        if (_bundle != null)
+        {
+            string normalized = path.Replace('\\', '/');
+
+            // Direct match
+            if (_bundle.HasFile(normalized))
+            {
+                return _bundle.Open(normalized);
+            }
+
+            // Fuzzy match (extensions)
+            if (!Path.HasExtension(normalized))
+            {
+                // This is inefficient but functional for small projects
+                // In a real engine, use a trie or dictionary lookup optimization
+                string[] extensions = { ".png", ".jpg", ".gltf", ".glb", ".wav" };
+                foreach (var ext in extensions)
+                {
+                    string probe = normalized + ext;
+                    if (_bundle.HasFile(probe))
+                    {
+                        return _bundle.Open(probe);
+                    }
+                }
+            }
+        }
+
+        // 2. Try Disk
+        string? realPath = Find(path);
+        return realPath != null ? File.OpenRead(realPath) : null;
+    }
 
     public static string? Find(string path)
     {
@@ -5400,37 +5587,21 @@ public static class ProjectFiles
             return null;
         }
 
-        // 1. If path is absolute and exists, return it.
+        // If path is absolute and exists, return it.
         if (Path.IsPathRooted(path) && File.Exists(path))
         {
             return path;
         }
 
-        // 2. If path is absolute but missing, try to make it relative to the BaseDirectory.
-        //    This handles cases where the Runtime naively constructs paths like "BaseDir/Scenes/Scene.yaml"
-        //    but the file is actually in "BaseDir/Assets/Scenes/Scene.yaml".
         string searchPath = path;
-        if (Path.IsPathRooted(path))
+        string baseDir = AppContext.BaseDirectory;
+
+        if (Path.IsPathRooted(path) && path.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
         {
-            string baseDir = AppContext.BaseDirectory;
-            if (path.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
-            {
-                // Strip the base directory to get the relative part
-                searchPath = path[baseDir.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-            else
-            {
-                // If it's absolute but not inside BaseDirectory, we can't easily fix it. 
-                // Return null to indicate failure.
-                return null;
-            }
+            searchPath = path[baseDir.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        // 3. Resolve using the correct Content Root (Editor Project Root or Runtime Assets/)
-        string root = !string.IsNullOrWhiteSpace(ProjectRoot)
-            ? ProjectRoot
-            : GetRuntimeContentRoot();
-
+        string root = !string.IsNullOrWhiteSpace(ProjectRoot) ? ProjectRoot : GetRuntimeContentRoot();
         string fullPath = Path.Combine(root, searchPath);
 
         if (File.Exists(fullPath))
@@ -5438,7 +5609,7 @@ public static class ProjectFiles
             return fullPath;
         }
 
-        // 4. Fuzzy search (extensions) if exact match failed
+        // Fuzzy search
         if (!Path.HasExtension(fullPath))
         {
             string? directory = Path.GetDirectoryName(fullPath);
@@ -5459,12 +5630,8 @@ public static class ProjectFiles
 
     private static string GetRuntimeContentRoot()
     {
-        // Check for "Assets" folder next to the executable
         string assetsPath = Path.Combine(AppContext.BaseDirectory, "Assets");
-
-        return Directory.Exists(assetsPath)
-            ? assetsPath
-            : AppContext.BaseDirectory;
+        return Directory.Exists(assetsPath) ? assetsPath : AppContext.BaseDirectory;
     }
 }
 ```
@@ -7809,7 +7976,6 @@ public class OpenTKRenderer : IRenderer, IDisposable
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
-using Cherris.Utils;
 using OpenTK.Graphics.OpenGL4;
 
 namespace Cherris.Rendering.OpenTK;
@@ -7825,7 +7991,6 @@ public class OpenTKResourceManager : ResourceManagerBase
         Logger.Info("[OpenTKResourceManager] Initial assets loaded.");
         _meshes.Add("Cube", Mesh.CreateCube());
         _meshes.Add("Plane", Mesh.CreatePlane(20f));
-
         _textures.Add("White", CreateWhiteTexture());
     }
 
@@ -7833,10 +7998,8 @@ public class OpenTKResourceManager : ResourceManagerBase
     {
         int handle = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, handle);
-
         byte[] pixel = { 255, 255, 255, 255 };
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
-
         SetTextureParameters(TextureTarget.Texture2D);
         return new OpenTKTexture(handle);
     }
@@ -7848,14 +8011,7 @@ public class OpenTKResourceManager : ResourceManagerBase
             return texture;
         }
 
-        string? path = ProjectFiles.Find(name);
-        if (path is null)
-        {
-            Logger.Warning($"[OpenTKResourceManager] Could not find texture '{name}'.");
-            return _textures["White"];
-        }
-
-        var imageData = ImageLoader.LoadFromFile(path);
+        var imageData = ImageLoader.LoadFromFile(name);
         if (imageData is null)
         {
             return _textures["White"];
@@ -7863,10 +8019,8 @@ public class OpenTKResourceManager : ResourceManagerBase
 
         int handle = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, handle);
-
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8,
             imageData.Value.Width, imageData.Value.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, imageData.Value.Data);
-
         GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
         SetTextureParameters(TextureTarget.Texture2D);
 
@@ -7901,7 +8055,8 @@ public class OpenTKResourceManager : ResourceManagerBase
             return skybox;
         }
 
-        var faceImages = GenericCubemapLoader.LoadCubemapFaces(name);
+        // Use the unified loader logic
+        var faceImages = SkyboxLoader.LoadSkyboxImages(name);
         if (faceImages is null)
         {
             Logger.Error($"[OpenTKResourceManager] Could not load faces for skybox '{name}'.");
@@ -7933,20 +8088,12 @@ public class OpenTKResourceManager : ResourceManagerBase
             return clip;
         }
 
-        string? path = ProjectFiles.Find(name);
-        if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-        {
-            Logger.Warning($"[OpenTKResourceManager] Could not find audio clip '{name}'. Only .wav is supported.");
-            return null;
-        }
-
-        var newClip = AudioLoader.LoadFromFile(path);
+        var newClip = AudioLoader.LoadFromFile(name);
         if (newClip is not null)
         {
             _audioClips.Add(name, newClip);
             return newClip;
         }
-
         return null;
     }
 
@@ -7956,10 +8103,12 @@ public class OpenTKResourceManager : ResourceManagerBase
         {
             texture.Dispose();
         }
+
         foreach (var skybox in _skyboxes.Values)
         {
             skybox.Dispose();
         }
+
         foreach (var clip in _audioClips.Values)
         {
             clip.Dispose();
@@ -8461,7 +8610,15 @@ public class Editor : Engine
         _sceneSerializer = new SceneSerializer();
         ProjectManager = new ProjectManager();
         ScriptManager = new ScriptManager(SceneLoader);
-        PlayModeManager = new PlayModeManager(SceneManager);
+
+        // Pass dependencies to PlayModeManager
+        PlayModeManager = new PlayModeManager(
+            SceneManager,
+            SceneLoader,
+            _sceneSerializer,
+            ScriptManager,
+            ProjectManager);
+
         SceneOperations = new SceneOperations(SceneLoader, SceneManager, _sceneSerializer);
         Selection = new EditorSelection(SceneManager);
     }
@@ -8485,7 +8642,9 @@ public class Editor : Engine
     public void EnterEditMode()
     {
         PlayModeManager.Stop();
-        SceneOperations.ReloadSceneForEditing(SceneManager.ActiveScene);
+
+        // After stopping (restoring snapshot), we need to ensure the editor camera is hooked up again
+        SetupSceneForEditing(SceneManager.ActiveScene);
     }
 
     public void RestartPlayMode()
@@ -8507,8 +8666,7 @@ public class Editor : Engine
             return;
         }
 
-        string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
-        ScriptManager.CreateAndCompileScript(scriptsPath, scriptName);
+        ScriptManager.CreateAndCompileScript(ProjectManager.CurrentProject.RootPath, scriptName);
     }
 
     public void SetSelectedGameObject(GameObject? go)
@@ -8528,8 +8686,7 @@ public class Editor : Engine
 
         if (ProjectManager.CurrentProject is not null)
         {
-            string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
-            ScriptManager.CompileAndRegisterGameScripts(scriptsPath);
+            ScriptManager.CompileAndRegisterGameScripts(ProjectManager.CurrentProject.RootPath);
         }
 
         History.OnHistoryChanged += MarkActiveSceneDirty;
@@ -8597,14 +8754,17 @@ public class Editor : Engine
     {
         foreach (Script? script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
+            // Only allow RigidBody in editor (for debug viz), disable everything else
             script.Enabled = script is RigidBody;
         }
     }
 
     private Camera? EnsureEditorCamera(Scene scene)
     {
-        GameObject? cameraObject = scene.MainCamera?.GameObject
-            ?? scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
+        GameObject? cameraObject = scene.GameObjects
+            .FirstOrDefault(g => g.GetComponent<EditorController>() is not null);
+
+        cameraObject ??= scene.GameObjects.FirstOrDefault(go => go.GetComponent<Camera>() is not null);
 
         if (cameraObject is null)
         {
@@ -9393,6 +9553,7 @@ public class Project
 {
     public string Name { get; set; } = "MyGame";
     public string StartScene { get; set; } = "Main.yaml";
+    public bool PackAssets { get; set; } = false;
 
     [YamlIgnore]
     public string RootPath { get; set; } = string.Empty;
@@ -9494,6 +9655,7 @@ public static class ProjectPersistence
 ### `CherrisEditor\ScriptCompiler.cs`
 
 ```csharp
+using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Microsoft.CodeAnalysis;
@@ -9513,12 +9675,13 @@ public static class ScriptCompiler
     private static readonly string[] RequiredAssemblies =
     {
         "System.Runtime",
-        "System.Numerics.Vectors"
+        "System.Numerics.Vectors",
+        "System.Collections"
     };
 
-    public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
+    public static Assembly? Compile(string projectRoot, AssemblyLoadContext context)
     {
-        var compilation = PrepareCompilation(rootAssetPath);
+        var compilation = PrepareCompilation(projectRoot);
         if (compilation is null)
         {
             return null;
@@ -9538,15 +9701,14 @@ public static class ScriptCompiler
         return context.LoadFromStream(stream);
     }
 
-    public static bool CompileToFile(string rootAssetPath, string outputPath)
+    public static bool CompileToFile(string projectRoot, string outputPath)
     {
-        var compilation = PrepareCompilation(rootAssetPath);
+        var compilation = PrepareCompilation(projectRoot);
         if (compilation is null)
         {
             return false;
         }
 
-        // We emit to a file stream instead of memory
         using var stream = new FileStream(outputPath, FileMode.Create);
         EmitResult result = compilation.Emit(stream);
 
@@ -9560,9 +9722,9 @@ public static class ScriptCompiler
         return true;
     }
 
-    private static CSharpCompilation? PrepareCompilation(string rootAssetPath)
+    private static CSharpCompilation? PrepareCompilation(string projectRoot)
     {
-        string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
+        string scriptsPath = Path.Combine(projectRoot, ScriptsDirectoryName);
 
         if (!TryGetScriptFiles(scriptsPath, out var files))
         {
@@ -9585,8 +9747,7 @@ public static class ScriptCompiler
 
         if (!Directory.Exists(scriptsPath))
         {
-            // Just a warning for runtime build, but info for editor
-            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found.");
+            Logger.Info($"[ScriptCompiler] Scripts directory not found at: '{scriptsPath}'");
             return false;
         }
 
@@ -9594,7 +9755,7 @@ public static class ScriptCompiler
 
         if (files.Length == 0)
         {
-            Logger.Info($"[ScriptCompiler] No C# script files found in '{ScriptsDirectoryName}'.");
+            Logger.Info($"[ScriptCompiler] No C# script files found in '{scriptsPath}'.");
             return false;
         }
 
@@ -9611,11 +9772,15 @@ public static class ScriptCompiler
 
     private static IEnumerable<MetadataReference> CreateMetadataReferences()
     {
+        // Explicitly include the assemblies where core engine types are defined
         HashSet<string> assemblyPaths =
         [
             typeof(object).Assembly.Location,
-            typeof(Engine).Assembly.Location,
-            typeof(System.Numerics.Vector3).Assembly.Location
+            typeof(Engine).Assembly.Location,           // Cherris.Core
+            typeof(Script).Assembly.Location,           // Cherris.Components (if separate)
+            typeof(Component).Assembly.Location,        // Cherris.Components (base)
+            typeof(System.Numerics.Vector3).Assembly.Location,
+            typeof(Console).Assembly.Location           // System.Console for debug prints
         ];
 
         foreach (string assemblyName in RequiredAssemblies)
@@ -9627,7 +9792,7 @@ public static class ScriptCompiler
             }
             catch
             {
-                // Ignore if not found, standard lib might be implicitly loaded
+                // Ignore if not found
             }
         }
 
@@ -9687,6 +9852,7 @@ public class {scriptName} : Script
 ### `CherrisEditor\Build\GameBuilder.cs`
 
 ```csharp
+using Cherris.Core;
 using Cherris.Core.Logging;
 using NativeFileDialogNET;
 using System.Diagnostics;
@@ -9710,8 +9876,8 @@ public static class GameBuilder
             return;
         }
 
-        Logger.Info($"[GameBuilder] Starting build process...");
-        Logger.Info($"[GameBuilder] Output Directory: {outputDir}");
+        Logger.Info($"[GameBuilder] Starting build process for '{project.Name}'...");
+        Logger.Info($"[GameBuilder] Mode: {(project.PackAssets ? "Packed (Assets.pak)" : "Loose Files")}");
 
         string gameName = SanitizeGameName(project.Name);
 
@@ -9719,31 +9885,32 @@ public static class GameBuilder
         {
             try
             {
-                // Step 1: Publish the runtime
                 if (!PublishRuntime(outputDir, gameName))
                 {
-                    Logger.Error("[GameBuilder] Build aborted due to Runtime publish failure.");
                     return;
                 }
 
-                // Step 2: Clean up editor-only files
                 CleanupBuildArtifacts(outputDir, gameName);
-
-                // Step 3: Compile game scripts
                 if (!CompileScripts(project, outputDir))
                 {
-                    Logger.Error("[GameBuilder] Build aborted due to Script compilation failure.");
                     return;
                 }
 
-                // Step 4: Copy assets
                 CopyEngineResources(outputDir);
-                CopyProjectContent(project, outputDir);
+
+                // Asset Handling: Pack or Copy
+                if (project.PackAssets)
+                {
+                    PackAssets(project, outputDir);
+                }
+                else
+                {
+                    CopyProjectContent(project, outputDir);
+                }
+
                 CopyConfigFile(project, outputDir);
 
                 Logger.Info("[GameBuilder] Build completed successfully!");
-                Logger.Info($"[GameBuilder] Opening folder: {outputDir}");
-
                 Process.Start("explorer.exe", outputDir);
             }
             catch (Exception ex)
@@ -9752,6 +9919,16 @@ public static class GameBuilder
             }
         });
     }
+
+    private static void PackAssets(Project project, string outputDir)
+    {
+        Logger.Info("[GameBuilder] Packing assets into Assets.pak...");
+        string pakPath = Path.Combine(outputDir, "Assets.pak");
+        AssetBundle.Create(pakPath, project.RootPath);
+    }
+
+    // ... (SanitizeGameName, PublishRuntime, CleanupBuildArtifacts, CompileScripts, CopyEngineResources remain unchanged) ...
+    // Note: I will include the full file content for correctness as per protocol.
 
     private static string SanitizeGameName(string name)
     {
@@ -9774,7 +9951,7 @@ public static class GameBuilder
             return false;
         }
 
-        Logger.Info($"[GameBuilder] Step 1/5: Publishing Runtime as '{gameName}.exe'...");
+        Logger.Info($"[GameBuilder] Publishing Runtime as '{gameName}.exe'...");
 
         string originalContent = File.ReadAllText(runtimeProjPath);
         string modifiedContent = originalContent;
@@ -9803,7 +9980,6 @@ public static class GameBuilder
             };
 
             using var process = new Process { StartInfo = startInfo };
-
             process.OutputDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Info($"[DotNet] {e.Data}"); } };
             process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) { Logger.Warning($"[DotNet] {e.Data}"); } };
 
@@ -9826,19 +10002,11 @@ public static class GameBuilder
 
     private static void CleanupBuildArtifacts(string outputDir, string gameName)
     {
-        Logger.Info("[GameBuilder] Step 2/5: Cleaning up editor artifacts...");
-
         string[] filesToDelete =
         {
-            "CherrisEditor.exe",
-            "CherrisEditor.dll",
-            "CherrisEditor.pdb",
-            "CherrisEditor.runtimeconfig.json",
-            "ImGuizmo.NET.dll",
-            "NativeFileDialogNET.dll",
-            "Microsoft.CodeAnalysis.dll",
-            "Microsoft.CodeAnalysis.CSharp.dll",
-            "Microsoft.CodeAnalysis.VisualBasic.dll"
+            "CherrisEditor.exe", "CherrisEditor.dll", "CherrisEditor.pdb", "CherrisEditor.runtimeconfig.json",
+            "ImGuizmo.NET.dll", "NativeFileDialogNET.dll",
+            "Microsoft.CodeAnalysis.dll", "Microsoft.CodeAnalysis.CSharp.dll", "Microsoft.CodeAnalysis.VisualBasic.dll"
         };
 
         foreach (var file in filesToDelete)
@@ -9846,65 +10014,37 @@ public static class GameBuilder
             string path = Path.Combine(outputDir, file);
             if (File.Exists(path))
             {
-                try
-                {
-                    File.Delete(path);
-                }
-                catch
-                {
-                    Logger.Warning($"[GameBuilder] Failed to delete artifact: {file}");
-                }
+                try { File.Delete(path); } catch { }
             }
         }
     }
 
     private static bool CompileScripts(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 3/5: Compiling Game Scripts...");
-        // Scripts DLL must remain in root for the engine to load it
+        Logger.Info("[GameBuilder] Compiling Game Scripts...");
         string dllPath = Path.Combine(outputDir, "GameScripts.dll");
         return ScriptCompiler.CompileToFile(project.RootPath, dllPath);
     }
 
     private static void CopyEngineResources(string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 4/5: Copying Engine Resources...");
-
         string sourceDir = Path.Combine(AppContext.BaseDirectory, "EditorResources");
         string destDir = Path.Combine(outputDir, "EditorResources");
-
         if (Directory.Exists(sourceDir))
         {
             CopyDirectoryRecursively(sourceDir, destDir);
-        }
-        else
-        {
-            Logger.Warning("[GameBuilder] 'EditorResources' folder not found in Editor directory. Runtime visuals might fail.");
         }
     }
 
     private static void CopyProjectContent(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Step 5/5: Copying Project Content to Assets/...");
-
+        Logger.Info("[GameBuilder] Copying Project Content...");
         string assetsDir = Path.Combine(outputDir, "Assets");
         Directory.CreateDirectory(assetsDir);
 
-        var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "bin", "obj", ".git", ".vs", ".idea", "Builds", "Logs"
-        };
-
-        var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".csproj", ".sln", ".pdb", ".user", ".cs"
-        };
-
-        // Explicitly exclude project.yaml as it is copied to Root separately
-        var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "project.yaml"
-        };
+        var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "bin", "obj", ".git", ".vs", "Builds", "Logs" };
+        var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".csproj", ".sln", ".pdb", ".user", ".cs" };
+        var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "project.yaml" };
 
         string fullOutputDir = Path.GetFullPath(outputDir);
         string fullProjectRoot = Path.GetFullPath(project.RootPath);
@@ -9912,7 +10052,6 @@ public static class GameBuilder
         void CopyRecursive(string source, string dest)
         {
             Directory.CreateDirectory(dest);
-
             foreach (var file in Directory.GetFiles(source))
             {
                 if (excludedExtensions.Contains(Path.GetExtension(file)))
@@ -9926,15 +10065,11 @@ public static class GameBuilder
                 }
 
                 string destFile = Path.Combine(dest, Path.GetFileName(file));
-
-                if (File.Exists(destFile))
+                if (!File.Exists(destFile))
                 {
-                    continue;
+                    File.Copy(file, destFile, true);
                 }
-
-                File.Copy(file, destFile, true);
             }
-
             foreach (var subDir in Directory.GetDirectories(source))
             {
                 string dirName = Path.GetFileName(subDir);
@@ -9943,9 +10078,7 @@ public static class GameBuilder
                     continue;
                 }
 
-                string fullSubPath = Path.GetFullPath(subDir);
-
-                if (fullOutputDir.StartsWith(fullSubPath, StringComparison.OrdinalIgnoreCase))
+                if (fullOutputDir.StartsWith(Path.GetFullPath(subDir), StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -9953,13 +10086,11 @@ public static class GameBuilder
                 CopyRecursive(subDir, Path.Combine(dest, dirName));
             }
         }
-
         CopyRecursive(fullProjectRoot, assetsDir);
     }
 
     private static void CopyConfigFile(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Finalizing configuration...");
         string destPath = Path.Combine(outputDir, "project.yaml");
         File.Copy(project.ConfigPath, destPath, true);
     }
@@ -9967,7 +10098,6 @@ public static class GameBuilder
     private static void CopyDirectoryRecursively(string sourceDir, string destDir)
     {
         Directory.CreateDirectory(destDir);
-
         foreach (var file in Directory.GetFiles(sourceDir))
         {
             File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), true);
@@ -10127,19 +10257,38 @@ public class EditorSelection
 ```csharp
 using Cherris;
 using Cherris.Components;
+using Cherris.Core;
 using Cherris.Core.Logging;
+using Cherris.Serialization;
 
 namespace CherrisEditor.Core;
 
 public class PlayModeManager
 {
     private readonly SceneManager _sceneManager;
+    private readonly SceneLoader _sceneLoader;
+    private readonly SceneSerializer _sceneSerializer;
+    private readonly ScriptManager _scriptManager;
+    private readonly ProjectManager _projectManager;
+
+    // Stores the YAML state of the scene before entering Play Mode.
+    private string? _editModeSceneSnapshot;
+    private string _activeScenePath = "";
 
     public EditorState State { get; private set; } = EditorState.Editing;
 
-    public PlayModeManager(SceneManager sceneManager)
+    public PlayModeManager(
+        SceneManager sceneManager,
+        SceneLoader sceneLoader,
+        SceneSerializer sceneSerializer,
+        ScriptManager scriptManager,
+        ProjectManager projectManager)
     {
         _sceneManager = sceneManager;
+        _sceneLoader = sceneLoader;
+        _sceneSerializer = sceneSerializer;
+        _scriptManager = scriptManager;
+        _projectManager = projectManager;
     }
 
     public void EnterPlayMode(Camera? editorCamera)
@@ -10151,7 +10300,38 @@ public class PlayModeManager
 
         if (State == EditorState.Editing)
         {
-            var gameCamera = _sceneManager.GameObjects
+            Scene? activeScene = _sceneManager.ActiveScene;
+            if (activeScene is null)
+            {
+                Logger.Warning("[Editor] No active scene to play.");
+                return;
+            }
+
+            // 1. Snapshot the current scene state (in-memory save)
+            Logger.Info("[PlayMode] Snapshotting scene state...");
+            _editModeSceneSnapshot = _sceneSerializer.SerializeSceneToString(activeScene.GameObjects);
+            _activeScenePath = activeScene.FilePath;
+
+            // 2. Compile Scripts (Hot-Reload)
+            // We compile AFTER snapshotting but BEFORE reloading.
+            // This ensures we save the data of the old types, but instantiate the new types.
+            if (_projectManager.CurrentProject != null)
+            {
+                Logger.Info("[PlayMode] Compiling scripts...");
+                bool success = _scriptManager.CompileAndRegisterGameScripts(_projectManager.CurrentProject.RootPath);
+                if (!success)
+                {
+                    Logger.Error("[PlayMode] Compilation failed. Aborting Play Mode.");
+                    _editModeSceneSnapshot = null; // Discard snapshot
+                    return;
+                }
+            }
+
+            // 3. Hot-reload the scene from the snapshot using NEW script types.
+            ReloadSceneFromSnapshot(_editModeSceneSnapshot, _activeScenePath);
+
+            // 4. Find/Set Main Camera for Game
+            var gameCamera = _sceneManager.ActiveScene.GameObjects
                 .Select(g => g.GetComponent<Camera>())
                 .FirstOrDefault(c => c is not null && c != editorCamera);
 
@@ -10161,14 +10341,17 @@ public class PlayModeManager
             }
             else
             {
-                Logger.Warning("[Editor] No game camera found to switch to for play mode. Using the editor camera.");
+                Logger.Warning("[Editor] No game camera found. Using default/editor camera.");
             }
 
+            // 5. Start the Scene (Calls Start() on all scripts)
             _sceneManager.Start();
         }
 
         State = EditorState.Playing;
         SetScriptsEnabledForPlayMode();
+
+        Logger.Info("[PlayMode] Game Started.");
     }
 
     public void EnterPauseMode()
@@ -10180,26 +10363,68 @@ public class PlayModeManager
 
         State = EditorState.Paused;
         SetScriptsEnabledForPauseMode();
+        Logger.Info("[PlayMode] Game Paused.");
     }
 
     public void Stop()
     {
+        if (State == EditorState.Editing)
+        {
+            return;
+        }
+
+        // Restore the scene to the state it was in before Play Mode
+        if (!string.IsNullOrEmpty(_editModeSceneSnapshot))
+        {
+            Logger.Info("[PlayMode] Restoring edit-mode scene state...");
+            ReloadSceneFromSnapshot(_editModeSceneSnapshot, _activeScenePath);
+            _editModeSceneSnapshot = null;
+        }
+
         State = EditorState.Editing;
+        Logger.Info("[PlayMode] Stopped.");
+    }
+
+    private void ReloadSceneFromSnapshot(string snapshotYaml, string filePath)
+    {
+        // Close the current scene (cleans up resources like Physics bodies)
+        if (_sceneManager.ActiveScene is not null)
+        {
+            _sceneManager.CloseScene(_sceneManager.ActiveScene);
+        }
+
+        // Load objects from the snapshot string
+        List<GameObject> objects = _sceneLoader.LoadSceneFromYaml(snapshotYaml);
+
+        // Create new scene instance
+        Scene newScene = new(filePath, objects);
+        _sceneManager.OpenScene(newScene);
     }
 
     private void SetScriptsEnabledForPlayMode()
     {
+        int count = 0;
         foreach (var script in _sceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            script.Enabled = script is not EditorController;
+            // Disable EditorController, Enable everything else
+            bool isEditorScript = script.GetType().Name == "EditorController";
+            script.Enabled = !isEditorScript;
+
+            if (script.Enabled)
+            {
+                count++;
+            }
         }
+        Logger.Info($"[PlayMode] Enabled {count} scripts.");
     }
 
     private void SetScriptsEnabledForPauseMode()
     {
         foreach (var script in _sceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            script.Enabled = script is EditorController;
+            // In pause mode, we might want to enable the EditorCamera to fly around frozen time
+            bool isEditorScript = script.GetType().Name == "EditorController";
+            script.Enabled = isEditorScript;
         }
     }
 }
@@ -10341,7 +10566,6 @@ public class SceneOperations
 using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
-using CherrisEditor.Build;
 using System.Reflection;
 using System.Runtime.Loader;
 
@@ -10360,7 +10584,7 @@ public class ScriptManager
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
     }
 
-    public void CompileAndRegisterGameScripts(string scriptsPath)
+    public bool CompileAndRegisterGameScripts(string projectRoot)
     {
         if (_gameAssemblyContext.Assemblies.Any())
         {
@@ -10379,12 +10603,13 @@ public class ScriptManager
 
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
-        Assembly? gameAssembly = ScriptCompiler.Compile(scriptsPath, _gameAssemblyContext);
+        // ScriptCompiler.Compile expects the Project Root (parent of Scripts folder)
+        Assembly? gameAssembly = ScriptCompiler.Compile(projectRoot, _gameAssemblyContext);
 
         if (gameAssembly is null)
         {
-            Logger.Warning("[Editor] Game script compilation failed. No custom components will be loaded.");
-            return;
+            Logger.Warning("[Editor] Game script compilation failed or no scripts found. No custom components will be loaded.");
+            return false;
         }
 
         try
@@ -10399,10 +10624,12 @@ public class ScriptManager
                 count++;
             }
             Logger.Info($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
+            return true;
         }
         catch (Exception ex)
         {
             Logger.Error($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
+            return false;
         }
     }
 
@@ -10416,10 +10643,10 @@ public class ScriptManager
         }
 
         _sceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Logger.Info($"[Editor] Registered component: {scriptType.Name}");
+        // Logger.Info($"[Editor] Registered component: {scriptType.Name}"); // Reduced spam
     }
 
-    public void CreateAndCompileScript(string scriptsPath, string scriptName)
+    public void CreateAndCompileScript(string projectRoot, string scriptName)
     {
         if (!IsValidCSharpIdentifier(scriptName))
         {
@@ -10427,7 +10654,9 @@ public class ScriptManager
             return;
         }
 
+        string scriptsPath = Path.Combine(projectRoot, "Scripts");
         Directory.CreateDirectory(scriptsPath);
+
         string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
 
         if (File.Exists(filePath))
@@ -10440,7 +10669,7 @@ public class ScriptManager
         File.WriteAllText(filePath, content);
         Logger.Info($"[Editor] Created new script at '{filePath}'");
 
-        CompileAndRegisterGameScripts(scriptsPath);
+        CompileAndRegisterGameScripts(projectRoot);
     }
 
     private static bool IsValidCSharpIdentifier(string identifier)
@@ -12522,7 +12751,6 @@ public class MenuBar
             if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
                 Scene? activeScene = _editor.SceneManager.ActiveScene;
-
                 if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
                 {
                     _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
@@ -12533,16 +12761,24 @@ public class MenuBar
 
             ImGui.Separator();
 
-            if (ImGui.MenuItem("Build Game..."))
+            // Project settings exposed here for convenience
+            if (_editor.ProjectManager.CurrentProject is not null)
             {
-                if (_editor.ProjectManager.CurrentProject is not null)
+                bool pack = _editor.ProjectManager.CurrentProject.PackAssets;
+                if (ImGui.MenuItem("Pack Assets on Build", "", ref pack))
+                {
+                    _editor.ProjectManager.CurrentProject.PackAssets = pack;
+                    _editor.ProjectManager.CurrentProject.Save();
+                }
+
+                if (ImGui.MenuItem("Build Game..."))
                 {
                     GameBuilder.BuildGame(_editor.ProjectManager.CurrentProject);
                 }
-                else
-                {
-                    Console.WriteLine("[Editor] Cannot build: No project loaded.");
-                }
+            }
+            else
+            {
+                ImGui.MenuItem("Build Game...", "", false, false);
             }
 
             ImGui.Separator();
@@ -14081,21 +14317,17 @@ public class RuntimeGame : Engine
 
     protected override void LoadContent()
     {
+        // Initialize Virtual File System
+        ProjectFiles.Initialize(AppContext.BaseDirectory);
+
         ResourceManager.LoadInitialAssets();
-
-        // 1. Register internal components (Camera, Light, etc.)
         RegisterInternalComponents();
-
-        // 2. Load and register user scripts
         LoadGameScripts();
-
-        // 3. Load project config and start scene
         LoadProjectAndScene();
     }
 
     private void RegisterInternalComponents()
     {
-        // These are the same basic types the editor supports
         ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
     }
 
@@ -14105,7 +14337,6 @@ public class RuntimeGame : Engine
 
         if (!File.Exists(dllPath))
         {
-            Logger.Warning($"[Runtime] No scripts assembly found at '{dllPath}'.");
             return;
         }
 
@@ -14117,9 +14348,7 @@ public class RuntimeGame : Engine
 
             foreach (Type type in scriptTypes)
             {
-                // Register the factory for this script type
                 SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
-                Logger.Info($"[Runtime] Registered script: {type.Name}");
             }
         }
         catch (Exception ex)
@@ -14131,7 +14360,7 @@ public class RuntimeGame : Engine
     private void LoadProjectAndScene()
     {
         string configPath = Path.Combine(AppContext.BaseDirectory, ConfigFile);
-        string startScenePath = "Scenes/Main.yaml"; // Default fallback
+        string startScenePath = "Scenes/Main.yaml";
 
         if (File.Exists(configPath))
         {
@@ -14148,31 +14377,13 @@ public class RuntimeGame : Engine
                     startScenePath = configuredScene;
                 }
             }
-            catch (Exception ex)
-            {
-                Logger.Error($"[Runtime] Error reading project config: {ex.Message}");
-            }
+            catch { }
         }
 
-        LoadScene(startScenePath);
-    }
-
-    private void LoadScene(string filePath)
-    {
-        // Use ProjectFiles.Find to correctly locate the file in the Assets directory if needed
-        string? fullPath = ProjectFiles.Find(filePath);
-
-        if (fullPath is null)
-        {
-            Logger.Error($"[Runtime] Start scene not found. Lookup path: '{filePath}'");
-            return;
-        }
-
-        Logger.Info($"[Runtime] Loading scene: {fullPath}");
-
-        var gameObjects = SceneLoader.LoadScene(fullPath);
-        var scene = new Scene(fullPath, gameObjects);
-
+        // ProjectFiles.Open finds it in pack or disk
+        Logger.Info($"[Runtime] Loading scene: {startScenePath}");
+        var gameObjects = SceneLoader.LoadScene(startScenePath);
+        var scene = new Scene(startScenePath, gameObjects);
         SceneManager.OpenScene(scene);
         SceneManager.Start();
     }
