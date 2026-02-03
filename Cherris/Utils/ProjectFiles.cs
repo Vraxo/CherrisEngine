@@ -7,13 +7,6 @@ public static class ProjectFiles
     public static string? ProjectRoot { get; set; }
     private static AssetBundle? _bundle;
 
-    // Expanded extension list to support more image formats
-    private static readonly string[] SupportedExtensions =
-    {
-        ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".tiff",
-        ".gltf", ".glb", ".wav", ".ogg"
-    };
-
     public static void Initialize(string rootPath)
     {
         string bundlePath = Path.Combine(rootPath, "Assets.pak");
@@ -44,7 +37,10 @@ public static class ProjectFiles
             // Fuzzy match (extensions)
             if (!Path.HasExtension(normalized))
             {
-                foreach (var ext in SupportedExtensions)
+                // This is inefficient but functional for small projects
+                // In a real engine, use a trie or dictionary lookup optimization
+                string[] extensions = { ".png", ".jpg", ".gltf", ".glb", ".wav" };
+                foreach (var ext in extensions)
                 {
                     string probe = normalized + ext;
                     if (_bundle.HasFile(probe))
@@ -89,7 +85,7 @@ public static class ProjectFiles
             return fullPath;
         }
 
-        // Fuzzy search for extensions
+        // Fuzzy search
         if (!Path.HasExtension(fullPath))
         {
             string? directory = Path.GetDirectoryName(fullPath);
@@ -97,14 +93,10 @@ public static class ProjectFiles
 
             if (directory is not null && Directory.Exists(directory))
             {
-                // We strictly look for files starting with fileName + an extension
-                foreach (var ext in SupportedExtensions)
+                string[] files = Directory.GetFiles(directory, $"{fileName}.*");
+                if (files.Any())
                 {
-                    string probe = Path.Combine(directory, fileName + ext);
-                    if (File.Exists(probe))
-                    {
-                        return probe;
-                    }
+                    return files[0];
                 }
             }
         }

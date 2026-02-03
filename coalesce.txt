@@ -13136,83 +13136,47 @@ in vec3 vToCamera;
 
 out vec4 FragColor;
 
-// Calculates grid line intensity for a specific scale
-float grid(vec2 pos, float scale) {
-    vec2 coord = pos / scale;
-    // fwidth provides anti-aliasing for the lines
-    vec2 derivative = fwidth(coord);
-    vec2 grid = abs(fract(coord - 0.5) - 0.5) / derivative;
-    float line = min(grid.x, grid.y);
-    return 1.0 - min(line, 1.0);
-}
-
 void main()
 {
     float dist = length(vToCamera);
-
-    // --- Configuration ---
-    float smallScale = 1.0;
-    float largeScale = 10.0;
     
-    // Fade zones (in meters/units)
-    // Small grid visible up to 50m
-    float smallFadeStart = 20.0;
-    float smallFadeEnd = 50.0;
-    
-    // Large grid visible up to 400m
-    float largeFadeStart = 250.0;
-    float largeFadeEnd = 400.0;
+    float spacing = 1.0;
+    if (dist > 200.0) spacing = 10.0;
+    else if (dist > 50.0) spacing = 5.0;
 
-    // --- Grid Calculations ---
+    vec2 coord = vWorldPos.xz / spacing;
     
-    // 1. Calculate the raw grid patterns
-    float smallGrid = grid(vWorldPos.xz, smallScale);
-    float largeGrid = grid(vWorldPos.xz, largeScale);
+    vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+    float line = min(grid.x, grid.y);
     
-    // 2. Calculate visibility factors (0.0 to 1.0) based on distance
-    float smallVis = 1.0 - smoothstep(smallFadeStart, smallFadeEnd, dist);
-    float largeVis = 1.0 - smoothstep(largeFadeStart, largeFadeEnd, dist);
+    vec2 coord_major = vWorldPos.xz / (spacing * 10.0);
+    vec2 grid_major = abs(fract(coord_major - 0.5) - 0.5) / fwidth(coord_major);
+    float line_major = min(grid_major.x, grid_major.y);
     
-    // 3. Axes (X = Red, Z = Blue)
-    float axisWidth = 1.5;
-    vec2 derivative = fwidth(vWorldPos.xz);
-    float xAxis = smoothstep(axisWidth * derivative.y, 0.0, abs(vWorldPos.z));
-    float zAxis = smoothstep(axisWidth * derivative.x, 0.0, abs(vWorldPos.x));
-    float axesVis = max(xAxis, zAxis);
-
-    // --- Composition ---
-
-    // Colors
-    vec3 colorSmall = vec3(0.35); // Slightly lighter gray
-    vec3 colorLarge = vec3(0.20); // Darker gray for major lines
-    vec3 colorX = vec3(0.8, 0.2, 0.2);
-    vec3 colorZ = vec3(0.2, 0.3, 0.8);
-
-    // Combine grids
-    // We dim the small grid (multiply by 0.5) so it doesn't overpower the scene
-    float smallAlpha = smallGrid * smallVis * 0.5; 
-    float largeAlpha = largeGrid * largeVis;
+    float axis_width = 1.5;
+    vec2 axis_d = fwidth(vWorldPos.xz);
+    float x_axis_alpha = smoothstep(axis_width * axis_d.y, 0.0, abs(vWorldPos.z));
+    float z_axis_alpha = smoothstep(axis_width * axis_d.x, 0.0, abs(vWorldPos.x));
+    float axes_alpha = max(x_axis_alpha, z_axis_alpha);
     
-    // Determine final alpha and base color
-    // Use max() to ensure lines don't double-add opacity weirdly
-    float gridAlpha = max(largeAlpha, smallAlpha);
+    float fade_start = 250.0;
+    float fade_end = 350.0;
+    float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
     
-    // Determine color priority (Large > Small)
-    vec3 gridColor = mix(colorSmall, colorLarge, largeAlpha > smallAlpha ? 1.0 : 0.0);
-
-    // Apply Axes override
-    if (axesVis > 0.0) {
-        if (xAxis > zAxis) gridColor = colorX;
-        else gridColor = colorZ;
-        
-        // Axes fade out with the large grid
-        gridAlpha = max(gridAlpha, axesVis * largeVis);
-    }
-
-    if (gridAlpha < 0.01)
+    float grid_alpha = 1.0 - min(line, 1.0);
+    float grid_major_alpha = 1.0 - min(line_major, 1.0);
+    
+    float final_alpha = (max(grid_alpha, axes_alpha) + grid_major_alpha) * fade;
+    
+    if (final_alpha < 0.01)
         discard;
+    
+    vec3 color = vec3(0.3);
+    color = mix(color, vec3(0.4), grid_major_alpha);
+    color = mix(color, vec3(0.8, 0.2, 0.2), x_axis_alpha);
+    color = mix(color, vec3(0.2, 0.3, 0.8), z_axis_alpha);
 
-    FragColor = vec4(gridColor, gridAlpha);
+    FragColor = vec4(color, final_alpha);
 }
 ```
 
