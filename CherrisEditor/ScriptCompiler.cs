@@ -20,9 +20,9 @@ public static class ScriptCompiler
         "System.Numerics.Vectors"
     };
 
-    public static Assembly? Compile(string rootAssetPath, AssemblyLoadContext context)
+    public static Assembly? Compile(string projectRoot, AssemblyLoadContext context)
     {
-        var compilation = PrepareCompilation(rootAssetPath);
+        var compilation = PrepareCompilation(projectRoot);
         if (compilation is null)
         {
             return null;
@@ -42,15 +42,14 @@ public static class ScriptCompiler
         return context.LoadFromStream(stream);
     }
 
-    public static bool CompileToFile(string rootAssetPath, string outputPath)
+    public static bool CompileToFile(string projectRoot, string outputPath)
     {
-        var compilation = PrepareCompilation(rootAssetPath);
+        var compilation = PrepareCompilation(projectRoot);
         if (compilation is null)
         {
             return false;
         }
 
-        // We emit to a file stream instead of memory
         using var stream = new FileStream(outputPath, FileMode.Create);
         EmitResult result = compilation.Emit(stream);
 
@@ -64,9 +63,9 @@ public static class ScriptCompiler
         return true;
     }
 
-    private static CSharpCompilation? PrepareCompilation(string rootAssetPath)
+    private static CSharpCompilation? PrepareCompilation(string projectRoot)
     {
-        string scriptsPath = Path.Combine(rootAssetPath, ScriptsDirectoryName);
+        string scriptsPath = Path.Combine(projectRoot, ScriptsDirectoryName);
 
         if (!TryGetScriptFiles(scriptsPath, out var files))
         {
@@ -89,8 +88,7 @@ public static class ScriptCompiler
 
         if (!Directory.Exists(scriptsPath))
         {
-            // Just a warning for runtime build, but info for editor
-            Logger.Info($"[ScriptCompiler] '{ScriptsDirectoryName}' directory not found.");
+            Logger.Info($"[ScriptCompiler] Scripts directory not found at: '{scriptsPath}'");
             return false;
         }
 
@@ -98,7 +96,7 @@ public static class ScriptCompiler
 
         if (files.Length == 0)
         {
-            Logger.Info($"[ScriptCompiler] No C# script files found in '{ScriptsDirectoryName}'.");
+            Logger.Info($"[ScriptCompiler] No C# script files found in '{scriptsPath}'.");
             return false;
         }
 
@@ -131,7 +129,7 @@ public static class ScriptCompiler
             }
             catch
             {
-                // Ignore if not found, standard lib might be implicitly loaded
+                // Ignore if not found
             }
         }
 

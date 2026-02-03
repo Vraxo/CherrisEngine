@@ -1,6 +1,7 @@
 ﻿using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
+using StbImageSharp;
 using Veldrid;
 
 namespace Cherris.Core;
@@ -34,12 +35,6 @@ public class ResourceManager : IResourceManager
         string[] parts = name.Split('#');
         string filePathPart = parts[0];
 
-        // Ensure we handle virtual files properly.
-        // If we are packed, Find() won't return a disk path if it's purely virtual, 
-        // but ModelLoader now handles ProjectFiles.Open.
-        // We use Find just to check existence or rely on ModelLoader failing gracefully.
-
-        // Actually, let's just try to load if the extension matches.
         if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
             filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
@@ -68,7 +63,6 @@ public class ResourceManager : IResourceManager
         return null;
     }
 
-
     public ITexture GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out var texture))
@@ -76,10 +70,7 @@ public class ResourceManager : IResourceManager
             return texture;
         }
 
-        // TextureLoader uses ImageLoader which uses ProjectFiles.Open.
-        // We just pass the name (path).
         var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, name);
-
         if (loadedTexture is not null)
         {
             _textures.Add(name, loadedTexture);
@@ -97,19 +88,41 @@ public class ResourceManager : IResourceManager
             return skybox;
         }
 
-        var loadedSkybox = SkyboxLoader.LoadSkybox(_graphicsDevice, name);
-        if (loadedSkybox is not null)
+        ImageResult[]? images = SkyboxLoader.LoadSkyboxImages(name);
+        if (images is null)
         {
-            _skyboxes.Add(name, loadedSkybox);
-            return loadedSkybox;
+            return null;
         }
-        return null;
+
+        Texture cubemapTexture = CreateCubemapTexture(images);
+        var newSkybox = new Skybox(cubemapTexture, name);
+
+        _skyboxes.Add(name, newSkybox);
+        return newSkybox;
+    }
+
+    private Texture CreateCubemapTexture(ImageResult[] images)
+    {
+        ImageResult firstImage = images[0];
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+        TextureDescription textureDescription = TextureDescription.Texture2D(
+            (uint)firstImage.Width, (uint)firstImage.Height, 1, (uint)images.Length,
+            PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Cubemap | TextureUsage.Sampled);
+
+        Veldrid.Texture cubemap = factory.CreateTexture(textureDescription);
+
+        for (uint i = 0; i < images.Length; i++)
+        {
+            _graphicsDevice.UpdateTexture(cubemap, images[i].Data, 0, 0, 0, (uint)images[i].Width, (uint)images[i].Height, 1, 0, i);
+        }
+
+        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
+        return new Texture(cubemap, textureView);
     }
 
     public AudioClip? GetAudioClip(string name)
     {
-        // Veldrid backend doesn't support audio here, 
-        // but if it did, it would use AudioLoader which is now stream-ready.
         return null;
     }
 

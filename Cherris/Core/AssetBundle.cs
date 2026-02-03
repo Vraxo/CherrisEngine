@@ -36,11 +36,22 @@ public class AssetBundle : IDisposable
             }
 
             int count = reader.ReadInt32();
+            if (count is < 0 or > 1_000_000)
+            {
+                throw new Exception($"Invalid file count: {count}");
+            }
+
             for (int i = 0; i < count; i++)
             {
                 string key = reader.ReadString();
                 long offset = reader.ReadInt64();
                 long size = reader.ReadInt64();
+
+                if (size < 0)
+                {
+                    throw new Exception($"Invalid size for asset '{key}'");
+                }
+
                 bundle._entries[key] = (offset, size);
             }
 
@@ -56,36 +67,30 @@ public class AssetBundle : IDisposable
 
     public static void Create(string outputPath, string rootDirectory)
     {
-        // 1. Resolve absolute path of the output file to compare against scanned files
         string absoluteOutputPath = Path.GetFullPath(outputPath);
 
-        // 2. Open the file for writing
         using var stream = File.Create(outputPath);
         using var writer = new BinaryWriter(stream, Encoding.UTF8);
 
-        // 3. Scan files, EXCLUDING the bundle file itself and other artifacts
         var files = Directory.GetFiles(rootDirectory, "*", SearchOption.AllDirectories)
             .Where(f =>
             {
                 string absPath = Path.GetFullPath(f);
                 string fileName = Path.GetFileName(f);
 
-                // Exclude the output package itself (critical fix)
                 if (string.Equals(absPath, absoluteOutputPath, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
-                // Exclude project config
                 if (fileName.Equals("project.yaml", StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
-                // Exclude build artifacts / hidden folders
-                if (f.Contains("\\bin\\") || f.Contains("/bin/") ||
-                    f.Contains("\\obj\\") || f.Contains("/obj/") ||
-                    f.Contains("\\.git\\") || f.Contains("/.git/"))
+                if (f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar) ||
+                    f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) ||
+                    f.Contains(".git"))
                 {
                     return false;
                 }
@@ -94,30 +99,25 @@ public class AssetBundle : IDisposable
             })
             .ToList();
 
-        // 4. Write Header
         writer.Write(Magic.ToCharArray());
         writer.Write(Version);
         writer.Write(files.Count);
 
-        // 5. Placeholder for Index
         long indexStart = stream.Position;
 
-        // Write dummy index
         foreach (var file in files)
         {
             string relPath = Path.GetRelativePath(rootDirectory, file).Replace('\\', '/');
             writer.Write(relPath);
-            writer.Write((long)0); // Offset placeholder
-            writer.Write((long)0); // Size placeholder
+            writer.Write((long)0);
+            writer.Write((long)0);
         }
 
-        // 6. Write Data Blobs
         var entries = new List<(long Offset, long Size)>();
 
         foreach (var file in files)
         {
             long offset = stream.Position;
-
             try
             {
                 using var fs = File.OpenRead(file);
@@ -127,12 +127,10 @@ public class AssetBundle : IDisposable
             catch (Exception ex)
             {
                 Logger.Warning($"[AssetBundle] Failed to pack '{file}': {ex.Message}");
-                // We still need an entry to match the index count, but size 0
                 entries.Add((offset, 0));
             }
         }
 
-        // 7. Rewrite Index with correct offsets
         long finalPosition = stream.Position;
         stream.Position = indexStart;
 
@@ -144,7 +142,6 @@ public class AssetBundle : IDisposable
             writer.Write(entries[i].Size);
         }
 
-        // Restore position (good practice, though stream closes here)
         stream.Position = finalPosition;
     }
 
@@ -160,7 +157,13 @@ public class AssetBundle : IDisposable
             return null;
         }
 
-        byte[] data = new byte[entry.Size];
+        if (entry.Size > int.MaxValue)
+        {
+            Logger.Error($"[AssetBundle] Asset '{path}' is too large ({entry.Size} bytes) to load into memory.");
+            return null;
+        }
+
+        byte[] data = new byte[(int)entry.Size];
         lock (_stream!)
         {
             _stream.Seek(entry.Offset, SeekOrigin.Begin);

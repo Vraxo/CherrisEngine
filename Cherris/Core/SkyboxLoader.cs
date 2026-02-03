@@ -1,7 +1,5 @@
-﻿using Cherris.Components;
-using Cherris.Utils;
+﻿using Cherris.Utils;
 using StbImageSharp;
-using Veldrid;
 
 namespace Cherris.Core;
 
@@ -9,22 +7,21 @@ public static class SkyboxLoader
 {
     private static readonly string[] FaceSuffixes = ["_right", "_left", "_top", "_bottom", "_front", "_back"];
 
-    public static Skybox? LoadSkybox(GraphicsDevice gd, string name)
+    // Returns an array of 6 ImageResults (Right, Left, Top, Bottom, Front, Back)
+    public static ImageResult[]? LoadSkyboxImages(string baseName)
     {
-        // Name is typically "SkyboxName" -> looks for "SkyboxName_right" etc.
-        // We need paths. ProjectFiles.Find returns paths for Editor, but Open returns stream.
-        // Here we just need to try opening "name_suffix".
-
         var images = new ImageResult[6];
 
         try
         {
+            // Cubemaps usually don't need flipping, depending on the backend.
+            // We load raw here; the consumer (ResourceManager) can decide flags if needed,
+            // but StbImage state is global, so we set it locally and reset.
             StbImage.stbi_set_flip_vertically_on_load(0);
 
             for (int i = 0; i < 6; i++)
             {
-                string faceName = name + FaceSuffixes[i];
-                // We fuzzy search via Open since we don't know the extension
+                string faceName = baseName + FaceSuffixes[i];
                 using var stream = ProjectFiles.Open(faceName);
 
                 if (stream is null)
@@ -41,8 +38,7 @@ public static class SkyboxLoader
                 return null;
             }
 
-            Texture cubemapTexture = CreateCubemapTexture(gd, images);
-            return new(cubemapTexture, name);
+            return images;
         }
         catch (Exception e)
         {
@@ -51,7 +47,7 @@ public static class SkyboxLoader
         }
         finally
         {
-            StbImage.stbi_set_flip_vertically_on_load(1);
+            StbImage.stbi_set_flip_vertically_on_load(1); // Restore default
         }
     }
 
@@ -68,26 +64,5 @@ public static class SkyboxLoader
         }
 
         return true;
-    }
-
-    private static Texture CreateCubemapTexture(GraphicsDevice gd, ImageResult[] images)
-    {
-        // (Unchanged implementation)
-        ImageResult firstImage = images[0];
-        ResourceFactory factory = gd.ResourceFactory;
-
-        TextureDescription textureDescription = TextureDescription.Texture2D(
-            (uint)firstImage.Width, (uint)firstImage.Height, 1, (uint)images.Length,
-            PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Cubemap | TextureUsage.Sampled);
-
-        Veldrid.Texture cubemap = factory.CreateTexture(textureDescription);
-
-        for (uint i = 0; i < images.Length; i++)
-        {
-            gd.UpdateTexture(cubemap, images[i].Data, 0, 0, 0, (uint)images[i].Width, (uint)images[i].Height, 1, 0, i);
-        }
-
-        TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
-        return new(cubemap, textureView);
     }
 }

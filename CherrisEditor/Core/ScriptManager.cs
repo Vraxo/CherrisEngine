@@ -1,7 +1,6 @@
 ﻿using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
-using CherrisEditor.Build;
 using System.Reflection;
 using System.Runtime.Loader;
 
@@ -20,7 +19,7 @@ public class ScriptManager
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
     }
 
-    public void CompileAndRegisterGameScripts(string scriptsPath)
+    public void CompileAndRegisterGameScripts(string projectRoot)
     {
         if (_gameAssemblyContext.Assemblies.Any())
         {
@@ -39,11 +38,12 @@ public class ScriptManager
 
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
 
-        Assembly? gameAssembly = ScriptCompiler.Compile(scriptsPath, _gameAssemblyContext);
+        // ScriptCompiler.Compile expects the Project Root (parent of Scripts folder)
+        Assembly? gameAssembly = ScriptCompiler.Compile(projectRoot, _gameAssemblyContext);
 
         if (gameAssembly is null)
         {
-            Logger.Warning("[Editor] Game script compilation failed. No custom components will be loaded.");
+            Logger.Warning("[Editor] Game script compilation failed or no scripts found. No custom components will be loaded.");
             return;
         }
 
@@ -79,7 +79,7 @@ public class ScriptManager
         Logger.Info($"[Editor] Registered component: {scriptType.Name}");
     }
 
-    public void CreateAndCompileScript(string scriptsPath, string scriptName)
+    public void CreateAndCompileScript(string projectRoot, string scriptName)
     {
         if (!IsValidCSharpIdentifier(scriptName))
         {
@@ -87,7 +87,9 @@ public class ScriptManager
             return;
         }
 
+        string scriptsPath = Path.Combine(projectRoot, "Scripts");
         Directory.CreateDirectory(scriptsPath);
+
         string filePath = Path.Combine(scriptsPath, $"{scriptName}.cs");
 
         if (File.Exists(filePath))
@@ -100,7 +102,7 @@ public class ScriptManager
         File.WriteAllText(filePath, content);
         Logger.Info($"[Editor] Created new script at '{filePath}'");
 
-        CompileAndRegisterGameScripts(scriptsPath);
+        CompileAndRegisterGameScripts(projectRoot);
     }
 
     private static bool IsValidCSharpIdentifier(string identifier)

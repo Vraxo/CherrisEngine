@@ -80,8 +80,7 @@ public class Editor : Engine
             return;
         }
 
-        string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
-        ScriptManager.CreateAndCompileScript(scriptsPath, scriptName);
+        ScriptManager.CreateAndCompileScript(ProjectManager.CurrentProject.RootPath, scriptName);
     }
 
     public void SetSelectedGameObject(GameObject? go)
@@ -101,8 +100,7 @@ public class Editor : Engine
 
         if (ProjectManager.CurrentProject is not null)
         {
-            string scriptsPath = Path.Combine(ProjectManager.CurrentProject.RootPath, "Scripts");
-            ScriptManager.CompileAndRegisterGameScripts(scriptsPath);
+            ScriptManager.CompileAndRegisterGameScripts(ProjectManager.CurrentProject.RootPath);
         }
 
         History.OnHistoryChanged += MarkActiveSceneDirty;

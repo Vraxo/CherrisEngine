@@ -80,16 +80,11 @@ public class OpenTKResourceManager : ResourceManagerBase
             return skybox;
         }
 
-        // SkyboxLoader now uses ProjectFiles.Open internally
-        var loadedSkybox = SkyboxLoader.LoadSkybox(null!, name); // Note: GraphicsDevice is null here because OpenTK doesn't use it, but SkyboxLoader expects it for Veldrid.
-
-        // REFACTOR: SkyboxLoader logic is currently coupled to Veldrid. 
-        // For OpenTK, we should implement a dedicated loading path or refactor SkyboxLoader to return raw data.
-        // Given constraints, I will implement OpenTK specific loading here to avoid breaking the Veldrid loader.
-
-        var faceImages = LoadCubemapFacesGeneric(name);
+        // Use the unified loader logic
+        var faceImages = SkyboxLoader.LoadSkyboxImages(name);
         if (faceImages is null)
         {
+            Logger.Error($"[OpenTKResourceManager] Could not load faces for skybox '{name}'.");
             return null;
         }
 
@@ -109,26 +104,6 @@ public class OpenTKResourceManager : ResourceManagerBase
         var newSkybox = new Skybox(newTexture, name);
         _skyboxes.Add(name, newSkybox);
         return newSkybox;
-    }
-
-    private static ImageData[]? LoadCubemapFacesGeneric(string baseName)
-    {
-        // Re-implementing logic from GenericCubemapLoader but using ProjectFiles.Open via ImageLoader
-        string[] suffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
-        var images = new ImageData[6];
-        for (int i = 0; i < suffixes.Length; i++)
-        {
-            string name = baseName + suffixes[i];
-            // ImageLoader uses ProjectFiles.Open(name) which does fuzzy search
-            var img = ImageLoader.LoadFromFile(name, false);
-            if (img == null)
-            {
-                return null;
-            }
-
-            images[i] = img.Value;
-        }
-        return images;
     }
 
     public override AudioClip? GetAudioClip(string name)
