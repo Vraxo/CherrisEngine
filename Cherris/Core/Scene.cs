@@ -1,4 +1,5 @@
 ﻿using Cherris.Components;
+using Cherris.Core.Logging;
 using System.Numerics;
 
 namespace Cherris.Core;
@@ -80,7 +81,15 @@ public class Scene : IDisposable
                     rb.Initialize(physicsSystem);
                 }
 
-                script.Start();
+                try
+                {
+                    script.Start();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.Start() on '{gameObject.Name}': {ex.Message}\n{ex.StackTrace}");
+                    script.Enabled = false;
+                }
             }
 
             foreach (var audioSource in gameObject.GetComponents<AudioSource>())
@@ -110,7 +119,15 @@ public class Scene : IDisposable
                     continue;
                 }
 
-                script.Update(deltaTime);
+                try
+                {
+                    script.Update(deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.Update() on '{gameObject.Name}': {ex.Message}");
+                    script.Enabled = false; // Disable the script to prevent console flooding
+                }
             }
         }
     }
