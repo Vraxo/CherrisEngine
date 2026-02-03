@@ -84,7 +84,7 @@ public class OpenTKResourceManager : ResourceManagerBase
         var faceImages = SkyboxLoader.LoadSkyboxImages(name);
         if (faceImages is null)
         {
-            Logger.Error($"[OpenTKResourceManager] Could not load faces for skybox '{name}'.");
+            Logger.Error($"[OpenTKResourceManager] Failed to create skybox '{name}' due to loading errors (see above).");
             return null;
         }
 
