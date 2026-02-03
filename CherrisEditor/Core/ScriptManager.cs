@@ -19,7 +19,7 @@ public class ScriptManager
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
     }
 
-    public void CompileAndRegisterGameScripts(string projectRoot)
+    public bool CompileAndRegisterGameScripts(string projectRoot)
     {
         if (_gameAssemblyContext.Assemblies.Any())
         {
@@ -44,7 +44,7 @@ public class ScriptManager
         if (gameAssembly is null)
         {
             Logger.Warning("[Editor] Game script compilation failed or no scripts found. No custom components will be loaded.");
-            return;
+            return false;
         }
 
         try
@@ -59,10 +59,12 @@ public class ScriptManager
                 count++;
             }
             Logger.Info($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
+            return true;
         }
         catch (Exception ex)
         {
             Logger.Error($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
+            return false;
         }
     }
 
@@ -76,7 +78,7 @@ public class ScriptManager
         }
 
         _sceneLoader.RegisterComponentFactory(scriptType.Name, Factory);
-        Logger.Info($"[Editor] Registered component: {scriptType.Name}");
+        // Logger.Info($"[Editor] Registered component: {scriptType.Name}"); // Reduced spam
     }
 
     public void CreateAndCompileScript(string projectRoot, string scriptName)

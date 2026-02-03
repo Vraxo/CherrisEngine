@@ -59,6 +59,12 @@ public class SceneLoader
         return DeserializeObjects(reader, false); // False = return all (scene list)
     }
 
+    public List<GameObject> LoadSceneFromYaml(string yamlContent)
+    {
+        using var reader = new StringReader(yamlContent);
+        return DeserializeObjects(reader, false);
+    }
+
     private List<GameObject> DeserializeObjects(TextReader reader, bool returnRootsOnly)
     {
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(reader);
@@ -115,7 +121,6 @@ public class SceneLoader
         return returnRootsOnly ? resultList.Where(g => g.Transform.Parent == null).ToList() : resultList;
     }
 
-    // ... (ApplyTransformProperties, AddComponent, ApplyScriptProperties remain identical to previous) ...
     private void ApplyTransformProperties(Transform transform, object properties)
     {
         var yaml = _serializer.Serialize(properties);
@@ -147,6 +152,7 @@ public class SceneLoader
 
         if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
+            Logger.Warning($"[SceneLoader] Unknown component type: '{componentType}' on GameObject '{go.Name}'");
             return;
         }
 

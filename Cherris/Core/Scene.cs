@@ -15,6 +15,8 @@ public class Scene : IDisposable
     public Skybox? Skybox { get; private set; } = null;
     public bool IsDirty { get; set; }
 
+    private float _debugLogTimer;
+
     public Scene(string filePath, List<GameObject> gameObjects)
     {
         FilePath = filePath;
@@ -42,43 +44,45 @@ public class Scene : IDisposable
 
     public void RemoveGameObject(GameObject go)
     {
-        // Recursively remove children first to avoid modifying collection during iteration
         foreach (Transform? childTransform in go.Transform.Children.ToList())
         {
             RemoveGameObject(childTransform.GameObject);
         }
 
-        // Remove the object from its parent's list
         go.Transform.Parent = null;
-
-        // Remove from the root scene list
         GameObjects.Remove(go);
 
-        // Remove light from cached list
         var light = go.GetComponent<Light>();
-
         if (light is not null)
         {
             Lights.Remove(light);
         }
 
-        // Dispose its managed resources
         go.GetComponent<MeshRenderer>()?.Dispose();
         IsDirty = true;
     }
 
     public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
+        Logger.Info($"[Scene] Starting scene '{Name}' with {GameObjects.Count} objects.");
         FindMainComponents();
 
-        // Initialize scripts and components
         foreach (GameObject gameObject in GameObjects)
         {
             foreach (var script in gameObject.GetComponents<Script>())
             {
+                Logger.Info($"[Scene] Initializing script '{script.GetType().Name}' on '{gameObject.Name}'");
+
                 if (script is RigidBody rb)
                 {
-                    rb.Initialize(physicsSystem);
+                    try
+                    {
+                        rb.Initialize(physicsSystem);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error($"[Scene] Failed to initialize RigidBody on '{gameObject.Name}': {ex.Message}");
+                    }
                 }
 
                 try
@@ -99,7 +103,6 @@ public class Scene : IDisposable
             }
         }
 
-        // Handle case where no camera was found in the scene
         if (MainCamera is not null)
         {
             return;
@@ -110,6 +113,15 @@ public class Scene : IDisposable
 
     public void Update(float deltaTime)
     {
+        _debugLogTimer += deltaTime;
+        bool shouldLog = _debugLogTimer >= 2.0f;
+
+        if (shouldLog)
+        {
+            _debugLogTimer = 0;
+            // Logger.Info($"[Scene] Heartbeat - Updating {GameObjects.Count} objects.");
+        }
+
         foreach (var gameObject in GameObjects)
         {
             foreach (var script in gameObject.GetComponents<Script>())
@@ -119,6 +131,11 @@ public class Scene : IDisposable
                     continue;
                 }
 
+                if (shouldLog)
+                {
+                    // Logger.Info($"[Scene] Updating {script.GetType().Name} on {gameObject.Name}");
+                }
+
                 try
                 {
                     script.Update(deltaTime);
@@ -126,7 +143,7 @@ public class Scene : IDisposable
                 catch (Exception ex)
                 {
                     Logger.Error($"[Scene] Exception in {script.GetType().Name}.Update() on '{gameObject.Name}': {ex.Message}");
-                    script.Enabled = false; // Disable the script to prevent console flooding
+                    script.Enabled = false;
                 }
             }
         }

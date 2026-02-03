@@ -30,7 +30,7 @@ public class SceneSerializer
 
         foreach (GameObject gameObject in hierarchy)
         {
-            Dictionary<string, object> goData = new Dictionary<string, object>
+            Dictionary<string, object> goData = new()
             {
                 ["Id"] = gameObject.Id.ToString(),
                 ["Name"] = gameObject.Name
@@ -58,6 +58,12 @@ public class SceneSerializer
 
     public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
     {
+        string yaml = SerializeSceneToString(gameObjects);
+        File.WriteAllText(filePath, yaml);
+    }
+
+    public string SerializeSceneToString(IEnumerable<GameObject> gameObjects)
+    {
         List<Dictionary<string, object>> gameObjectsData = [];
 
         foreach (GameObject gameObject in gameObjects)
@@ -83,8 +89,7 @@ public class SceneSerializer
             ["GameObjects"] = gameObjectsData
         };
 
-        string yaml = _serializer.Serialize(root);
-        File.WriteAllText(filePath, yaml);
+        return _serializer.Serialize(root);
     }
 
     private static Dictionary<string, object> SerializeGameObjectComponents(GameObject gameObject)
@@ -115,10 +120,25 @@ public class SceneSerializer
                 Dictionary<string, object> meshRendererData = new() { ["Mesh"] = mr.MeshName };
                 Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
 
-                if (mr.Material.TextureTiling != Vector2.One) materialData["TextureTiling"] = mr.Material.TextureTiling;
-                if (mr.Material.EmissiveColor != Vector3.Zero) materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f) materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f) materialData["Shininess"] = mr.Material.Shininess;
+                if (mr.Material.TextureTiling != Vector2.One)
+                {
+                    materialData["TextureTiling"] = mr.Material.TextureTiling;
+                }
+
+                if (mr.Material.EmissiveColor != Vector3.Zero)
+                {
+                    materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+                }
+
+                if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+                {
+                    materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+                }
+
+                if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+                {
+                    materialData["Shininess"] = mr.Material.Shininess;
+                }
 
                 meshRendererData["Material"] = materialData;
                 componentsData["MeshRenderer"] = meshRendererData;
@@ -150,7 +170,7 @@ public class SceneSerializer
         // This handles components like Camera that have no public properties to serialize.
         if (!properties.Any())
         {
-            return new Dictionary<string, object>();
+            return [];
         }
 
         foreach (PropertyInfo prop in properties)

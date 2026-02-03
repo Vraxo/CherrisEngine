@@ -1,4 +1,5 @@
-﻿using Cherris.Core;
+﻿using Cherris.Components;
+using Cherris.Core;
 using Cherris.Core.Logging;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -17,7 +18,8 @@ public static class ScriptCompiler
     private static readonly string[] RequiredAssemblies =
     {
         "System.Runtime",
-        "System.Numerics.Vectors"
+        "System.Numerics.Vectors",
+        "System.Collections"
     };
 
     public static Assembly? Compile(string projectRoot, AssemblyLoadContext context)
@@ -113,11 +115,15 @@ public static class ScriptCompiler
 
     private static IEnumerable<MetadataReference> CreateMetadataReferences()
     {
+        // Explicitly include the assemblies where core engine types are defined
         HashSet<string> assemblyPaths =
         [
             typeof(object).Assembly.Location,
-            typeof(Engine).Assembly.Location,
-            typeof(System.Numerics.Vector3).Assembly.Location
+            typeof(Engine).Assembly.Location,           // Cherris.Core
+            typeof(Script).Assembly.Location,           // Cherris.Components (if separate)
+            typeof(Component).Assembly.Location,        // Cherris.Components (base)
+            typeof(System.Numerics.Vector3).Assembly.Location,
+            typeof(Console).Assembly.Location           // System.Console for debug prints
         ];
 
         foreach (string assemblyName in RequiredAssemblies)

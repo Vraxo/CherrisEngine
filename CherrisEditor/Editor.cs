@@ -34,7 +34,15 @@ public class Editor : Engine
         _sceneSerializer = new SceneSerializer();
         ProjectManager = new ProjectManager();
         ScriptManager = new ScriptManager(SceneLoader);
-        PlayModeManager = new PlayModeManager(SceneManager);
+
+        // Pass dependencies to PlayModeManager
+        PlayModeManager = new PlayModeManager(
+            SceneManager,
+            SceneLoader,
+            _sceneSerializer,
+            ScriptManager,
+            ProjectManager);
+
         SceneOperations = new SceneOperations(SceneLoader, SceneManager, _sceneSerializer);
         Selection = new EditorSelection(SceneManager);
     }
@@ -58,7 +66,9 @@ public class Editor : Engine
     public void EnterEditMode()
     {
         PlayModeManager.Stop();
-        SceneOperations.ReloadSceneForEditing(SceneManager.ActiveScene);
+
+        // After stopping (restoring snapshot), we need to ensure the editor camera is hooked up again
+        SetupSceneForEditing(SceneManager.ActiveScene);
     }
 
     public void RestartPlayMode()
@@ -168,14 +178,17 @@ public class Editor : Engine
     {
         foreach (Script? script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
+            // Only allow RigidBody in editor (for debug viz), disable everything else
             script.Enabled = script is RigidBody;
         }
     }
 
     private Camera? EnsureEditorCamera(Scene scene)
     {
-        GameObject? cameraObject = scene.MainCamera?.GameObject
-            ?? scene.GameObjects.Select(go => go.GetComponent<Camera>()).FirstOrDefault(c => c is not null)?.GameObject;
+        GameObject? cameraObject = scene.GameObjects
+            .FirstOrDefault(g => g.GetComponent<EditorController>() is not null);
+
+        cameraObject ??= scene.GameObjects.FirstOrDefault(go => go.GetComponent<Camera>() is not null);
 
         if (cameraObject is null)
         {
