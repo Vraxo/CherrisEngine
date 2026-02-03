@@ -7,6 +7,7 @@ public class Project
 {
     public string Name { get; set; } = "MyGame";
     public string StartScene { get; set; } = "Main.yaml";
+    public bool PackAssets { get; set; } = false;
 
     [YamlIgnore]
     public string RootPath { get; set; } = string.Empty;

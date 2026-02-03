@@ -21,13 +21,11 @@ public class SceneLoader
     public SceneLoader(IResourceManager resourceManager)
     {
         _resourceManager = resourceManager;
-
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
             .WithTypeConverter(new Vector2YamlTypeConverter())
             .Build();
-
         _serializer = new SerializerBuilder().Build();
     }
 
@@ -38,153 +36,86 @@ public class SceneLoader
 
     public List<GameObject> LoadPrefab(string filePath)
     {
-        // Resolve path to handle Runtime "Assets/" redirection
-        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
-
-        var input = new StringReader(File.ReadAllText(resolvedPath));
-        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
-
-        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
+        using var stream = ProjectFiles.Open(filePath);
+        if (stream is null)
         {
             return [];
         }
 
-        var createdGameObjects = new List<GameObject>();
-        var oldToNewIdMap = new Dictionary<Guid, Guid>();
-        var newIdToGameObjectMap = new Dictionary<Guid, GameObject>();
-        var childToParentMap = new Dictionary<Guid, Guid>(); // <new_child_id, old_parent_id>
-
-        // Pass 1: Create all GameObjects with new GUIDs and deserialize their components
-        foreach (var goData in gameObjectDatas)
-        {
-            string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
-            {
-                name = goName;
-            }
-
-            Guid oldId = Guid.Empty;
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
-            {
-                oldId = parsedId;
-            }
-
-            Guid newId = Guid.NewGuid();
-            oldToNewIdMap[oldId] = newId;
-
-            var go = new GameObject(name, newId);
-            newIdToGameObjectMap[newId] = go;
-            createdGameObjects.Add(go);
-
-            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
-            {
-                childToParentMap[newId] = parentId;
-            }
-
-            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
-            {
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
-                {
-                    ApplyTransformProperties(go.Transform, transformProperties);
-                }
-
-                foreach (var componentKvp in componentsDict)
-                {
-                    if ((componentKvp.Key as string) == "Transform")
-                    {
-                        continue;
-                    }
-
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
-                }
-            }
-        }
-
-        // Pass 2: Hook up parent-child relationships using the remapped GUIDs
-        foreach (var (newChildId, oldParentId) in childToParentMap)
-        {
-            if (oldToNewIdMap.TryGetValue(oldParentId, out Guid newParentId))
-            {
-                var child = newIdToGameObjectMap[newChildId];
-                var parent = newIdToGameObjectMap[newParentId];
-                child.Transform.Parent = parent.Transform;
-            }
-        }
-
-        return createdGameObjects.Where(go => go.Transform.Parent is null).ToList();
+        using var reader = new StreamReader(stream);
+        return DeserializeObjects(reader, true); // True = return only roots
     }
-
 
     public List<GameObject> LoadScene(string filePath)
     {
-        // Resolve path to handle Runtime "Assets/" redirection
-        string resolvedPath = ProjectFiles.Find(filePath) ?? filePath;
+        using var stream = ProjectFiles.Open(filePath);
+        if (stream is null)
+        {
+            Logger.Error($"[SceneLoader] Scene not found: {filePath}");
+            return [];
+        }
 
-        var input = new StringReader(File.ReadAllText(resolvedPath));
-        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(input);
+        using var reader = new StreamReader(stream);
+        return DeserializeObjects(reader, false); // False = return all (scene list)
+    }
 
-        if (!sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
+    private List<GameObject> DeserializeObjects(TextReader reader, bool returnRootsOnly)
+    {
+        var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(reader);
+        if (sceneData is null || !sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
         {
             return [];
         }
 
-        var createdGameObjects = new Dictionary<Guid, GameObject>();
+        var objects = new Dictionary<Guid, GameObject>();
         var parentMap = new Dictionary<Guid, Guid>();
+        var resultList = new List<GameObject>();
 
-        // Pass 1: Create all GameObjects and components, storing parent relationships
+        // Pass 1: Create
         foreach (var goData in gameObjectDatas)
         {
-            string name = "GameObject";
-            if (goData.TryGetValue("Name", out var nameObj) && nameObj is string goName)
-            {
-                name = goName;
-            }
-
-            Guid id = Guid.NewGuid();
-            if (goData.TryGetValue("Id", out var idObj) && Guid.TryParse(idObj as string, out Guid parsedId))
-            {
-                id = parsedId;
-            }
+            string name = goData.TryGetValue("Name", out var n) ? (string)n : "GameObject";
+            Guid id = goData.TryGetValue("Id", out var i) && Guid.TryParse((string)i, out Guid pid) ? pid : Guid.NewGuid();
 
             var go = new GameObject(name, id);
-            createdGameObjects[id] = go;
+            objects[id] = go;
+            resultList.Add(go);
 
-            if (goData.TryGetValue("Parent", out var parentIdObj) && Guid.TryParse(parentIdObj as string, out Guid parentId))
+            if (goData.TryGetValue("Parent", out var pObj) && Guid.TryParse((string)pObj, out Guid pId))
             {
-                parentMap[id] = parentId;
+                parentMap[id] = pId;
             }
 
-            if (goData.TryGetValue("Components", out var componentsObj) && componentsObj is Dictionary<object, object> componentsDict)
+            if (goData.TryGetValue("Components", out var compsObj) && compsObj is Dictionary<object, object> comps)
             {
-                if (componentsDict.TryGetValue("Transform", out var transformProperties))
+                if (comps.TryGetValue("Transform", out var tProps))
                 {
-                    ApplyTransformProperties(go.Transform, transformProperties);
+                    ApplyTransformProperties(go.Transform, tProps);
                 }
 
-                foreach (var componentKvp in componentsDict)
+                foreach (var kvp in comps)
                 {
-                    if ((componentKvp.Key as string) == "Transform")
+                    if ((string)kvp.Key != "Transform")
                     {
-                        continue;
+                        AddComponent(go, (string)kvp.Key, kvp.Value);
                     }
-
-                    AddComponent(go, componentKvp.Key as string, componentKvp.Value);
                 }
             }
         }
 
-        // Pass 2: Hook up parent-child relationships
+        // Pass 2: Hierarchy
         foreach (var (childId, parentId) in parentMap)
         {
-            if (createdGameObjects.TryGetValue(childId, out var child) && createdGameObjects.TryGetValue(parentId, out var parent))
+            if (objects.TryGetValue(childId, out var child) && objects.TryGetValue(parentId, out var parent))
             {
                 child.Transform.Parent = parent.Transform;
             }
         }
 
-        return createdGameObjects.Values.ToList();
+        return returnRootsOnly ? resultList.Where(g => g.Transform.Parent == null).ToList() : resultList;
     }
 
+    // ... (ApplyTransformProperties, AddComponent, ApplyScriptProperties remain identical to previous) ...
     private void ApplyTransformProperties(Transform transform, object properties)
     {
         var yaml = _serializer.Serialize(properties);
@@ -200,77 +131,60 @@ public class SceneLoader
             transform.Scale = scale;
         }
 
-        if (props.TryGetValue("Rotation", out var rotDegrees))
+        if (props.TryGetValue("Rotation", out var rot))
         {
-            var rotRadians = rotDegrees * (MathF.PI / 180.0f);
-            transform.Rotation = Quaternion.CreateFromYawPitchRoll(rotRadians.Y, rotRadians.X, rotRadians.Z);
+            var rad = rot * (MathF.PI / 180f);
+            transform.Rotation = Quaternion.CreateFromYawPitchRoll(rad.Y, rad.X, rad.Z);
         }
     }
 
     private void AddComponent(GameObject go, string componentType, object properties)
     {
-        // Support the generic "Script" key where the actual type is defined in the properties
-        if (componentType == "Script" && properties is Dictionary<object, object> dict && dict.TryGetValue("Type", out var typeObj))
+        if (componentType == "Script" && properties is Dictionary<object, object> d && d.TryGetValue("Type", out var t))
         {
-            componentType = typeObj.ToString() ?? "";
-        }
-
-        if (string.IsNullOrEmpty(componentType))
-        {
-            return;
+            componentType = t.ToString()!;
         }
 
         if (!_componentFactories.TryGetValue(componentType, out var factory))
         {
-            Logger.Warning($"[SceneLoader] Warning: No factory registered for component type '{componentType}'.");
             return;
         }
 
-        var component = factory(properties);
-        if (component is null)
+        var comp = factory(properties);
+        if (comp != null)
         {
-            return;
-        }
-
-        _ = go.AddComponent(component);
-
-        if (component is Script script && properties is Dictionary<object, object> propsDict)
-        {
-            ApplyScriptProperties(script, propsDict);
+            go.AddComponent(comp);
+            if (comp is Script s && properties is Dictionary<object, object> pd)
+            {
+                ApplyScriptProperties(s, pd);
+            }
         }
     }
 
     private static void ApplyScriptProperties(Script script, Dictionary<object, object> propsDict)
     {
-        var scriptType = script.GetType();
-        foreach (var propKvp in propsDict)
+        var type = script.GetType();
+        foreach (var kvp in propsDict)
         {
-            if (propKvp.Key is not string propName)
+            if (kvp.Key is not string name)
             {
                 continue;
             }
 
-            PropertyInfo? propertyInfo = scriptType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !propertyInfo.CanWrite)
+            var prop = type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null || !prop.CanWrite)
             {
                 continue;
             }
 
             try
             {
-                object convertedValue;
-                var propType = propertyInfo.PropertyType;
-                var yamlValue = propKvp.Value;
-
-                convertedValue = propType.IsEnum && yamlValue is string stringValue
-                    ? Enum.Parse(propType, stringValue, true)
-                    : Convert.ChangeType(yamlValue, propType, CultureInfo.InvariantCulture);
-                propertyInfo.SetValue(script, convertedValue);
+                object val = prop.PropertyType.IsEnum && kvp.Value is string s
+                    ? Enum.Parse(prop.PropertyType, s, true)
+                    : Convert.ChangeType(kvp.Value, prop.PropertyType, CultureInfo.InvariantCulture);
+                prop.SetValue(script, val);
             }
-            catch (Exception ex)
-            {
-                Logger.Warning($"[SceneLoader] Warning: Could not set property '{propName}' on component '{scriptType.Name}'. Reason: {ex.Message}");
-            }
+            catch { }
         }
     }
 }

@@ -31,7 +31,6 @@ public class MenuBar
             if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
                 Scene? activeScene = _editor.SceneManager.ActiveScene;
-
                 if (activeScene is not null && !string.IsNullOrEmpty(activeScene.FilePath))
                 {
                     _sceneSerializer.SaveScene(activeScene.GameObjects, activeScene.FilePath);
@@ -42,16 +41,24 @@ public class MenuBar
 
             ImGui.Separator();
 
-            if (ImGui.MenuItem("Build Game..."))
+            // Project settings exposed here for convenience
+            if (_editor.ProjectManager.CurrentProject is not null)
             {
-                if (_editor.ProjectManager.CurrentProject is not null)
+                bool pack = _editor.ProjectManager.CurrentProject.PackAssets;
+                if (ImGui.MenuItem("Pack Assets on Build", "", ref pack))
+                {
+                    _editor.ProjectManager.CurrentProject.PackAssets = pack;
+                    _editor.ProjectManager.CurrentProject.Save();
+                }
+
+                if (ImGui.MenuItem("Build Game..."))
                 {
                     GameBuilder.BuildGame(_editor.ProjectManager.CurrentProject);
                 }
-                else
-                {
-                    Console.WriteLine("[Editor] Cannot build: No project loaded.");
-                }
+            }
+            else
+            {
+                ImGui.MenuItem("Build Game...", "", false, false);
             }
 
             ImGui.Separator();

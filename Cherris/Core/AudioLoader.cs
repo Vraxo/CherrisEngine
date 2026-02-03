@@ -1,4 +1,5 @@
 ﻿using Cherris.Core.Logging;
+using Cherris.Utils;
 using OpenTK.Audio.OpenAL;
 
 namespace Cherris.Core;
@@ -7,10 +8,15 @@ public static class AudioLoader
 {
     public static AudioClip? LoadFromFile(string path)
     {
+        using var stream = ProjectFiles.Open(path);
+        if (stream is null)
+        {
+            return null;
+        }
+
         try
         {
-            using var fileStream = File.OpenRead(path);
-            using var reader = new BinaryReader(fileStream);
+            using var reader = new BinaryReader(stream);
 
             // -- RIFF Header --
             string signature = new(reader.ReadChars(4));
@@ -19,7 +25,7 @@ public static class AudioLoader
                 throw new NotSupportedException("Specified stream is not a wave file.");
             }
 
-            _ = reader.ReadInt32(); // Riff Chunk Size
+            _ = reader.ReadInt32();
 
             string format = new(reader.ReadChars(4));
             if (format != "WAVE")
@@ -34,17 +40,16 @@ public static class AudioLoader
                 throw new NotSupportedException("Specified wave file is not supported.");
             }
 
-            _ = reader.ReadInt32(); // Format chunk size
-            _ = reader.ReadInt16(); // Audio Format
+            _ = reader.ReadInt32();
+            _ = reader.ReadInt16();
             short channels = reader.ReadInt16();
             int sampleRate = reader.ReadInt32();
-            _ = reader.ReadInt32(); // Byte Rate
-            _ = reader.ReadInt16(); // Block Align
+            _ = reader.ReadInt32();
+            _ = reader.ReadInt16();
             short bitsPerSample = reader.ReadInt16();
 
             // -- DATA Chunk --
             string dataSignature = new(reader.ReadChars(4));
-            // Handle cases where a 'JUNK' or other chunk is between 'fmt ' and 'data'
             while (dataSignature != "data")
             {
                 int chunkSize = reader.ReadInt32();
@@ -55,12 +60,11 @@ public static class AudioLoader
             int dataChunkSize = reader.ReadInt32();
             byte[] audioData = reader.ReadBytes(dataChunkSize);
 
-            // -- OpenAL Buffer --
             ALFormat formatEnum = GetSoundFormat(channels, bitsPerSample);
             int alBuffer = AL.GenBuffer();
             AL.BufferData(alBuffer, formatEnum, audioData, sampleRate);
 
-            Logger.Info($"[AudioLoader] Loaded '{Path.GetFileName(path)}' ({channels} ch, {bitsPerSample}-bit, {sampleRate} Hz)");
+            Logger.Info($"[AudioLoader] Loaded '{Path.GetFileName(path)}'");
             return new AudioClip(alBuffer);
         }
         catch (Exception ex)

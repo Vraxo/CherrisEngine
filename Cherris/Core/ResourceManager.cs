@@ -1,7 +1,6 @@
 ﻿using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
-using Cherris.Utils;
 using Veldrid;
 
 namespace Cherris.Core;
@@ -20,14 +19,9 @@ public class ResourceManager : IResourceManager
 
     public void LoadInitialAssets()
     {
-        var cubeMesh = Mesh.CreateCube();
-        _meshes.Add("Cube", cubeMesh);
-
-        var planeMesh = Mesh.CreatePlane(20f);
-        _meshes.Add("Plane", planeMesh);
-
-        var white = CreateWhiteTexture("White");
-        _textures.Add("White", white);
+        _meshes.Add("Cube", Mesh.CreateCube());
+        _meshes.Add("Plane", Mesh.CreatePlane(20f));
+        _textures.Add("White", CreateWhiteTexture("White"));
     }
 
     public Mesh? GetMesh(string name)
@@ -40,35 +34,25 @@ public class ResourceManager : IResourceManager
         string[] parts = name.Split('#');
         string filePathPart = parts[0];
 
+        // Ensure we handle virtual files properly.
+        // If we are packed, Find() won't return a disk path if it's purely virtual, 
+        // but ModelLoader now handles ProjectFiles.Open.
+        // We use Find just to check existence or rely on ModelLoader failing gracefully.
+
+        // Actually, let's just try to load if the extension matches.
         if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
             filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
         {
-            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
-            {
-                Logger.Warning($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
-                return null;
-            }
-
-            string? fullPath = ProjectFiles.Find(filePathPart);
-            if (fullPath is null)
-            {
-                Logger.Warning($"[ResourceManager] Could not find model file for '{filePathPart}'.");
-                return null;
-            }
-
-            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
+            var loadedMeshes = ModelLoader.LoadMeshesFromFile(filePathPart);
             if (!loadedMeshes.Any())
             {
-                Logger.Warning($"[ResourceManager] No meshes found in model file '{fullPath}'.");
                 return null;
             }
 
             foreach (var (meshName, loadedMesh) in loadedMeshes)
             {
-                string cacheKey = $"{filePathPart}#{meshName}";
-                _meshes[cacheKey] = loadedMesh;
+                _meshes[$"{filePathPart}#{meshName}"] = loadedMesh;
             }
-            Logger.Info($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
 
             if (_meshes.TryGetValue(name, out var finalMesh))
             {
@@ -92,19 +76,17 @@ public class ResourceManager : IResourceManager
             return texture;
         }
 
-        string? filePath = ProjectFiles.Find(name);
+        // TextureLoader uses ImageLoader which uses ProjectFiles.Open.
+        // We just pass the name (path).
+        var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, name);
 
-        if (filePath is not null)
+        if (loadedTexture is not null)
         {
-            var loadedTexture = TextureLoader.LoadTextureFromFile(_graphicsDevice, filePath);
-            if (loadedTexture is not null)
-            {
-                _textures.Add(name, loadedTexture);
-                return loadedTexture;
-            }
+            _textures.Add(name, loadedTexture);
+            return loadedTexture;
         }
 
-        Logger.Warning($"[ResourceManager] Warning: Could not find or load texture '{name}'. Using default white texture.");
+        Logger.Warning($"[ResourceManager] Texture '{name}' not found. Using default.");
         return _textures["White"];
     }
 
@@ -121,14 +103,13 @@ public class ResourceManager : IResourceManager
             _skyboxes.Add(name, loadedSkybox);
             return loadedSkybox;
         }
-
-        Logger.Warning($"[ResourceManager] Warning: Could not find or load skybox '{name}'.");
         return null;
     }
 
     public AudioClip? GetAudioClip(string name)
     {
-        Logger.Warning("[ResourceManager] Warning: Veldrid backend does not support audio. GetAudioClip will return null.");
+        // Veldrid backend doesn't support audio here, 
+        // but if it did, it would use AudioLoader which is now stream-ready.
         return null;
     }
 

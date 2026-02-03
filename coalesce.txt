@@ -14063,6 +14063,7 @@ using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
+using Cherris.Utils;
 using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -14130,7 +14131,7 @@ public class RuntimeGame : Engine
     private void LoadProjectAndScene()
     {
         string configPath = Path.Combine(AppContext.BaseDirectory, ConfigFile);
-        string startScenePath = "Assets/Scenes/Main.yaml"; // Default fallback
+        string startScenePath = "Scenes/Main.yaml"; // Default fallback
 
         if (File.Exists(configPath))
         {
@@ -14158,18 +14159,19 @@ public class RuntimeGame : Engine
 
     private void LoadScene(string filePath)
     {
-        string fullPath = Path.Combine(AppContext.BaseDirectory, filePath);
+        // Use ProjectFiles.Find to correctly locate the file in the Assets directory if needed
+        string? fullPath = ProjectFiles.Find(filePath);
 
-        if (!File.Exists(fullPath))
+        if (fullPath is null)
         {
-            Logger.Error($"[Runtime] Start scene not found at: {fullPath}");
+            Logger.Error($"[Runtime] Start scene not found. Lookup path: '{filePath}'");
             return;
         }
 
-        Logger.Info($"[Runtime] Loading scene: {filePath}");
+        Logger.Info($"[Runtime] Loading scene: {fullPath}");
 
         var gameObjects = SceneLoader.LoadScene(fullPath);
-        var scene = new Scene(filePath, gameObjects);
+        var scene = new Scene(fullPath, gameObjects);
 
         SceneManager.OpenScene(scene);
         SceneManager.Start();

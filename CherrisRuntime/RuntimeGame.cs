@@ -21,21 +21,17 @@ public class RuntimeGame : Engine
 
     protected override void LoadContent()
     {
+        // Initialize Virtual File System
+        ProjectFiles.Initialize(AppContext.BaseDirectory);
+
         ResourceManager.LoadInitialAssets();
-
-        // 1. Register internal components (Camera, Light, etc.)
         RegisterInternalComponents();
-
-        // 2. Load and register user scripts
         LoadGameScripts();
-
-        // 3. Load project config and start scene
         LoadProjectAndScene();
     }
 
     private void RegisterInternalComponents()
     {
-        // These are the same basic types the editor supports
         ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
     }
 
@@ -45,7 +41,6 @@ public class RuntimeGame : Engine
 
         if (!File.Exists(dllPath))
         {
-            Logger.Warning($"[Runtime] No scripts assembly found at '{dllPath}'.");
             return;
         }
 
@@ -57,9 +52,7 @@ public class RuntimeGame : Engine
 
             foreach (Type type in scriptTypes)
             {
-                // Register the factory for this script type
                 SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
-                Logger.Info($"[Runtime] Registered script: {type.Name}");
             }
         }
         catch (Exception ex)
@@ -71,7 +64,7 @@ public class RuntimeGame : Engine
     private void LoadProjectAndScene()
     {
         string configPath = Path.Combine(AppContext.BaseDirectory, ConfigFile);
-        string startScenePath = "Scenes/Main.yaml"; // Default fallback
+        string startScenePath = "Scenes/Main.yaml";
 
         if (File.Exists(configPath))
         {
@@ -88,31 +81,13 @@ public class RuntimeGame : Engine
                     startScenePath = configuredScene;
                 }
             }
-            catch (Exception ex)
-            {
-                Logger.Error($"[Runtime] Error reading project config: {ex.Message}");
-            }
+            catch { }
         }
 
-        LoadScene(startScenePath);
-    }
-
-    private void LoadScene(string filePath)
-    {
-        // Use ProjectFiles.Find to correctly locate the file in the Assets directory if needed
-        string? fullPath = ProjectFiles.Find(filePath);
-
-        if (fullPath is null)
-        {
-            Logger.Error($"[Runtime] Start scene not found. Lookup path: '{filePath}'");
-            return;
-        }
-
-        Logger.Info($"[Runtime] Loading scene: {fullPath}");
-
-        var gameObjects = SceneLoader.LoadScene(fullPath);
-        var scene = new Scene(fullPath, gameObjects);
-
+        // ProjectFiles.Open finds it in pack or disk
+        Logger.Info($"[Runtime] Loading scene: {startScenePath}");
+        var gameObjects = SceneLoader.LoadScene(startScenePath);
+        var scene = new Scene(startScenePath, gameObjects);
         SceneManager.OpenScene(scene);
         SceneManager.Start();
     }

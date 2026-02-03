@@ -11,88 +11,59 @@ public static class SkyboxLoader
 
     public static Skybox? LoadSkybox(GraphicsDevice gd, string name)
     {
-        string[]? facePaths = FindFacePaths(name);
+        // Name is typically "SkyboxName" -> looks for "SkyboxName_right" etc.
+        // We need paths. ProjectFiles.Find returns paths for Editor, but Open returns stream.
+        // Here we just need to try opening "name_suffix".
 
-        if (facePaths is null)
-        {
-            return null;
-        }
-
-        ImageResult[]? faceImages = LoadFaceImages(facePaths);
-
-        if (faceImages is null || !ValidateImageDimensions(faceImages, facePaths))
-        {
-            return null;
-        }
-
-        Texture cubemapTexture = CreateCubemapTexture(gd, faceImages);
-
-        return new(cubemapTexture, name);
-    }
-
-    private static string[]? FindFacePaths(string baseName)
-    {
-        string[] facePaths = new string[6];
-
-        for (int i = 0; i < FaceSuffixes.Length; i++)
-        {
-            string? path = ProjectFiles.Find(baseName + FaceSuffixes[i]);
-
-            if (path is null)
-            {
-                Console.WriteLine($"[SkyboxLoader] Could not find face '{baseName}{FaceSuffixes[i]}' for skybox.");
-                return null;
-            }
-
-            facePaths[i] = path;
-        }
-
-        return facePaths;
-    }
-
-    private static ImageResult[]? LoadFaceImages(string[] paths)
-    {
         var images = new ImageResult[6];
 
         try
         {
-            StbImage.stbi_set_flip_vertically_on_load(0); // Cubemaps do not need flipping
+            StbImage.stbi_set_flip_vertically_on_load(0);
 
-            for (int i = 0; i < paths.Length; i++)
+            for (int i = 0; i < 6; i++)
             {
-                using var stream = File.OpenRead(paths[i]);
+                string faceName = name + FaceSuffixes[i];
+                // We fuzzy search via Open since we don't know the extension
+                using var stream = ProjectFiles.Open(faceName);
+
+                if (stream is null)
+                {
+                    Console.WriteLine($"[SkyboxLoader] Could not find face '{faceName}'.");
+                    return null;
+                }
+
                 images[i] = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
             }
 
-            return images;
+            if (!ValidateImageDimensions(images))
+            {
+                return null;
+            }
+
+            Texture cubemapTexture = CreateCubemapTexture(gd, images);
+            return new(cubemapTexture, name);
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[SkyboxLoader] Error loading skybox images: {e.Message}");
+            Console.WriteLine($"[SkyboxLoader] Error loading skybox: {e.Message}");
             return null;
         }
         finally
         {
-            StbImage.stbi_set_flip_vertically_on_load(1); // Reset to default for other textures
+            StbImage.stbi_set_flip_vertically_on_load(1);
         }
     }
 
-    private static bool ValidateImageDimensions(ImageResult[] images, string[] paths)
+    private static bool ValidateImageDimensions(ImageResult[] images)
     {
-        ImageResult firstImage = images[0];
-
-        if (firstImage.Width != firstImage.Height)
+        if (images[0].Width != images[0].Height)
         {
-            Console.WriteLine(
-                $"[SkyboxLoader] Error: Skybox face texture is not square." +
-                $"Texture '{paths[0]}' has dimensions {firstImage.Width}x{firstImage.Height}.");
-
             return false;
         }
 
-        if (images.Any(img => img.Width != firstImage.Width || img.Height != firstImage.Height))
+        if (images.Any(img => img.Width != images[0].Width || img.Height != images[0].Height))
         {
-            Console.WriteLine("[SkyboxLoader] Error: All faces of a skybox must have the same dimensions.");
             return false;
         }
 
@@ -101,38 +72,22 @@ public static class SkyboxLoader
 
     private static Texture CreateCubemapTexture(GraphicsDevice gd, ImageResult[] images)
     {
+        // (Unchanged implementation)
         ImageResult firstImage = images[0];
         ResourceFactory factory = gd.ResourceFactory;
 
         TextureDescription textureDescription = TextureDescription.Texture2D(
-            (uint)firstImage.Width,
-            (uint)firstImage.Height,
-            1,
-            (uint)images.Length,
-            PixelFormat.R8_G8_B8_A8_UNorm,
-            TextureUsage.Cubemap | TextureUsage.Sampled);
+            (uint)firstImage.Width, (uint)firstImage.Height, 1, (uint)images.Length,
+            PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Cubemap | TextureUsage.Sampled);
 
         Veldrid.Texture cubemap = factory.CreateTexture(textureDescription);
 
         for (uint i = 0; i < images.Length; i++)
         {
-            ImageResult img = images[i];
-
-            gd.UpdateTexture(
-                cubemap,
-                img.Data,
-                0,
-                0,
-                0,
-                (uint)img.Width,
-                (uint)img.Height,
-                1,
-                0,
-                i);
+            gd.UpdateTexture(cubemap, images[i].Data, 0, 0, 0, (uint)images[i].Width, (uint)images[i].Height, 1, 0, i);
         }
 
         TextureView textureView = factory.CreateTextureView(new TextureViewDescription(cubemap));
-
         return new(cubemap, textureView);
     }
 }

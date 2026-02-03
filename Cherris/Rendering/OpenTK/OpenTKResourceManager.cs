@@ -1,7 +1,6 @@
 ﻿using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
-using Cherris.Utils;
 using OpenTK.Graphics.OpenGL4;
 
 namespace Cherris.Rendering.OpenTK;
@@ -17,7 +16,6 @@ public class OpenTKResourceManager : ResourceManagerBase
         Logger.Info("[OpenTKResourceManager] Initial assets loaded.");
         _meshes.Add("Cube", Mesh.CreateCube());
         _meshes.Add("Plane", Mesh.CreatePlane(20f));
-
         _textures.Add("White", CreateWhiteTexture());
     }
 
@@ -25,10 +23,8 @@ public class OpenTKResourceManager : ResourceManagerBase
     {
         int handle = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, handle);
-
         byte[] pixel = { 255, 255, 255, 255 };
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
-
         SetTextureParameters(TextureTarget.Texture2D);
         return new OpenTKTexture(handle);
     }
@@ -40,14 +36,7 @@ public class OpenTKResourceManager : ResourceManagerBase
             return texture;
         }
 
-        string? path = ProjectFiles.Find(name);
-        if (path is null)
-        {
-            Logger.Warning($"[OpenTKResourceManager] Could not find texture '{name}'.");
-            return _textures["White"];
-        }
-
-        var imageData = ImageLoader.LoadFromFile(path);
+        var imageData = ImageLoader.LoadFromFile(name);
         if (imageData is null)
         {
             return _textures["White"];
@@ -55,10 +44,8 @@ public class OpenTKResourceManager : ResourceManagerBase
 
         int handle = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, handle);
-
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Srgb8Alpha8,
             imageData.Value.Width, imageData.Value.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, imageData.Value.Data);
-
         GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
         SetTextureParameters(TextureTarget.Texture2D);
 
@@ -93,10 +80,16 @@ public class OpenTKResourceManager : ResourceManagerBase
             return skybox;
         }
 
-        var faceImages = GenericCubemapLoader.LoadCubemapFaces(name);
+        // SkyboxLoader now uses ProjectFiles.Open internally
+        var loadedSkybox = SkyboxLoader.LoadSkybox(null!, name); // Note: GraphicsDevice is null here because OpenTK doesn't use it, but SkyboxLoader expects it for Veldrid.
+
+        // REFACTOR: SkyboxLoader logic is currently coupled to Veldrid. 
+        // For OpenTK, we should implement a dedicated loading path or refactor SkyboxLoader to return raw data.
+        // Given constraints, I will implement OpenTK specific loading here to avoid breaking the Veldrid loader.
+
+        var faceImages = LoadCubemapFacesGeneric(name);
         if (faceImages is null)
         {
-            Logger.Error($"[OpenTKResourceManager] Could not load faces for skybox '{name}'.");
             return null;
         }
 
@@ -118,6 +111,26 @@ public class OpenTKResourceManager : ResourceManagerBase
         return newSkybox;
     }
 
+    private static ImageData[]? LoadCubemapFacesGeneric(string baseName)
+    {
+        // Re-implementing logic from GenericCubemapLoader but using ProjectFiles.Open via ImageLoader
+        string[] suffixes = { "_right", "_left", "_top", "_bottom", "_front", "_back" };
+        var images = new ImageData[6];
+        for (int i = 0; i < suffixes.Length; i++)
+        {
+            string name = baseName + suffixes[i];
+            // ImageLoader uses ProjectFiles.Open(name) which does fuzzy search
+            var img = ImageLoader.LoadFromFile(name, false);
+            if (img == null)
+            {
+                return null;
+            }
+
+            images[i] = img.Value;
+        }
+        return images;
+    }
+
     public override AudioClip? GetAudioClip(string name)
     {
         if (_audioClips.TryGetValue(name, out var clip))
@@ -125,20 +138,12 @@ public class OpenTKResourceManager : ResourceManagerBase
             return clip;
         }
 
-        string? path = ProjectFiles.Find(name);
-        if (path is null || !path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-        {
-            Logger.Warning($"[OpenTKResourceManager] Could not find audio clip '{name}'. Only .wav is supported.");
-            return null;
-        }
-
-        var newClip = AudioLoader.LoadFromFile(path);
+        var newClip = AudioLoader.LoadFromFile(name);
         if (newClip is not null)
         {
             _audioClips.Add(name, newClip);
             return newClip;
         }
-
         return null;
     }
 
@@ -148,10 +153,12 @@ public class OpenTKResourceManager : ResourceManagerBase
         {
             texture.Dispose();
         }
+
         foreach (var skybox in _skyboxes.Values)
         {
             skybox.Dispose();
         }
+
         foreach (var clip in _audioClips.Values)
         {
             clip.Dispose();

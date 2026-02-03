@@ -1,4 +1,5 @@
 ﻿using Cherris.Core.Logging;
+using Cherris.Utils;
 using SharpGLTF.Schema2;
 using System.Numerics;
 using Veldrid;
@@ -11,21 +12,51 @@ public static class ModelLoader
     public static Dictionary<string, Mesh> LoadMeshesFromFile(string path)
     {
         var loadedMeshes = new Dictionary<string, Mesh>();
-        if (!File.Exists(path))
-        {
-            Logger.Warning($"[ModelLoader] File not found: {path}");
-            return loadedMeshes;
-        }
+        ModelRoot? model = null;
 
         try
         {
-            var model = ModelRoot.Load(path);
+            // 1. Try loading from Disk (Preferred for .gltf with external refs)
+            string? realPath = ProjectFiles.Find(path);
+            if (realPath is not null)
+            {
+                // Verify extension to avoid loading non-model files by accident
+                if (realPath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
+                    realPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+                {
+                    model = ModelRoot.Load(realPath);
+                }
+            }
+
+            // 2. Try loading from VFS Stream (Packed assets)
+            if (model is null)
+            {
+                using var stream = ProjectFiles.Open(path);
+                if (stream is not null)
+                {
+                    if (path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+                    {
+                        model = ModelRoot.ReadGLB(stream);
+                    }
+                    else
+                    {
+                        Logger.Warning($"[ModelLoader] Packed .gltf files ('{path}') are not supported. Please use .glb for packed assets.");
+                        return loadedMeshes;
+                    }
+                }
+            }
+
+            if (model is null)
+            {
+                Logger.Warning($"[ModelLoader] Model not found or failed to load: {path}");
+                return loadedMeshes;
+            }
+
             Logger.Info($"[ModelLoader] Loading model '{path}', found {model.LogicalMeshes.Count} logical mesh(es).");
 
             for (int i = 0; i < model.LogicalMeshes.Count; i++)
             {
                 var gltfMesh = model.LogicalMeshes[i];
-
                 var allVertices = new List<Vertex>();
                 var allIndices = new List<ushort>();
 
@@ -46,14 +77,12 @@ public static class ModelLoader
                     var normalsAccessor = primitive.GetVertexAccessor("NORMAL");
                     var texCoordsAccessor = primitive.GetVertexAccessor("TEXCOORD_0");
                     var indicesAccessor = primitive.IndexAccessor;
-
                     if (indicesAccessor is null)
                     {
                         continue;
                     }
 
                     var indices = indicesAccessor.AsIndicesArray();
-
                     IList<Vector3>? normals = normalsAccessor?.AsVector3Array();
                     IList<Vector2>? texCoords = texCoordsAccessor?.AsVector2Array();
 
@@ -71,22 +100,16 @@ public static class ModelLoader
 
                     for (int tri = 0; tri < indices.Count; tri += 3)
                     {
-                        uint i0 = indices[tri];
-                        uint i1 = indices[tri + 1];
-                        uint i2 = indices[tri + 2];
-
-                        allIndices.Add((ushort)(baseVertex + i0));
-                        allIndices.Add((ushort)(baseVertex + i2));
-                        allIndices.Add((ushort)(baseVertex + i1));
+                        allIndices.Add((ushort)(baseVertex + indices[tri]));
+                        allIndices.Add((ushort)(baseVertex + indices[tri + 2]));
+                        allIndices.Add((ushort)(baseVertex + indices[tri + 1]));
                     }
                 }
 
                 if (allVertices.Any())
                 {
                     string meshName = string.IsNullOrWhiteSpace(gltfMesh.Name) ? $"mesh_{i}" : gltfMesh.Name;
-                    var newMesh = new Mesh(allVertices.ToArray(), allIndices.ToArray());
-                    loadedMeshes[meshName] = newMesh;
-                    Logger.Info($"[ModelLoader] Created mesh '{meshName}' with {newMesh.Vertices.Length} vertices and {newMesh.Indices.Length / 3} triangles.");
+                    loadedMeshes[meshName] = new Mesh(allVertices.ToArray(), allIndices.ToArray());
                 }
             }
         }
