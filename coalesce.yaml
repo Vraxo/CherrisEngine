@@ -2,7 +2,7 @@ outputFilePath: coalesce.txt
 sourceDirectoryPaths:
   - Cherris
   - CherrisEditor
-  #- E:\Parsa Stuff\Visual Studio\DirectUI\Directui
+  - CherrisRuntime
 includeExtensions:
   - .cs
   - .c
