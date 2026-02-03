@@ -2,7 +2,7 @@ Format:
   Namespace: File
   Usings:
     Sort: Alphabetical
-    RemoveUnused: true
+    RemoveUnused: false
   Variables:
     UseVar: Never
   Collections:
@@ -22,7 +22,7 @@ Format:
 Include:
   - "Cherris"
   - "CherrisEngine"
-  - "CherrisRuntime"
+  - "CherrisRuntime/**/*.cs"
 
 Exclude:
   - "**/obj/**"
