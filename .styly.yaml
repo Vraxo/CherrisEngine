@@ -1,0 +1,28 @@
+Format:
+  Namespace: File
+  Usings:
+    Sort: Alphabetical
+    RemoveUnused: true
+  Variables:
+    UseVar: Never
+  Collections:
+    PreferExpression: true
+  Initializers:
+    Object: MultiLine
+    Collection: SingleLine
+    AnonymousType: MultiLine
+  Spacing:
+    EmptyLineBeforeControlFlow: true
+    EmptyLineAfterControlFlow: true
+  Modifiers:
+    MakeStaticWhenPossible: true
+  Optimization:
+    PreferLengthCountOverAny: true
+
+Include:
+  - "Cherris"
+  - "CherrisEngine"
+  - "CherrisRuntime"
+
+Exclude:
+  - "**/obj/**"
