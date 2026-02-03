@@ -2,6 +2,7 @@
 using Cherris.Core;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
+
 namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKRenderer : IRenderer, IDisposable
