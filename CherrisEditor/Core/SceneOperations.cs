@@ -1,5 +1,4 @@
-﻿using Cherris;
-using Cherris.Core;
+﻿using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
 using CherrisEditor.Build;

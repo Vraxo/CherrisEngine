@@ -399,6 +399,11 @@ public class MeshRenderer : Component, IDisposable
 ### `Cherris\Components\RigidBody.cs`
 
 ```csharp
+using BepuPhysics;
+using BepuPhysics.Collidables;
+using BepuUtilities;
+using BepuUtilities.Memory;
+using Cherris.Core;
 using Cherris.Utils;
 using System.Numerics;
 
@@ -434,12 +439,14 @@ public class RigidBody : Script
     public float Bounciness { get; set; } = 0.5f;
 
     [HideInInspector]
-    public Jitter.Dynamics.RigidBody? JitterBody { get; private set; }
+    public BodyHandle? BepuBodyHandle { get; internal set; }
+
+    [HideInInspector]
+    public StaticHandle? BepuStaticHandle { get; internal set; }
 
     private PhysicsSystem? _physicsSystem;
     private Vector3 _lastScale;
 
-    // Called by the Scene to provide the PhysicsSystem instance.
     internal void Initialize(PhysicsSystem physicsSystem)
     {
         _physicsSystem = physicsSystem;
@@ -451,12 +458,11 @@ public class RigidBody : Script
         {
             return;
         }
-        CreateAndRegisterJitterBody();
+        CreateAndRegisterBepuBody();
     }
 
     public override void Update(float deltaTime)
     {
-        // If the object's scale has changed, recreate the physics body to match.
         if (GameObject is not null && GameObject.Transform.Scale != _lastScale)
         {
             RecreatePhysicsBody();
@@ -465,17 +471,33 @@ public class RigidBody : Script
 
     private void RecreatePhysicsBody()
     {
-        if (JitterBody is null || _physicsSystem is null)
+        if (_physicsSystem is null)
         {
             return;
         }
 
-        _physicsSystem.RemoveBody(JitterBody);
-        JitterBody = null;
-        CreateAndRegisterJitterBody();
+        RemovePhysicsBody();
+        CreateAndRegisterBepuBody();
     }
 
-    private void CreateAndRegisterJitterBody()
+    private void RemovePhysicsBody()
+    {
+        if (BepuBodyHandle.HasValue && _physicsSystem?.Simulation is not null)
+        {
+            _physicsSystem.Simulation.Bodies.Remove(BepuBodyHandle.Value);
+            _physicsSystem.UnregisterBody(this);
+            BepuBodyHandle = null;
+        }
+
+        if (BepuStaticHandle.HasValue && _physicsSystem?.Simulation is not null)
+        {
+            _physicsSystem.Simulation.Statics.Remove(BepuStaticHandle.Value);
+            _physicsSystem.UnregisterBody(this);
+            BepuStaticHandle = null;
+        }
+    }
+
+    private void CreateAndRegisterBepuBody()
     {
         var meshRenderer = GameObject.GetComponent<MeshRenderer>();
 
@@ -486,50 +508,204 @@ public class RigidBody : Script
         }
 
         BoundingBox aabb = meshRenderer.Mesh.AABB;
-        _lastScale = GameObject.Transform.Scale; // Store the scale used for creation
+        _lastScale = GameObject.Transform.Scale;
         Vector3 size = (aabb.Max - aabb.Min) * _lastScale;
 
-        Jitter.Collision.Shapes.Shape shape;
-        switch (Shape)
+        if (_physicsSystem?.Simulation is null)
         {
-            case ColliderType.Box:
-                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
-                break;
-            case ColliderType.Sphere:
-                float radius = (size.X + size.Y + size.Z) / 6.0f; // Average radius
-                shape = new Jitter.Collision.Shapes.SphereShape(radius);
-                break;
-            case ColliderType.Capsule:
-                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
-                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius)); // Ensure length is not negative
-                shape = new Jitter.Collision.Shapes.CapsuleShape(capsuleLength, capsuleRadius);
-                break;
-            default:
-                Console.WriteLine($"[RigidBody] Warning: Unsupported collider type '{Shape}' on '{GameObject.Name}'. Defaulting to Box.");
-                shape = new Jitter.Collision.Shapes.BoxShape(size.ToJitter());
-                break;
+            return;
         }
 
-        JitterBody = new(shape)
-        {
-            Position = GameObject.Transform.Position.ToJitter(),
-            Orientation = GameObject.Transform.Rotation.ToJitter()
-        };
+        var position = GameObject.Transform.Position;
+        var orientation = GameObject.Transform.Rotation;
+        var pose = new RigidPose(position, orientation);
 
         if (IsStatic)
         {
-            JitterBody.IsStatic = true;
+            CreateStaticBody(size, pose);
         }
         else
         {
-            JitterBody.Mass = Mass;
+            CreateDynamicBody(size, pose);
         }
 
-        JitterBody.Material.StaticFriction = Friction;
-        JitterBody.Material.KineticFriction = Friction;
-        JitterBody.Material.Restitution = Bounciness;
+        _physicsSystem.RegisterBody(this);
+    }
 
-        _physicsSystem.AddBody(this, JitterBody);
+    private void CreateStaticBody(Vector3 size, RigidPose pose)
+    {
+        if (_physicsSystem?.Simulation is null)
+        {
+            return;
+        }
+
+        TypedIndex shapeIndex;
+        switch (Shape)
+        {
+            case ColliderType.Box:
+                var box = new BepuPhysics.Collidables.Box(size.X, size.Y, size.Z);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(box);
+                break;
+
+            case ColliderType.Sphere:
+                float sphereRadius = (size.X + size.Y + size.Z) / 6.0f;
+                var sphere = new Sphere(sphereRadius);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(sphere);
+                break;
+
+            case ColliderType.Capsule:
+                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
+                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius));
+                var capsule = new Capsule(capsuleRadius, capsuleLength);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(capsule);
+                break;
+
+            default:
+                var defaultBox = new BepuPhysics.Collidables.Box(size.X, size.Y, size.Z);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(defaultBox);
+                break;
+        }
+
+        // Create static description - use the constructor that takes pose and shape index directly
+        // Based on the error, StaticDescription constructor takes (RigidPose, TypedIndex)
+        var staticDescription = new StaticDescription(pose, shapeIndex);
+
+        BepuStaticHandle = _physicsSystem.Simulation.Statics.Add(staticDescription);
+        BepuBodyHandle = null;
+    }
+
+    private void CreateDynamicBody(Vector3 size, RigidPose pose)
+    {
+        if (_physicsSystem?.Simulation is null)
+        {
+            return;
+        }
+
+        BodyInertia inertia;
+        TypedIndex shapeIndex;
+
+        switch (Shape)
+        {
+            case ColliderType.Box:
+                var box = new BepuPhysics.Collidables.Box(size.X, size.Y, size.Z);
+                inertia = box.ComputeInertia(Mass);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(box);
+                break;
+
+            case ColliderType.Sphere:
+                float sphereRadius = (size.X + size.Y + size.Z) / 6.0f;
+                var sphere = new Sphere(sphereRadius);
+                inertia = sphere.ComputeInertia(Mass);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(sphere);
+                break;
+
+            case ColliderType.Capsule:
+                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
+                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius));
+                var capsule = new Capsule(capsuleRadius, capsuleLength);
+                inertia = capsule.ComputeInertia(Mass);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(capsule);
+                break;
+
+            default:
+                var defaultBox = new BepuPhysics.Collidables.Box(size.X, size.Y, size.Z);
+                inertia = defaultBox.ComputeInertia(Mass);
+                shapeIndex = _physicsSystem.Simulation.Shapes.Add(defaultBox);
+                break;
+        }
+
+        var collidable = new CollidableDescription(shapeIndex, 0.1f);
+        var activity = new BodyActivityDescription(0.01f);
+
+        var bodyDescription = BodyDescription.CreateDynamic(pose, inertia, collidable, activity);
+
+        BepuBodyHandle = _physicsSystem.Simulation.Bodies.Add(bodyDescription);
+        BepuStaticHandle = null;
+    }
+
+    public void ApplyForce(Vector3 force)
+    {
+        if (!BepuBodyHandle.HasValue || _physicsSystem?.Simulation is null || IsStatic)
+        {
+            return;
+        }
+
+        var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+        if (bodyReference.Exists)
+        {
+            bodyReference.Velocity.Linear += force / Mass;
+        }
+    }
+
+    public void ApplyImpulse(Vector3 impulse)
+    {
+        if (!BepuBodyHandle.HasValue || _physicsSystem?.Simulation is null || IsStatic)
+        {
+            return;
+        }
+
+        var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+        if (bodyReference.Exists)
+        {
+            bodyReference.Velocity.Linear += impulse / Mass;
+        }
+    }
+
+    public void SetVelocity(Vector3 velocity)
+    {
+        if (!BepuBodyHandle.HasValue || _physicsSystem?.Simulation is null || IsStatic)
+        {
+            return;
+        }
+
+        var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+        if (bodyReference.Exists)
+        {
+            bodyReference.Velocity.Linear = velocity;
+        }
+    }
+
+    public Vector3 GetVelocity()
+    {
+        if (!BepuBodyHandle.HasValue || _physicsSystem?.Simulation is null || IsStatic)
+        {
+            return Vector3.Zero;
+        }
+
+        var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+        if (bodyReference.Exists)
+        {
+            return bodyReference.Velocity.Linear;
+        }
+
+        return Vector3.Zero;
+    }
+
+    public void Teleport(Vector3 position, Quaternion? rotation = null)
+    {
+        if (BepuBodyHandle.HasValue && _physicsSystem?.Simulation is not null && !IsStatic)
+        {
+            var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+            if (bodyReference.Exists)
+            {
+                bodyReference.Pose.Position = position;
+                if (rotation.HasValue)
+                {
+                    bodyReference.Pose.Orientation = rotation.Value;
+                }
+            }
+        }
+
+        GameObject.Transform.Position = position;
+        if (rotation.HasValue)
+        {
+            GameObject.Transform.Rotation = rotation.Value;
+        }
+    }
+
+    public void OnDestroy()
+    {
+        RemovePhysicsBody();
     }
 }
 ```
@@ -1150,6 +1326,40 @@ public class AudioSystem : IDisposable
         }
 
         Logger.Warning($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+    }
+}
+```
+
+---
+
+### `Cherris\Core\BepuConvert.cs`
+
+```csharp
+using System.Numerics;
+
+namespace Cherris.Core;
+
+public static class BepuConvert
+{
+    // BEPUphysics v2 uses System.Numerics directly, so no conversion needed
+    public static Vector3 ToBepu(this Vector3 v)
+    {
+        return v;
+    }
+
+    public static Vector3 ToNumerics(this Vector3 v)
+    {
+        return v;
+    }
+
+    public static Quaternion ToBepu(this Quaternion q)
+    {
+        return q;
+    }
+
+    public static Quaternion ToNumerics(this Quaternion q)
+    {
+        return q;
     }
 }
 ```
@@ -2528,72 +2738,174 @@ public static class ModelLoader
 ### `Cherris\Core\PhysicsSystem.cs`
 
 ```csharp
-namespace Cherris;
-
+using BepuPhysics;
+using BepuPhysics.Collidables;
+using BepuPhysics.CollisionDetection;
+using BepuUtilities;
+using BepuUtilities.Memory;
 using Cherris.Components;
-using Jitter.Collision;
-using System.Collections.Generic;
 using System.Numerics;
 
-public class PhysicsSystem
+namespace Cherris.Core;
+
+public class PhysicsSystem : IDisposable
 {
-    public Jitter.World World { get; }
-    private readonly Dictionary<Jitter.Dynamics.RigidBody, RigidBody> _bodyMap = new();
+    public Simulation Simulation { get; private set; }
+
+    private readonly BufferPool _bufferPool;
+    private readonly ThreadDispatcher _threadDispatcher;
+    private readonly Dictionary<BodyHandle, RigidBody> _bodyHandleToComponent = [];
+    private readonly Dictionary<StaticHandle, RigidBody> _staticHandleToComponent = [];
 
     private float _accumulator = 0.0f;
     private const float FixedTimeStep = 1.0f / 60.0f;
-    private const float MaxDeltaTime = 0.25f; // Prevents "spiral of death" from very large delta times
+    private const float MaxDeltaTime = 0.25f;
 
     public PhysicsSystem()
     {
-        CollisionSystemSAP collisionSystem = new();
+        _bufferPool = new BufferPool();
 
-        World = new Jitter.World(collisionSystem)
-        {
-            Gravity = new Vector3(0, -9.81f, 0).ToJitter()
-        };
+        int threadCount = Math.Max(1, Environment.ProcessorCount - 1);
+        _threadDispatcher = new ThreadDispatcher(threadCount);
+
+        Simulation = Simulation.Create(
+            _bufferPool,
+            new NarrowPhaseCallbacks(),
+            new PoseIntegratorCallbacks(new Vector3(0, -9.81f, 0)),
+            new SolveDescription(8, 1));
     }
 
-    public void AddBody(RigidBody bodyComponent, Jitter.Dynamics.RigidBody jitterBody)
+    public void RegisterBody(RigidBody bodyComponent)
     {
-        _bodyMap.Add(jitterBody, bodyComponent);
-        World.AddBody(jitterBody);
-    }
-
-    public void RemoveBody(Jitter.Dynamics.RigidBody jitterBody)
-    {
-        if (jitterBody is null || !_bodyMap.ContainsKey(jitterBody))
+        if (bodyComponent.BepuBodyHandle.HasValue)
         {
-            return;
+            _bodyHandleToComponent[bodyComponent.BepuBodyHandle.Value] = bodyComponent;
         }
+        else if (bodyComponent.BepuStaticHandle.HasValue)
+        {
+            _staticHandleToComponent[bodyComponent.BepuStaticHandle.Value] = bodyComponent;
+        }
+    }
 
-        _bodyMap.Remove(jitterBody);
-        World.RemoveBody(jitterBody);
+    public void UnregisterBody(RigidBody bodyComponent)
+    {
+        if (bodyComponent.BepuBodyHandle.HasValue)
+        {
+            _bodyHandleToComponent.Remove(bodyComponent.BepuBodyHandle.Value);
+        }
+        else if (bodyComponent.BepuStaticHandle.HasValue)
+        {
+            _staticHandleToComponent.Remove(bodyComponent.BepuStaticHandle.Value);
+        }
     }
 
     public void Update(float deltaTime)
     {
-        // Clamp the delta time to prevent huge simulation steps after a freeze
         float effectiveDeltaTime = Math.Min(deltaTime, MaxDeltaTime);
         _accumulator += effectiveDeltaTime;
 
-        // Step the simulation in fixed increments to maintain stability
         while (_accumulator >= FixedTimeStep)
         {
-            World.Step(FixedTimeStep, true);
+            Simulation.Timestep(FixedTimeStep, _threadDispatcher);
             _accumulator -= FixedTimeStep;
         }
 
-        // Sync transforms from physics back to game objects for non-static bodies
-        foreach ((Jitter.Dynamics.RigidBody jitterBody, RigidBody bodyComponent) in _bodyMap)
+        SyncTransforms();
+    }
+
+    private void SyncTransforms()
+    {
+        foreach (var (handle, bodyComponent) in _bodyHandleToComponent)
         {
-            if (jitterBody.IsStatic)
+            if (bodyComponent.IsStatic)
             {
                 continue;
             }
 
-            bodyComponent.GameObject.Transform.Position = jitterBody.Position.ToNumerics();
-            bodyComponent.GameObject.Transform.Rotation = jitterBody.Orientation.ToNumerics();
+            var bodyReference = Simulation.Bodies.GetBodyReference(handle);
+            if (!bodyReference.Exists)
+            {
+                continue;
+            }
+
+            bodyComponent.GameObject.Transform.Position = bodyReference.Pose.Position;
+            bodyComponent.GameObject.Transform.Rotation = bodyReference.Pose.Orientation;
+        }
+    }
+
+    public void Dispose()
+    {
+        Simulation.Dispose();
+        _threadDispatcher.Dispose();
+        _bufferPool.Clear();
+    }
+
+    private struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
+    {
+        public void Initialize(Simulation simulation) { }
+
+        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b)
+        {
+            return true;
+        }
+
+        public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
+        {
+            return true;
+        }
+
+        public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
+        {
+            pairMaterial = new PairMaterialProperties(0.5f, 0.5f, 0f, 0f);
+            return true;
+        }
+
+        public void Dispose() { }
+
+        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    private struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
+    {
+        private Vector3 _gravity;
+        private readonly float _linearDamping;
+        private readonly float _angularDamping;
+
+        public AngularIntegrationMode AngularIntegrationMode => throw new NotImplementedException();
+
+        public bool AllowSubstepsForUnconstrainedBodies => throw new NotImplementedException();
+
+        public bool IntegrateVelocityForKinematics => throw new NotImplementedException();
+
+        public PoseIntegratorCallbacks(Vector3 gravity, float linearDamping = 0.03f, float angularDamping = 0.03f)
+        {
+            _gravity = gravity;
+            _linearDamping = linearDamping;
+            _angularDamping = angularDamping;
+        }
+
+        public void Initialize(Simulation simulation) { }
+
+        public void PrepareForIntegration(float dt) { }
+
+        public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
+        {
+            velocity.Linear += _gravity * FixedTimeStep;
+            velocity.Linear *= MathF.Pow(1 - _linearDamping, FixedTimeStep);
+            velocity.Angular *= MathF.Pow(1 - _angularDamping, FixedTimeStep);
+        }
+
+        public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation, BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt, ref BodyVelocityWide velocity)
+        {
+            throw new NotImplementedException();
         }
     }
 }
@@ -3080,6 +3392,7 @@ public class Scene : IDisposable
         IsDirty = true;
     }
 
+    // In Scene.cs, update the Start method:
     public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
         Logger.Info($"[Scene] Starting scene '{Name}' with {GameObjects.Count} objects.");
@@ -3211,26 +3524,25 @@ public class Scene : IDisposable
 
 ```csharp
 using Cherris.Components;
-using Cherris.Core;
 
-namespace Cherris;
+namespace Cherris.Core;
 
 public class SceneManager
 {
-    private readonly List<Scene> _openScenes = new();
-    private Scene _activeScene;
+    private readonly List<Scene> _openScenes = [];
+
     public event Action<Scene> OnActiveSceneChanged;
 
 
-    public Scene ActiveScene => _activeScene;
+    public Scene? ActiveScene { get; private set; }
     public IReadOnlyList<Scene> OpenScenes => _openScenes;
     public PhysicsSystem PhysicsSystem { get; }
     public AudioSystem AudioSystem { get; }
 
-    public Camera MainCamera => _activeScene?.MainCamera;
-    public Skybox Skybox => _activeScene?.Skybox;
-    public IEnumerable<GameObject> GameObjects => _activeScene?.GameObjects ?? Enumerable.Empty<GameObject>();
-    public IEnumerable<Light> Lights => _activeScene?.Lights ?? Enumerable.Empty<Light>();
+    public Camera? MainCamera => ActiveScene?.MainCamera;
+    public Skybox? Skybox => ActiveScene?.Skybox;
+    public IEnumerable<GameObject> GameObjects => ActiveScene?.GameObjects ?? Enumerable.Empty<GameObject>();
+    public IEnumerable<Light> Lights => ActiveScene?.Lights ?? Enumerable.Empty<Light>();
 
     public SceneManager()
     {
@@ -3241,12 +3553,15 @@ public class SceneManager
 
     public void AddGameObject(GameObject go)
     {
-        _activeScene?.AddGameObject(go);
+        ActiveScene?.AddGameObject(go);
     }
 
     public void RemoveGameObject(GameObject go)
     {
-        if (_activeScene is null) return;
+        if (ActiveScene is null)
+        {
+            return;
+        }
 
         var rb = go.GetComponent<RigidBody>();
         if (rb?.JitterBody is not null)
@@ -3254,7 +3569,7 @@ public class SceneManager
             PhysicsSystem.RemoveBody(rb.JitterBody);
         }
 
-        _activeScene.RemoveGameObject(go);
+        ActiveScene.RemoveGameObject(go);
     }
 
     public void OpenScene(Scene scene)
@@ -3263,59 +3578,59 @@ public class SceneManager
         {
             _openScenes.Add(scene);
         }
-        _activeScene = scene;
-        OnActiveSceneChanged?.Invoke(_activeScene);
+        ActiveScene = scene;
+        OnActiveSceneChanged?.Invoke(ActiveScene);
     }
 
     public void CloseScene(Scene scene)
     {
-        if (scene is null) return;
+        if (scene is null)
+        {
+            return;
+        }
 
         int sceneIndex = _openScenes.IndexOf(scene);
-        if (sceneIndex == -1) return;
+        if (sceneIndex == -1)
+        {
+            return;
+        }
 
         scene.Dispose();
         _openScenes.RemoveAt(sceneIndex);
 
-        if (_activeScene == scene)
+        if (ActiveScene == scene)
         {
             if (_openScenes.Count > 0)
             {
                 // Set the active scene to the one before the closed one, or the first one
-                _activeScene = _openScenes[Math.Max(0, sceneIndex - 1)];
+                ActiveScene = _openScenes[Math.Max(0, sceneIndex - 1)];
             }
             else
             {
-                _activeScene = null;
+                ActiveScene = null;
             }
-            OnActiveSceneChanged?.Invoke(_activeScene);
+            OnActiveSceneChanged?.Invoke(ActiveScene);
         }
     }
 
     public void SetActiveScene(Scene scene)
     {
-        if (scene is not null && _openScenes.Contains(scene) && _activeScene != scene)
+        if (scene is not null && _openScenes.Contains(scene) && ActiveScene != scene)
         {
-            _activeScene = scene;
-            OnActiveSceneChanged?.Invoke(_activeScene);
+            ActiveScene = scene;
+            OnActiveSceneChanged?.Invoke(ActiveScene);
         }
     }
 
     public void SetMainCamera(Camera camera)
     {
-        if (_activeScene is not null)
-        {
-            _activeScene.MainCamera = camera;
-        }
+        ActiveScene?.MainCamera = camera;
     }
 
     public void Start()
     {
         // Start only the active scene when entering play mode.
-        if (_activeScene is not null)
-        {
-            _activeScene.Start(PhysicsSystem, AudioSystem);
-        }
+        ActiveScene?.Start(PhysicsSystem, AudioSystem);
     }
 
     public void Update(float deltaTime, bool stepPhysics = true)
@@ -3327,10 +3642,10 @@ public class SceneManager
         }
 
         // Update audio system
-        AudioSystem.Update(_activeScene);
+        AudioSystem.Update(ActiveScene);
 
         // Then update game logic
-        _activeScene?.Update(deltaTime);
+        ActiveScene?.Update(deltaTime);
     }
 
 
@@ -6464,7 +6779,6 @@ internal class OpenGLDebugRenderer : IDisposable
 ```csharp
 using Cherris.Components;
 using Cherris.Core;
-using Jitter.Collision.Shapes;
 using System.Numerics;
 
 namespace Cherris.Rendering.OpenTK;
@@ -6601,34 +6915,47 @@ internal class OpenGLGizmoRenderer
     {
         RigidBody? rigidBody = gameObject.GetComponent<RigidBody>();
 
-        if (rigidBody?.JitterBody is null)
+        if (rigidBody?.BepuBodyHandle is null && rigidBody?.BepuStaticHandle is null)
         {
             return;
         }
 
         Vector3 color = GetRigidBodyGizmoColor(rigidBody);
-        Vector3 position = rigidBody.JitterBody.Position.ToNumerics();
-        Quaternion orientation = rigidBody.JitterBody.Orientation.ToNumerics();
+        Vector3 position = gameObject.Transform.Position;
+        Quaternion orientation = gameObject.Transform.Rotation;
 
-        switch (rigidBody.JitterBody.Shape)
+        // Get size from mesh renderer
+        var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+        if (meshRenderer?.Mesh is null)
         {
-            case BoxShape box:
-                _debugRenderer.AddBox(position, orientation, box.Size.ToNumerics(), color);
+            return;
+        }
+
+        BoundingBox aabb = meshRenderer.Mesh.AABB;
+        Vector3 size = (aabb.Max - aabb.Min) * gameObject.Transform.Scale;
+
+        switch (rigidBody.Shape)
+        {
+            case ColliderType.Box:
+                _debugRenderer.AddBox(position, orientation, size, color);
                 break;
 
-            case SphereShape sphere:
-                _debugRenderer.AddSphere(position, sphere.Radius, color);
+            case ColliderType.Sphere:
+                float radius = (size.X + size.Y + size.Z) / 6.0f;
+                _debugRenderer.AddSphere(position, radius, color);
                 break;
 
-            case CapsuleShape capsule:
-                _debugRenderer.AddCapsule(position, orientation, capsule.Length, capsule.Radius, color);
+            case ColliderType.Capsule:
+                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
+                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius));
+                _debugRenderer.AddCapsule(position, orientation, capsuleLength, capsuleRadius, color);
                 break;
         }
     }
 
     private static Vector3 GetRigidBodyGizmoColor(RigidBody rigidBody)
     {
-        return rigidBody.JitterBody?.IsStatic == true
+        return rigidBody.IsStatic
             ? StaticBodyColor
             : DynamicBodyColor;
     }
@@ -10197,7 +10524,6 @@ public class EditorSelection
 ### `CherrisEditor\Core\PlayModeManager.cs`
 
 ```csharp
-using Cherris;
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
@@ -10408,7 +10734,6 @@ public class ProjectManager
 ### `CherrisEditor\Core\SceneOperations.cs`
 
 ```csharp
-using Cherris;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
@@ -13622,7 +13947,6 @@ void main()
 ### `CherrisEditor\UI\Inspector\ComponentAdderPresenter.cs`
 
 ```csharp
-using Cherris;
 using Cherris.Components;
 using Cherris.Core;
 using CherrisEditor.Core;

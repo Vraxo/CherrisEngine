@@ -62,6 +62,7 @@ public class Scene : IDisposable
         IsDirty = true;
     }
 
+    // In Scene.cs, update the Start method:
     public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
         Logger.Info($"[Scene] Starting scene '{Name}' with {GameObjects.Count} objects.");

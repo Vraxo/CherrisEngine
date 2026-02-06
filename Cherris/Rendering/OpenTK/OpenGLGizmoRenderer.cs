@@ -1,6 +1,5 @@
 ﻿using Cherris.Components;
 using Cherris.Core;
-using Jitter.Collision.Shapes;
 using System.Numerics;
 
 namespace Cherris.Rendering.OpenTK;
@@ -137,34 +136,47 @@ internal class OpenGLGizmoRenderer
     {
         RigidBody? rigidBody = gameObject.GetComponent<RigidBody>();
 
-        if (rigidBody?.JitterBody is null)
+        if (rigidBody?.BepuBodyHandle is null && rigidBody?.BepuStaticHandle is null)
         {
             return;
         }
 
         Vector3 color = GetRigidBodyGizmoColor(rigidBody);
-        Vector3 position = rigidBody.JitterBody.Position.ToNumerics();
-        Quaternion orientation = rigidBody.JitterBody.Orientation.ToNumerics();
+        Vector3 position = gameObject.Transform.Position;
+        Quaternion orientation = gameObject.Transform.Rotation;
 
-        switch (rigidBody.JitterBody.Shape)
+        // Get size from mesh renderer
+        var meshRenderer = gameObject.GetComponent<MeshRenderer>();
+        if (meshRenderer?.Mesh is null)
         {
-            case BoxShape box:
-                _debugRenderer.AddBox(position, orientation, box.Size.ToNumerics(), color);
+            return;
+        }
+
+        BoundingBox aabb = meshRenderer.Mesh.AABB;
+        Vector3 size = (aabb.Max - aabb.Min) * gameObject.Transform.Scale;
+
+        switch (rigidBody.Shape)
+        {
+            case ColliderType.Box:
+                _debugRenderer.AddBox(position, orientation, size, color);
                 break;
 
-            case SphereShape sphere:
-                _debugRenderer.AddSphere(position, sphere.Radius, color);
+            case ColliderType.Sphere:
+                float radius = (size.X + size.Y + size.Z) / 6.0f;
+                _debugRenderer.AddSphere(position, radius, color);
                 break;
 
-            case CapsuleShape capsule:
-                _debugRenderer.AddCapsule(position, orientation, capsule.Length, capsule.Radius, color);
+            case ColliderType.Capsule:
+                float capsuleRadius = Math.Max(size.X, size.Z) / 2.0f;
+                float capsuleLength = Math.Max(0, size.Y - (2 * capsuleRadius));
+                _debugRenderer.AddCapsule(position, orientation, capsuleLength, capsuleRadius, color);
                 break;
         }
     }
 
     private static Vector3 GetRigidBodyGizmoColor(RigidBody rigidBody)
     {
-        return rigidBody.JitterBody?.IsStatic == true
+        return rigidBody.IsStatic
             ? StaticBodyColor
             : DynamicBodyColor;
     }
