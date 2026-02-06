@@ -33,7 +33,8 @@ public class Scene : IDisposable
     public void AddGameObject(GameObject go)
     {
         GameObjects.Add(go);
-        var light = go.GetComponent<Light>();
+
+        Light? light = go.GetComponent<Light>();
 
         if (light is not null)
         {
@@ -53,7 +54,8 @@ public class Scene : IDisposable
         go.Transform.Parent = null;
         GameObjects.Remove(go);
 
-        var light = go.GetComponent<Light>();
+        Light? light = go.GetComponent<Light>();
+        
         if (light is not null)
         {
             Lights.Remove(light);
@@ -71,7 +73,7 @@ public class Scene : IDisposable
 
         foreach (GameObject gameObject in GameObjects)
         {
-            foreach (var script in gameObject.GetComponents<Script>())
+            foreach (Script script in gameObject.GetComponents<Script>())
             {
                 Logger.Info($"[Scene] Initializing script '{script.GetType().Name}' on '{gameObject.Name}'");
 
@@ -98,7 +100,7 @@ public class Scene : IDisposable
                 }
             }
 
-            foreach (var audioSource in gameObject.GetComponents<AudioSource>())
+            foreach (AudioSource audioSource in gameObject.GetComponents<AudioSource>())
             {
                 audioSource.Initialize(audioSystem);
                 audioSource.Start();
@@ -124,9 +126,9 @@ public class Scene : IDisposable
             // Logger.Info($"[Scene] Heartbeat - Updating {GameObjects.Count} objects.");
         }
 
-        foreach (var gameObject in GameObjects)
+        foreach (GameObject gameObject in GameObjects)
         {
-            foreach (var script in gameObject.GetComponents<Script>())
+            foreach (Script script in gameObject.GetComponents<Script>())
             {
                 if (!script.Enabled)
                 {
@@ -161,20 +163,23 @@ public class Scene : IDisposable
         {
             MainCamera ??= gameObject.GetComponent<Camera>();
             Skybox ??= gameObject.GetComponent<Skybox>();
-            var light = gameObject.GetComponent<Light>();
+            Light? light = gameObject.GetComponent<Light>();
 
-            if (light is not null)
+            if (light is null)
             {
-                Lights.Add(light);
+                continue;
             }
+
+            Lights.Add(light);
         }
     }
 
     private void CreateDefaultCamera()
     {
         Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
+        
         GameObject go = new("Default Camera");
-        go.Transform.Position = new Vector3(0, 1, 3);
+        go.Transform.Position = new(0, 1, 3);
         MainCamera = go.AddComponent(new Camera());
         GameObjects.Add(go);
     }

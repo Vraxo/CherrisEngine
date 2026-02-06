@@ -97,11 +97,14 @@ public class RigidBody : Script
 
     private void CreateAndRegisterBepuBody()
     {
-        var meshRenderer = GameObject.GetComponent<MeshRenderer>();
+        MeshRenderer? meshRenderer = GameObject.GetComponent<MeshRenderer>();
 
         if (meshRenderer is null)
         {
-            Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
+            Console.WriteLine(
+                $"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. " +
+                $"Cannot create physics shape.");
+
             return;
         }
 
@@ -283,10 +286,12 @@ public class RigidBody : Script
     {
         if (BepuBodyHandle.HasValue && _physicsSystem?.Simulation is not null && !IsStatic)
         {
-            var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+            BodyReference bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
+
             if (bodyReference.Exists)
             {
                 bodyReference.Pose.Position = position;
+
                 if (rotation.HasValue)
                 {
                     bodyReference.Pose.Orientation = rotation.Value;
@@ -295,6 +300,7 @@ public class RigidBody : Script
         }
 
         GameObject.Transform.Position = position;
+
         if (rotation.HasValue)
         {
             GameObject.Transform.Rotation = rotation.Value;

@@ -135,8 +135,6 @@ public class SceneManager
         ActiveScene?.Update(deltaTime);
     }
 
-
-
     public void Dispose()
     {
         foreach (var scene in _openScenes)

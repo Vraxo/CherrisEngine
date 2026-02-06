@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 
-namespace Cherris.Core;
+namespace Cherris.Core.Physics;
 
 public static class BepuConvert
 {

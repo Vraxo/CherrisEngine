@@ -2,7 +2,6 @@
 using BepuUtilities;
 using BepuUtilities.Memory;
 using Cherris.Components;
-using System.Numerics;
 
 namespace Cherris.Core.Physics;
 
@@ -29,8 +28,8 @@ public partial class PhysicsSystem : IDisposable
         Simulation = Simulation.Create(
             _bufferPool,
             new NarrowPhaseCallbacks(),
-            new PoseIntegratorCallbacks(new Vector3(0, -9.81f, 0)),
-            new SolveDescription(8, 1));
+            new PoseIntegratorCallbacks(new(0, -9.81f, 0)),
+            new(8, 1));
     }
 
     public void RegisterBody(RigidBody bodyComponent)
@@ -80,7 +79,8 @@ public partial class PhysicsSystem : IDisposable
                 continue;
             }
 
-            var bodyReference = Simulation.Bodies.GetBodyReference(handle);
+            BodyReference bodyReference = Simulation.Bodies.GetBodyReference(handle);
+
             if (!bodyReference.Exists)
             {
                 continue;
