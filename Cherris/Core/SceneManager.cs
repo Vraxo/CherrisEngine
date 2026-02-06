@@ -39,9 +39,20 @@ public class SceneManager
         }
 
         var rb = go.GetComponent<RigidBody>();
-        if (rb?.JitterBody is not null)
+
+        // BEPUphysics v2: Use BepuBodyHandle/BepuStaticHandle instead of JitterBody
+        if (rb?.BepuBodyHandle.HasValue == true)
         {
-            PhysicsSystem.RemoveBody(rb.JitterBody);
+            PhysicsSystem.Simulation.Bodies.Remove(rb.BepuBodyHandle.Value);
+            PhysicsSystem.UnregisterBody(rb);
+            rb.BepuBodyHandle = null;
+        }
+
+        if (rb?.BepuStaticHandle.HasValue == true)
+        {
+            PhysicsSystem.Simulation.Statics.Remove(rb.BepuStaticHandle.Value);
+            PhysicsSystem.UnregisterBody(rb);
+            rb.BepuStaticHandle = null;
         }
 
         ActiveScene.RemoveGameObject(go);

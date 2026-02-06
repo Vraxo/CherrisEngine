@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="BepuPhysics" Version="2.4.0" />
-    <PackageReference Include="BepuUtilities" Version="2.5.0-beta.27" />
+    <PackageReference Include="BepuUtilities" Version="2.4.0" />
     <PackageReference Include="Jitter" Version="0.1.7" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
     <PackageReference Include="OpenTK" Version="4.9.4" />

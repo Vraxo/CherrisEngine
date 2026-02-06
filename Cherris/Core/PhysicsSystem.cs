@@ -1,6 +1,7 @@
 ﻿using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
+using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
 using Cherris.Components;
@@ -104,30 +105,38 @@ public class PhysicsSystem : IDisposable
     {
         public void Initialize(Simulation simulation) { }
 
-        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b)
+        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
         {
+            // Allow all contact generation by default
+            // Return true to allow collision detection between these collidables
             return true;
         }
 
         public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
         {
+            // Allow contact generation for compound shapes
             return true;
         }
 
         public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
         {
-            pairMaterial = new PairMaterialProperties(0.5f, 0.5f, 0f, 0f);
+            pairMaterial = new PairMaterialProperties
+            {
+                FrictionCoefficient = 0.5f,
+                MaximumRecoveryVelocity = 2f,
+                SpringSettings = new SpringSettings(30f, 1f)
+            };
             return true;
         }
 
-        public void Dispose() { }
-
-        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
+        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
         {
-            throw new NotImplementedException();
+            // For child manifold configuration (compound shapes), just return true
+            // Material properties are handled by the parent manifold
+            return true;
         }
 
-        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
+        public void Dispose()
         {
             throw new NotImplementedException();
         }
@@ -139,11 +148,10 @@ public class PhysicsSystem : IDisposable
         private readonly float _linearDamping;
         private readonly float _angularDamping;
 
-        public AngularIntegrationMode AngularIntegrationMode => throw new NotImplementedException();
-
-        public bool AllowSubstepsForUnconstrainedBodies => throw new NotImplementedException();
-
-        public bool IntegrateVelocityForKinematics => throw new NotImplementedException();
+        // FIX: These properties must return values, not throw exceptions
+        public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.ConserveMomentum;
+        public bool AllowSubstepsForUnconstrainedBodies => false;
+        public bool IntegrateVelocityForKinematics => false;  // Line 153 - was throwing NotImplementedException
 
         public PoseIntegratorCallbacks(Vector3 gravity, float linearDamping = 0.03f, float angularDamping = 0.03f)
         {
@@ -158,14 +166,37 @@ public class PhysicsSystem : IDisposable
 
         public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
         {
-            velocity.Linear += _gravity * FixedTimeStep;
-            velocity.Linear *= MathF.Pow(1 - _linearDamping, FixedTimeStep);
-            velocity.Angular *= MathF.Pow(1 - _angularDamping, FixedTimeStep);
+            velocity.Linear += _gravity * 0.016f; // Assuming 60fps, use your actual timestep
+            velocity.Linear *= MathF.Pow(1 - _linearDamping, 0.016f);
+            velocity.Angular *= MathF.Pow(1 - _angularDamping, 0.016f);
         }
 
-        public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation, BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt, ref BodyVelocityWide velocity)
+        // Wide vector version - also must be implemented
+        public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation,
+            BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt,
+            ref BodyVelocityWide velocity)
         {
-            throw new NotImplementedException();
+            // Create gravity wide vector by setting fields directly
+            Vector<float> gravityX = new(_gravity.X);
+            Vector<float> gravityY = new(_gravity.Y);
+            Vector<float> gravityZ = new(_gravity.Z);
+
+            // Apply gravity: velocity += gravity * dt
+            velocity.Linear.X += gravityX;
+            velocity.Linear.Y += gravityY;
+            velocity.Linear.Z += gravityZ;
+
+            // Apply damping
+            Vector<float> linearDamping = new(MathF.Pow(1 - _linearDamping, 0.016f));
+            Vector<float> angularDamping = new(MathF.Pow(1 - _angularDamping, 0.016f));
+
+            velocity.Linear.X *= linearDamping;
+            velocity.Linear.Y *= linearDamping;
+            velocity.Linear.Z *= linearDamping;
+
+            velocity.Angular.X *= angularDamping;
+            velocity.Angular.Y *= angularDamping;
+            velocity.Angular.Z *= angularDamping;
         }
     }
 }

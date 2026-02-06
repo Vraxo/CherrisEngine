@@ -1,35 +1,36 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.0.0-1.25277.114">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-2.final" />
-    <PackageReference Include="NativeFileDialogNET" Version="2.0.2" />
-    <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
-    <PackageReference Include="Twizzle.ImGui.NET" Version="1.89.4" />
-    <PackageReference Include="Twizzle.ImGuizmo.NET" Version="1.89.4.1" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.0.0-1.25277.114">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<!-- Changed from 5.0.0-2.final to 5.0.0 to resolve NU1605 downgrade warning -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+		<PackageReference Include="NativeFileDialogNET" Version="2.0.2" />
+		<PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+		<PackageReference Include="Twizzle.ImGui.NET" Version="1.89.4" />
+		<PackageReference Include="Twizzle.ImGuizmo.NET" Version="1.89.4.1" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Cherris\Cherris.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Cherris\Cherris.csproj" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Content Include="EditorResources\**\*" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+	<ItemGroup>
+		<Content Include="EditorResources\**\*" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Attributes\" />
-  </ItemGroup>
+	<ItemGroup>
+		<Folder Include="Attributes\" />
+	</ItemGroup>
 
 </Project>

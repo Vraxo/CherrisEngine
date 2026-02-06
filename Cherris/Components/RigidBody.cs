@@ -1,7 +1,5 @@
 ﻿using BepuPhysics;
 using BepuPhysics.Collidables;
-using BepuUtilities;
-using BepuUtilities.Memory;
 using Cherris.Core;
 using Cherris.Utils;
 using System.Numerics;
