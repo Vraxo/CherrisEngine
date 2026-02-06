@@ -1,4 +1,5 @@
 ﻿using Cherris.Components;
+using Cherris.Core.Physics;
 
 namespace Cherris.Core;
 

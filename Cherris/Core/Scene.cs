@@ -1,5 +1,6 @@
 ﻿using Cherris.Components;
 using Cherris.Core.Logging;
+using Cherris.Core.Physics;
 using System.Numerics;
 
 namespace Cherris.Core;
