@@ -166,37 +166,41 @@ public class PhysicsSystem : IDisposable
 
         public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
         {
-            velocity.Linear += _gravity * 0.016f; // Assuming 60fps, use your actual timestep
-            velocity.Linear *= MathF.Pow(1 - _linearDamping, 0.016f);
-            velocity.Angular *= MathF.Pow(1 - _angularDamping, 0.016f);
+            // Use actual timestep, not hardcoded 0.016f
+            velocity.Linear += _gravity * 0.016f;  // Keep this for scalar version if called with fixed timestep
+
+            // Or if dt is available in this overload, use it:
+            // velocity.Linear += _gravity * dt;
         }
 
-        // Wide vector version - also must be implemented
         public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation,
             BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt,
             ref BodyVelocityWide velocity)
         {
-            // Create gravity wide vector by setting fields directly
-            Vector<float> gravityX = new(_gravity.X);
-            Vector<float> gravityY = new(_gravity.Y);
-            Vector<float> gravityZ = new(_gravity.Z);
+            // FIX: Scale gravity by actual dt for each lane
+            Vector<float> dtWide = dt;  // Use the passed dt parameter
 
-            // Apply gravity: velocity += gravity * dt
-            velocity.Linear.X += gravityX;
-            velocity.Linear.Y += gravityY;
-            velocity.Linear.Z += gravityZ;
+            // Apply gravity scaled by timestep
+            Vector3Wide gravityScaled;
+            gravityScaled.X = new Vector<float>(_gravity.X) * dtWide;
+            gravityScaled.Y = new Vector<float>(_gravity.Y) * dtWide;
+            gravityScaled.Z = new Vector<float>(_gravity.Z) * dtWide;
 
-            // Apply damping
-            Vector<float> linearDamping = new(MathF.Pow(1 - _linearDamping, 0.016f));
-            Vector<float> angularDamping = new(MathF.Pow(1 - _angularDamping, 0.016f));
+            velocity.Linear.X += gravityScaled.X;
+            velocity.Linear.Y += gravityScaled.Y;
+            velocity.Linear.Z += gravityScaled.Z;
 
-            velocity.Linear.X *= linearDamping;
-            velocity.Linear.Y *= linearDamping;
-            velocity.Linear.Z *= linearDamping;
+            // Apply damping (also scaled by dt)
+            Vector<float> linearDampingFactor = Vector<float>.One - (new Vector<float>(_linearDamping) * dtWide);
+            Vector<float> angularDampingFactor = Vector<float>.One - (new Vector<float>(_angularDamping) * dtWide);
 
-            velocity.Angular.X *= angularDamping;
-            velocity.Angular.Y *= angularDamping;
-            velocity.Angular.Z *= angularDamping;
+            velocity.Linear.X *= linearDampingFactor;
+            velocity.Linear.Y *= linearDampingFactor;
+            velocity.Linear.Z *= linearDampingFactor;
+
+            velocity.Angular.X *= angularDampingFactor;
+            velocity.Angular.Y *= angularDampingFactor;
+            velocity.Angular.Z *= angularDampingFactor;
         }
     }
 }
