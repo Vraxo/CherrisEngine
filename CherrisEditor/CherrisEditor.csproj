@@ -15,7 +15,7 @@
     </PackageReference>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-2.final" />
     <PackageReference Include="NativeFileDialogNET" Version="2.0.2" />
-    <PackageReference Include="SharpGLTF.Core" Version="1.0.5" />
+    <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
     <PackageReference Include="Twizzle.ImGui.NET" Version="1.89.4" />
     <PackageReference Include="Twizzle.ImGuizmo.NET" Version="1.89.4.1" />
   </ItemGroup>
