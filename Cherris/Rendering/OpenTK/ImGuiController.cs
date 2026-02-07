@@ -261,7 +261,6 @@ void main()
             ImDrawListPtr cmd_list = ((ImDrawListPtr*)draw_data.CmdLists)[i];
 
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-
             GL.BufferData(
                 BufferTarget.ArrayBuffer,
                 cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(),

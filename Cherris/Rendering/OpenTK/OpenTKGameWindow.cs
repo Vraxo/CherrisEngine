@@ -187,8 +187,7 @@ public class OpenTKGameWindow : IGameWindow
 
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
-        // Fix: MouseScroll is a static method, so it must be called on the type ImGuiController.
-        ImGuiController.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
+        _imGuiController?.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
 
         bool ignoreImGui = IsViewportActive?.Invoke() ?? false;
 

@@ -401,8 +401,9 @@ public class MeshRenderer : Component, IDisposable
 ```csharp
 using BepuPhysics;
 using BepuPhysics.Collidables;
+using BepuUtilities;
+using BepuUtilities.Memory;
 using Cherris.Core;
-using Cherris.Core.Physics;
 using Cherris.Utils;
 using System.Numerics;
 
@@ -498,14 +499,11 @@ public class RigidBody : Script
 
     private void CreateAndRegisterBepuBody()
     {
-        MeshRenderer? meshRenderer = GameObject.GetComponent<MeshRenderer>();
+        var meshRenderer = GameObject.GetComponent<MeshRenderer>();
 
         if (meshRenderer is null)
         {
-            Console.WriteLine(
-                $"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. " +
-                $"Cannot create physics shape.");
-
+            Console.WriteLine($"[RigidBody] Warning: No MeshRenderer found on '{GameObject.Name}'. Cannot create physics shape.");
             return;
         }
 
@@ -687,12 +685,10 @@ public class RigidBody : Script
     {
         if (BepuBodyHandle.HasValue && _physicsSystem?.Simulation is not null && !IsStatic)
         {
-            BodyReference bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
-
+            var bodyReference = _physicsSystem.Simulation.Bodies.GetBodyReference(BepuBodyHandle.Value);
             if (bodyReference.Exists)
             {
                 bodyReference.Pose.Position = position;
-
                 if (rotation.HasValue)
                 {
                     bodyReference.Pose.Orientation = rotation.Value;
@@ -701,7 +697,6 @@ public class RigidBody : Script
         }
 
         GameObject.Transform.Position = position;
-
         if (rotation.HasValue)
         {
             GameObject.Transform.Rotation = rotation.Value;
@@ -1331,6 +1326,40 @@ public class AudioSystem : IDisposable
         }
 
         Logger.Warning($"[AudioSystem] OpenAL Error after {context}: {AL.GetErrorString(error)}");
+    }
+}
+```
+
+---
+
+### `Cherris\Core\BepuConvert.cs`
+
+```csharp
+using System.Numerics;
+
+namespace Cherris.Core;
+
+public static class BepuConvert
+{
+    // BEPUphysics v2 uses System.Numerics directly, so no conversion needed
+    public static Vector3 ToBepu(this Vector3 v)
+    {
+        return v;
+    }
+
+    public static Vector3 ToNumerics(this Vector3 v)
+    {
+        return v;
+    }
+
+    public static Quaternion ToBepu(this Quaternion q)
+    {
+        return q;
+    }
+
+    public static Quaternion ToNumerics(this Quaternion q)
+    {
+        return q;
     }
 }
 ```
@@ -2503,6 +2532,43 @@ public enum MouseButton
 
 ---
 
+### `Cherris\Core\JitterConvert.cs`
+
+```csharp
+using Jitter.LinearMath;
+using System.Numerics;
+
+namespace Cherris;
+
+public static class JitterConvert
+{
+    public static JVector ToJitter(this Vector3 v)
+    {
+        return new(v.X, v.Y, v.Z);
+    }
+
+    public static Vector3 ToNumerics(this JVector v)
+    {
+        return new(v.X, v.Y, v.Z);
+    }
+
+    public static JMatrix ToJitter(this Quaternion q)
+    {
+        JQuaternion jq = new(q.X, q.Y, q.Z, q.W);
+        JMatrix.CreateFromQuaternion(ref jq, out var matrix);
+        return matrix;
+    }
+
+    public static Quaternion ToNumerics(this JMatrix m)
+    {
+        JQuaternion.CreateFromMatrix(ref m, out var jq);
+        return new(jq.X, jq.Y, jq.Z, jq.W);
+    }
+}
+```
+
+---
+
 ### `Cherris\Core\Material.cs`
 
 ```csharp
@@ -2663,6 +2729,184 @@ public static class ModelLoader
         }
 
         return loadedMeshes;
+    }
+}
+```
+
+---
+
+### `Cherris\Core\PhysicsSystem.cs`
+
+```csharp
+using BepuPhysics;
+using BepuPhysics.Collidables;
+using BepuPhysics.CollisionDetection;
+using BepuUtilities;
+using BepuUtilities.Memory;
+using Cherris.Components;
+using System.Numerics;
+
+namespace Cherris.Core;
+
+public class PhysicsSystem : IDisposable
+{
+    public Simulation Simulation { get; private set; }
+
+    private readonly BufferPool _bufferPool;
+    private readonly ThreadDispatcher _threadDispatcher;
+    private readonly Dictionary<BodyHandle, RigidBody> _bodyHandleToComponent = [];
+    private readonly Dictionary<StaticHandle, RigidBody> _staticHandleToComponent = [];
+
+    private float _accumulator = 0.0f;
+    private const float FixedTimeStep = 1.0f / 60.0f;
+    private const float MaxDeltaTime = 0.25f;
+
+    public PhysicsSystem()
+    {
+        _bufferPool = new BufferPool();
+
+        int threadCount = Math.Max(1, Environment.ProcessorCount - 1);
+        _threadDispatcher = new ThreadDispatcher(threadCount);
+
+        Simulation = Simulation.Create(
+            _bufferPool,
+            new NarrowPhaseCallbacks(),
+            new PoseIntegratorCallbacks(new Vector3(0, -9.81f, 0)),
+            new SolveDescription(8, 1));
+    }
+
+    public void RegisterBody(RigidBody bodyComponent)
+    {
+        if (bodyComponent.BepuBodyHandle.HasValue)
+        {
+            _bodyHandleToComponent[bodyComponent.BepuBodyHandle.Value] = bodyComponent;
+        }
+        else if (bodyComponent.BepuStaticHandle.HasValue)
+        {
+            _staticHandleToComponent[bodyComponent.BepuStaticHandle.Value] = bodyComponent;
+        }
+    }
+
+    public void UnregisterBody(RigidBody bodyComponent)
+    {
+        if (bodyComponent.BepuBodyHandle.HasValue)
+        {
+            _bodyHandleToComponent.Remove(bodyComponent.BepuBodyHandle.Value);
+        }
+        else if (bodyComponent.BepuStaticHandle.HasValue)
+        {
+            _staticHandleToComponent.Remove(bodyComponent.BepuStaticHandle.Value);
+        }
+    }
+
+    public void Update(float deltaTime)
+    {
+        float effectiveDeltaTime = Math.Min(deltaTime, MaxDeltaTime);
+        _accumulator += effectiveDeltaTime;
+
+        while (_accumulator >= FixedTimeStep)
+        {
+            Simulation.Timestep(FixedTimeStep, _threadDispatcher);
+            _accumulator -= FixedTimeStep;
+        }
+
+        SyncTransforms();
+    }
+
+    private void SyncTransforms()
+    {
+        foreach (var (handle, bodyComponent) in _bodyHandleToComponent)
+        {
+            if (bodyComponent.IsStatic)
+            {
+                continue;
+            }
+
+            var bodyReference = Simulation.Bodies.GetBodyReference(handle);
+            if (!bodyReference.Exists)
+            {
+                continue;
+            }
+
+            bodyComponent.GameObject.Transform.Position = bodyReference.Pose.Position;
+            bodyComponent.GameObject.Transform.Rotation = bodyReference.Pose.Orientation;
+        }
+    }
+
+    public void Dispose()
+    {
+        Simulation.Dispose();
+        _threadDispatcher.Dispose();
+        _bufferPool.Clear();
+    }
+
+    private struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
+    {
+        public void Initialize(Simulation simulation) { }
+
+        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b)
+        {
+            return true;
+        }
+
+        public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
+        {
+            return true;
+        }
+
+        public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
+        {
+            pairMaterial = new PairMaterialProperties(0.5f, 0.5f, 0f, 0f);
+            return true;
+        }
+
+        public void Dispose() { }
+
+        public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    private struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
+    {
+        private Vector3 _gravity;
+        private readonly float _linearDamping;
+        private readonly float _angularDamping;
+
+        public AngularIntegrationMode AngularIntegrationMode => throw new NotImplementedException();
+
+        public bool AllowSubstepsForUnconstrainedBodies => throw new NotImplementedException();
+
+        public bool IntegrateVelocityForKinematics => throw new NotImplementedException();
+
+        public PoseIntegratorCallbacks(Vector3 gravity, float linearDamping = 0.03f, float angularDamping = 0.03f)
+        {
+            _gravity = gravity;
+            _linearDamping = linearDamping;
+            _angularDamping = angularDamping;
+        }
+
+        public void Initialize(Simulation simulation) { }
+
+        public void PrepareForIntegration(float dt) { }
+
+        public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
+        {
+            velocity.Linear += _gravity * FixedTimeStep;
+            velocity.Linear *= MathF.Pow(1 - _linearDamping, FixedTimeStep);
+            velocity.Angular *= MathF.Pow(1 - _angularDamping, FixedTimeStep);
+        }
+
+        public void IntegrateVelocity(Vector<int> bodyIndices, Vector3Wide position, QuaternionWide orientation, BodyInertiaWide localInertia, Vector<int> integrationMask, int workerIndex, Vector<float> dt, ref BodyVelocityWide velocity)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
 ```
@@ -3086,7 +3330,6 @@ public abstract class ResourceManagerBase : IResourceManager
 ```csharp
 using Cherris.Components;
 using Cherris.Core.Logging;
-using Cherris.Core.Physics;
 using System.Numerics;
 
 namespace Cherris.Core;
@@ -3119,8 +3362,7 @@ public class Scene : IDisposable
     public void AddGameObject(GameObject go)
     {
         GameObjects.Add(go);
-
-        Light? light = go.GetComponent<Light>();
+        var light = go.GetComponent<Light>();
 
         if (light is not null)
         {
@@ -3140,8 +3382,7 @@ public class Scene : IDisposable
         go.Transform.Parent = null;
         GameObjects.Remove(go);
 
-        Light? light = go.GetComponent<Light>();
-        
+        var light = go.GetComponent<Light>();
         if (light is not null)
         {
             Lights.Remove(light);
@@ -3159,7 +3400,7 @@ public class Scene : IDisposable
 
         foreach (GameObject gameObject in GameObjects)
         {
-            foreach (Script script in gameObject.GetComponents<Script>())
+            foreach (var script in gameObject.GetComponents<Script>())
             {
                 Logger.Info($"[Scene] Initializing script '{script.GetType().Name}' on '{gameObject.Name}'");
 
@@ -3186,7 +3427,7 @@ public class Scene : IDisposable
                 }
             }
 
-            foreach (AudioSource audioSource in gameObject.GetComponents<AudioSource>())
+            foreach (var audioSource in gameObject.GetComponents<AudioSource>())
             {
                 audioSource.Initialize(audioSystem);
                 audioSource.Start();
@@ -3212,9 +3453,9 @@ public class Scene : IDisposable
             // Logger.Info($"[Scene] Heartbeat - Updating {GameObjects.Count} objects.");
         }
 
-        foreach (GameObject gameObject in GameObjects)
+        foreach (var gameObject in GameObjects)
         {
-            foreach (Script script in gameObject.GetComponents<Script>())
+            foreach (var script in gameObject.GetComponents<Script>())
             {
                 if (!script.Enabled)
                 {
@@ -3249,23 +3490,20 @@ public class Scene : IDisposable
         {
             MainCamera ??= gameObject.GetComponent<Camera>();
             Skybox ??= gameObject.GetComponent<Skybox>();
-            Light? light = gameObject.GetComponent<Light>();
+            var light = gameObject.GetComponent<Light>();
 
-            if (light is null)
+            if (light is not null)
             {
-                continue;
+                Lights.Add(light);
             }
-
-            Lights.Add(light);
         }
     }
 
     private void CreateDefaultCamera()
     {
         Console.WriteLine("Warning: No active camera found in scene. Creating a default one.");
-        
         GameObject go = new("Default Camera");
-        go.Transform.Position = new(0, 1, 3);
+        go.Transform.Position = new Vector3(0, 1, 3);
         MainCamera = go.AddComponent(new Camera());
         GameObjects.Add(go);
     }
@@ -3286,7 +3524,6 @@ public class Scene : IDisposable
 
 ```csharp
 using Cherris.Components;
-using Cherris.Core.Physics;
 
 namespace Cherris.Core;
 
@@ -3327,20 +3564,9 @@ public class SceneManager
         }
 
         var rb = go.GetComponent<RigidBody>();
-
-        // BEPUphysics v2: Use BepuBodyHandle/BepuStaticHandle instead of JitterBody
-        if (rb?.BepuBodyHandle.HasValue == true)
+        if (rb?.JitterBody is not null)
         {
-            PhysicsSystem.Simulation.Bodies.Remove(rb.BepuBodyHandle.Value);
-            PhysicsSystem.UnregisterBody(rb);
-            rb.BepuBodyHandle = null;
-        }
-
-        if (rb?.BepuStaticHandle.HasValue == true)
-        {
-            PhysicsSystem.Simulation.Statics.Remove(rb.BepuStaticHandle.Value);
-            PhysicsSystem.UnregisterBody(rb);
-            rb.BepuStaticHandle = null;
+            PhysicsSystem.RemoveBody(rb.JitterBody);
         }
 
         ActiveScene.RemoveGameObject(go);
@@ -3421,6 +3647,8 @@ public class SceneManager
         // Then update game logic
         ActiveScene?.Update(deltaTime);
     }
+
+
 
     public void Dispose()
     {
@@ -5808,281 +6036,6 @@ public readonly struct LogMessage
 
 ---
 
-### `Cherris\Core\Physics\BepuConvert.cs`
-
-```csharp
-using System.Numerics;
-
-namespace Cherris.Core.Physics;
-
-public static class BepuConvert
-{
-    // BEPUphysics v2 uses System.Numerics directly, so no conversion needed
-    public static Vector3 ToBepu(this Vector3 v)
-    {
-        return v;
-    }
-
-    public static Vector3 ToNumerics(this Vector3 v)
-    {
-        return v;
-    }
-
-    public static Quaternion ToBepu(this Quaternion q)
-    {
-        return q;
-    }
-
-    public static Quaternion ToNumerics(this Quaternion q)
-    {
-        return q;
-    }
-}
-```
-
----
-
-### `Cherris\Core\Physics\NarrowPhaseCallbacks.cs`
-
-```csharp
-using BepuPhysics;
-using BepuPhysics.Collidables;
-using BepuPhysics.CollisionDetection;
-
-namespace Cherris.Core.Physics;
-
-public struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
-{
-    public void Initialize(Simulation simulation) { }
-
-    public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
-    {
-        // Allow all contact generation by default
-        // Return true to allow collision detection between these collidables
-        return true;
-    }
-
-    public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
-    {
-        // Allow contact generation for compound shapes
-        return true;
-    }
-
-    public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
-    {
-        pairMaterial = new()
-        {
-            FrictionCoefficient = 0.5f,
-            MaximumRecoveryVelocity = 2f,
-            SpringSettings = new(30f, 1f)
-        };
-
-        return true;
-    }
-
-    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
-    {
-        // For child manifold configuration (compound shapes), just return true
-        // Material properties are handled by the parent manifold
-        return true;
-    }
-
-    public void Dispose()
-    {
-        throw new NotImplementedException();
-    }
-}
-```
-
----
-
-### `Cherris\Core\Physics\PhysicsSystem.cs`
-
-```csharp
-using BepuPhysics;
-using BepuUtilities;
-using BepuUtilities.Memory;
-using Cherris.Components;
-
-namespace Cherris.Core.Physics;
-
-public partial class PhysicsSystem : IDisposable
-{
-    public Simulation Simulation { get; private set; }
-
-    private readonly BufferPool _bufferPool;
-    private readonly ThreadDispatcher _threadDispatcher;
-    private readonly Dictionary<BodyHandle, RigidBody> _bodyHandleToComponent = [];
-    private readonly Dictionary<StaticHandle, RigidBody> _staticHandleToComponent = [];
-
-    private float _accumulator = 0.0f;
-    private const float FixedTimeStep = 1.0f / 60.0f;
-    private const float MaxDeltaTime = 0.25f;
-
-    public PhysicsSystem()
-    {
-        _bufferPool = new BufferPool();
-
-        int threadCount = Math.Max(1, Environment.ProcessorCount - 1);
-        _threadDispatcher = new ThreadDispatcher(threadCount);
-
-        Simulation = Simulation.Create(
-            _bufferPool,
-            new NarrowPhaseCallbacks(),
-            new PoseIntegratorCallbacks(new(0, -9.81f, 0)),
-            new(8, 1));
-    }
-
-    public void RegisterBody(RigidBody bodyComponent)
-    {
-        if (bodyComponent.BepuBodyHandle.HasValue)
-        {
-            _bodyHandleToComponent[bodyComponent.BepuBodyHandle.Value] = bodyComponent;
-        }
-        else if (bodyComponent.BepuStaticHandle.HasValue)
-        {
-            _staticHandleToComponent[bodyComponent.BepuStaticHandle.Value] = bodyComponent;
-        }
-    }
-
-    public void UnregisterBody(RigidBody bodyComponent)
-    {
-        if (bodyComponent.BepuBodyHandle.HasValue)
-        {
-            _bodyHandleToComponent.Remove(bodyComponent.BepuBodyHandle.Value);
-        }
-        else if (bodyComponent.BepuStaticHandle.HasValue)
-        {
-            _staticHandleToComponent.Remove(bodyComponent.BepuStaticHandle.Value);
-        }
-    }
-
-    public void Update(float deltaTime)
-    {
-        float effectiveDeltaTime = Math.Min(deltaTime, MaxDeltaTime);
-        _accumulator += effectiveDeltaTime;
-
-        while (_accumulator >= FixedTimeStep)
-        {
-            Simulation.Timestep(FixedTimeStep, _threadDispatcher);
-            _accumulator -= FixedTimeStep;
-        }
-
-        SyncTransforms();
-    }
-
-    private void SyncTransforms()
-    {
-        foreach (var (handle, bodyComponent) in _bodyHandleToComponent)
-        {
-            if (bodyComponent.IsStatic)
-            {
-                continue;
-            }
-
-            BodyReference bodyReference = Simulation.Bodies.GetBodyReference(handle);
-
-            if (!bodyReference.Exists)
-            {
-                continue;
-            }
-
-            bodyComponent.GameObject.Transform.Position = bodyReference.Pose.Position;
-            bodyComponent.GameObject.Transform.Rotation = bodyReference.Pose.Orientation;
-        }
-    }
-
-    public void Dispose()
-    {
-        Simulation.Dispose();
-        _threadDispatcher.Dispose();
-        _bufferPool.Clear();
-    }
-}
-```
-
----
-
-### `Cherris\Core\Physics\PoseIntegratorCallbacks.cs`
-
-```csharp
-using BepuPhysics;
-using BepuUtilities;
-using System.Numerics;
-
-namespace Cherris.Core.Physics;
-
-public struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
-{
-    private Vector3 _gravity;
-    private readonly float _linearDamping;
-    private readonly float _angularDamping;
-
-    // FIX: These properties must return values, not throw exceptions
-    public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.ConserveMomentum;
-    public bool AllowSubstepsForUnconstrainedBodies => false;
-    public bool IntegrateVelocityForKinematics => false;  // Line 153 - was throwing NotImplementedException
-
-    public PoseIntegratorCallbacks(Vector3 gravity, float linearDamping = 0.03f, float angularDamping = 0.03f)
-    {
-        _gravity = gravity;
-        _linearDamping = linearDamping;
-        _angularDamping = angularDamping;
-    }
-
-    public void Initialize(Simulation simulation) { }
-
-    public void PrepareForIntegration(float dt) { }
-
-    public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
-    {
-        // Use actual timestep, not hardcoded 0.016f
-        velocity.Linear += _gravity * 0.016f;  // Keep this for scalar version if called with fixed timestep
-
-        // Or if dt is available in this overload, use it:
-        // velocity.Linear += _gravity * dt;
-    }
-
-    public void IntegrateVelocity(
-        Vector<int> bodyIndices,
-        Vector3Wide position,
-        QuaternionWide orientation,
-        BodyInertiaWide localInertia,
-        Vector<int> integrationMask,
-        int workerIndex,
-        Vector<float> dt,
-        ref BodyVelocityWide velocity)
-    {
-        // FIX: Scale gravity by actual dt for each lane
-        Vector<float> dtWide = dt;  // Use the passed dt parameter
-
-        // Apply gravity scaled by timestep
-        Vector3Wide gravityScaled;
-        gravityScaled.X = new Vector<float>(_gravity.X) * dtWide;
-        gravityScaled.Y = new Vector<float>(_gravity.Y) * dtWide;
-        gravityScaled.Z = new Vector<float>(_gravity.Z) * dtWide;
-
-        velocity.Linear.X += gravityScaled.X;
-        velocity.Linear.Y += gravityScaled.Y;
-        velocity.Linear.Z += gravityScaled.Z;
-
-        // Apply damping (also scaled by dt)
-        Vector<float> linearDampingFactor = Vector<float>.One - (new Vector<float>(_linearDamping) * dtWide);
-        Vector<float> angularDampingFactor = Vector<float>.One - (new Vector<float>(_angularDamping) * dtWide);
-
-        velocity.Linear.X *= linearDampingFactor;
-        velocity.Linear.Y *= linearDampingFactor;
-        velocity.Linear.Z *= linearDampingFactor;
-
-        velocity.Angular.X *= angularDampingFactor;
-        velocity.Angular.Y *= angularDampingFactor;
-        velocity.Angular.Z *= angularDampingFactor;
-    }
-}
-```
-
----
-
 ### `Cherris\Rendering\OpenTK\FrameBuffer.cs`
 
 ```csharp
@@ -6267,96 +6220,96 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Runtime.CompilerServices;
 
-namespace Cherris.Rendering.OpenTK;
-
-public class ImGuiController : IUIController
+namespace Cherris.Rendering.OpenTK
 {
-    private bool _frameBegun;
-
-    private int _vertexArray;
-    private int _vertexBuffer;
-    private int _vertexBufferSize;
-    private int _indexBuffer;
-    private int _indexBufferSize;
-
-    private int _fontTexture;
-    private int _shader;
-    private int _shaderFontTextureLocation;
-    private int _shaderProjectionMatrixLocation;
-
-    private int _windowWidth;
-    private int _windowHeight;
-
-    private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
-
-    public ImGuiController(int width, int height)
+    public class ImGuiController : IUIController
     {
-        _windowWidth = width;
-        _windowHeight = height;
+        private bool _frameBegun;
 
-        IntPtr context = ImGui.CreateContext();
-        ImGui.SetCurrentContext(context);
-        ImGuiIOPtr io = ImGui.GetIO();
+        private int _vertexArray;
+        private int _vertexBuffer;
+        private int _vertexBufferSize;
+        private int _indexBuffer;
+        private int _indexBufferSize;
 
-        const float baseFontSize = 18.0f;
-        string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
+        private int _fontTexture;
+        private int _shader;
+        private int _shaderFontTextureLocation;
+        private int _shaderProjectionMatrixLocation;
 
-        if (fontPath is not null && File.Exists(fontPath))
+        private int _windowWidth;
+        private int _windowHeight;
+
+        private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
+
+        public ImGuiController(int width, int height)
         {
-            _ = io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+            _windowWidth = width;
+            _windowHeight = height;
+
+            IntPtr context = ImGui.CreateContext();
+            ImGui.SetCurrentContext(context);
+            var io = ImGui.GetIO();
+
+            const float baseFontSize = 18.0f;
+            string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
+
+            if (fontPath is not null && File.Exists(fontPath))
+            {
+                _ = io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+            }
+            else
+            {
+                Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
+                _ = io.Fonts.AddFontDefault();
+            }
+
+            io.FontGlobalScale = 1.0f;
+
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+            io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+
+            CreateDeviceResources();
+            SetPerFrameImGuiData(1f / 60f);
+
+            ImGui.NewFrame();
+            _frameBegun = true;
         }
-        else
+
+        public void WindowResized(int width, int height)
         {
-            Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
-            _ = io.Fonts.AddFontDefault();
+            _windowWidth = width;
+            _windowHeight = height;
         }
 
-        io.FontGlobalScale = 1.0f;
+        public void DestroyDeviceObjects()
+        {
+            GL.DeleteVertexArray(_vertexArray);
+            GL.DeleteBuffer(_vertexBuffer);
+            GL.DeleteBuffer(_indexBuffer);
+            GL.DeleteTexture(_fontTexture);
+            GL.DeleteProgram(_shader);
+        }
 
-        io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-        io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+        public void CreateDeviceResources()
+        {
+            _vertexBufferSize = 10000;
+            _indexBufferSize = 2000;
 
-        CreateDeviceResources();
-        SetPerFrameImGuiData(1f / 60f);
+            _vertexArray = GL.GenVertexArray();
+            GL.BindVertexArray(_vertexArray);
 
-        ImGui.NewFrame();
-        _frameBegun = true;
-    }
+            _vertexBuffer = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+            GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
 
-    public void WindowResized(int width, int height)
-    {
-        _windowWidth = width;
-        _windowHeight = height;
-    }
+            _indexBuffer = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
 
-    public void DestroyDeviceObjects()
-    {
-        GL.DeleteVertexArray(_vertexArray);
-        GL.DeleteBuffer(_vertexBuffer);
-        GL.DeleteBuffer(_indexBuffer);
-        GL.DeleteTexture(_fontTexture);
-        GL.DeleteProgram(_shader);
-    }
+            RecreateFontDeviceTexture();
 
-    public void CreateDeviceResources()
-    {
-        _vertexBufferSize = 10000;
-        _indexBufferSize = 2000;
-
-        _vertexArray = GL.GenVertexArray();
-        GL.BindVertexArray(_vertexArray);
-
-        _vertexBuffer = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-        GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-
-        _indexBuffer = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-
-        RecreateFontDeviceTexture();
-
-        string VertexSource = @"#version 330 core
+            string VertexSource = @"#version 330 core
 uniform mat4 projection_matrix;
 layout(location = 0) in vec2 in_position;
 layout(location = 1) in vec2 in_texCoord;
@@ -6369,7 +6322,7 @@ void main()
     color = in_color;
     texCoord = in_texCoord;
 }";
-        string FragmentSource = @"#version 330 core
+            string FragmentSource = @"#version 330 core
 uniform sampler2D in_fontTexture;
 in vec4 color;
 in vec2 texCoord;
@@ -6379,306 +6332,257 @@ void main()
     outputColor = color * texture(in_fontTexture, texCoord);
 }";
 
-        _shader = CreateProgram("ImGui", VertexSource, FragmentSource);
-        _shaderProjectionMatrixLocation = GL.GetUniformLocation(_shader, "projection_matrix");
-        _shaderFontTextureLocation = GL.GetUniformLocation(_shader, "in_fontTexture");
+            _shader = CreateProgram("ImGui", VertexSource, FragmentSource);
+            _shaderProjectionMatrixLocation = GL.GetUniformLocation(_shader, "projection_matrix");
+            _shaderFontTextureLocation = GL.GetUniformLocation(_shader, "in_fontTexture");
 
-        int stride = Unsafe.SizeOf<ImDrawVert>();
-        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, 0);
-        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 8);
-        GL.VertexAttribPointer(2, 4, VertexAttribPointerType.UnsignedByte, true, stride, 16);
+            int stride = Unsafe.SizeOf<ImDrawVert>();
+            GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, 0);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 8);
+            GL.VertexAttribPointer(2, 4, VertexAttribPointerType.UnsignedByte, true, stride, 16);
 
-        GL.EnableVertexAttribArray(0);
-        GL.EnableVertexAttribArray(1);
-        GL.EnableVertexAttribArray(2);
+            GL.EnableVertexAttribArray(0);
+            GL.EnableVertexAttribArray(1);
+            GL.EnableVertexAttribArray(2);
 
-        GL.BindVertexArray(0);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
-    }
-
-    public void RecreateFontDeviceTexture()
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
-
-        _fontTexture = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, _fontTexture);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
-
-        io.Fonts.SetTexID(_fontTexture);
-        io.Fonts.ClearTexData();
-    }
-
-    public void Render()
-    {
-        if (!_frameBegun)
-        {
-            return;
+            GL.BindVertexArray(0);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
         }
 
-        _frameBegun = false;
-        ImGui.Render();
-        RenderImDrawData(ImGui.GetDrawData());
-    }
-
-    public void Update(float deltaSeconds)
-    {
-        if (_frameBegun)
+        public void RecreateFontDeviceTexture()
         {
-            ImGui.Render();
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
+
+            _fontTexture = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, _fontTexture);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
+
+            io.Fonts.SetTexID(_fontTexture);
+            io.Fonts.ClearTexData();
         }
 
-        SetPerFrameImGuiData(deltaSeconds);
-
-        _frameBegun = true;
-        ImGui.NewFrame();
-    }
-
-    private void SetPerFrameImGuiData(float deltaSeconds)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-
-        io.DisplaySize = new(
-            _windowWidth / _scaleFactor.X,
-            _windowHeight / _scaleFactor.Y);
-
-        io.DisplayFramebufferScale = _scaleFactor;
-        io.DeltaTime = deltaSeconds;
-    }
-
-    public void MouseMove(Vector2 newPosition)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.AddMousePosEvent(newPosition.X, newPosition.Y);
-    }
-
-    public static void MouseScroll(Vector2 offset)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.AddMouseWheelEvent(offset.X, offset.Y);
-    }
-
-    public void MouseButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button, bool down)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.AddMouseButtonEvent((int)button, down);
-    }
-
-    public void PressChar(char keyChar)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.AddInputCharacter(keyChar);
-    }
-
-    public void KeyEvent(Keys key, bool isRepeat, bool down)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-
-        if (s_KeyMap.TryGetValue(key, out var imguikey))
+        public void Render()
         {
-            io.AddKeyEvent(imguikey, down);
-        }
-    }
-
-    private unsafe void RenderImDrawData(ImDrawDataPtr draw_data)
-    {
-        if (draw_data.CmdListsCount == 0)
-        {
-            return;
-        }
-
-        GL.GetInteger(GetPName.ActiveTexture, out int lastActiveTexture);
-        GL.ActiveTexture(TextureUnit.Texture0);
-
-        GL.GetInteger(GetPName.CurrentProgram, out int lastProgram);
-        GL.GetInteger(GetPName.ArrayBufferBinding, out int lastArrayBuffer);
-        GL.GetInteger(GetPName.VertexArrayBinding, out int lastVertexArray);
-
-        GL.Enable(EnableCap.Blend);
-        GL.BlendEquation(BlendEquationMode.FuncAdd);
-        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-        GL.Disable(EnableCap.CullFace);
-        GL.Disable(EnableCap.DepthTest);
-        GL.Enable(EnableCap.ScissorTest);
-
-        GL.BindVertexArray(_vertexArray);
-
-        Matrix4 projection = Matrix4.CreateOrthographicOffCenter(
-            0f, _windowWidth,
-            _windowHeight, 0.0f,
-            -1.0f, 1.0f);
-
-        GL.UseProgram(_shader);
-        GL.UniformMatrix4(_shaderProjectionMatrixLocation, false, ref projection);
-        GL.Uniform1(_shaderFontTextureLocation, 0);
-
-        draw_data.ScaleClipRects(_scaleFactor);
-
-        for (int i = 0; i < draw_data.CmdListsCount; i++)
-        {
-            ImDrawListPtr cmd_list = ((ImDrawListPtr*)draw_data.CmdLists)[i];
-
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-
-            GL.BufferData(
-                BufferTarget.ArrayBuffer,
-                cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(),
-                cmd_list.VtxBuffer.Data,
-                BufferUsageHint.StreamDraw);
-
-            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-
-            GL.BufferData(
-                BufferTarget.ElementArrayBuffer,
-                cmd_list.IdxBuffer.Size * sizeof(ushort),
-                cmd_list.IdxBuffer.Data,
-                BufferUsageHint.StreamDraw);
-
-            for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
+            if (_frameBegun)
             {
-                ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
-
-                if (pcmd.UserCallback != IntPtr.Zero)
-                {
-                    throw new NotImplementedException();
-                }
-
-                GL.ActiveTexture(TextureUnit.Texture0);
-                GL.BindTexture(TextureTarget.Texture2D, (int)pcmd.TextureId);
-
-                System.Numerics.Vector4 clip = pcmd.ClipRect;
-                GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
-
-                GL.DrawElementsBaseVertex(
-                    PrimitiveType.Triangles,
-                    (int)pcmd.ElemCount,
-                    DrawElementsType.UnsignedShort,
-                    (IntPtr)(pcmd.IdxOffset * sizeof(ushort)),
-                    (int)pcmd.VtxOffset);
+                _frameBegun = false;
+                ImGui.Render();
+                RenderImDrawData(ImGui.GetDrawData());
             }
         }
 
-        GL.Disable(EnableCap.Blend);
-        GL.Disable(EnableCap.ScissorTest);
-
-        GL.UseProgram(lastProgram);
-        GL.ActiveTexture((TextureUnit)lastActiveTexture);
-        GL.BindVertexArray(lastVertexArray);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, lastArrayBuffer);
-    }
-
-    private static int CreateProgram(string name, string vertexSource, string fragmentSource)
-    {
-        int program = GL.CreateProgram();
-
-        int vertex = CompileShader(name, ShaderType.VertexShader, vertexSource);
-        int fragment = CompileShader(name, ShaderType.FragmentShader, fragmentSource);
-
-        GL.AttachShader(program, vertex);
-        GL.AttachShader(program, fragment);
-
-        GL.LinkProgram(program);
-
-        GL.GetProgram(program, GetProgramParameterName.LinkStatus, out int success);
-        if (success == 0)
+        public void Update(float deltaSeconds)
         {
-            string info = GL.GetProgramInfoLog(program);
-            Console.WriteLine($"GL.LinkProgram had info log for '{name}':\n{info}");
+            if (_frameBegun)
+            {
+                ImGui.Render();
+            }
+
+            SetPerFrameImGuiData(deltaSeconds);
+
+            _frameBegun = true;
+            ImGui.NewFrame();
         }
 
-        GL.DetachShader(program, vertex);
-        GL.DetachShader(program, fragment);
-
-        GL.DeleteShader(vertex);
-        GL.DeleteShader(fragment);
-
-        return program;
-    }
-
-    private static int CompileShader(string name, ShaderType type, string source)
-    {
-        int shader = GL.CreateShader(type);
-        GL.ShaderSource(shader, source);
-        GL.CompileShader(shader);
-
-        GL.GetShader(shader, ShaderParameter.CompileStatus, out int success);
-        if (success == 0)
+        private void SetPerFrameImGuiData(float deltaSeconds)
         {
-            string info = GL.GetShaderInfoLog(shader);
-            Console.WriteLine($"GL.CompileShader for '{name}' ({type}) had info log:\n{info}");
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.DisplaySize = new System.Numerics.Vector2(
+                _windowWidth / _scaleFactor.X,
+                _windowHeight / _scaleFactor.Y);
+            io.DisplayFramebufferScale = _scaleFactor;
+            io.DeltaTime = deltaSeconds;
         }
-        return shader;
-    }
 
-    public void Dispose()
-    {
-        DestroyDeviceObjects();
-    }
+        public void MouseMove(Vector2 newPosition)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddMousePosEvent(newPosition.X, newPosition.Y);
+        }
 
-    private static readonly Dictionary<Keys, ImGuiKey> s_KeyMap = new()
-    {
-        [Keys.Tab] = ImGuiKey.Tab,
-        [Keys.Left] = ImGuiKey.LeftArrow,
-        [Keys.Right] = ImGuiKey.RightArrow,
-        [Keys.Up] = ImGuiKey.UpArrow,
-        [Keys.Down] = ImGuiKey.DownArrow,
-        [Keys.PageUp] = ImGuiKey.PageUp,
-        [Keys.PageDown] = ImGuiKey.PageDown,
-        [Keys.Home] = ImGuiKey.Home,
-        [Keys.End] = ImGuiKey.End,
-        [Keys.Insert] = ImGuiKey.Insert,
-        [Keys.Delete] = ImGuiKey.Delete,
-        [Keys.Backspace] = ImGuiKey.Backspace,
-        [Keys.Space] = ImGuiKey.Space,
-        [Keys.Enter] = ImGuiKey.Enter,
-        [Keys.Escape] = ImGuiKey.Escape,
-        [Keys.A] = ImGuiKey.A,
-        [Keys.B] = ImGuiKey.B,
-        [Keys.C] = ImGuiKey.C,
-        [Keys.D] = ImGuiKey.D,
-        [Keys.E] = ImGuiKey.E,
-        [Keys.F] = ImGuiKey.F,
-        [Keys.G] = ImGuiKey.G,
-        [Keys.H] = ImGuiKey.H,
-        [Keys.I] = ImGuiKey.I,
-        [Keys.J] = ImGuiKey.J,
-        [Keys.K] = ImGuiKey.K,
-        [Keys.L] = ImGuiKey.L,
-        [Keys.M] = ImGuiKey.M,
-        [Keys.N] = ImGuiKey.N,
-        [Keys.O] = ImGuiKey.O,
-        [Keys.P] = ImGuiKey.P,
-        [Keys.Q] = ImGuiKey.Q,
-        [Keys.R] = ImGuiKey.R,
-        [Keys.S] = ImGuiKey.S,
-        [Keys.T] = ImGuiKey.T,
-        [Keys.U] = ImGuiKey.U,
-        [Keys.V] = ImGuiKey.V,
-        [Keys.W] = ImGuiKey.W,
-        [Keys.X] = ImGuiKey.X,
-        [Keys.Y] = ImGuiKey.Y,
-        [Keys.Z] = ImGuiKey.Z,
-        [Keys.D0] = ImGuiKey._0,
-        [Keys.D1] = ImGuiKey._1,
-        [Keys.D2] = ImGuiKey._2,
-        [Keys.D3] = ImGuiKey._3,
-        [Keys.D4] = ImGuiKey._4,
-        [Keys.D5] = ImGuiKey._5,
-        [Keys.D6] = ImGuiKey._6,
-        [Keys.D7] = ImGuiKey._7,
-        [Keys.D8] = ImGuiKey._8,
-        [Keys.D9] = ImGuiKey._9,
-        [Keys.LeftShift] = ImGuiKey.LeftShift,
-        [Keys.RightShift] = ImGuiKey.RightShift,
-        [Keys.LeftControl] = ImGuiKey.LeftCtrl,
-        [Keys.RightControl] = ImGuiKey.RightCtrl,
-        [Keys.LeftAlt] = ImGuiKey.LeftAlt,
-        [Keys.RightAlt] = ImGuiKey.RightAlt,
-    };
+        public void MouseScroll(Vector2 offset)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddMouseWheelEvent(offset.X, offset.Y);
+        }
+
+        public void MouseButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button, bool down)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddMouseButtonEvent((int)button, down);
+        }
+
+        public void PressChar(char keyChar)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            io.AddInputCharacter(keyChar);
+        }
+
+        public void KeyEvent(Keys key, bool isRepeat, bool down)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            if (s_KeyMap.TryGetValue(key, out var imguikey))
+            {
+                io.AddKeyEvent(imguikey, down);
+            }
+        }
+
+        private unsafe void RenderImDrawData(ImDrawDataPtr draw_data)
+        {
+            if (draw_data.CmdListsCount == 0)
+            {
+                return;
+            }
+
+            GL.GetInteger(GetPName.ActiveTexture, out int lastActiveTexture);
+            GL.ActiveTexture(TextureUnit.Texture0);
+
+            GL.GetInteger(GetPName.CurrentProgram, out int lastProgram);
+            GL.GetInteger(GetPName.ArrayBufferBinding, out int lastArrayBuffer);
+            GL.GetInteger(GetPName.VertexArrayBinding, out int lastVertexArray);
+
+            GL.Enable(EnableCap.Blend);
+            GL.BlendEquation(BlendEquationMode.FuncAdd);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Disable(EnableCap.CullFace);
+            GL.Disable(EnableCap.DepthTest);
+            GL.Enable(EnableCap.ScissorTest);
+
+            GL.BindVertexArray(_vertexArray);
+
+            Matrix4 projection = Matrix4.CreateOrthographicOffCenter(
+                0f, _windowWidth,
+                _windowHeight, 0.0f,
+                -1.0f, 1.0f);
+
+            GL.UseProgram(_shader);
+            GL.UniformMatrix4(_shaderProjectionMatrixLocation, false, ref projection);
+            GL.Uniform1(_shaderFontTextureLocation, 0);
+
+            draw_data.ScaleClipRects(_scaleFactor);
+
+            for (int i = 0; i < draw_data.CmdListsCount; i++)
+            {
+                ImDrawListPtr cmd_list = ((ImDrawListPtr*)draw_data.CmdLists)[i];
+
+                GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+                GL.BufferData(BufferTarget.ArrayBuffer, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data, BufferUsageHint.StreamDraw);
+
+                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
+                GL.BufferData(BufferTarget.ElementArrayBuffer, cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data, BufferUsageHint.StreamDraw);
+
+                for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
+                {
+                    ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
+                    if (pcmd.UserCallback != IntPtr.Zero)
+                    {
+                        throw new NotImplementedException();
+                    }
+
+                    GL.ActiveTexture(TextureUnit.Texture0);
+                    GL.BindTexture(TextureTarget.Texture2D, (int)pcmd.TextureId);
+
+                    var clip = pcmd.ClipRect;
+                    GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
+
+                    GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)(pcmd.IdxOffset * sizeof(ushort)), (int)pcmd.VtxOffset);
+                }
+            }
+
+            GL.Disable(EnableCap.Blend);
+            GL.Disable(EnableCap.ScissorTest);
+
+            GL.UseProgram(lastProgram);
+            GL.ActiveTexture((TextureUnit)lastActiveTexture);
+            GL.BindVertexArray(lastVertexArray);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, lastArrayBuffer);
+        }
+
+        private static int CreateProgram(string name, string vertexSource, string fragmentSource)
+        {
+            int program = GL.CreateProgram();
+
+            int vertex = CompileShader(name, ShaderType.VertexShader, vertexSource);
+            int fragment = CompileShader(name, ShaderType.FragmentShader, fragmentSource);
+
+            GL.AttachShader(program, vertex);
+            GL.AttachShader(program, fragment);
+
+            GL.LinkProgram(program);
+
+            GL.GetProgram(program, GetProgramParameterName.LinkStatus, out int success);
+            if (success == 0)
+            {
+                string info = GL.GetProgramInfoLog(program);
+                Console.WriteLine($"GL.LinkProgram had info log for '{name}':\n{info}");
+            }
+
+            GL.DetachShader(program, vertex);
+            GL.DetachShader(program, fragment);
+
+            GL.DeleteShader(vertex);
+            GL.DeleteShader(fragment);
+
+            return program;
+        }
+
+        private static int CompileShader(string name, ShaderType type, string source)
+        {
+            int shader = GL.CreateShader(type);
+            GL.ShaderSource(shader, source);
+            GL.CompileShader(shader);
+
+            GL.GetShader(shader, ShaderParameter.CompileStatus, out int success);
+            if (success == 0)
+            {
+                string info = GL.GetShaderInfoLog(shader);
+                Console.WriteLine($"GL.CompileShader for '{name}' ({type}) had info log:\n{info}");
+            }
+            return shader;
+        }
+
+        public void Dispose()
+        {
+            DestroyDeviceObjects();
+        }
+
+        private static readonly Dictionary<Keys, ImGuiKey> s_KeyMap = new()
+        {
+            { Keys.Tab, ImGuiKey.Tab },
+            { Keys.Left, ImGuiKey.LeftArrow },
+            { Keys.Right, ImGuiKey.RightArrow },
+            { Keys.Up, ImGuiKey.UpArrow },
+            { Keys.Down, ImGuiKey.DownArrow },
+            { Keys.PageUp, ImGuiKey.PageUp },
+            { Keys.PageDown, ImGuiKey.PageDown },
+            { Keys.Home, ImGuiKey.Home },
+            { Keys.End, ImGuiKey.End },
+            { Keys.Insert, ImGuiKey.Insert },
+            { Keys.Delete, ImGuiKey.Delete },
+            { Keys.Backspace, ImGuiKey.Backspace },
+            { Keys.Space, ImGuiKey.Space },
+            { Keys.Enter, ImGuiKey.Enter },
+            { Keys.Escape, ImGuiKey.Escape },
+            { Keys.A, ImGuiKey.A }, { Keys.B, ImGuiKey.B }, { Keys.C, ImGuiKey.C }, { Keys.D, ImGuiKey.D },
+            { Keys.E, ImGuiKey.E }, { Keys.F, ImGuiKey.F }, { Keys.G, ImGuiKey.G }, { Keys.H, ImGuiKey.H },
+            { Keys.I, ImGuiKey.I }, { Keys.J, ImGuiKey.J }, { Keys.K, ImGuiKey.K }, { Keys.L, ImGuiKey.L },
+            { Keys.M, ImGuiKey.M }, { Keys.N, ImGuiKey.N }, { Keys.O, ImGuiKey.O }, { Keys.P, ImGuiKey.P },
+            { Keys.Q, ImGuiKey.Q }, { Keys.R, ImGuiKey.R }, { Keys.S, ImGuiKey.S }, { Keys.T, ImGuiKey.T },
+            { Keys.U, ImGuiKey.U }, { Keys.V, ImGuiKey.V }, { Keys.W, ImGuiKey.W }, { Keys.X, ImGuiKey.X },
+            { Keys.Y, ImGuiKey.Y }, { Keys.Z, ImGuiKey.Z },
+            { Keys.D0, ImGuiKey._0 }, { Keys.D1, ImGuiKey._1 }, { Keys.D2, ImGuiKey._2 }, { Keys.D3, ImGuiKey._3 },
+            { Keys.D4, ImGuiKey._4 }, { Keys.D5, ImGuiKey._5 }, { Keys.D6, ImGuiKey._6 }, { Keys.D7, ImGuiKey._7 },
+            { Keys.D8, ImGuiKey._8 }, { Keys.D9, ImGuiKey._9 },
+            { Keys.LeftShift, ImGuiKey.LeftShift }, { Keys.RightShift, ImGuiKey.RightShift },
+            { Keys.LeftControl, ImGuiKey.LeftCtrl }, { Keys.RightControl, ImGuiKey.RightCtrl },
+            { Keys.LeftAlt, ImGuiKey.LeftAlt }, { Keys.RightAlt, ImGuiKey.RightAlt },
+        };
+    }
 }
 ```
 
@@ -14040,485 +13944,6 @@ void main()
 
 ---
 
-### `CherrisEditor\UI\Gui\ImGuiController.cs`
-
-```csharp
-using Cherris.Rendering;
-using ImGuiNET;
-
-namespace CherrisEditor.UI.Gui;
-
-public sealed class ImGuiController : IUIController
-{
-    private readonly ImGuiRenderer _renderer;
-    private readonly ImGuiFontLoader _fontLoader;
-    private bool _frameBegun;
-
-    public ImGuiController(int width, int height)
-    {
-        IntPtr context = ImGui.CreateContext();
-        ImGui.SetCurrentContext(context);
-
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-        io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
-
-        _fontLoader = new ImGuiFontLoader();
-        _fontLoader.Load();
-
-        _renderer = new ImGuiRenderer(width, height);
-
-        SetPerFrameData(1.0f / 60.0f);
-        ImGui.NewFrame();
-        _frameBegun = true;
-    }
-
-    public void WindowResized(int width, int height)
-    {
-        // Renderer handles projection matrix; IO handles display size
-        ImGui.GetIO().DisplaySize = new System.Numerics.Vector2(width, height);
-    }
-
-    public void Update(float deltaTime)
-    {
-        if (_frameBegun)
-        {
-            ImGui.Render();
-        }
-
-        SetPerFrameData(deltaTime);
-
-        _frameBegun = true;
-        ImGui.NewFrame();
-    }
-
-    public void Render()
-    {
-        if (!_frameBegun)
-        {
-            return;
-        }
-
-        _frameBegun = false;
-        ImGui.Render();
-        _renderer.Render(ImGui.GetDrawData());
-    }
-
-    private static void SetPerFrameData(float deltaTime)
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.DeltaTime = deltaTime;
-    }
-
-    public void Dispose()
-    {
-        _fontLoader.Dispose();
-        _renderer.Dispose();
-        ImGui.DestroyContext();
-    }
-}
-```
-
----
-
-### `CherrisEditor\UI\Gui\ImGuiFontLoader.cs`
-
-```csharp
-using Cherris.Utils;
-using ImGuiNET;
-using OpenTK.Graphics.OpenGL4;
-
-namespace CherrisEditor.UI.Gui;
-
-internal sealed class ImGuiFontLoader : IDisposable
-{
-    private int _textureHandle;
-
-    public void Load()
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-
-        const float fontSize = 18.0f;
-        string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
-
-        if (fontPath is not null && File.Exists(fontPath))
-        {
-            io.Fonts.AddFontFromFileTTF(fontPath, fontSize);
-        }
-        else
-        {
-            io.Fonts.AddFontDefault();
-        }
-
-        io.FontGlobalScale = 1.0f;
-
-        CreateTexture();
-    }
-
-    private void CreateTexture()
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
-
-        _textureHandle = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, _textureHandle);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
-
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-
-        io.Fonts.SetTexID(_textureHandle);
-        io.Fonts.ClearTexData();
-    }
-
-    public void Dispose()
-    {
-        if (_textureHandle != 0)
-        {
-            GL.DeleteTexture(_textureHandle);
-            _textureHandle = 0;
-        }
-    }
-}
-```
-
----
-
-### `CherrisEditor\UI\Gui\ImGuiInputHandler.cs`
-
-```csharp
-using ImGuiNET;
-using OpenTK.Windowing.GraphicsLibraryFramework;
-using System.Numerics;
-
-namespace CherrisEditor.UI.Gui;
-
-internal static class ImGuiInputHandler
-{
-    private static readonly Dictionary<Keys, ImGuiKey> KeyMap = new()
-    {
-        [Keys.Tab] = ImGuiKey.Tab,
-        [Keys.Left] = ImGuiKey.LeftArrow,
-        [Keys.Right] = ImGuiKey.RightArrow,
-        [Keys.Up] = ImGuiKey.UpArrow,
-        [Keys.Down] = ImGuiKey.DownArrow,
-        [Keys.PageUp] = ImGuiKey.PageUp,
-        [Keys.PageDown] = ImGuiKey.PageDown,
-        [Keys.Home] = ImGuiKey.Home,
-        [Keys.End] = ImGuiKey.End,
-        [Keys.Insert] = ImGuiKey.Insert,
-        [Keys.Delete] = ImGuiKey.Delete,
-        [Keys.Backspace] = ImGuiKey.Backspace,
-        [Keys.Space] = ImGuiKey.Space,
-        [Keys.Enter] = ImGuiKey.Enter,
-        [Keys.Escape] = ImGuiKey.Escape,
-        [Keys.A] = ImGuiKey.A,
-        [Keys.B] = ImGuiKey.B,
-        [Keys.C] = ImGuiKey.C,
-        [Keys.D] = ImGuiKey.D,
-        [Keys.E] = ImGuiKey.E,
-        [Keys.F] = ImGuiKey.F,
-        [Keys.G] = ImGuiKey.G,
-        [Keys.H] = ImGuiKey.H,
-        [Keys.I] = ImGuiKey.I,
-        [Keys.J] = ImGuiKey.J,
-        [Keys.K] = ImGuiKey.K,
-        [Keys.L] = ImGuiKey.L,
-        [Keys.M] = ImGuiKey.M,
-        [Keys.N] = ImGuiKey.N,
-        [Keys.O] = ImGuiKey.O,
-        [Keys.P] = ImGuiKey.P,
-        [Keys.Q] = ImGuiKey.Q,
-        [Keys.R] = ImGuiKey.R,
-        [Keys.S] = ImGuiKey.S,
-        [Keys.T] = ImGuiKey.T,
-        [Keys.U] = ImGuiKey.U,
-        [Keys.V] = ImGuiKey.V,
-        [Keys.W] = ImGuiKey.W,
-        [Keys.X] = ImGuiKey.X,
-        [Keys.Y] = ImGuiKey.Y,
-        [Keys.Z] = ImGuiKey.Z,
-        [Keys.D0] = ImGuiKey._0,
-        [Keys.D1] = ImGuiKey._1,
-        [Keys.D2] = ImGuiKey._2,
-        [Keys.D3] = ImGuiKey._3,
-        [Keys.D4] = ImGuiKey._4,
-        [Keys.D5] = ImGuiKey._5,
-        [Keys.D6] = ImGuiKey._6,
-        [Keys.D7] = ImGuiKey._7,
-        [Keys.D8] = ImGuiKey._8,
-        [Keys.D9] = ImGuiKey._9,
-        [Keys.LeftShift] = ImGuiKey.LeftShift,
-        [Keys.RightShift] = ImGuiKey.RightShift,
-        [Keys.LeftControl] = ImGuiKey.LeftCtrl,
-        [Keys.RightControl] = ImGuiKey.RightCtrl,
-        [Keys.LeftAlt] = ImGuiKey.LeftAlt,
-        [Keys.RightAlt] = ImGuiKey.RightAlt,
-    };
-
-    public static void KeyEvent(Keys key, bool down)
-    {
-        if (KeyMap.TryGetValue(key, out ImGuiKey imguiKey))
-        {
-            ImGui.GetIO().AddKeyEvent(imguiKey, down);
-        }
-    }
-
-    public static void MouseButton(MouseButton button, bool down)
-    {
-        ImGui.GetIO().AddMouseButtonEvent((int)button, down);
-    }
-
-    public static void MouseScroll(Vector2 offset)
-    {
-        ImGui.GetIO().AddMouseWheelEvent(offset.X, offset.Y);
-    }
-
-    public static void CharacterTyped(char c)
-    {
-        ImGui.GetIO().AddInputCharacter(c);
-    }
-}
-```
-
----
-
-### `CherrisEditor\UI\Gui\ImGuiRenderer.cs`
-
-```csharp
-using ImGuiNET;
-using OpenTK.Graphics.OpenGL4;
-using OpenTK.Mathematics;
-using System.Runtime.CompilerServices;
-
-namespace CherrisEditor.UI.Gui;
-
-internal sealed class ImGuiRenderer : IDisposable
-{
-    private int _vertexArray;
-    private int _vertexBuffer;
-    private int _indexBuffer;
-    private int _shader;
-    private int _projectionUniformLocation;
-    private int _fontTextureUniformLocation;
-
-    private readonly int _vertexBufferSize;
-    private readonly int _indexBufferSize;
-
-    private readonly int _windowWidth;
-    private readonly int _windowHeight;
-
-    public ImGuiRenderer(int windowWidth, int windowHeight)
-    {
-        _windowWidth = windowWidth;
-        _windowHeight = windowHeight;
-
-        const int initialVertexBufferSize = 10000;
-        const int initialIndexBufferSize = 2000;
-
-        _vertexBufferSize = initialVertexBufferSize;
-        _indexBufferSize = initialIndexBufferSize;
-
-        CreateVertexArray();
-        CreateBuffers();
-        CreateShader();
-    }
-
-    private void CreateVertexArray()
-    {
-        _vertexArray = GL.GenVertexArray();
-        GL.BindVertexArray(_vertexArray);
-
-        int stride = Unsafe.SizeOf<ImDrawVert>();
-
-        GL.EnableVertexAttribArray(0);
-        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, 0);
-
-        GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 8);
-
-        GL.EnableVertexAttribArray(2);
-        GL.VertexAttribPointer(2, 4, VertexAttribPointerType.UnsignedByte, true, stride, 16);
-
-        GL.BindVertexArray(0);
-    }
-
-    private void CreateBuffers()
-    {
-        _vertexBuffer = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-        GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-
-        _indexBuffer = GL.GenBuffer();
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-    }
-
-    private void CreateShader()
-    {
-        const string vertexSource = @"#version 330 core
-uniform mat4 projection_matrix;
-layout(location = 0) in vec2 in_position;
-layout(location = 1) in vec2 in_texCoord;
-layout(location = 2) in vec4 in_color;
-out vec4 color;
-out vec2 texCoord;
-void main()
-{
-    gl_Position = projection_matrix * vec4(in_position, 0, 1);
-    color = in_color;
-    texCoord = in_texCoord;
-}";
-
-        const string fragmentSource = @"#version 330 core
-uniform sampler2D in_fontTexture;
-in vec4 color;
-in vec2 texCoord;
-out vec4 outputColor;
-void main()
-{
-    outputColor = color * texture(in_fontTexture, texCoord);
-}";
-
-        int vertexShader = CompileShader(ShaderType.VertexShader, vertexSource);
-        int fragmentShader = CompileShader(ShaderType.FragmentShader, fragmentSource);
-
-        _shader = GL.CreateProgram();
-        GL.AttachShader(_shader, vertexShader);
-        GL.AttachShader(_shader, fragmentShader);
-        GL.LinkProgram(_shader);
-
-        GL.DetachShader(_shader, vertexShader);
-        GL.DetachShader(_shader, fragmentShader);
-        GL.DeleteShader(vertexShader);
-        GL.DeleteShader(fragmentShader);
-
-        _projectionUniformLocation = GL.GetUniformLocation(_shader, "projection_matrix");
-        _fontTextureUniformLocation = GL.GetUniformLocation(_shader, "in_fontTexture");
-    }
-
-    private static int CompileShader(ShaderType type, string source)
-    {
-        int shader = GL.CreateShader(type);
-        GL.ShaderSource(shader, source);
-        GL.CompileShader(shader);
-        return shader;
-    }
-
-    public void Render(ImDrawDataPtr drawData)
-    {
-        if (drawData.CmdListsCount == 0)
-        {
-            return;
-        }
-
-        SaveGLState(out int lastProgram, out int lastArrayBuffer, out int lastVertexArray, out int lastActiveTexture);
-
-        SetupRenderState();
-        drawData.ScaleClipRects(ImGui.GetIO().DisplayFramebufferScale);
-
-        for (int i = 0; i < drawData.CmdListsCount; i++)
-        {
-            RenderCommandList(drawData.CmdLists[i]);
-        }
-
-        RestoreGLState(lastProgram, lastArrayBuffer, lastVertexArray, lastActiveTexture);
-    }
-
-    private void SetupRenderState()
-    {
-        GL.Enable(EnableCap.Blend);
-        GL.BlendEquation(BlendEquationMode.FuncAdd);
-        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-        GL.Disable(EnableCap.CullFace);
-        GL.Disable(EnableCap.DepthTest);
-        GL.Enable(EnableCap.ScissorTest);
-
-        GL.BindVertexArray(_vertexArray);
-
-        Matrix4 projection = Matrix4.CreateOrthographicOffCenter(
-            0.0f, _windowWidth,
-            _windowHeight, 0.0f,
-            -1.0f, 1.0f);
-
-        GL.UseProgram(_shader);
-        GL.UniformMatrix4(_projectionUniformLocation, false, ref projection);
-        GL.Uniform1(_fontTextureUniformLocation, 0);
-    }
-
-    private unsafe void RenderCommandList(ImDrawListPtr cmdList)
-    {
-        UploadBuffers(cmdList);
-
-        ImDrawCmd* cmdPtr = (ImDrawCmd*)cmdList.CmdBuffer.Data.ToPointer();
-
-        for (int cmdIndex = 0; cmdIndex < cmdList.CmdBuffer.Size; cmdIndex++)
-        {
-            ImDrawCmd cmd = cmdPtr[cmdIndex];
-
-            if (cmd.UserCallback != IntPtr.Zero)
-            {
-                throw new NotSupportedException("User callbacks not supported.");
-            }
-
-            GL.ActiveTexture(TextureUnit.Texture0);
-            GL.BindTexture(TextureTarget.Texture2D, (int)cmd.TextureId);
-
-            System.Numerics.Vector4 clip = cmd.ClipRect;
-            GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
-
-            GL.DrawElementsBaseVertex(
-                PrimitiveType.Triangles,
-                (int)cmd.ElemCount,
-                DrawElementsType.UnsignedShort,
-                (IntPtr)(cmd.IdxOffset * sizeof(ushort)),
-                (int)cmd.VtxOffset);
-        }
-    }
-
-    private void UploadBuffers(ImDrawListPtr cmdList)
-    {
-        int vertexDataSize = cmdList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>();
-        int indexDataSize = cmdList.IdxBuffer.Size * sizeof(ushort);
-
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertexDataSize, cmdList.VtxBuffer.Data, BufferUsageHint.StreamDraw);
-
-        GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, indexDataSize, cmdList.IdxBuffer.Data, BufferUsageHint.StreamDraw);
-    }
-
-    private static void SaveGLState(out int lastProgram, out int lastArrayBuffer, out int lastVertexArray, out int lastActiveTexture)
-    {
-        GL.GetInteger(GetPName.ActiveTexture, out lastActiveTexture);
-        GL.ActiveTexture(TextureUnit.Texture0);
-        GL.GetInteger(GetPName.CurrentProgram, out lastProgram);
-        GL.GetInteger(GetPName.ArrayBufferBinding, out lastArrayBuffer);
-        GL.GetInteger(GetPName.VertexArrayBinding, out lastVertexArray);
-    }
-
-    private static void RestoreGLState(int program, int arrayBuffer, int vertexArray, int activeTexture)
-    {
-        GL.UseProgram(program);
-        GL.ActiveTexture((TextureUnit)activeTexture);
-        GL.BindVertexArray(vertexArray);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, arrayBuffer);
-    }
-
-    public void Dispose()
-    {
-        GL.DeleteVertexArray(_vertexArray);
-        GL.DeleteBuffer(_vertexBuffer);
-        GL.DeleteBuffer(_indexBuffer);
-        GL.DeleteProgram(_shader);
-    }
-}
-```
-
----
-
 ### `CherrisEditor\UI\Inspector\ComponentAdderPresenter.cs`
 
 ```csharp
@@ -15265,97 +14690,6 @@ public class RuntimeGame : Engine
         SceneManager.Start();
     }
 }
-```
-
----
-
-### `Docs\color-consistency.md`
-
-```markdown
-# 🎨 Color Consistency & Rendering Pipeline
-
-**Date:** Feb 02, 2026  
-**Context:** Fix for Editor Viewport vs. Runtime Standalone lighting mismatch.
-
----
-
-## 🚨 The Issue
-
-We observed a significant visual discrepancy between the **Editor Viewport** and the **Exported Game (Runtime)**:
-
-* **Runtime:** Appeared bright, washed out, and gamma-corrected.
-* **Editor:** Appeared dark, contrast-heavy, and linear.
-
-This violated the **WYSIWYG** (What You See Is What You Get) principle, making it impossible to light scenes reliably.
-
----
-
-## 🔍 Root Cause Analysis
-
-The discrepancy stemmed from how **OpenGL Hardware Gamma Correction** interacts with **ImGui**.
-
-1. **The Setup:**
-   The `OpenGLPostProcessor` was creating the final composite framebuffer using `PixelInternalFormat.Srgb8Alpha8`.
-
-2. **The Runtime Behavior (Correct Hardware Gamma):**
-   
-   * When the renderer wrote to this framebuffer, the GPU automatically converted the linear color values to sRGB (Gamma 2.2).
-   * The final `BlitToScreen` call copied this gamma-corrected image to the monitor.
-   * **Result:** Lighter image.
-
-3. **The Editor Behavior (ImGui Sampling Issue):**
-   
-   * The renderer wrote the same gamma-corrected values to the texture.
-   * However, the Editor renders the scene by passing this texture handle to **ImGui** (`ImGui.Image()`).
-   * When ImGui's shader samples an `sRGB` texture, OpenGL often automatically converts it *back* to Linear space (linearization) for blending calculations.
-   * **Result:** The Editor was effectively undoing the gamma correction, displaying raw Linear data (Darker) in the viewport.
-
----
-
-## ✅ The Fix
-
-We standardized the pipeline by **disabling hardware gamma correction** on the final composite buffer.
-
-**Change:**
-Modified `OpenGLPostProcessor.cs`:
-
-```csharp
-// Old (Hardware Gamma enabled)
-.WithColorFormat(PixelInternalFormat.Srgb8Alpha8, PixelType.UnsignedByte)
-
-// New (Raw Data / Linear)
-.WithColorFormat(PixelInternalFormat.Rgba8, PixelType.UnsignedByte)
-```
-
-**Outcome:**
-
-* The GPU no longer alters pixel values when writing to the framebuffer.
-* **Runtime:** Blits raw pixels to screen.
-* **Editor:** ImGui samples raw pixels to screen.
-* **Result:** 100% Consistency. Editor and Runtime look identical.
-
----
-
-## 🔮 Future Roadmap (Important)
-
-Because we disabled hardware gamma correction, the engine is currently rendering in **Linear Space**. This explains why the scene may look "darker" than before.
-
-**To restore brightness correctly:**
-We should not rely on invisible hardware flags. Instead, we must implement **Explicit Gamma Correction** in the shader.
-
-**Next Steps:**
-
-1. Modify `Shaders/post_composite.frag`.
-
-2. Add a final step to convert the color from Linear to sRGB manually:
-   
-   ```glsl
-   // Simple Gamma Correction (approximate sRGB)
-   const float gamma = 2.2;
-   color = pow(color, vec3(1.0 / gamma));
-   ```
-
-3. This moves control from "Magic Hardware State" to "Explicit Shader Logic," giving us full control over tone mapping and exposure in the future.
 ```
 
 ---

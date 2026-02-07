@@ -1,9 +1,8 @@
-outputFilePath: coalesce.md
+outputFilePath: coalesce.txt
 sourceDirectoryPaths:
   - Cherris
   - CherrisEditor
   - CherrisRuntime
-  - Docs
 includeExtensions:
   - .cs
   - .c
@@ -21,7 +20,6 @@ includeExtensions:
   - .ts
   - .frag
   - .vert
-  - .md
 excludeExtensions: []
 excludeDirectoryNames:
   - bin
