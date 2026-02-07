@@ -14452,21 +14452,21 @@ void main()
     {
         UploadBuffers(cmdList);
 
-        ImDrawCmd* cmdPtr = (ImDrawCmd*)cmdList.CmdBuffer.Data.ToPointer();
+        ImDrawCmd* cmdPtr = (ImDrawCmd*)cmdList.CmdBuffer.Data;
 
-        for (int cmdIndex = 0; cmdIndex < cmdList.CmdBuffer.Size; cmdIndex++)
+        for (int i = 0; i < cmdList.CmdBuffer.Size; i++)
         {
-            ImDrawCmd cmd = cmdPtr[cmdIndex];
+            ImDrawCmd cmd = cmdPtr[i];
 
-            if (cmd.UserCallback != IntPtr.Zero)
+            if (cmd.UserCallback != null)
             {
-                throw new NotSupportedException("User callbacks not supported.");
+                continue;
             }
 
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, (int)cmd.TextureId);
 
-            System.Numerics.Vector4 clip = cmd.ClipRect;
+            Vector4 clip = new(cmd.ClipRect.X, cmd.ClipRect.Y, cmd.ClipRect.Z, cmd.ClipRect.W);
             GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
 
             GL.DrawElementsBaseVertex(
@@ -14478,41 +14478,45 @@ void main()
         }
     }
 
-    private void UploadBuffers(ImDrawListPtr cmdList)
+    private unsafe void UploadBuffers(ImDrawListPtr cmdList)
     {
-        int vertexDataSize = cmdList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>();
-        int indexDataSize = cmdList.IdxBuffer.Size * sizeof(ushort);
-
         GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertexDataSize, cmdList.VtxBuffer.Data, BufferUsageHint.StreamDraw);
+        GL.BufferData(
+            BufferTarget.ArrayBuffer,
+            cmdList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(),
+            cmdList.VtxBuffer.Data,
+            BufferUsageHint.StreamDraw);
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, indexDataSize, cmdList.IdxBuffer.Data, BufferUsageHint.StreamDraw);
+        GL.BufferData(
+            BufferTarget.ElementArrayBuffer,
+            cmdList.IdxBuffer.Size * sizeof(ushort),
+            cmdList.IdxBuffer.Data,
+            BufferUsageHint.StreamDraw);
     }
 
     private static void SaveGLState(out int lastProgram, out int lastArrayBuffer, out int lastVertexArray, out int lastActiveTexture)
     {
-        GL.GetInteger(GetPName.ActiveTexture, out lastActiveTexture);
-        GL.ActiveTexture(TextureUnit.Texture0);
         GL.GetInteger(GetPName.CurrentProgram, out lastProgram);
         GL.GetInteger(GetPName.ArrayBufferBinding, out lastArrayBuffer);
         GL.GetInteger(GetPName.VertexArrayBinding, out lastVertexArray);
+        GL.GetInteger(GetPName.ActiveTexture, out lastActiveTexture);
     }
 
-    private static void RestoreGLState(int program, int arrayBuffer, int vertexArray, int activeTexture)
+    private static void RestoreGLState(int lastProgram, int lastArrayBuffer, int lastVertexArray, int lastActiveTexture)
     {
-        GL.UseProgram(program);
-        GL.ActiveTexture((TextureUnit)activeTexture);
-        GL.BindVertexArray(vertexArray);
-        GL.BindBuffer(BufferTarget.ArrayBuffer, arrayBuffer);
+        GL.UseProgram(lastProgram);
+        GL.BindVertexArray(lastVertexArray);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, lastArrayBuffer);
+        GL.ActiveTexture((TextureUnit)lastActiveTexture);
     }
 
     public void Dispose()
     {
-        GL.DeleteVertexArray(_vertexArray);
+        GL.DeleteProgram(_shader);
         GL.DeleteBuffer(_vertexBuffer);
         GL.DeleteBuffer(_indexBuffer);
-        GL.DeleteProgram(_shader);
+        GL.DeleteVertexArray(_vertexArray);
     }
 }
 ```
