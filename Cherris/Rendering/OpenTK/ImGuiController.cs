@@ -216,7 +216,7 @@ void main()
     {
         ImGuiIOPtr io = ImGui.GetIO();
 
-        if (s_KeyMap.TryGetValue(key, out var imguikey))
+        if (s_KeyMap.TryGetValue(key, out ImGuiKey imguikey))
         {
             io.AddKeyEvent(imguikey, down);
         }
@@ -418,3 +418,4 @@ void main()
         [Keys.RightAlt] = ImGuiKey.RightAlt,
     };
 }
+djdj

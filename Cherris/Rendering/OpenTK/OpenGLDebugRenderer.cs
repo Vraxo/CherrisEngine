@@ -1,4 +1,6 @@
-﻿using OpenTK.Graphics.OpenGL4;
+﻿using System.Numerics;
+
+Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
 namespace Cherris.Rendering.OpenTK;
@@ -119,9 +121,9 @@ internal class OpenGLDebugRenderer : IDisposable
 
     public void AddCapsule(System.Numerics.Vector3 center, System.Numerics.Quaternion orientation, float length, float radius, System.Numerics.Vector3 color)
     {
-        var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, orientation);
-        var right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, orientation);
-        var forward = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, orientation);
+        Vector3 up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, orientation);
+        Vector3 right = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, orientation);
+        Vector3 forward = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, orientation);
 
         var halfLengthVector = up * (length * 0.5f);
 
@@ -177,3 +179,4 @@ internal class OpenGLDebugRenderer : IDisposable
         GL.DeleteBuffer(_vbo);
     }
 }
+w
