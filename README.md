@@ -105,6 +105,8 @@ For additional languages, implement `IScriptLanguage` and `IScriptInstance`, and
 
 ## 🎮 Editor Controls
 
+The editor opens with the hierarchy on the left, inspector on the right, viewport in the center, and content browser and console docked below it. Your layout is saved between sessions; use **Window > Reset Layout** to restore the default.
+
 | Input | Action |
 | :--- | :--- |
 | `Right Mouse + Drag` | Look around in the viewport |

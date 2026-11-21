@@ -29,6 +29,8 @@ public class EditorAppLogic : IDisposable
     private ConsolePanel _consolePanel;
 
     private bool _imGuizmoInitialized;
+    private bool _dockLayoutChecked;
+    private bool _resetDockLayout;
 
     private static readonly (string Key, string Path)[] Icons =
     {
@@ -67,6 +69,7 @@ public class EditorAppLogic : IDisposable
     private void InitializePanels()
     {
         _menuBar = new MenuBar(_editor, _sceneSerializer, _history);
+        _menuBar.ResetLayoutRequested += () => _resetDockLayout = true;
         _toolbar = new Toolbar(_editor, _textureManager);
         _viewportPanel = new ViewportPanel(_editor, _history);
         _hierarchyPanel = new HierarchyPanel(_editor);
@@ -235,6 +238,27 @@ public class EditorAppLogic : IDisposable
         ImGui.PopStyleVar();
 
         uint dockspaceId = ImGui.GetID("MyDockSpace");
+        if (!_dockLayoutChecked)
+        {
+            _resetDockLayout |= DefaultDockLayout.NeedsDefault(ImGui.SaveIniSettingsToMemory());
+            _dockLayoutChecked = true;
+        }
+
+        if (_resetDockLayout)
+        {
+            var nodes = new DefaultDockLayout.NodeIds(
+                dockspaceId,
+                ImGui.GetID("DefaultDock.Left"),
+                ImGui.GetID("DefaultDock.Rest"),
+                ImGui.GetID("DefaultDock.Middle"),
+                ImGui.GetID("DefaultDock.Right"),
+                ImGui.GetID("DefaultDock.Viewport"),
+                ImGui.GetID("DefaultDock.Bottom"));
+            string settings = DefaultDockLayout.Create(nodes, ImGui.GetCursorScreenPos(), ImGui.GetContentRegionAvail());
+            ImGui.LoadIniSettingsFromMemory(settings);
+            _resetDockLayout = false;
+        }
+
         ImGui.DockSpace(dockspaceId, Vector2.Zero, ImGuiDockNodeFlags.None);
 
         ImGui.End();

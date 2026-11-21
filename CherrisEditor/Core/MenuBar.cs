@@ -1,4 +1,4 @@
-﻿using Cherris.Core;
+using Cherris.Core;
 using Cherris.Serialization;
 using CherrisEditor.Build;
 using CherrisEditor.Undo;
@@ -11,6 +11,8 @@ public class MenuBar
     private readonly SceneSerializer _sceneSerializer;
     private readonly Editor _editor;
     private readonly HistoryManager _history;
+
+    public event Action? ResetLayoutRequested;
 
     public MenuBar(Editor editor, SceneSerializer sceneSerializer, HistoryManager history)
     {
@@ -83,6 +85,15 @@ public class MenuBar
                 _history.Redo();
             }
 
+            ImGui.EndMenu();
+        }
+
+        if (ImGui.BeginMenu("Window"))
+        {
+            if (ImGui.MenuItem("Reset Layout"))
+            {
+                ResetLayoutRequested?.Invoke();
+            }
             ImGui.EndMenu();
         }
 
