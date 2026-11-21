@@ -10,5 +10,6 @@
   <Project Path="Cherris/Cherris.csproj" />
   <Project Path="Cherris.Tests/Cherris.Tests.csproj" />
   <Project Path="CherrisEditor/CherrisEditor.csproj" />
+  <Project Path="CherrisEditor.Tests/CherrisEditor.Tests.csproj" />
   <Project Path="CherrisRuntime/CherrisRuntime.csproj" />
 </Solution>

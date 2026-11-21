@@ -37,7 +37,7 @@ dotnet run --project CherrisEditor
 
 Build outputs and intermediate files are centralized in the repository's `artifacts/` directory, grouped by project and configuration.
 
-Run the unit tests with `dotnet test Cherris.slnx`. The test suite uses xUnit and AwesomeAssertions.
+Run all unit tests with `dotnet test Cherris.slnx`. Engine tests are in `Cherris.Tests`, and editor tests are in `CherrisEditor.Tests`. Both use xUnit and AwesomeAssertions.
 
 On launch, the editor reopens the last project if available, or opens the project launcher. The launcher can create projects, open a folder containing `project.yaml`, and search or remove recent projects. Creating a project never overwrites an existing folder.
 
