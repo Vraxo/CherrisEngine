@@ -4,9 +4,7 @@
 csharp_style_prefer_primary_constructors = false:suggestion
 
 # IDE0046: Convert to conditional expression
-# Prevents converting if/else statements to ternary operators (?:) for assignments
 csharp_style_prefer_conditional_expression_over_assignment = false
-# Prevents converting if/else statements to ternary operators (?:) for return statements  
 csharp_style_prefer_conditional_expression_over_return = false
 
 # IDE0058: Expression value is never used - prevents automatic discard insertion
@@ -14,6 +12,28 @@ dotnet_diagnostic.IDE0058.severity = none
 
 # IDE0059: Value assigned to symbol is never used (for assignment statements)
 dotnet_diagnostic.IDE0059.severity = none
+
+# Prevent Code Cleanup from adding [Obsolete] to methods it thinks are unused
+dotnet_diagnostic.IDE0051.severity = silent  # Remove unused private members
+dotnet_diagnostic.IDE0052.severity = silent  # Remove unread private members
+
+# CA1041: Provide ObsoleteAttribute message - disable the suggestion to add Obsolete
+dotnet_diagnostic.CA1041.severity = none
+
+# CA1515: Consider making public types internal - this can trigger Obsolete suggestions
+dotnet_diagnostic.CA1515.severity = none
+
+# CS0612: 'member' is obsolete - don't warn on obsolete usage (optional, but helps)
+dotnet_diagnostic.CS0612.severity = none
+
+# CS0618: 'member' is obsolete with message - don't warn on obsolete usage (optional)
+dotnet_diagnostic.CS0618.severity = none
+
+# ReSharper/Rider settings to prevent Obsolete attribute suggestions
+resharper_mark_method_with_attribute_obsolete_highlighting = none
+resharper_unused_member_global_highlighting = none
+resharper_member_can_be_made_private_global_highlighting = none
+
 csharp_using_directive_placement = outside_namespace:silent
 csharp_prefer_simple_using_statement = true:suggestion
 csharp_prefer_braces = true:silent
@@ -32,6 +52,7 @@ csharp_style_expression_bodied_lambdas = true:silent
 csharp_style_expression_bodied_local_functions = false:silent
 csharp_style_allow_blank_line_after_token_in_conditional_expression_experimental = true:silent
 csharp_style_conditional_delegate_call = true:suggestion
+
 [*.{cs,vb}]
 #### Naming styles ####
 
@@ -46,7 +67,7 @@ dotnet_naming_rule.types_should_be_pascal_case.symbols = types
 dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case
 
 dotnet_naming_rule.non_field_members_should_be_pascal_case.severity = suggestion
-dotnet_naming_rule.non_field_members_should_be_pascal_case.symbols = non_field_members
+dotnet_naming_rule.non_field_members_should_be_begins_with_i.symbols = non_field_members
 dotnet_naming_rule.non_field_members_should_be_pascal_case.style = pascal_case
 
 # Symbol specifications
@@ -95,4 +116,4 @@ dotnet_style_prefer_compound_assignment = true:suggestion
 dotnet_style_operator_placement_when_wrapping = beginning_of_line
 tab_width = 4
 indent_size = 4
-end_of_line = crlf
+end_of_line = lf
