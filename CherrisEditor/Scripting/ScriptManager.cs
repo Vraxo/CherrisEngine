@@ -1,4 +1,4 @@
-﻿using Cherris.Components;
+using Cherris.Components;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
 using System.Reflection;
@@ -37,6 +37,13 @@ public class ScriptManager
         }
 
         _gameAssemblyContext = new AssemblyLoadContext("GameScriptsContext", isCollectible: true);
+
+        string scriptsPath = Path.Combine(projectRoot, "Scripts");
+        if (!Directory.Exists(scriptsPath) || !Directory.EnumerateFiles(scriptsPath, "*.cs", SearchOption.AllDirectories).Any())
+        {
+            Logger.Info("[Editor] No C# scripts to compile.");
+            return true;
+        }
 
         // ScriptCompiler.Compile expects the Project Root (parent of Scripts folder)
         Assembly? gameAssembly = ScriptCompiler.Compile(projectRoot, _gameAssemblyContext);

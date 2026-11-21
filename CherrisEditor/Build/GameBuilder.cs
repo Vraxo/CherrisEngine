@@ -1,4 +1,4 @@
-﻿using Cherris.Core;
+using Cherris.Core;
 using Cherris.Core.Logging;
 using NativeFileDialogNET;
 using System.Diagnostics;
@@ -167,8 +167,17 @@ public static class GameBuilder
 
     private static bool CompileScripts(Project project, string outputDir)
     {
-        Logger.Info("[GameBuilder] Compiling Game Scripts...");
         string dllPath = Path.Combine(outputDir, "GameScripts.dll");
+        string scriptsPath = Path.Combine(project.RootPath, "Scripts");
+        if (!Directory.Exists(scriptsPath) || !Directory.EnumerateFiles(scriptsPath, "*.cs", SearchOption.AllDirectories).Any())
+        {
+            // An output folder reused from an earlier build must not retain stale C# scripts.
+            if (File.Exists(dllPath)) File.Delete(dllPath);
+            Logger.Info("[GameBuilder] No C# scripts to compile.");
+            return true;
+        }
+
+        Logger.Info("[GameBuilder] Compiling Game Scripts...");
         return ScriptCompiler.CompileToFile(project.RootPath, dllPath);
     }
 
