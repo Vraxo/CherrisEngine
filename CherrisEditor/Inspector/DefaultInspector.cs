@@ -8,18 +8,11 @@ using System.Text.RegularExpressions;
 
 namespace CherrisEditor.Inspectors;
 
-public sealed class DefaultInspector
+public sealed class DefaultInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
 {
-    private readonly EditorTextureManager _textures;
-    private readonly HistoryManager _history;
-    private readonly PropertyDrawer _propertyDrawer;
-
-    public DefaultInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
-    {
-        _textures = textures;
-        _history = history;
-        _propertyDrawer = new PropertyDrawer(editor, textures, history);
-    }
+    private readonly EditorTextureManager _textures = textures;
+    private readonly HistoryManager _history = history;
+    private readonly PropertyDrawer _propertyDrawer = new PropertyDrawer(editor, textures, history);
 
     public bool Draw(Component component)
     {
