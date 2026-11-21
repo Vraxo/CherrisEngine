@@ -1,4 +1,4 @@
-﻿using Cherris;
+using Cherris;
 using Cherris.Core.Logging;
 using Cherris.Serialization;
 using Cherris.Utils;
@@ -24,7 +24,8 @@ public class EditorAppLogic : IDisposable
     private ViewportPanel _viewportPanel;
     private HierarchyPanel _hierarchyPanel;
     private InspectorPanel _inspectorPanel;
-    private ContentBrowserPanel _contentBrowserPanel;
+    private ContentBrowserPanel? _contentBrowserPanel;
+    private Project? _contentBrowserProject;
     private ConsolePanel _consolePanel;
 
     private bool _imGuizmoInitialized;
@@ -70,7 +71,6 @@ public class EditorAppLogic : IDisposable
         _viewportPanel = new ViewportPanel(_editor, _history);
         _hierarchyPanel = new HierarchyPanel(_editor);
         _inspectorPanel = new InspectorPanel(_editor, _textureManager, _history);
-        _contentBrowserPanel = new ContentBrowserPanel(_editor, _textureManager);
         _consolePanel = new ConsolePanel();
     }
 
@@ -99,10 +99,18 @@ public class EditorAppLogic : IDisposable
             return;
         }
 
-        if (_editor.ProjectManager.CurrentProject is null)
+        var project = _editor.ProjectManager.CurrentProject;
+        if (project is null)
         {
             _projectSelector.Draw();
             return;
+        }
+
+        if (_contentBrowserPanel is null || !ReferenceEquals(_contentBrowserProject, project))
+        {
+            _contentBrowserPanel?.Dispose();
+            _contentBrowserPanel = new ContentBrowserPanel(_editor, _textureManager);
+            _contentBrowserProject = project;
         }
 
         SetupDockspace();
@@ -234,7 +242,7 @@ public class EditorAppLogic : IDisposable
 
     public void Dispose()
     {
-        _contentBrowserPanel.Dispose();
+        _contentBrowserPanel?.Dispose();
         _hierarchyPanel.Dispose();
         _textureManager.Dispose();
     }
