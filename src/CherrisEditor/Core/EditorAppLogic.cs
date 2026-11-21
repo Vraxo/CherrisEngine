@@ -52,7 +52,7 @@ public class EditorAppLogic : IDisposable
         _sceneSerializer = sceneSerializer;
         _history = editor.History;
         _textureManager = new EditorTextureManager();
-        _projectSelector = new ProjectSelector();
+        _projectSelector = new ProjectSelector(editor.StartWithNewProject);
 
         Initialize();
     }

@@ -12,11 +12,12 @@ internal class Program
         Console.SetOut(new ConsoleLogRedirector(LogLevel.Info, originalOut));
         Console.SetError(new ConsoleLogRedirector(LogLevel.Error, originalError));
 
-        Editor editor = new(GraphicsAPI.OpenTK);
+        bool newProject = args.Length > 0 && string.Equals(args[0], "--new-project", StringComparison.OrdinalIgnoreCase);
+        Editor editor = new(GraphicsAPI.OpenTK, startWithNewProject: newProject);
 
         try
         {
-            if (args.Length > 0 && !string.Equals(args[0], "--launcher", StringComparison.OrdinalIgnoreCase))
+            if (args.Length > 0 && !newProject && !string.Equals(args[0], "--launcher", StringComparison.OrdinalIgnoreCase))
             {
                 editor.LoadProject(args[0]);
             }

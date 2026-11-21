@@ -21,13 +21,15 @@ public class Editor : Engine
     public EditorState State => PlayModeManager.State;
     public IReadOnlyList<Type> AvailableScriptTypes => ScriptManager.AvailableScriptTypes;
     public bool IsViewportHovered { get; set; }
+    public bool StartWithNewProject { get; }
 
     private EditorAppLogic? _editorAppLogic;
     private Camera? _editorCamera;
     private readonly SceneSerializer _sceneSerializer;
 
-    public Editor(GraphicsAPI api) : base("Cherris Editor", false, api)
+    public Editor(GraphicsAPI api, bool startWithNewProject = false) : base("Cherris Editor", false, api)
     {
+        StartWithNewProject = startWithNewProject;
         AutoUpdateScene = false; // Editor handles scene updates manually (Edit/Play/Pause)
 
         Exposure = 0.5f;

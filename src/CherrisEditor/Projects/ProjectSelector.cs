@@ -25,8 +25,9 @@ public class ProjectSelector
 
     public event Action<string>? OnProjectSelected;
 
-    public ProjectSelector()
+    public ProjectSelector(bool showCreate = false)
     {
+        _showCreate = showCreate;
         if (string.IsNullOrEmpty(_location) || !Directory.Exists(_location))
             _location = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         RefreshRecent();
