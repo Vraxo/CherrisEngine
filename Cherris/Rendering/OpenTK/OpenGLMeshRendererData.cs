@@ -1,4 +1,8 @@
-﻿
+﻿using Cherris.Components;
+using OpenTK.Graphics.OpenGL4;
+
+namespace Cherris.Rendering.OpenTK;
+
 internal class OpenGLMeshRendererData : IDisposable
 {
     public readonly int VaoHandle;
