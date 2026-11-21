@@ -3,7 +3,7 @@ using AwesomeAssertions;
 using CherrisEditor;
 using Xunit;
 
-namespace Cherris.Tests.Editor;
+namespace CherrisEditor.Tests.Editor;
 
 public class DefaultDockLayoutTests
 {

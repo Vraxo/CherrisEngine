@@ -2,7 +2,7 @@ using AwesomeAssertions;
 using CherrisEditor;
 using Xunit;
 
-namespace Cherris.Tests.Projects;
+namespace CherrisEditor.Tests.Projects;
 
 public class ProjectLauncherTests : IDisposable
 {

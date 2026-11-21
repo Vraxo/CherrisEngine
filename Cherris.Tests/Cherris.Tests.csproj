@@ -19,6 +19,5 @@
 
   <ItemGroup>
     <ProjectReference Include="../Cherris/Cherris.csproj" />
-    <ProjectReference Include="../CherrisEditor/CherrisEditor.csproj" />
   </ItemGroup>
 </Project>
