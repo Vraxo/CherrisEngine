@@ -52,6 +52,7 @@ public class ProjectSelector
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 6);
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(12, 9));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(10, 10));
+        ImGui.PushStyleVar(ImGuiStyleVar.ButtonTextAlign, new Vector2(0.5f, 0.5f));
         ImGui.Begin("Project Selector", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
             ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings);
 
@@ -76,7 +77,7 @@ public class ProjectSelector
 
         ImGui.EndChild();
         ImGui.End();
-        ImGui.PopStyleVar(5);
+        ImGui.PopStyleVar(6);
         ImGui.PopStyleColor(7);
     }
 
@@ -188,7 +189,10 @@ public class ProjectSelector
     {
         ImGui.PushID(path);
         bool exists = Directory.Exists(path) && File.Exists(Path.Combine(path, "project.yaml"));
-        BeginCard("ProjectRow", new Vector2(0, 125), Surface);
+        // Leave room for two text lines, their spacing, the padded buttons and card padding.
+        float contentHeight = ImGui.GetTextLineHeight() * 2 + ImGui.GetStyle().ItemSpacing.Y * 2
+            + LauncherPresentation.ButtonHeight(30, ImGui.GetFrameHeight());
+        BeginCard("ProjectRow", new Vector2(0, Math.Max(125, contentHeight + 32)), Surface);
         ImGui.TextUnformatted(LauncherPresentation.ProjectName(path));
         ImGui.SameLine();
         ImGui.PushStyleColor(ImGuiCol.Text, exists ? new Vector4(0.51f, 0.78f, 0.68f, 1f) : new Vector4(0.96f, 0.65f, 0.42f, 1f));
@@ -297,7 +301,7 @@ public class ProjectSelector
         ImGui.PushStyleColor(ImGuiCol.Button, selected ? new Vector4(0.29f, 0.14f, 0.18f, 1f) : Sidebar);
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.25f, 0.18f, 0.21f, 1f));
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.36f, 0.18f, 0.22f, 1f));
-        bool clicked = ImGui.Button(label, size);
+        bool clicked = DrawButton(label, size);
         ImGui.PopStyleColor(3);
         return clicked;
     }
@@ -308,7 +312,7 @@ public class ProjectSelector
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, AccentHover);
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.79f, 0.27f, 0.32f, 1f));
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.09f, 0.055f, 0.07f, 1f));
-        bool clicked = ImGui.Button(label, size);
+        bool clicked = DrawButton(label, size);
         ImGui.PopStyleColor(4);
         return clicked;
     }
@@ -318,9 +322,15 @@ public class ProjectSelector
         ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.17f, 0.18f, 0.22f, 1f));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.24f, 0.25f, 0.30f, 1f));
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.13f, 0.14f, 0.17f, 1f));
-        bool clicked = ImGui.Button(label, size);
+        bool clicked = DrawButton(label, size);
         ImGui.PopStyleColor(3);
         return clicked;
+    }
+
+    private static bool DrawButton(string label, Vector2 size)
+    {
+        size.Y = LauncherPresentation.ButtonHeight(size.Y, ImGui.GetFrameHeight());
+        return ImGui.Button(label, size);
     }
 
     private static void Caption(string text)
