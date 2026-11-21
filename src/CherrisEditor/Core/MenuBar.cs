@@ -1,4 +1,5 @@
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Serialization;
 using CherrisEditor.Build;
 using CherrisEditor.Undo;
@@ -30,6 +31,16 @@ public class MenuBar
 
         if (ImGui.BeginMenu("File"))
         {
+            if (ImGui.MenuItem("New Project in New Window..."))
+            {
+                OpenProjectLauncher(createProject: true);
+            }
+            if (ImGui.MenuItem("Open Project in New Window..."))
+            {
+                OpenProjectLauncher(createProject: false);
+            }
+            ImGui.Separator();
+
             if (ImGui.MenuItem("Save", "Ctrl+S"))
             {
                 Scene? activeScene = _editor.SceneManager.ActiveScene;
@@ -98,5 +109,17 @@ public class MenuBar
         }
 
         ImGui.EndMenuBar();
+    }
+
+    private static void OpenProjectLauncher(bool createProject)
+    {
+        try
+        {
+            ProjectLauncherProcess.Start(createProject);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Editor] Could not open the project launcher: {ex.Message}");
+        }
     }
 }
