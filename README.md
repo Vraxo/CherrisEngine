@@ -4,13 +4,13 @@ Cherris is a 3D game engine, visual scene editor, and standalone runtime written
 
 ## 🧱 Architecture
 
-The solution (`Cherris.slnx`) is split into three projects:
+The solution (`Cherris.slnx`) contains three production projects under `src/`:
 
 | Project | Output | Purpose |
 | :--- | :--- | :--- |
-| [`Cherris`](Cherris/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
-| [`CherrisEditor`](CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
-| [`CherrisRuntime`](CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
+| [`Cherris`](src/Cherris/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
+| [`CherrisEditor`](src/CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
+| [`CherrisRuntime`](src/CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
 
 ## 🔧 Capabilities
 
@@ -32,20 +32,20 @@ The solution (`Cherris.slnx`) is split into three projects:
 
 ```bash
 dotnet build Cherris.slnx
-dotnet run --project CherrisEditor
+dotnet run --project src/CherrisEditor
 ```
 
 Build outputs and intermediate files are centralized in the repository's `artifacts/` directory, grouped by project and configuration.
 
-Run all unit tests with `dotnet test Cherris.slnx`. Engine tests are in `Cherris.Tests`, and editor tests are in `CherrisEditor.Tests`. Both use xUnit and AwesomeAssertions.
+Run all unit tests with `dotnet test Cherris.slnx`. Engine tests are in `tests/Cherris.Tests`, and editor tests are in `tests/CherrisEditor.Tests`. Both use xUnit and AwesomeAssertions.
 
 On launch, the editor reopens the last project if available, or opens the project launcher. The launcher can create projects, open a folder containing `project.yaml`, and search or remove recent projects. Creating a project never overwrites an existing folder.
 
 Open the launcher explicitly or pass a directory path to open a specific project directly:
 
 ```bash
-dotnet run --project CherrisEditor -- --launcher
-dotnet run --project CherrisEditor -- /path/to/MyGame
+dotnet run --project src/CherrisEditor -- --launcher
+dotnet run --project src/CherrisEditor -- /path/to/MyGame
 ```
 
 ## 💻 Scripting

@@ -18,6 +18,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Cherris/Cherris.csproj" />
+    <ProjectReference Include="../../src/Cherris/Cherris.csproj" />
   </ItemGroup>
 </Project>

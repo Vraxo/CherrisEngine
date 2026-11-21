@@ -7,9 +7,9 @@
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
   </Folder>
-  <Project Path="Cherris/Cherris.csproj" />
-  <Project Path="Cherris.Tests/Cherris.Tests.csproj" />
-  <Project Path="CherrisEditor/CherrisEditor.csproj" />
-  <Project Path="CherrisEditor.Tests/CherrisEditor.Tests.csproj" />
-  <Project Path="CherrisRuntime/CherrisRuntime.csproj" />
+  <Project Path="src/Cherris/Cherris.csproj" />
+  <Project Path="tests/Cherris.Tests/Cherris.Tests.csproj" />
+  <Project Path="src/CherrisEditor/CherrisEditor.csproj" />
+  <Project Path="tests/CherrisEditor.Tests/CherrisEditor.Tests.csproj" />
+  <Project Path="src/CherrisRuntime/CherrisRuntime.csproj" />
 </Solution>
