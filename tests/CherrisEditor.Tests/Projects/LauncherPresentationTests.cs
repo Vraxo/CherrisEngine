@@ -25,6 +25,16 @@ public class LauncherPresentationTests
         LauncherPresentation.UseSidebar(width).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(30, 36, 36)]
+    [InlineData(0, 36, 36)]
+    [InlineData(44, 36, 44)]
+    [InlineData(30, 50, 50)]
+    public void ButtonsAreNeverShorterThanThePaddedText(float requested, float frameHeight, float expected)
+    {
+        LauncherPresentation.ButtonHeight(requested, frameHeight).Should().Be(expected);
+    }
+
     [Fact]
     public void ProjectNamesIgnoreTrailingSeparators()
     {
