@@ -39,6 +39,9 @@ public class ProjectSelector
         ImGui.SetNextWindowPos(viewport.Pos);
         ImGui.SetNextWindowSize(viewport.Size);
         ImGui.PushStyleColor(ImGuiCol.WindowBg, Background);
+        // Unframed child windows should blend into the full-window background;
+        // individual cards override this color in BeginCard.
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Background);
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.94f, 0.94f, 0.96f, 1f));
         ImGui.PushStyleColor(ImGuiCol.TextDisabled, Muted);
         ImGui.PushStyleColor(ImGuiCol.FrameBg, new Vector4(0.075f, 0.08f, 0.10f, 1f));
@@ -52,10 +55,8 @@ public class ProjectSelector
         ImGui.Begin("Project Selector", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
             ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings);
 
-        float width = Math.Min(1280, Math.Max(1, ImGui.GetContentRegionAvail().X));
-        float left = Math.Max(ImGui.GetCursorPosX(), (ImGui.GetWindowWidth() - width) / 2);
-        ImGui.SetCursorPosX(left);
-        ImGui.BeginChild("Launcher", new Vector2(width, 0), false);
+        float width = Math.Max(1, ImGui.GetContentRegionAvail().X);
+        ImGui.BeginChild("Launcher", new Vector2(0, 0), false);
 
         if (LauncherPresentation.UseSidebar(width))
         {
@@ -76,7 +77,7 @@ public class ProjectSelector
         ImGui.EndChild();
         ImGui.End();
         ImGui.PopStyleVar(5);
-        ImGui.PopStyleColor(6);
+        ImGui.PopStyleColor(7);
     }
 
     private void DrawSidebar()
@@ -116,7 +117,7 @@ public class ProjectSelector
         ImGui.TextUnformatted("CHERRIS");
         ImGui.SetWindowFontScale(1f);
         ImGui.PopStyleColor();
-        Caption("ENGINE  /  PROJECT LAUNCHER");
+        Caption("PROJECT LAUNCHER");
     }
 
     private void DrawMainContent()
