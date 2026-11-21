@@ -1,4 +1,4 @@
-﻿using Cherris.Components;
+using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering;
@@ -18,6 +18,7 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+        sceneLoader.RegisterComponentFactory("LanguageScript", _ => new LanguageScript());
         sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
     }

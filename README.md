@@ -81,7 +81,27 @@ public class Spinner : Script
 }
 ```
 
-Public read/write properties on components and scripts are automatically exposed in the Inspector and serialized to scene `.yaml` files when modified from their defaults.
+Public read/write properties on C# components and scripts are automatically exposed in the Inspector and serialized to scene `.yaml` files when modified from their defaults.
+
+### Lua scripts
+
+Cherris also supports Lua through the MoonSharp interpreter. Put a `.lua` file in your project's `Scripts/` folder, add **Language Script** from the Inspector's **Add Component** menu, and set `Language` to `lua` and `Source Path` to a project-relative path such as `Scripts/move.lua`. Save the scene and enter Play mode:
+
+```lua
+function start()
+    log("Hello from Lua")
+end
+
+function update(dt)
+    translate(dt, 0, 0)
+end
+```
+
+Each component has its own Lua state. Optional `start()` and `update(dt)` functions run on scene start and each update. The initial engine API is `log(message)`, `get_position()` (returns x, y, z), `set_position(x, y, z)`, and `translate(x, y, z)`. Lua source is loaded when play starts, so changes are picked up on the next play session. Lua files are included in loose and packed builds; a project does not need C# scripts to build or play.
+
+The scene format currently supports one language-script component per object; Lua-defined inspector properties, state-preserving hot reload, and a full engine API are not yet supported. The interpreter omits filesystem and module-loading libraries, but has no execution time or memory limits and must not be treated as a security boundary for untrusted code.
+
+For additional languages, implement `IScriptLanguage` and `IScriptInstance`, and register the adapter with `ScriptLanguages.Register` in both the editor and runtime before scripts start. Adapters and their dependencies must also be included in exported builds. The existing Roslyn C# workflow remains separate.
 
 ## 🎮 Editor Controls
 

@@ -1,4 +1,4 @@
-﻿using Cherris.Components;
+using Cherris.Components;
 using Cherris.Core;
 using Cherris.Utils;
 using System.Numerics;
@@ -142,6 +142,16 @@ public class SceneSerializer
 
                 meshRendererData["Material"] = materialData;
                 componentsData["MeshRenderer"] = meshRendererData;
+            }
+            else if (component is LanguageScript languageScript)
+            {
+                // The editor disables scripts while editing; that transient state must not
+                // disable the script in a saved scene or play-mode snapshot.
+                componentsData[nameof(LanguageScript)] = new Dictionary<string, object>
+                {
+                    [nameof(LanguageScript.Language)] = languageScript.Language,
+                    [nameof(LanguageScript.SourcePath)] = languageScript.SourcePath
+                };
             }
             else // All other components can be serialized generically using reflection.
             {
