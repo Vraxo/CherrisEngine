@@ -1,13 +1,17 @@
-﻿using OpenTK.Graphics.OpenGL4;
+using System.Runtime.InteropServices;
+using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
+using Vector3 = OpenTK.Mathematics.Vector3;
 
 namespace Cherris.Rendering.OpenTK;
 
+[StructLayout(LayoutKind.Sequential)]
 internal struct DebugVertex
 {
     public Vector3 Position;
     public Vector3 Color;
-    public static readonly int Size = Vector3.SizeInBytes * 2;
+    public static readonly int Size = Marshal.SizeOf<DebugVertex>();
+    public static readonly int ColorOffset = (int)Marshal.OffsetOf<DebugVertex>(nameof(Color));
 }
 
 internal class OpenGLDebugRenderer : IDisposable
@@ -33,7 +37,7 @@ internal class OpenGLDebugRenderer : IDisposable
         GL.EnableVertexAttribArray(0);
         GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, 0);
         GL.EnableVertexAttribArray(1);
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, Vector3.SizeInBytes);
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, DebugVertex.Size, DebugVertex.ColorOffset);
         GL.BindVertexArray(0);
     }
 
