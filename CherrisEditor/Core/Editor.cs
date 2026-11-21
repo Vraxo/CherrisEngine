@@ -1,4 +1,4 @@
-﻿using Cherris;
+using Cherris;
 using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
@@ -49,7 +49,17 @@ public class Editor : Engine
 
     public void LoadProject(string projectRoot)
     {
+        var previousProject = ProjectManager.CurrentProject;
         ProjectManager.LoadProject(projectRoot);
+
+        // Projects selected after startup need the same script and scene setup as
+        // projects loaded from the command line or the last-project setting.
+        var project = ProjectManager.CurrentProject;
+        if (_editorAppLogic is not null && project is not null && !ReferenceEquals(previousProject, project))
+        {
+            ScriptManager.CompileAndRegisterGameScripts(project.RootPath);
+            LoadInitialSceneIfProjectExists();
+        }
     }
 
     public void EnterPlayMode()
