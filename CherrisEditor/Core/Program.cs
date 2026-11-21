@@ -1,4 +1,4 @@
-﻿using Cherris;
+using Cherris;
 using Cherris.Core;
 using CherrisEditor;
 
@@ -14,17 +14,24 @@ internal class Program
 
         Editor editor = new(GraphicsAPI.OpenTK);
 
-        if (args.Length > 0)
+        try
         {
-            editor.LoadProject(args[0]);
-        }
-        else
-        {
-            string? lastProject = ProjectPersistence.GetLastProject();
-            if (lastProject is not null && Directory.Exists(lastProject))
+            if (args.Length > 0 && !string.Equals(args[0], "--launcher", StringComparison.OrdinalIgnoreCase))
             {
-                editor.LoadProject(lastProject);
+                editor.LoadProject(args[0]);
             }
+            else if (args.Length == 0)
+            {
+                string? lastProject = ProjectPersistence.GetLastProject();
+                if (lastProject is not null)
+                {
+                    editor.LoadProject(lastProject);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Could not open the project: {ex.Message}");
         }
 
         editor.Run();

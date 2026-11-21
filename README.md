@@ -39,9 +39,12 @@ Build outputs and intermediate files are centralized in the repository's `artifa
 
 Run the unit tests with `dotnet test Cherris.slnx`. The test suite uses xUnit and AwesomeAssertions.
 
-On launch, the editor reopens the last project if available, or opens the Project Selector to create or browse for one. Pass a directory path to open a specific project directly:
+On launch, the editor reopens the last project if available, or opens the project launcher. The launcher can create projects, open a folder containing `project.yaml`, and search or remove recent projects. Creating a project never overwrites an existing folder.
+
+Open the launcher explicitly or pass a directory path to open a specific project directly:
 
 ```bash
+dotnet run --project CherrisEditor -- --launcher
 dotnet run --project CherrisEditor -- /path/to/MyGame
 ```
 
