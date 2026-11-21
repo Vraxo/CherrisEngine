@@ -84,16 +84,10 @@ public static class GameBuilder
 
     private static bool PublishRuntime(string outputDir, string gameName)
     {
-        string runtimeProjPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../CherrisRuntime/CherrisRuntime.csproj"));
-
-        if (!File.Exists(runtimeProjPath))
+        string? runtimeProjPath = RuntimeProjectLocator.Find(AppContext.BaseDirectory);
+        if (runtimeProjPath is null)
         {
-            runtimeProjPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../CherrisRuntime/CherrisRuntime.csproj"));
-        }
-
-        if (!File.Exists(runtimeProjPath))
-        {
-            Logger.Error($"[GameBuilder] Could not find CherrisRuntime.csproj at '{runtimeProjPath}'.");
+            Logger.Error($"[GameBuilder] Could not find CherrisRuntime.csproj in the source tree above '{AppContext.BaseDirectory}'.");
             return false;
         }
 
