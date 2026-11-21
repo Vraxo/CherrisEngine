@@ -1,6 +1,6 @@
 # 🍒 Cherris Engine
 
-Cherris is a 3D game engine, visual scene editor, and standalone runtime written in C# on .NET 10. It pairs a GameObject-Component architecture with OpenGL 4 rendering, BepuPhysics v2 simulation, OpenAL 3D audio, YAML scene serialization, and Roslyn C# scripting.
+Cherris is a 3D game engine, visual scene editor, and standalone runtime written in C# on .NET 11. It pairs a GameObject-Component architecture with OpenGL 4 rendering, BepuPhysics v2 simulation, OpenAL 3D audio, YAML scene serialization, and Roslyn C# scripting.
 
 ## 🧱 Architecture
 
@@ -24,7 +24,7 @@ The solution (`Cherris.slnx`) is split into three projects:
 
 ### 📋 Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (`net10.0`)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download) (`net11.0`)
 - GPU with OpenGL 4.x support
 - OpenAL runtime installed on the system (required for audio playback; the engine runs with audio disabled if unavailable)
 
