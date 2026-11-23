@@ -1,4 +1,4 @@
-# The UE5 editor palette, exactly
+# The UE5 editor look, exactly
 
 Both editors are themed with Unreal Engine 5's own color values rather than with colors picked to look
 similar:
@@ -118,3 +118,52 @@ by design. Those are the only places where a value is not literally one palette 
 UE5 rounds inputs, buttons, scrollbar thumbs and tab corners by 4px and draws 1px borders; windows and menus
 are square. The ImGui style now matches (`FrameRounding`/`GrabRounding`/`ScrollbarRounding`/`TabRounding` = 4,
 `ScrollbarSize` = 8, 1px borders), and the stylesheet uses the same radii.
+
+The sizes the stylesheet reproduces come from the same sources as the colors:
+
+| Widget (Slate) | Source | Blazor |
+| --- | --- | --- |
+| Menu bar padding `FMargin(12, 4)` | `WindowMenuBar.MenuBar` | `.menubar-button` (`4px 12px`) |
+| Menu block padding `FMargin(12, 1, 5, 1)` | `Menu.Block` | `.menu-item` (`3px 12px`) |
+| Menu separator padding `FMargin(12, 6, 12, 6)` | `Menu.Separator` | `.menu-separator` (`6px 12px`) |
+| Editable text / button padding `8, 3` | `EditableText`, `Button` | inputs and `.imgui-button` (13px text + `3px/4px` padding = the engine's 22px row) |
+| Tab padding `FMargin(4, 3, 10, 4)`, 26px strip | `DockTabStyle` | `.panel-tab`, `.panel-tabstrip` |
+| Tree rows, square corners, 10pt text | `TreeView` / `FTableRowStyle` | `.tree-row` (`3px 4px`, `border-radius: 0`) |
+| Details category rows with a lower 1px `Recessed` rule | `DetailsView.CategoryTop` | `.inspector-section-header` |
+| Status strip 8pt | `Small` text style | `.statusbar` (11px) |
+
+## Typography
+
+The editor's text styles are `FStarshipCoreStyle::FStyleFonts`: `Normal` 10pt, `Small` 8pt, `Large` 14pt and
+condensed headings at 15, 21 and 33pt, all Roboto; `MonospacedText` is `DEFAULT_FONT("Mono", 10)`, Roboto Mono.
+Slate scales points by DPI, so at 96 DPI 10pt is 13.33px and the UI uses **13px** (rounded, so glyphs stay on
+the pixel grid). `src/Cherris/UI/Ue5Typography.cs` is the shared source of those numbers and of the font file
+names; `tests/CherrisEditorWeb.Tests/Ue5TypographyTests.cs` keeps the two front ends and the stylesheet in step.
+
+Fonts are bundled in the repository, since neither front end may depend on a system font:
+
+- `src/CherrisEditor/EditorResources/Fonts/Roboto-Regular.TTF` — the latin + latin-ext + cyrillic + greek
+  merge of the official Roboto subsets (587 glyphs, 89 KB). The ImGui editor loads it at 13px
+  (`ImGuiFontLoader`), falling back to `RobotoMono-Regular.TTF` and then ImGui's bitmap font.
+- `src/CherrisEditorPhotino/wwwroot/fonts/roboto-{latin,latin-ext,cyrillic,greek}-400-normal.woff2`,
+  `roboto-latin-700-normal.woff2` and `roboto-mono-latin-400-normal.woff2` — the same families for the
+  stylesheet, declared as `@font-face` rules with the unicode-ranges the upstream packages ship, so a subset
+  downloads only when the UI needs it. `WebEditorServer` serves them as `font/woff2`.
+- Both directories carry the SIL Open Font License text (`Roboto-OFL.txt`, `Roboto-LICENSE.txt`) that the
+  fonts require.
+
+`RobotoMono-Regular.TTF` has no `▸`, `▾` or `→` glyphs, so the tree and the details categories draw their
+disclosure arrows as inline SVG chevrons instead of text.
+
+## Where else the look is reproduced
+
+- **Flat toolbar buttons.** The engine's transport and viewport-toolbar buttons are `SimpleButton`s: no fill
+  until hover, `Dropdown` on hover, `Header` while pressed, `AccentGray` text when disabled. The transport
+  buttons and the viewport's Options button follow that instead of the filled `FButtonStyle`.
+- **Search boxes** carry the magnifier `SSearchBox` draws inside the text box (`.search-field`).
+- **Focus** is a 1px `Primary` rectangle drawn *inside* the widget (`.imgui-input:focus-visible` and friends),
+  as `FocusRectangle` does, rather than the browser's default ring.
+- **Content browser** tiles are 84px cells with a 28px glyph, and folders use the engine's `AccentFolder`
+  tint, as the folder icon in the content browser does.
+- **Cursors** are the arrow, not a hand: Slate does not change the pointer over buttons.
+

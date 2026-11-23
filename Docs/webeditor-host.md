@@ -210,7 +210,7 @@ chrome is deliberately the same so muscle memory carries over:
 | Theme: `EditorTheme.ApplyUnrealEngineStyle` | `--imgui-*` tokens in `wwwroot/css/app.css`, same greys and the accent blue |
 
 Colors come from the engine's own palette rather than an approximation of it — see
-[UE5 Theme](ue5-theme.md) for every value, its source file and the widget styles it maps to.
+[UE5 Theme](ue5-theme.md) for every value, its source file, the widget styles it maps to, and the bundled Roboto/Roboto Mono fonts behind the typography.
 
 Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
 which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists

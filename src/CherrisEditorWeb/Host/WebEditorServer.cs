@@ -23,7 +23,10 @@ public sealed class WebEditorServer : IAsyncDisposable
         [".json"] = "application/json; charset=utf-8",
         [".svg"] = "image/svg+xml",
         [".png"] = "image/png",
-        [".ico"] = "image/x-icon"
+        [".ico"] = "image/x-icon",
+        [".woff2"] = "font/woff2",
+        [".woff"] = "font/woff",
+        [".ttf"] = "font/ttf"
     };
 
     private readonly HttpListener _listener = new();

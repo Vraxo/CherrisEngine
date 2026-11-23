@@ -1,4 +1,5 @@
-﻿using Cherris.Utils;
+﻿using Cherris.UI;
+using Cherris.Utils;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 
@@ -12,12 +13,21 @@ internal sealed class ImGuiFontLoader : IDisposable
     {
         ImGuiIOPtr io = ImGui.GetIO();
 
-        const float fontSize = 18.0f;
-        string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
+        // UE5 renders its UI in Roboto at 10pt (FStarshipCoreStyle::FStyleFonts); 13px is that size rounded to
+        // the pixel grid. Roboto Mono is the fallback the editor shipped with, and the last resort is ImGui's
+        // own bitmap font.
+        float fontSize = Ue5Typography.NormalPixels;
 
-        if (fontPath is not null && File.Exists(fontPath))
+        string? uiFontPath = EditorResources.Find(Ue5Typography.UiFontResource);
+        string? monoFontPath = EditorResources.Find(Ue5Typography.MonospaceFontResource);
+
+        if (uiFontPath is not null && File.Exists(uiFontPath))
         {
-            io.Fonts.AddFontFromFileTTF(fontPath, fontSize);
+            io.Fonts.AddFontFromFileTTF(uiFontPath, fontSize);
+        }
+        else if (monoFontPath is not null && File.Exists(monoFontPath))
+        {
+            io.Fonts.AddFontFromFileTTF(monoFontPath, fontSize);
         }
         else
         {
