@@ -1,0 +1,238 @@
+@inject EditorHostService Host
+@implements IDisposable
+
+@* ImGui's Content Browser: <- Back and a path line, separator, then a grid of folders and assets. *@
+<div class="content-browser">
+    <div class="cb-header">
+        <button type="button" class="imgui-button" disabled="@(_currentDirectory is null || IsAtRoot)"
+                @onclick="GoBack" title="Go up one folder">
+            &lt;- Back
+        </button>
+
+        <span class="cb-path" title="@_currentDirectory">Path: @DisplayPath</span>
+
+        <span class="cb-count">@_entries.Count items</span>
+    </div>
+
+    <div class="imgui-separator"></div>
+
+    <div class="cb-grid">
+        @if (Host.ProjectRoot is null)
+        {
+            <p class="panel-empty">No project folder is open.</p>
+        }
+        else if (_entries.Count == 0)
+        {
+            <p class="panel-empty">This folder is empty.</p>
+        }
+        else
+        {
+            @foreach (Entry entry in _entries)
+            {
+                <button type="button" class="cb-item @(_selectedPath == entry.FullPath ? "selected" : "")"
+                        title="@entry.Name"
+                        @onclick="() => Select(entry)"
+                        @ondblclick="() => Activate(entry)">
+                    @Glyph(entry)
+                    <span class="cb-name">@entry.Name</span>
+                </button>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
+
+    private readonly List<Entry> _entries = [];
+    private string? _currentDirectory;
+    private string? _selectedPath;
+    private Timer? _timer;
+
+    private sealed record Entry(string FullPath, string Name, bool IsDirectory);
+
+    private string ProjectRoot => Host.ProjectRoot ?? string.Empty;
+
+    private bool IsAtRoot => _currentDirectory is null
+        || string.Equals(_currentDirectory, ProjectRoot, StringComparison.OrdinalIgnoreCase);
+
+    private string DisplayPath
+    {
+        get
+        {
+            if (Host.ProjectRoot is not string root)
+            {
+                return "none";
+            }
+
+            string projectName = Host.SessionName ?? Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (string.IsNullOrEmpty(projectName))
+            {
+                projectName = "Project";
+            }
+
+            if (_currentDirectory is null || string.Equals(_currentDirectory, root, StringComparison.OrdinalIgnoreCase))
+            {
+                return projectName;
+            }
+
+            string relative = Path.GetRelativePath(root, _currentDirectory);
+
+            return $"{projectName}/{relative.Replace(Path.DirectorySeparatorChar, '/')}";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _currentDirectory = Host.ProjectRoot;
+        Refresh();
+        _timer = new Timer(_ => _ = PollAsync(), null, PollInterval, PollInterval);
+    }
+
+    private async Task PollAsync()
+    {
+        // The asset folder changes outside the editor, so re-read it; ImGui re-reads every frame.
+        string? previous = string.Join('\n', _entries.Select(entry => entry.FullPath));
+        List<Entry> entries = ReadEntries();
+        string current = string.Join('\n', entries.Select(entry => entry.FullPath));
+
+        if (previous == current)
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _entries.Clear();
+            _entries.AddRange(entries);
+            StateHasChanged();
+        });
+    }
+
+    private void Refresh()
+    {
+        _entries.Clear();
+        _entries.AddRange(ReadEntries());
+    }
+
+    private List<Entry> ReadEntries()
+    {
+        List<Entry> entries = [];
+        string? directory = _currentDirectory ?? Host.ProjectRoot;
+
+        if (directory is null || !Directory.Exists(directory))
+        {
+            return entries;
+        }
+
+        try
+        {
+            foreach (string path in Directory.EnumerateDirectories(directory).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                entries.Add(new Entry(path, Path.GetFileName(path), true));
+            }
+
+            foreach (string path in Directory.EnumerateFiles(directory).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                string name = Path.GetFileName(path);
+
+                if (name.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                entries.Add(new Entry(path, name, false));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A locked or permission-denied folder shows as empty instead of failing the panel.
+        }
+
+        return entries;
+    }
+
+    private void Select(Entry entry)
+    {
+        _selectedPath = entry.FullPath;
+    }
+
+    private void Activate(Entry entry)
+    {
+        if (!entry.IsDirectory)
+        {
+            return;
+        }
+
+        _currentDirectory = entry.FullPath;
+        _selectedPath = null;
+        Refresh();
+    }
+
+    private void GoBack()
+    {
+        if (_currentDirectory is null)
+        {
+            return;
+        }
+
+        string? parent;
+
+        try
+        {
+            parent = Directory.GetParent(_currentDirectory)?.FullName;
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException)
+        {
+            parent = null;
+        }
+
+        // Never walk above the project: the panel shows one project's assets, like ImGui's browser.
+        _currentDirectory = parent is null || !parent.StartsWith(ProjectRoot, StringComparison.OrdinalIgnoreCase)
+            ? Host.ProjectRoot
+            : parent;
+
+        _selectedPath = null;
+        Refresh();
+    }
+
+    private static RenderFragment Glyph(Entry entry)
+    {
+        string extension = Path.GetExtension(entry.Name).ToLowerInvariant();
+
+        string path = entry.IsDirectory
+            ? "M1.5 3.2h4.2l1.3 1.7h7.5v8.4H1.5z"
+            : extension switch
+            {
+                ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" or ".tga" =>
+                    "M2 3.2h12v9.6H2zm1.2 1.2v5.2l2.6-2.6 2.2 2.2 2.4-2.9 2.4 2.6V4.4z",
+                ".yaml" or ".yml" => "M3 2.4h7l3 3v8.2H3zm1.2 3.4h6.6M4.2 8h6.6M4.2 9.8h4.4",
+                ".wav" or ".ogg" or ".mp3" => "M6 2.6v8.1a1.7 1.7 0 1 0 1.4 1.7V6.2l5-1.1v5.6a1.7 1.7 0 1 0 1.4 1.7V2.2z",
+                _ => "M3.2 2h6.2l3.4 3.4V14H3.2zm1.2 3.2h6.4M4.4 7.4h6.4M4.4 9.6h4.6"
+            };
+
+        return builder =>
+        {
+            builder.OpenElement(0, "svg");
+            builder.AddAttribute(1, "class", "cb-glyph");
+            builder.AddAttribute(2, "viewBox", "0 0 16 16");
+            builder.AddAttribute(3, "aria-hidden", "true");
+
+            builder.OpenElement(4, "path");
+            builder.AddAttribute(5, "d", path);
+            builder.AddAttribute(6, "fill", entry.IsDirectory || extension is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" or ".tga" ? "currentColor" : "none");
+            builder.AddAttribute(7, "stroke", "currentColor");
+            builder.AddAttribute(8, "stroke-width", "1.1");
+            builder.CloseElement();
+
+            builder.CloseElement();
+        };
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+}

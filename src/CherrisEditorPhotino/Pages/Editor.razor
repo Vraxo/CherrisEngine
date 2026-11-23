@@ -6,20 +6,10 @@
 
 <PageTitle>@Host.SessionName — Cherris Editor</PageTitle>
 
+@* Mirrors the ImGui editor's chrome: menu bar, centred transport toolbar, dockspace, status strip. *@
 <div class="editor-shell">
-    <header class="editor-toolbar">
-        <div class="editor-toolbar-project">
-            <span class="editor-toolbar-name">@Host.SessionName</span>
-            <span class="editor-toolbar-path" title="@Host.ProjectRoot">
-                @(Host.ProjectRoot ?? "built-in demo scene")
-            </span>
-        </div>
-
-        <div class="editor-toolbar-actions">
-            <span class="editor-toolbar-state">@StateText</span>
-            <button type="button" class="editor-button" @onclick="SwitchProject">Projects…</button>
-        </div>
-    </header>
+    <MenuBar />
+    <ToolBar />
 
     @if (Host.State == EditorSessionState.Failed)
     {
@@ -56,19 +46,58 @@
     }
     else
     {
-        <div class="editor-grid">
-            <section class="editor-viewport">
-                <ViewportPanel WebSocketUrl="@Host.WebSocketUrl" />
-            </section>
+        <div class="dockspace" id="dockspace">
+            <div class="dock-pane">
+                <HierarchyPanel />
+            </div>
 
-            <aside class="editor-sidebar">
-                <ScenePanel />
-            </aside>
+            <div class="dock-splitter dock-splitter-x" data-dock-splitter="1" data-axis="x" data-target="left"
+                 role="separator" aria-orientation="vertical" title="Drag to resize the hierarchy"></div>
 
-            <footer class="editor-statusbar">
-                <StatusBar />
-            </footer>
+            <div class="dock-middle">
+                <div class="dock-pane">
+                    <ViewportPanel WebSocketUrl="@Host.WebSocketUrl" />
+                </div>
+
+                <div class="dock-splitter dock-splitter-y" data-dock-splitter="1" data-axis="y" data-target="bottom"
+                     role="separator" aria-orientation="horizontal" title="Drag to resize the bottom dock"></div>
+
+                <div class="dock-pane">
+                    <section class="panel">
+                        <header class="panel-tabstrip">
+                            <button type="button" class="panel-tab @(_bottomTab == "content" ? "active" : "")"
+                                    @onclick='() => _bottomTab = "content"'>
+                                Content Browser
+                            </button>
+                            <button type="button" class="panel-tab @(_bottomTab == "console" ? "active" : "")"
+                                    @onclick='() => _bottomTab = "console"'>
+                                Console
+                            </button>
+                        </header>
+
+                        <div class="panel-body nopad">
+                            @if (_bottomTab == "content")
+                            {
+                                <ContentBrowserPanel />
+                            }
+                            else
+                            {
+                                <ConsolePanel />
+                            }
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <div class="dock-splitter dock-splitter-x" data-dock-splitter="1" data-axis="x" data-target="right"
+                 role="separator" aria-orientation="vertical" title="Drag to resize the inspector"></div>
+
+            <div class="dock-pane">
+                <InspectorPanel />
+            </div>
         </div>
+
+        <StatusBar />
     }
 </div>
 
@@ -77,16 +106,10 @@
 
     private Timer? _timer;
     private bool _copied;
+    private bool _dockMounted;
     private string? _lastFailure;
     private EditorSessionState _lastState;
-
-    private string StateText => Host.State switch
-    {
-        EditorSessionState.Running => "running",
-        EditorSessionState.Starting => "starting…",
-        EditorSessionState.Failed => "stopped",
-        _ => "no session"
-    };
+    private string _bottomTab = "content";
 
     protected override void OnInitialized()
     {
@@ -104,6 +127,25 @@
         _timer = new Timer(_ => _ = CheckHealthAsync(), null, HealthInterval, HealthInterval);
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_dockMounted || Host.State != EditorSessionState.Running)
+        {
+            return;
+        }
+
+        // mount() reports false when #dockspace is not in the DOM yet (the first render is still the
+        // "starting" state), so stay unmounted and try again on the next render.
+        try
+        {
+            _dockMounted = await JS.InvokeAsync<bool>("cherrisDock.mount");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The webview is going away; nothing left to wire up.
+        }
+    }
+
     private async Task CheckHealthAsync()
     {
         if (Host.FailureMessage == _lastFailure && Host.State == _lastState)
@@ -118,8 +160,6 @@
             StateHasChanged();
         });
     }
-
-    private void SwitchProject() => BackToLauncher();
 
     private void BackToLauncher()
     {

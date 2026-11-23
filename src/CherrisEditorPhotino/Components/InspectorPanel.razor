@@ -1,0 +1,123 @@
+@inject SceneStore Store
+@inject SceneSelection Selection
+@implements IDisposable
+
+@* ImGui's Inspector: object name, Transform, then one collapsible section per component. *@
+<section class="panel">
+    <header class="panel-tabstrip">
+        <span class="panel-tab active">Inspector</span>
+    </header>
+
+    <div class="panel-body">
+        @if (SelectedNode is not SceneNodeSnapshot node)
+        {
+            <p class="panel-empty">No object selected.</p>
+        }
+        else
+        {
+            <input type="text" class="imgui-input" value="@node.Name" readonly
+                   aria-label="Object name" title="Renaming is driven by the ImGui editor" />
+
+            <div class="imgui-separator"></div>
+
+            <div class="inspector-section">
+                <div class="inspector-section-header">
+                    <span class="tree-arrow">▾</span>
+                    <span>Transform</span>
+                </div>
+
+                <div class="inspector-section-body">
+                    @(VectorRow("Position", node.Position.X, node.Position.Y, node.Position.Z))
+                    @(VectorRow("Rotation", node.Rotation.X, node.Rotation.Y, node.Rotation.Z, node.Rotation.W))
+                    @(VectorRow("Scale", node.Scale.X, node.Scale.Y, node.Scale.Z))
+                </div>
+            </div>
+
+            @foreach (string component in node.Components)
+            {
+                <div class="inspector-section">
+                    <div class="inspector-section-header">
+                        <span class="tree-arrow">▾</span>
+                        <span>@component</span>
+                    </div>
+
+                    <div class="inspector-section-body">
+                        <p class="inspector-muted">Fields are edited in the ImGui editor.</p>
+                    </div>
+                </div>
+            }
+
+            <div class="inspector-add">
+                <button type="button" class="imgui-button" disabled title="Components are added in the ImGui editor">
+                    Add ▾
+                </button>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private SceneNodeSnapshot? SelectedNode
+    {
+        get
+        {
+            if (Selection.SelectedId is not Guid id || Store.Current is not SceneSnapshot scene)
+            {
+                return null;
+            }
+
+            return scene.Nodes.FirstOrDefault(node => node.Id == id);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnSceneChanged;
+        Selection.Changed += OnSceneChanged;
+    }
+
+    private void OnSceneChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static RenderFragment VectorRow(string label, float x, float y, float z, float? w = null) =>
+        w is null
+            ? BuildRow(label, [x, y, z])
+            : BuildRow(label, [x, y, z, w.Value]);
+
+    private static RenderFragment BuildRow(string label, float[] values) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "vec-row");
+
+        builder.OpenElement(2, "span");
+        builder.AddAttribute(3, "class", "vec-label");
+        builder.AddContent(4, label);
+        builder.CloseElement();
+
+        builder.OpenElement(5, "div");
+        builder.AddAttribute(6, "class", "vec-fields");
+
+        for (int index = 0; index < values.Length; index++)
+        {
+            builder.OpenElement(7, "input");
+            builder.AddAttribute(8, "type", "text");
+            builder.AddAttribute(9, "class", "imgui-input vec-field");
+            builder.AddAttribute(10, "value", values[index].ToString("0.###", CultureInfo.InvariantCulture));
+            builder.AddAttribute(11, "readonly", true);
+            builder.AddAttribute(12, "tabindex", "-1");
+            builder.AddAttribute(13, "aria-label", $"{label} {index}");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    public void Dispose()
+    {
+        Store.Changed -= OnSceneChanged;
+        Selection.Changed -= OnSceneChanged;
+    }
+}

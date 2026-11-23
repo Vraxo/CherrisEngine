@@ -70,7 +70,7 @@ public sealed class EditorHostService : IDisposable
     private readonly int _height;
     private readonly int _targetFrameRate;
     private readonly Cherris.Projects.RecentProjects _recent = new();
-    private readonly Queue<string> _log = new();
+    private readonly Queue<EditorLogEntry> _log = new();
     private readonly object _logLock = new();
 
     private Session? _session;
@@ -112,6 +112,21 @@ public sealed class EditorHostService : IDisposable
     /// launcher then falls back to typed paths.
     /// </summary>
     public Func<string, string?, Task<string[]>>? FolderPicker { get; set; }
+
+    /// <summary>Closes the window; supplied by the host once the window exists (File &gt; Exit).</summary>
+    public Action? CloseRequested { get; set; }
+
+    /// <summary>The log the console panel shows, oldest first.</summary>
+    public IReadOnlyList<EditorLogEntry> LogEntries
+    {
+        get
+        {
+            lock (_logLock)
+            {
+                return _log.ToArray();
+            }
+        }
+    }
 
     /// <summary>Current session state.</summary>
     public EditorSessionState State => _state;
@@ -264,13 +279,16 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>Writes a diagnostic line to the console, the in-memory log and the log file.</summary>
-    public void WriteLog(string message)
+    public void WriteLog(string message) => WriteLog(message, LogLevel.Info);
+
+    /// <inheritdoc cref="WriteLog(string)" />
+    public void WriteLog(string message, LogLevel level)
     {
-        string line = $"{DateTimeOffset.Now:HH:mm:ss.fff} {message}";
+        EditorLogEntry entry = new(DateTimeOffset.Now, level, message);
 
         lock (_logLock)
         {
-            _log.Enqueue(line);
+            _log.Enqueue(entry);
 
             while (_log.Count > MaximumLogLines)
             {
@@ -279,6 +297,8 @@ public sealed class EditorHostService : IDisposable
         }
 
         Console.WriteLine(message);
+
+        string line = $"{entry.Timestamp:HH:mm:ss.fff} [{level}] {message}";
 
         string? path = _logFilePath;
 
@@ -300,13 +320,24 @@ public sealed class EditorHostService : IDisposable
         }
     }
 
-    /// <summary>Last <paramref name="lineCount"/> log lines, oldest first.</summary>
+    /// <summary>Last <paramref name="lineCount"/> log lines as text, oldest first.</summary>
     public string LogTail(int lineCount = 30)
     {
         lock (_logLock)
         {
             int skip = Math.Max(0, _log.Count - Math.Max(1, lineCount));
-            return string.Join(Environment.NewLine, _log.Skip(skip));
+
+            return string.Join(Environment.NewLine, _log.Skip(skip)
+                .Select(entry => $"{entry.Timestamp:HH:mm:ss.fff} [{entry.Level}] {entry.Message}"));
+        }
+    }
+
+    /// <summary>Empties the console. The log file keeps its history.</summary>
+    public void ClearLog()
+    {
+        lock (_logLock)
+        {
+            _log.Clear();
         }
     }
 
@@ -446,7 +477,7 @@ public sealed class EditorHostService : IDisposable
         _state = EditorSessionState.Failed;
         _failure = message;
         _failureDetail = detail;
-        WriteLog($"[editor] {message}{(detail is null ? string.Empty : $" {detail}")}");
+        WriteLog($"[editor] {message}{(detail is null ? string.Empty : $" {detail}")}", LogLevel.Error);
     }
 
     private WebEditorOptions CreateOptions() => new()
@@ -502,7 +533,7 @@ public sealed class EditorHostService : IDisposable
 
     private void OnEngineLog(LogMessage message)
     {
-        WriteLog($"[{message.Level}] {message.Message}");
+        WriteLog(message.Message, message.Level);
     }
 
     /// <summary>Reserves a port by binding to port 0, so two editor instances never collide.</summary>
@@ -534,6 +565,12 @@ public sealed class EditorHostService : IDisposable
         public ManualResetEventSlim Exited { get; } = exited;
     }
 }
+
+/// <summary>One line of the editor log the console panel renders.</summary>
+/// <param name="Timestamp">When the line was produced.</param>
+/// <param name="Level">Info, warning or error.</param>
+/// <param name="Message">The text.</param>
+public sealed record EditorLogEntry(DateTimeOffset Timestamp, LogLevel Level, string Message);
 
 /// <summary>Viewport numbers the status bar shows, read from the JavaScript bridge.</summary>
 /// <param name="Connected">True while the frame socket is open.</param>

@@ -1,0 +1,109 @@
+@using Cherris.Core.Logging
+@inject EditorHostService Host
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* ImGui's Console: Clear + Auto-scroll, separator, then colour-coded log lines. *@
+<div class="console">
+    <div class="console-toolbar">
+        <button type="button" class="imgui-button" @onclick="Clear">Clear</button>
+
+        <label class="imgui-checkbox">
+            <input type="checkbox" @bind="_autoScroll" />
+            <span>Auto-scroll</span>
+        </label>
+
+        <span class="console-count">@_entries.Count lines</span>
+    </div>
+
+    <div class="imgui-separator"></div>
+
+    <div class="console-log" id="console-log">
+        @if (_entries.Count == 0)
+        {
+            <p class="panel-empty">Nothing logged yet.</p>
+        }
+        else
+        {
+            @foreach (EditorLogEntry entry in _entries)
+            {
+                <div class="log-line @LevelClass(entry.Level)">
+                    <span class="log-time">[@entry.Timestamp.ToString("HH:mm:ss")]</span>
+                    <span class="log-level">[@entry.Level]</span>
+                    <span class="log-text">@entry.Message</span>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
+
+    private IReadOnlyList<EditorLogEntry> _entries = [];
+    private bool _autoScroll = true;
+    private bool _needsScroll;
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _entries = Host.LogEntries;
+        _needsScroll = _autoScroll;
+        _timer = new Timer(_ => _ = PollAsync(), null, PollInterval, PollInterval);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_needsScroll)
+        {
+            return;
+        }
+
+        _needsScroll = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync("cherrisUi.scrollToEnd", "console-log");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; the log goes with it.
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        IReadOnlyList<EditorLogEntry> entries = Host.LogEntries;
+
+        if (entries.Count == _entries.Count && (entries.Count == 0 || ReferenceEquals(entries[^1], _entries[^1])))
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _entries = entries;
+            _needsScroll = _autoScroll;
+            StateHasChanged();
+        });
+    }
+
+    private void Clear()
+    {
+        Host.ClearLog();
+        _entries = Host.LogEntries;
+    }
+
+    private static string LevelClass(LogLevel level) => level switch
+    {
+        LogLevel.Warning => "log-warning",
+        LogLevel.Error => "log-error",
+        _ => "log-info"
+    };
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+}

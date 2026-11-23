@@ -1,0 +1,155 @@
+@inject EditorHostService Host
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* ImGui's main menu bar: File / Edit / Window, drawn as flat text on the window background. *@
+<div class="menubar">
+    <button type="button" class="menubar-brand" title="Back to the project launcher" @onclick="OpenLauncher">
+        Cherris Editor
+    </button>
+
+    <div class="menubar-item">
+        <button type="button" class="menubar-button @(IsOpen("file") ? "open" : "")" @onclick='() => Toggle("file")'>
+            File
+        </button>
+
+        @if (IsOpen("file"))
+        {
+            <div class="menu-popup" role="menu">
+                <button type="button" class="menu-item" role="menuitem" @onclick="NewProject">
+                    <span>New Project…</span>
+                </button>
+                <button type="button" class="menu-item" role="menuitem" @onclick="OpenLauncher">
+                    <span>Open Project…</span>
+                </button>
+                <div class="menu-separator"></div>
+                <button type="button" class="menu-item" role="menuitem" disabled
+                        title="Saving is driven by the ImGui editor">
+                    <span>Save</span>
+                    <span class="menu-shortcut">Ctrl+S</span>
+                </button>
+                <div class="menu-separator"></div>
+                <button type="button" class="menu-item" role="menuitem" disabled
+                        title="Build options live in the ImGui editor">
+                    <span>Pack Assets on Build</span>
+                </button>
+                <button type="button" class="menu-item" role="menuitem" disabled
+                        title="Build options live in the ImGui editor">
+                    <span>Build Game…</span>
+                </button>
+                <div class="menu-separator"></div>
+                <button type="button" class="menu-item" role="menuitem" disabled="@(Host.CloseRequested is null)"
+                        @onclick="Exit">
+                    <span>Exit</span>
+                </button>
+            </div>
+        }
+    </div>
+
+    <div class="menubar-item">
+        <button type="button" class="menubar-button @(IsOpen("edit") ? "open" : "")" @onclick='() => Toggle("edit")'>
+            Edit
+        </button>
+
+        @if (IsOpen("edit"))
+        {
+            <div class="menu-popup" role="menu">
+                <button type="button" class="menu-item" role="menuitem" disabled
+                        title="Undo is owned by the ImGui editor">
+                    <span>Undo</span>
+                    <span class="menu-shortcut">Ctrl+Z</span>
+                </button>
+                <button type="button" class="menu-item" role="menuitem" disabled
+                        title="Redo is owned by the ImGui editor">
+                    <span>Redo</span>
+                    <span class="menu-shortcut">Ctrl+Y</span>
+                </button>
+            </div>
+        }
+    </div>
+
+    <div class="menubar-item">
+        <button type="button" class="menubar-button @(IsOpen("window") ? "open" : "")" @onclick='() => Toggle("window")'>
+            Window
+        </button>
+
+        @if (IsOpen("window"))
+        {
+            <div class="menu-popup" role="menu">
+                <button type="button" class="menu-item" role="menuitem" @onclick="ResetLayout">
+                    <span>Reset Layout</span>
+                </button>
+            </div>
+        }
+    </div>
+
+    <span class="menubar-spacer"></span>
+    <span class="menubar-session" title="@Host.ProjectRoot">@SessionTitle</span>
+
+    @if (_openMenu is not null)
+    {
+        <div class="menu-scrim" @onclick="CloseMenus"></div>
+    }
+</div>
+
+@code {
+    private string? _openMenu;
+
+    private string SessionTitle => Host.SessionName ?? "Cherris Editor";
+
+    private bool IsOpen(string menu) => _openMenu == menu;
+
+    private void Toggle(string menu)
+    {
+        _openMenu = IsOpen(menu) ? null : menu;
+    }
+
+    private void CloseMenus()
+    {
+        _openMenu = null;
+    }
+
+    private void OpenLauncher()
+    {
+        LeaveSession();
+        Nav.NavigateTo("/");
+    }
+
+    private void NewProject()
+    {
+        LeaveSession();
+        Nav.NavigateTo("/?tab=new");
+    }
+
+    // The launcher bounces back into the editor while a session is live, so picking a project has to end
+    // this one first. Nothing in the web editor holds unsaved edits, so there is nothing to prompt about.
+    private void LeaveSession()
+    {
+        CloseMenus();
+
+        if (Host.State is not EditorSessionState.Idle)
+        {
+            Host.CloseSession();
+        }
+    }
+
+    private async Task ResetLayout()
+    {
+        CloseMenus();
+
+        try
+        {
+            await JS.InvokeVoidAsync("cherrisDock.reset");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; there is nothing left to reset.
+        }
+    }
+
+    private void Exit()
+    {
+        CloseMenus();
+        Host.CloseRequested?.Invoke();
+    }
+}

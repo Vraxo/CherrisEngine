@@ -121,14 +121,14 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
 | `FramePipe` | shared | Single-slot frame hand-off: newest frame wins, stale frames are dropped and pooled. |
 | `SceneSnapshotBuilder` | render thread | Copies the hierarchy into an immutable `SceneSnapshot` every 15 frames. |
-| `ScenePanel` / `StatusBar` | UI thread | Poll (`250 ms` / `500 ms`) what the other threads publish; never touch engine state. |
+| `SceneStore` / `StatusBar` | UI thread | Poll (`200 ms` / `500 ms`) what the other threads publish; never touch engine state. |
 
 ```
 main thread (native loop + Blazor)        engine thread                 socket thread
 ----------------------------------        -------------                 -------------
 window / webview / components
   ViewportPanel --mount(ws)----> socket <---- PublishFrame <--- FramePipe
-  ScenePanel ----poll---------- LatestScene <-- SceneSnapshotBuilder
+  SceneStore ----poll---------- LatestScene <-- SceneSnapshotBuilder
   StatusBar -----getStats()---> JS bridge ---> send key/mouse/resize ---> HeadlessInput
 ```
 
@@ -186,10 +186,35 @@ Linux; the exact path is shown in the window and in the diagnostics block).
 
 ### Scene snapshots
 
-The render thread publishes a `SceneSnapshot` (objects, transform, component type names) every 15 frames.
-`ScenePanel` polls `EditorHostService.LatestScene` and diffs by reference, so the UI shows the hierarchy at
-4 Hz without ever locking the engine. Snapshots are immutable copies: an older one cannot change while a
-component is rendering it.
+The render thread publishes a `SceneSnapshot` (objects, transform, component type names, parent id) every
+15 frames. `SceneStore` — one singleton, not one timer per panel — polls
+`EditorHostService.LatestScene` and diffs by reference, so the UI shows the hierarchy at 5 Hz without ever
+locking the engine. Snapshots are immutable copies: an older one cannot change while a component is
+rendering it. `SceneTree` rebuilds the `Transform.Parent` hierarchy from the flat node list for the
+hierarchy panel, promoting objects with a missing parent or a parent cycle to roots so a damaged scene still
+renders.
+
+### Editor layout
+
+`Pages/Editor.razor` replicates the ImGui editor's dock layout rather than inventing its own one; the
+chrome is deliberately the same so muscle memory carries over:
+
+| ImGui (`src/CherrisEditor`) | PhotinoX editor |
+| :--- | :--- |
+| `MenuBar` — File / Edit / Window | `Components/MenuBar.razor` — File (New Project…, Open Project…, Exit), Edit, Window (Reset Layout) |
+| `ToolBar` — three centred transport buttons | `Components/ToolBar.razor` — Play / Pause / Stop, disabled: play mode is engine-side and stays in the ImGui editor |
+| Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
+| `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel` (Show Grid is a renderer setting, so it is shown disabled) |
+| `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
+| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, read-only over the open project folder |
+| Theme: `EditorTheme.ApplyUnrealEngineStyle` | `--imgui-*` tokens in `wwwroot/css/app.css`, same greys and the accent blue |
+
+Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
+which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists
+them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.
+Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hierarchy selection drives the
+inspector without either component talking to the other. Editing stays in the ImGui editor: names, values
+and the Add-component menu are drawn read-only/enabled-off rather than faked.
 
 ## Protocol
 

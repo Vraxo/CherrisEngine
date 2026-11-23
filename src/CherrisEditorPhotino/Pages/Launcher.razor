@@ -196,6 +196,10 @@
 
     private LauncherTab Tab { get; set; } = LauncherTab.Projects;
 
+    // File > New Project… in the editor links here as /?tab=new.
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? TabQuery { get; set; }
+
     private IReadOnlyList<RecentProjectEntry> _recent = [];
     private string _search = string.Empty;
     private string _openPath = string.Empty;
@@ -237,6 +241,11 @@
 
     protected override void OnInitialized()
     {
+        if (string.Equals(TabQuery, "new", StringComparison.OrdinalIgnoreCase))
+        {
+            Tab = LauncherTab.NewProject;
+        }
+
         RefreshRecent();
 
         // A session can die while the launcher is showing (for example after a driver reset), and the

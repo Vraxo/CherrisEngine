@@ -51,6 +51,28 @@ public class SceneSnapshotBuilderTests
     }
 
     [Fact]
+    public void Build_CapturesTheHierarchyParent()
+    {
+        GameObject parentObject = new("Body");
+        GameObject childObject = new("Wheel");
+        childObject.Transform.Parent = parentObject.Transform;
+
+        Scene scene = new(string.Empty, [parentObject, childObject]);
+
+        SceneSnapshot snapshot = SceneSnapshotBuilder.Build(scene, 3, DateTimeOffset.UtcNow);
+
+        snapshot.Nodes.Should().HaveCount(2);
+        snapshot.Nodes[0].ParentId.Should().BeNull();
+        snapshot.Nodes[1].ParentId.Should().Be(parentObject.Id);
+
+        IReadOnlyList<SceneTreeNode> roots = SceneTree.Build(snapshot.Nodes);
+
+        roots.Should().ContainSingle();
+        roots[0].Node.Id.Should().Be(parentObject.Id);
+        roots[0].Children.Should().ContainSingle().Which.Node.Id.Should().Be(childObject.Id);
+    }
+
+    [Fact]
     public void Build_ReflectsLaterSceneChanges_WithoutTouchingAnEarlierSnapshot()
     {
         GameObject cube = new("Cube");
