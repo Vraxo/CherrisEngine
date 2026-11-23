@@ -63,8 +63,17 @@ public abstract class Engine
     }
 
     protected Engine(string windowTitle, bool startWithMouseLocked, GraphicsAPI api)
+        : this(windowTitle, startWithMouseLocked, CreateBackend(api))
     {
-        _backend = CreateBackend(api);
+    }
+
+    /// <summary>
+    /// Initializes the engine with a caller-supplied rendering backend, for hosts that do not render
+    /// into a native window (see <c>Cherris.Rendering.Headless</c>).
+    /// </summary>
+    protected Engine(string windowTitle, bool startWithMouseLocked, IRenderingInterface backend)
+    {
+        _backend = backend;
         _backend.Initialize(windowTitle, 1920, 1080, startWithMouseLocked);
 
         _gameWindow = _backend.GameWindow;

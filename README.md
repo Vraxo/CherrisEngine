@@ -134,3 +134,4 @@ Current limitations:
 
 - [Color Consistency & Rendering Pipeline](Docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](Docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
+- [Webview Host (PhotinoX/Blazor)](Docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.

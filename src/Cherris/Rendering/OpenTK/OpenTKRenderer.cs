@@ -7,7 +7,7 @@ namespace Cherris.Rendering.OpenTK;
 
 public class OpenTKRenderer : IRenderer, IDisposable
 {
-    private readonly ImGuiController _imGuiController;
+    private readonly ImGuiController? _imGuiController;
     // Sub-renderers
     private readonly OpenGLSceneRenderer _sceneRenderer;
     private readonly OpenGLSkyboxRenderer _skyboxRenderer;
@@ -19,7 +19,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private bool _viewportConfiguredThisFrame;
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
-    public OpenTKRenderer(ImGuiController imGuiController)
+    /// <param name="imGuiController">
+    /// Controller for the in-engine ImGui UI, or null for hosts that draw their own UI and only need
+    /// the off-screen scene pass (see <c>Cherris.Rendering.Headless</c>).
+    /// </param>
+    public OpenTKRenderer(ImGuiController? imGuiController = null)
     {
         _imGuiController = imGuiController;
         _sceneRenderer = new OpenGLSceneRenderer();
@@ -113,6 +117,13 @@ public class OpenTKRenderer : IRenderer, IDisposable
     }
     private void RenderUIPass(int width, int height, bool clearScreen)
     {
+        // Hosts without an in-engine UI (headless backends) render the scene pass only; there is no
+        // window to present into and nothing to clear.
+        if (_imGuiController is null)
+        {
+            return;
+        }
+
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, width, height);
         if (clearScreen)
