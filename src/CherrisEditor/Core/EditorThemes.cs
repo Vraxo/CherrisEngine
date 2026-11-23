@@ -67,10 +67,26 @@ public static class EditorThemes
 
         if (_fonts.TryGetValue(theme.Id, out ImFontPtr font))
         {
-            ImGui.GetIO().FontDefault = font;
+            SetDefaultFont(font);
         }
 
         Changed?.Invoke(theme);
+    }
+
+    /// <summary>The atlas entry every widget draws with.</summary>
+    public static ImFontPtr? ActiveFont { get; private set; }
+
+    /// <summary>
+    /// Makes a theme's atlas entry the UI font.
+    /// </summary>
+    /// <remarks>
+    /// The ImGui binding exposes <c>io.FontDefault</c> as read-only, so the field it reads is written directly;
+    /// this is the documented way to change the default font between frames.
+    /// </remarks>
+    private static unsafe void SetDefaultFont(ImFontPtr font)
+    {
+        ImGui.GetIO().NativePtr->FontDefault = font.NativePtr;
+        ActiveFont = font;
     }
 
     /// <summary>Switches to a theme, applies it and remembers the choice.</summary>

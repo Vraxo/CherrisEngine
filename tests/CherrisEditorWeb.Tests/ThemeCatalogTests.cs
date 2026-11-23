@@ -17,7 +17,7 @@ public class ThemeCatalogTests
         foreach (EditorTheme theme in ThemeCatalog.BuiltIn)
         {
             theme.Colors.Keys.Should().BeEquivalentTo(ThemeRoles.All, $"'{theme.Id}' must theme every role");
-            theme.Colors.Values.Should().OnlyContain(color => color.Hex.Length is 7 or 9);
+            theme.Colors.Values.Should().OnlyContain(color => color.Hex.Length == 7 || color.Hex.Length == 9);
         }
     }
 
@@ -124,7 +124,7 @@ public class ThemeCatalogTests
 
         theme.Should().BeNull();
         error.Should().NotBeNull();
-        error!.Should().Contain(reason, StringComparison.OrdinalIgnoreCase);
+        error!.Should().ContainEquivalentOf(reason);
     }
 
     [Fact]
