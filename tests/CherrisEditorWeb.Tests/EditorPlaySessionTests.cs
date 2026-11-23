@@ -332,10 +332,14 @@ public class EditorPlaySessionTests
         return text.ToString();
     }
 
-    /// <summary>A script that only counts how often the engine ticks it.</summary>
+    /// <summary>
+    /// A script that only counts how often the engine ticks it. The count is a field on purpose: the snapshot
+    /// captures public properties with a setter, private ones included, so a property here would be put back to
+    /// its captured value by a stop and the test could not tell ticking from restoring.
+    /// </summary>
     private sealed class Counter : Script
     {
-        public int Ticks { get; private set; }
+        public int Ticks;
 
         public override void Update(float deltaTime) => Ticks++;
     }
