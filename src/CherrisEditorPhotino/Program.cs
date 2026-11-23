@@ -35,6 +35,9 @@ internal static class Program
 
             // One snapshot poller and one selection shared by the hierarchy, inspector and viewport, so the
             // panels agree on the frame and the selected object.
+            // Themes are data: the catalog reads the shipped Themes folder and the user's, and applying one
+            // sets CSS custom properties on the document (wwwroot/js/theme.js).
+            appBuilder.Services.AddSingleton<ThemeService>();
             appBuilder.Services.AddSingleton<SceneStore>();
             appBuilder.Services.AddSingleton<SceneSelection>();
 

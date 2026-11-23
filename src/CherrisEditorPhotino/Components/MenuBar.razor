@@ -1,8 +1,10 @@
+@using Cherris.UI
 @inject EditorHostService Host
 @inject NavigationManager Nav
+@inject ThemeService Themes
 @inject IJSRuntime JS
 
-@* ImGui's main menu bar: File / Edit / Window, drawn as flat text on the window background. *@
+@* ImGui's main menu bar: File / Edit / Window / Theme, drawn as flat text on the window background. *@
 <div class="menubar">
     <button type="button" class="menubar-brand" title="Back to the project launcher" @onclick="OpenLauncher">
         Cherris Editor
@@ -83,6 +85,45 @@
         }
     </div>
 
+    <div class="menubar-item">
+        <button type="button" class="menubar-button @(IsOpen("theme") ? "open" : "")" @onclick='() => Toggle("theme")'>
+            Theme
+        </button>
+
+        @if (IsOpen("theme"))
+        {
+            <div class="menu-popup" role="menu">
+                @foreach (EditorTheme theme in Themes.Catalog.Themes)
+                {
+                    <button type="button" class="menu-item" role="menuitemradio"
+                            aria-checked="@(theme.Id == Themes.Active.Id)"
+                            title="@theme.Provenance"
+                            @onclick="() => SelectTheme(theme.Id)">
+                        <span>@(theme.Id == Themes.Active.Id ? "\u2022 " : "")@theme.DisplayName</span>
+                        @if (theme.IsExternal)
+                        {
+                            <span class="menu-shortcut">file</span>
+                        }
+                    </button>
+                }
+
+                <div class="menu-separator"></div>
+
+                <button type="button" class="menu-item" role="menuitem" @onclick="ReloadThemes">
+                    <span>Reload Themes</span>
+                </button>
+
+                @foreach ((string path, string error) in Themes.Errors)
+                {
+                    <button type="button" class="menu-item" role="menuitem" disabled title="@error">
+                        <span>@System.IO.Path.GetFileName(path)</span>
+                        <span class="menu-shortcut">error</span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
     <span class="menubar-spacer"></span>
     <span class="menubar-session" title="@Host.ProjectRoot">@SessionTitle</span>
 
@@ -131,6 +172,38 @@
         {
             Host.CloseSession();
         }
+    }
+
+    private async Task SelectTheme(string id)
+    {
+        CloseMenus();
+
+        try
+        {
+            await Themes.SelectAsync(JS, id);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; the selection is already saved.
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ReloadThemes()
+    {
+        CloseMenus();
+
+        try
+        {
+            await Themes.ReloadAsync(JS);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; nothing to apply.
+        }
+
+        StateHasChanged();
     }
 
     private async Task ResetLayout()

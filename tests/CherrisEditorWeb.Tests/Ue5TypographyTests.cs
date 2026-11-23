@@ -43,6 +43,10 @@ public class Ue5TypographyTests
         string[] required =
         [
             Path.Combine(repositoryRoot, "src", "CherrisEditor", "EditorResources", "Fonts", "Roboto-Regular.TTF"),
+            Path.Combine(repositoryRoot, "src", "CherrisEditor", "EditorResources", "Fonts", "Inter-Regular.TTF"),
+            Path.Combine(repositoryRoot, "src", "CherrisEditorPhotino", "wwwroot", "fonts", "inter-latin-400-normal.woff2"),
+            Path.Combine(repositoryRoot, "src", "CherrisEditorPhotino", "wwwroot", "fonts", "Inter-OFL.txt"),
+            Path.Combine(repositoryRoot, "src", "CherrisEditor", "EditorResources", "Fonts", "Inter-LICENSE.txt"),
             Path.Combine(repositoryRoot, "src", "CherrisEditorPhotino", "wwwroot", "fonts", "roboto-latin-400-normal.woff2"),
             Path.Combine(repositoryRoot, "src", "CherrisEditorPhotino", "wwwroot", "fonts", "roboto-latin-700-normal.woff2"),
             Path.Combine(repositoryRoot, "src", "CherrisEditorPhotino", "wwwroot", "fonts", "roboto-mono-latin-400-normal.woff2"),
@@ -71,17 +75,18 @@ public class Ue5TypographyTests
         string stylesheet = File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), "src", "CherrisEditorPhotino", "wwwroot", "css", "app.css"));
 
-        // One @font-face per shipped file: latin, latin-ext, cyrillic and greek at 400, latin at 700, mono.
-        stylesheet.Split("@font-face").Length.Should().Be(7);
+        // One @font-face per shipped file: four Roboto subsets at 400, latin at 700, mono, and the same
+        // five for Inter, which the Unity theme asks for.
+        stylesheet.Split("@font-face").Length.Should().Be(12);
         stylesheet.Should().Contain("url(\"../fonts/roboto-latin-400-normal.woff2\")");
         stylesheet.Should().Contain("url(\"../fonts/roboto-mono-latin-400-normal.woff2\")");
+        stylesheet.Should().Contain("url(\"../fonts/inter-latin-400-normal.woff2\")");
+        stylesheet.Should().Contain("url(\"../fonts/inter-latin-600-normal.woff2\")");
 
-        // The UI font and the 10pt body size (13px, per Ue5Typography.NormalPixels).
-        stylesheet.Should().Contain($"\"{Ue5Typography.Family}\", \"Segoe UI\", system-ui, sans-serif");
-        stylesheet.Should().Contain("font-size: 13px;");
-
-        // The monospaced family carries the log and code blocks.
-        stylesheet.Should().Contain($"\"{Ue5Typography.MonospaceFamily}\", \"Cascadia Mono\", ui-monospace, monospace");
+        // The type is a theme variable, defaulting to Roboto at the engine's 10pt (13px).
+        stylesheet.Should().Contain($"--theme-font-ui: \"{Ue5Typography.Family}\", \"Segoe UI\", system-ui, sans-serif;");
+        stylesheet.Should().Contain($"--theme-font-size: {Ue5Typography.NormalPixels:0}px;");
+        stylesheet.Should().Contain($"--theme-font-mono: \"{Ue5Typography.MonospaceFamily}\", \"Cascadia Mono\", ui-monospace, monospace;");
     }
 
     private static string FindRepositoryRoot()

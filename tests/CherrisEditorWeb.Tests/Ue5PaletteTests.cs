@@ -6,9 +6,14 @@ using Xunit;
 namespace CherrisEditorWeb.Tests;
 
 /// <summary>
-/// Keeps the two front ends on the engine's palette: ImGui reads <see cref="Ue5Colors"/> directly, the
-/// Blazor UI reads <c>wwwroot/css/app.css</c>, and this test fails if those two ever disagree.
+/// Keeps the stylesheet's fallback theme in step with the C# theme it mirrors, and keeps the two front ends
+/// reading the same role names.
 /// </summary>
+/// <remarks>
+/// The stylesheet's <c>:root</c> block is the default theme's values, so the UI is styled before Blazor and
+/// without JavaScript; the editor then overrides those properties at runtime from whichever
+/// <see cref="EditorTheme"/> is selected. This test pins the fallback.
+/// </remarks>
 public class Ue5PaletteTests
 {
     [Fact]
@@ -27,7 +32,6 @@ public class Ue5PaletteTests
         Ue5Colors.DropdownOutline.Hex.Should().Be("#4c4c4c");
         Ue5Colors.Hover.Hex.Should().Be("#575757");
         Ue5Colors.Hover2.Hex.Should().Be("#808080");
-        // White25 is the engine's translucent separator/menu-heading color.
         Ue5Colors.White25.Hex.Should().Be("#ffffff40");
         Ue5Colors.Primary.Hex.Should().Be("#0070e0");
         Ue5Colors.PrimaryHover.Hex.Should().Be("#0e86ff");
@@ -44,9 +48,7 @@ public class Ue5PaletteTests
         Ue5Colors.Error.Hex.Should().Be("#ef3535");
         Ue5Colors.Success.Hex.Should().Be("#1fe44b");
         Ue5Colors.Selection.Hex.Should().Be("#18a0fb");
-        // SelectionColor_Pressed is stored linear (0.701, 0.225, 0.003); sRGB-encoded that is #DA820A.
         Ue5Colors.SelectionPressed.Hex.Should().Be("#da820a");
-        // The engine paints a hovered tab with Panel at 80% over Background: 0.8 * 0x24 + 0.2 * 0x15 = 0x21.
         Ue5Colors.TabHover.Hex.Should().Be("#212121");
     }
 
@@ -58,73 +60,33 @@ public class Ue5PaletteTests
     }
 
     [Fact]
-    public void Stylesheet_MatchesThePalette()
+    public void Stylesheet_MatchesTheDefaultTheme()
+    {
+        string stylesheet = File.ReadAllText(FindStylesheet());
+        EditorTheme theme = Ue5StarshipTheme.Create();
+        IReadOnlyDictionary<string, string> expected = theme.ToCssVariables();
+
+        Dictionary<string, string> declared = Regex
+            .Matches(stylesheet, @"(?m)^\s*(--theme-[a-z0-9-]+)\s*:\s*([^;]+);")
+            .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value.Trim());
+
+        foreach ((string token, string value) in expected)
+        {
+            declared.Should().ContainKey(token, "the stylesheet has to declare every theme variable as a fallback");
+            declared[token].Should().Be(value, $"'{token}' must be the default theme's value");
+        }
+    }
+
+    [Fact]
+    public void Stylesheet_ReadsRolesRatherThanOneEditorsNumbers()
     {
         string stylesheet = File.ReadAllText(FindStylesheet());
 
-        Dictionary<string, Ue5Color> expected = new()
-        {
-            ["--ue-black"] = Ue5Colors.Black,
-            ["--ue-title"] = Ue5Colors.Title,
-            ["--ue-background"] = Ue5Colors.Background,
-            ["--ue-window-border"] = Ue5Colors.WindowBorder,
-            ["--ue-foldout"] = Ue5Colors.Foldout,
-            ["--ue-input"] = Ue5Colors.Input,
-            ["--ue-input-outline"] = Ue5Colors.InputOutline,
-            ["--ue-recessed"] = Ue5Colors.Recessed,
-            ["--ue-panel"] = Ue5Colors.Panel,
-            ["--ue-header"] = Ue5Colors.Header,
-            ["--ue-dropdown"] = Ue5Colors.Dropdown,
-            ["--ue-dropdown-outline"] = Ue5Colors.DropdownOutline,
-            ["--ue-hover"] = Ue5Colors.Hover,
-            ["--ue-hover-2"] = Ue5Colors.Hover2,
-            ["--ue-white"] = Ue5Colors.White,
-            ["--ue-white-25"] = Ue5Colors.White25,
-            ["--ue-highlight"] = Ue5Colors.Highlight,
-            ["--ue-primary"] = Ue5Colors.Primary,
-            ["--ue-primary-hover"] = Ue5Colors.PrimaryHover,
-            ["--ue-primary-press"] = Ue5Colors.PrimaryPress,
-            ["--ue-secondary"] = Ue5Colors.Secondary,
-            ["--ue-foreground"] = Ue5Colors.Foreground,
-            ["--ue-foreground-hover"] = Ue5Colors.ForegroundHover,
-            ["--ue-foreground-inverted"] = Ue5Colors.ForegroundInverted,
-            ["--ue-foreground-header"] = Ue5Colors.ForegroundHeader,
-            ["--ue-select"] = Ue5Colors.Select,
-            ["--ue-select-inactive"] = Ue5Colors.SelectInactive,
-            ["--ue-select-parent"] = Ue5Colors.SelectParent,
-            ["--ue-select-hover"] = Ue5Colors.SelectHover,
-            ["--ue-notifications"] = Ue5Colors.Notifications,
-            ["--ue-accent-blue"] = Ue5Colors.AccentBlue,
-            ["--ue-accent-purple"] = Ue5Colors.AccentPurple,
-            ["--ue-accent-pink"] = Ue5Colors.AccentPink,
-            ["--ue-accent-red"] = Ue5Colors.AccentRed,
-            ["--ue-accent-orange"] = Ue5Colors.AccentOrange,
-            ["--ue-accent-yellow"] = Ue5Colors.AccentYellow,
-            ["--ue-accent-green"] = Ue5Colors.AccentGreen,
-            ["--ue-accent-brown"] = Ue5Colors.AccentBrown,
-            ["--ue-accent-black"] = Ue5Colors.AccentBlack,
-            ["--ue-accent-gray"] = Ue5Colors.AccentGray,
-            ["--ue-accent-white"] = Ue5Colors.AccentWhite,
-            ["--ue-accent-folder"] = Ue5Colors.AccentFolder,
-            ["--ue-warning"] = Ue5Colors.Warning,
-            ["--ue-error"] = Ue5Colors.Error,
-            ["--ue-success"] = Ue5Colors.Success,
-            ["--ue-selection"] = Ue5Colors.Selection,
-            ["--ue-selection-pressed"] = Ue5Colors.SelectionPressed,
-            ["--ue-tab-hover"] = Ue5Colors.TabHover
-        };
-
-        Dictionary<string, string> declared = Regex
-            .Matches(stylesheet, @"(?m)^\s*(--ue-[a-z0-9-]+)\s*:\s*([^;]+);")
-            .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value.Trim());
-
-        declared.Keys.Should().BeEquivalentTo(expected.Keys,
-            "every engine color the stylesheet declares must have a counterpart in Ue5Colors");
-
-        foreach ((string token, Ue5Color color) in expected)
-        {
-            declared[token].Should().Be(color.Hex, $"'{token}' must be the engine's exact value");
-        }
+        // No rule may hardcode a palette value: everything goes through a --theme-* variable, which is what
+        // lets a theme swap at runtime.
+        stylesheet.Should().NotContain("--ue-");
+        stylesheet.Should().Contain("font-family: var(--theme-font-ui)");
+        stylesheet.Should().Contain("font-size: var(--theme-font-size)");
     }
 
     private static string FindStylesheet()
@@ -144,7 +106,6 @@ public class Ue5PaletteTests
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException(
-            "wwwroot/css/app.css was not found above '" + AppContext.BaseDirectory + "'.");
+        throw new FileNotFoundException("app.css not found above '" + AppContext.BaseDirectory + "'.");
     }
 }

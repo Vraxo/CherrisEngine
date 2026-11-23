@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <base href="/" />
     <link href="css/app.css" rel="stylesheet" />
+    <script>
+        // Replay the last theme before the first paint, so a window that opens on a non-default theme does
+        // not flash the stylesheet's default for a frame. js/theme.js replaces this set when Blazor starts.
+        (function () {
+            try {
+                var tokens = JSON.parse(localStorage.getItem("cherris.theme") || "null");
+
+                if (!tokens) {
+                    return;
+                }
+
+                var root = document.documentElement;
+
+                for (var name in tokens) {
+                    if (Object.prototype.hasOwnProperty.call(tokens, name) && name.indexOf("--theme-") === 0) {
+                        root.style.setProperty(name, tokens[name]);
+                    }
+                }
+            } catch (error) {
+                // No stored theme, or storage is unavailable: the stylesheet's defaults stand.
+            }
+        })();
+    </script>
 </head>
 <body>
     <app>Loading the editor…</app>
@@ -19,6 +42,7 @@
     <script src="js/viewport.js"></script>
     <script src="js/dock.js"></script>
     <script src="js/host.js"></script>
+    <script src="js/theme.js"></script>
     <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>

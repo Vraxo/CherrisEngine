@@ -18,8 +18,16 @@ public sealed class ImGuiController : IUIController
         io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
         io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
 
+        // Themes are catalogued before the atlas is built, because each theme contributes its own font entry.
+        EditorThemes.Initialize();
+
         _fontLoader = new ImGuiFontLoader();
-        _fontLoader.Load();
+        _fontLoader.Load(EditorThemes.Catalog.Themes);
+        EditorThemes.AttachFonts(_fontLoader.Fonts);
+
+        // Apply the style and the theme's font now that the atlas exists, so the first frame is already
+        // themed whatever order the window and the app logic are constructed in.
+        EditorThemes.Reapply();
 
         _renderer = new ImGuiRenderer(width, height);
 
