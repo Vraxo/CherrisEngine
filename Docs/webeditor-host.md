@@ -40,7 +40,8 @@ folder is the same thing to both front ends:
   without it.
 - **New project** — name plus location, with a live preview of the folder that will be created. A new
   project gets `project.yaml` and an empty start scene, exactly like the ImGui editor's.
-- **Skip: demo scene** — opens the built-in scene (camera, light, floor, spinning cube) without a project.
+- **Skip: demo scene** — opens the built-in scene (camera, light, floor, cube) without a project. The cube
+  spins once you press Play; an edited scene does not run.
 
 History lives in `%APPDATA%\Cherris\recent_projects` and `last_project` (`~/.config/Cherris/` on Linux).
 The ImGui editor writes the same two files, so a project opened in one front end appears in the other's
