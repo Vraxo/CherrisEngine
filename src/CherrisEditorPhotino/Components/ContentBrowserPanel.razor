@@ -215,7 +215,7 @@
         return builder =>
         {
             builder.OpenElement(0, "svg");
-            builder.AddAttribute(1, "class", "cb-glyph");
+            builder.AddAttribute(1, "class", entry.IsDirectory ? "cb-glyph folder" : "cb-glyph");
             builder.AddAttribute(2, "viewBox", "0 0 16 16");
             builder.AddAttribute(3, "aria-hidden", "true");
 

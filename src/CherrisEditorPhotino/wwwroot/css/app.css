@@ -1,3 +1,67 @@
+/* Roboto — the Unreal Engine 5 editor font (FStarshipCoreStyle::FStyleFonts uses "Roboto" and
+   "Roboto Mono"). Bundled from @fontsource/roboto and @fontsource/roboto-mono (SIL OFL 1.1, see
+   fonts/Roboto-OFL.txt) with the unicode-ranges those packages ship, so each subset loads only when the
+   UI needs it. The regular weight is latin + latin-ext + cyrillic + greek, matching the coverage the ImGui
+   editor loads from EditorResources/Fonts/Roboto-Regular.TTF. */
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-cyrillic-400-normal.woff2") format("woff2");
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-greek-400-normal.woff2") format("woff2");
+    unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-latin-ext-400-normal.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+        U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-latin-400-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 700;
+    src: url("../fonts/roboto-latin-700-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: "Roboto Mono";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-mono-latin-400-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
     color-scheme: dark;
 
@@ -85,9 +149,20 @@ body {
     margin: 0;
     background: var(--surface);
     color: var(--text);
-    font-family: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+    /* FStyleFonts: Normal 10pt, Small 8pt, Large 14pt. 10pt is 13.33px at 96 DPI; the UI stays on 13px so
+       Roboto sits on the pixel grid. Keep in step with Cherris.UI.Ue5Typography. */
+    font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
     font-size: 13px;
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
     overflow: hidden;
+}
+
+/* Editable text selects into Highlight with ForegroundHover text, as SEditableText does. */
+::selection {
+    background: var(--ue-primary);
+    color: var(--ue-foreground-hover);
 }
 
 .app-shell {
@@ -106,7 +181,7 @@ body {
 }
 
 .app-title {
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: 0.01em;
 }
 
@@ -153,7 +228,7 @@ body {
 
 .launcher-caption {
     margin-top: 4px;
-    font-size: 10.5px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--text-muted);
@@ -190,7 +265,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    font-size: 11.5px;
+    font-size: 11px;
 }
 
 .launcher-main {
@@ -207,7 +282,7 @@ body {
 .launcher-headline {
     margin: 6px 0 4px;
     font-size: 26px;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .launcher-muted {
@@ -233,7 +308,7 @@ body {
     align-items: baseline;
     justify-content: space-between;
     margin-bottom: 10px;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -303,12 +378,12 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .launcher-row-path {
     color: var(--text-muted);
-    font-size: 11.5px;
+    font-size: 11px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -323,8 +398,8 @@ body {
 .launcher-badge {
     padding: 1px 7px;
     border-radius: 999px;
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
@@ -441,22 +516,22 @@ body {
     /* WindowMenuBar.Background is unpainted, so the window background shows through. */
     background: var(--ue-background);
     border-bottom: 1px solid var(--ue-window-border);
-    font-size: 12.5px;
+    font-size: 13px;
     user-select: none;
     z-index: 30;
 }
 
 .menubar-brand {
-    padding: 3px 8px;
+    padding: 4px 8px;
     margin-right: 6px;
     border: none;
     border-radius: 4px;
     background: transparent;
     color: var(--ue-foreground);
     font: inherit;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    cursor: pointer;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    cursor: default;
 }
 
 .menubar-brand:hover,
@@ -471,13 +546,13 @@ body {
 }
 
 .menubar-button {
-    padding: 3px 10px;
+    padding: 4px 12px;
     border: none;
     border-radius: 4px;
     background: transparent;
     color: var(--ue-foreground);
     font: inherit;
-    cursor: pointer;
+    cursor: default;
 }
 
 /* WindowMenuBar.Button.SubMenuOpen */
@@ -517,7 +592,7 @@ body {
     border: 1px solid var(--ue-dropdown-outline);
     border-radius: 0;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-    font-size: 12.5px;
+    font-size: 13px;
 }
 
 .viewport-toolbar .menu-popup {
@@ -531,13 +606,14 @@ body {
     justify-content: space-between;
     gap: 24px;
     width: 100%;
-    padding: 4px 12px;
+    padding: 3px 12px;
     border: none;
     background: transparent;
     color: var(--ue-foreground);
     font: inherit;
+    font-size: 13px;
     text-align: left;
-    cursor: pointer;
+    cursor: default;
 }
 
 .menu-item:hover:not(:disabled) {
@@ -558,7 +634,7 @@ body {
 /* Menu.Separator is White25. */
 .menu-separator {
     height: 1px;
-    margin: 6px 0;
+    margin: 6px 12px;
     background: var(--ue-white-25);
 }
 
@@ -589,32 +665,35 @@ body {
     width: 62px;
     height: 22px;
     padding: 0;
-    border: 1px solid var(--ue-input);
+    /* SimpleButton: no fill until hovered, then Dropdown, then Header while pressed. */
+    border: 1px solid transparent;
     border-radius: 4px;
-    background: var(--ue-secondary);
-    color: var(--ue-foreground-hover);
-    cursor: pointer;
-}
-
-.transport-button button:hover:not(:disabled) {
-    background: var(--ue-hover);
-}
-
-.transport-button button:active:not(:disabled) {
-    background: var(--ue-header);
-}
-
-/* FButtonStyle's disabled state: Dropdown fill, Recessed outline. */
-.transport-button button:disabled {
-    border-color: var(--ue-recessed);
-    background: var(--ue-dropdown);
+    background: transparent;
     color: var(--ue-foreground);
     cursor: default;
 }
 
+.transport-button button:hover:not(:disabled) {
+    background: var(--ue-dropdown);
+    color: var(--ue-foreground-hover);
+}
+
+.transport-button button:active:not(:disabled) {
+    background: var(--ue-header);
+    color: var(--ue-foreground-hover);
+}
+
+/* SimpleButton's disabled state is unpainted with subdued text. */
+.transport-button button:disabled {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ue-accent-gray);
+    cursor: default;
+}
+
 .transport-button svg {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     fill: currentColor;
     stroke: none;
 }
@@ -699,7 +778,7 @@ body.dock-dragging-y * {
 .panel-tabstrip {
     display: flex;
     align-items: stretch;
-    min-height: 25px;
+    min-height: 26px;
     background: var(--ue-background);
     border-bottom: 1px solid var(--ue-window-border);
     user-select: none;
@@ -707,6 +786,8 @@ body.dock-dragging-y * {
 
 .panel-tab {
     position: relative;
+    display: inline-flex;
+    align-items: center;
     padding: 3px 10px 4px;
     border: none;
     /* Docking.Tab.InactiveTabSeparator is Hover. */
@@ -715,7 +796,7 @@ body.dock-dragging-y * {
     color: var(--ue-foreground);
     font: inherit;
     font-size: 12px;
-    cursor: pointer;
+    cursor: default;
 }
 
 /* A hovered tab is Panel at 80% opacity over the well. */
@@ -821,14 +902,14 @@ span.panel-tab:hover {
 
 /* FButtonStyle: Secondary -> Hover -> Header, Input outline, ForegroundHover text. */
 .imgui-button {
-    padding: 3px 10px;
+    padding: 4px 12px;
     border: 1px solid var(--ue-input);
     border-radius: 4px;
     background: var(--ue-secondary);
     color: var(--ue-foreground-hover);
     font: inherit;
-    font-size: 12px;
-    cursor: pointer;
+    font-size: 13px;
+    cursor: default;
 }
 
 .imgui-button:hover:not(:disabled) {
@@ -887,10 +968,10 @@ span.panel-tab:hover {
     display: flex;
     align-items: center;
     gap: 3px;
-    padding: 2px 4px;
-    border-radius: 2px;
+    padding: 3px 4px;
+    border-radius: 0;
     color: var(--ue-foreground);
-    font-size: 12px;
+    font-size: 13px;
     cursor: default;
     user-select: none;
 }
@@ -909,13 +990,13 @@ span.panel-tab:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     padding: 0;
     border: none;
     background: transparent;
+    color: var(--ue-foreground);
     color: var(--ue-accent-gray);
-    font-size: 9px;
     line-height: 1;
     cursor: pointer;
 }
@@ -949,10 +1030,12 @@ span.panel-tab:hover {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 4px;
+    padding: 4px;
+    border-bottom: 1px solid var(--ue-recessed);
     background: var(--ue-header);
     color: var(--ue-foreground-header);
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 700;
     user-select: none;
 }
 
@@ -963,7 +1046,7 @@ span.panel-tab:hover {
 .inspector-muted {
     margin: 0;
     color: var(--ue-accent-gray);
-    font-size: 11.5px;
+    font-size: 12px;
 }
 
 .inspector-add {
@@ -981,7 +1064,7 @@ span.panel-tab:hover {
     width: 62px;
     flex: none;
     color: var(--ue-accent-gray);
-    font-size: 11.5px;
+    font-size: 12px;
 }
 
 .vec-fields {
@@ -995,7 +1078,7 @@ span.panel-tab:hover {
     min-width: 0;
     padding: 2px 6px;
     font-variant-numeric: tabular-nums;
-    font-size: 11.5px;
+    font-size: 12px;
 }
 
 /* ---- console ---- */
@@ -1029,9 +1112,9 @@ span.panel-tab:hover {
     background: var(--ue-recessed);
     border: 1px solid var(--ue-input-outline);
     border-radius: 4px;
-    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-    font-size: 11.5px;
-    line-height: 1.45;
+    font-family: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.4;
 }
 
 .log-line {
@@ -1115,9 +1198,9 @@ span.panel-tab:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
-    width: 78px;
-    padding: 6px 3px;
+    gap: 4px;
+    width: 84px;
+    padding: 8px 4px;
     border: 1px solid transparent;
     border-radius: 4px;
     background: transparent;
@@ -1139,18 +1222,18 @@ span.panel-tab:hover {
 }
 
 .cb-glyph {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     color: var(--ue-foreground);
     flex: none;
 }
 
 .cb-name {
-    max-width: 72px;
+    max-width: 76px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 /* ---- viewport ---- */
@@ -1204,6 +1287,77 @@ span.panel-tab:hover {
     background: rgba(0, 0, 0, 0.85);
 }
 
+
+/* ---- UE5 details: focus rectangles (FocusRectangle brush), chevrons, search field ---- */
+
+/* Slate paints a 1px Primary rectangle inside the focused widget instead of a browser ring. */
+.imgui-input:focus-visible,
+.imgui-button:focus-visible,
+.panel-tab:focus-visible,
+.menubar-button:focus-visible,
+.menu-item:focus-visible,
+.tree-row:focus-visible {
+    outline: 1px solid var(--ue-primary);
+    outline-offset: -1px;
+}
+
+.imgui-input:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* SSearchBox draws its magnifier inside the text box. */
+.search-field {
+    position: relative;
+}
+
+.search-field .imgui-input {
+    padding-left: 26px;
+}
+
+.search-icon {
+    position: absolute;
+    left: 7px;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    transform: translateY(-50%);
+    color: var(--ue-accent-gray);
+    pointer-events: none;
+}
+
+/* The tree and the details categories use a thin chevron, rotated when open, like Slate's. */
+.tree-chevron {
+    width: 10px;
+    height: 10px;
+    transition: transform 90ms ease-out;
+}
+
+.tree-chevron.expanded {
+    transform: rotate(90deg);
+}
+
+/* SimpleButton: flat until hovered. Used by toolbar-style buttons such as the viewport's Options. */
+.imgui-button.flat {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ue-foreground);
+}
+
+.imgui-button.flat:hover:not(:disabled) {
+    background: var(--ue-dropdown);
+    color: var(--ue-foreground-hover);
+}
+
+.imgui-button.flat:active:not(:disabled) {
+    background: var(--ue-header);
+    color: var(--ue-foreground-hover);
+}
+
+/* Folder icons carry the engine's AccentFolder tint. */
+.cb-glyph.folder {
+    color: var(--ue-accent-folder);
+}
+
 /* ---- status strip ---- */
 
 .statusbar {
@@ -1214,7 +1368,7 @@ span.panel-tab:hover {
     background: var(--ue-header);
     border-top: 1px solid var(--ue-window-border);
     color: var(--ue-foreground);
-    font-size: 11.5px;
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
     user-select: none;
     overflow: hidden;
@@ -1246,7 +1400,7 @@ span.panel-tab:hover {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .status-pill::before {
@@ -1305,7 +1459,7 @@ span.panel-tab:hover {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--ue-accent-gray);
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .editor-error-actions {
@@ -1329,15 +1483,15 @@ span.panel-tab:hover {
     border-radius: 4px;
     background: var(--ue-input);
     color: var(--ue-foreground);
-    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-    font-size: 11.5px;
-    line-height: 1.45;
+    font-family: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.4;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
 .editor-error code {
-    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    font-family: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
     color: var(--ue-foreground-hover);
 }
 

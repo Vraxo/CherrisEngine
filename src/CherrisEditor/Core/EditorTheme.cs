@@ -29,6 +29,11 @@ namespace CherrisEditor;
 /// </item>
 /// </list>
 /// <para>
+/// Sizes come from the engine as well — see <see cref="Ue5Typography"/> for the text styles and the metrics
+/// section of the method below for the paddings, rounding and scrollbar width. The font atlas is loaded by
+/// <c>ImGuiFontLoader</c> at <see cref="Ue5Typography.NormalPixels"/> in Roboto.
+/// </para>
+/// <para>
 /// A few ImGui roles have no single equivalent. Where a role needs transparency (docking preview, modal dim)
 /// the alpha comes from ImGui's own defaults and the RGB stays a palette color; each such case is called out
 /// at the line that sets it.
@@ -130,9 +135,11 @@ public static class EditorTheme
 
         // ---- metrics -------------------------------------------------------------------------------
         // UE5 rounds its inputs, buttons, scrollbar thumbs and tab corners by 4px; windows stay square.
+        // Frame padding follows the engine's editable-text padding (8, 3, 8, 4), which with the 13px UI font
+        // (Ue5Typography.NormalPixels, i.e. 10pt) gives the 22px rows Slate lays out.
 
         style.WindowPadding = new Vector2(8, 8);
-        style.FramePadding = new Vector2(5, 4);
+        style.FramePadding = new Vector2(8, 3);
         style.CellPadding = new Vector2(4, 2);
         style.ItemSpacing = new Vector2(8, 4);
         style.ItemInnerSpacing = new Vector2(4, 4);
