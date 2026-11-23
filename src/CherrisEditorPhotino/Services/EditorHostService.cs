@@ -81,6 +81,10 @@ public sealed class EditorHostService : IDisposable
     private volatile string? _failureDetail;
     private volatile string? _projectRoot;
 
+    // What the transport was last asked to do. The render thread applies it at the top of its next frame,
+    // which is one frame away, so the toolbar reads this rather than waiting for a snapshot to come back.
+    private volatile EditorPlayState _playState = EditorPlayState.Editing;
+
     // What the pointer is dragging: the command it feeds, and a key that stops a different field in the same
     // inspector from feeding it too.
     private string? _liveKey;
@@ -176,6 +180,24 @@ public sealed class EditorHostService : IDisposable
 
     /// <summary>Most recent scene snapshot from the render thread, or null before the first frame.</summary>
     public SceneSnapshot? LatestScene => _session?.Host.LatestScene;
+
+    /// <summary>
+    /// What the transport is doing: the last action asked for, which the render thread carries out a frame
+    /// later. Editing whenever no session is running.
+    /// </summary>
+    public EditorPlayState PlayState => _session is null ? EditorPlayState.Editing : _playState;
+
+    /// <summary>Starts the scene running, or carries on after a pause.</summary>
+    public bool Play() => RequestPlayback(PlaybackRequest.Play, EditorPlayState.Playing);
+
+    /// <summary>Freezes the scene where it is; only a running scene can be paused.</summary>
+    public bool Pause() => RequestPlayback(PlaybackRequest.Pause, EditorPlayState.Paused);
+
+    /// <summary>Puts the scene back to how it was authored and returns to editing.</summary>
+    public bool Stop() => RequestPlayback(PlaybackRequest.Stop, EditorPlayState.Editing);
+
+    /// <summary>Puts the scene back and plays it again.</summary>
+    public bool Restart() => RequestPlayback(PlaybackRequest.Restart, EditorPlayState.Playing);
 
     /// <summary>Human-readable reason the host is not usable, or null when it is fine.</summary>
     public string? FailureMessage => _failure;
@@ -578,6 +600,8 @@ public sealed class EditorHostService : IDisposable
     {
         Close();
 
+        // Every session starts in editing: play mode belongs to the scene, and this is a new one.
+        _playState = EditorPlayState.Editing;
         _state = EditorSessionState.Starting;
         _failure = null;
         _failureDetail = null;
@@ -644,6 +668,7 @@ public sealed class EditorHostService : IDisposable
         // Drop the reference first: the finishing render thread checks that it still owns the session before
         // writing state, so a late exit cannot overwrite the next session's state.
         _session = null;
+        _playState = EditorPlayState.Editing;
 
         session.Host.RequestStop();
 
@@ -687,6 +712,26 @@ public sealed class EditorHostService : IDisposable
         {
             session.Exited.Set();
         }
+    }
+
+    /// <summary>
+    /// Hands a transport action to the render thread and remembers the state it leads to. The engine applies
+    /// it on the next frame and logs what it did, so the console always tells the same story as the toolbar.
+    /// </summary>
+    private bool RequestPlayback(PlaybackRequest request, EditorPlayState stateAfter)
+    {
+        WebEditorHost? host = _session?.Host;
+
+        if (host is null || !host.RequestPlayback(request))
+        {
+            WriteLog("[play] There is no running session to play.", LogLevel.Warning);
+
+            return false;
+        }
+
+        _playState = stateAfter;
+
+        return true;
     }
 
     private void Fail(string message, string? detail)

@@ -1,29 +1,35 @@
-@* ImGui's transport toolbar: three equal-width buttons, centred, above the dockspace. *@
+@inject EditorHostService Host
+@inject SceneStore Store
+@implements IDisposable
+
+@* ImGui's transport toolbar: play/pause, stop and restart, three equal-width buttons, centred above the
+   dockspace. Play is a toggle like ImGui's: the same button shows the pause glyph while the scene runs. *@
 <div class="editor-toolbar-strip">
     <div class="transport" role="toolbar" aria-label="Play mode">
-        <span class="transport-button" title="Play — play mode is driven by the ImGui editor">
-            <button type="button" disabled aria-label="Play">
-                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.6 13 8l-8.5 5.4z" /></svg>
+        <span class="transport-button" title="@PlayTitle">
+            <button type="button" disabled="@(!CanPlay)" aria-label="@PlayLabel" @onclick="TogglePlayPause">
+                @if (IsPlaying)
+                {
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <rect x="4" y="3" width="3" height="10" />
+                        <rect x="9" y="3" width="3" height="10" />
+                    </svg>
+                }
+                else
+                {
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.6 13 8l-8.5 5.4z" /></svg>
+                }
             </button>
         </span>
 
-        <span class="transport-button" title="Pause — play mode is driven by the ImGui editor">
-            <button type="button" disabled aria-label="Pause">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="4" y="3" width="3" height="10" />
-                    <rect x="9" y="3" width="3" height="10" />
-                </svg>
-            </button>
-        </span>
-
-        <span class="transport-button" title="Stop — nothing is running to stop">
-            <button type="button" disabled aria-label="Stop">
+        <span class="transport-button" title="@StopTitle">
+            <button type="button" disabled="@(!CanStop)" aria-label="Stop" @onclick="StopPlayback">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" /></svg>
             </button>
         </span>
 
-        <span class="transport-button" title="Restart — play mode is driven by the ImGui editor">
-            <button type="button" disabled aria-label="Restart">
+        <span class="transport-button" title="@RestartTitle">
+            <button type="button" disabled="@(!CanStop)" aria-label="Restart" @onclick="RestartPlayback">
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M8 3.2a4.8 4.8 0 1 0 4.7 5.8" fill="none" stroke="currentColor" stroke-width="1.6" />
                     <path d="M12.9 2.4v3.6H9.3z" />
@@ -32,3 +38,83 @@
         </span>
     </div>
 </div>
+
+@code {
+    // A session without a published snapshot has no scene to play yet, so the transport waits for one rather
+    // than offering a button that would do nothing.
+    private bool CanPlay => Host.State == EditorSessionState.Running && Host.LatestScene is not null;
+    private bool IsPlaying => CanPlay && Host.PlayState == EditorPlayState.Playing;
+    private bool CanStop => CanPlay && Host.PlayState != EditorPlayState.Editing;
+
+    private string PlayLabel => IsPlaying ? "Pause" : "Play";
+
+    private string PlayTitle
+    {
+        get
+        {
+            if (!CanPlay)
+            {
+                return "Play — no scene is open yet.";
+            }
+
+            if (IsPlaying)
+            {
+                return "Pause — freeze the scene where it is.";
+            }
+
+            return Host.PlayState == EditorPlayState.Paused
+                ? "Resume — carry on from where you paused."
+                : "Play — run the scene: physics and scripts start ticking.";
+        }
+    }
+
+    private string StopTitle => CanStop
+        ? "Stop — put the scene back to how it was authored."
+        : "Stop — nothing is running to stop.";
+
+    private string RestartTitle => CanStop
+        ? "Restart — start again from the authored scene."
+        : "Restart — nothing is running to restart.";
+
+    protected override void OnInitialized()
+    {
+        // Play state can also change without a click, when a session starts or closes.
+        Store.Changed += OnSceneChanged;
+    }
+
+    private void OnSceneChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void TogglePlayPause()
+    {
+        if (IsPlaying)
+        {
+            Host.Pause();
+        }
+        else
+        {
+            Host.Play();
+        }
+
+        StateHasChanged();
+    }
+
+    private void StopPlayback()
+    {
+        Host.Stop();
+        StateHasChanged();
+    }
+
+    private void RestartPlayback()
+    {
+        Host.Restart();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= OnSceneChanged;
+    }
+}

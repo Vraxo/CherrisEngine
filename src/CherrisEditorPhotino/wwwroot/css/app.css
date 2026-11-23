@@ -561,7 +561,7 @@ body {
    Editor — the ImGui editor's chrome and dock layout, in the UE5 palette:
 
      menubar
-     transport toolbar (play / pause / stop / restart)
+     transport toolbar (play-pause / stop / restart)
      +----------------+-------------------------------+----------------+
      | Hierarchy (20%)| Viewport (72%)                | Inspector (24%)|
      |                +-------------------------------+                |

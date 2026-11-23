@@ -34,6 +34,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private readonly ISceneSnapshotSink? _snapshotSink;
     private readonly EditorSceneRequest _scene;
     private readonly EditorCommandDispatcher? _commands;
+    private readonly EditorPlaySession _play;
 
     private SceneFrameCapture? _capture;
     private GameObject? _spinTarget;
@@ -41,6 +42,11 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private volatile bool _stopRequested;
     private volatile string? _rendererInfo;
     private long _frameNumber;
+    private int _playRequest = NoPlayRequest;
+    private int _playState;
+
+    /// <summary>Sentinel for "no transport action is waiting"; every <see cref="PlaybackRequest"/> is zero or more.</summary>
+    private const int NoPlayRequest = -1;
 
     /// <param name="backend">Off-screen rendering backend.</param>
     /// <param name="sink">Receives captured frames and the desired viewport size.</param>
@@ -62,13 +68,66 @@ public sealed class WebEditorEngine : Engine, IDisposable
         _commands = commands;
 
         Exposure = 0.5f;
+
+        // Play mode owns the world: physics and scripts only advance while the transport says so, which is
+        // what makes pause and stop possible at all. The scene is still started when it loads, as in a game.
+        AutoUpdateScene = false;
+        _play = new EditorPlaySession(SceneManager, Logger.Info);
+
         OnDrawUI = _ =>
         {
-            // Edits land at the top of the frame: nothing else touches the scene while this thread runs, and
-            // the snapshot published below already includes them.
+            // The transport and the edits land at the top of the frame: nothing else touches the scene while
+            // this thread runs, and the snapshot published below already includes both.
+            ApplyPlaybackRequest();
             ExecuteCommands();
             CaptureAndPublish();
         };
+    }
+
+    /// <summary>
+    /// Queues a transport action. Safe to call from any thread; the render loop carries it out at the top of
+    /// its next frame, which is the only place the scene may change.
+    /// </summary>
+    /// <returns>False when the host is already shutting down and the action will be ignored.</returns>
+    public bool RequestPlayback(PlaybackRequest request)
+    {
+        if (_stopRequested)
+        {
+            return false;
+        }
+
+        Volatile.Write(ref _playRequest, (int)request);
+
+        return true;
+    }
+
+    /// <summary>What the transport is doing; written by the render thread, read by the UI.</summary>
+    public EditorPlayState PlayState => (EditorPlayState)Volatile.Read(ref _playState);
+
+    /// <summary>Carries out the transport action the UI queued, if any.</summary>
+    private void ApplyPlaybackRequest()
+    {
+        int request = Interlocked.Exchange(ref _playRequest, NoPlayRequest);
+
+        if (request == NoPlayRequest)
+        {
+            return;
+        }
+
+        PlaybackRequest action = (PlaybackRequest)request;
+
+        if (!_play.Apply(action))
+        {
+            return;
+        }
+
+        Volatile.Write(ref _playState, (int)_play.State);
+
+        // Stop and restart put the authored rotation back, so the demo's spin starts over from it too.
+        if (action is PlaybackRequest.Stop or PlaybackRequest.Restart)
+        {
+            _spinAngle = 0f;
+        }
     }
 
     /// <summary>
@@ -107,7 +166,8 @@ public sealed class WebEditorEngine : Engine, IDisposable
         Scene scene = OpenRequestedScene();
         SceneManager.OpenScene(scene);
 
-        // Only the built-in demo spins; a project's objects must sit exactly where they were authored.
+        // Only the built-in demo spins, and only while play is running; a project's objects must sit exactly
+        // where they were authored.
         _spinTarget = scene.GameObjects.FirstOrDefault(gameObject => gameObject.Name == "Cube")
             is { } cube && _scene.ProjectRoot is null ? cube : null;
     }
@@ -193,7 +253,10 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
         base.Update(deltaTime);
 
-        if (_spinTarget is null)
+        // Physics, audio and scripts advance only while play is running; a paused or edited scene stands still.
+        _play.Tick(deltaTime);
+
+        if (_spinTarget is null || !_play.IsRunning)
         {
             return;
         }

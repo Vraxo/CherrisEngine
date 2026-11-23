@@ -202,7 +202,7 @@ chrome is deliberately the same so muscle memory carries over:
 | ImGui (`src/CherrisEditor`) | PhotinoX editor |
 | :--- | :--- |
 | `MenuBar` — File / Edit / Window | `Components/MenuBar.razor` — File (New Project…, Open Project…, Exit), Edit, Window (Reset Layout) |
-| `ToolBar` — three centred transport buttons | `Components/ToolBar.razor` — Play / Pause / Stop, disabled: play mode is engine-side and stays in the ImGui editor |
+| `ToolBar` — three centred transport buttons | `Components/ToolBar.razor` — Play/Pause, Stop, Restart, live (see [Play mode](#play-mode)) |
 | Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
 | `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel` (Show Grid is a renderer setting, so it is shown disabled) |
 | `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
@@ -219,9 +219,9 @@ Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hier
 inspector without either component talking to the other.
 
 One rule keeps the panels honest about what they can do: anything the web UI *cannot* do is drawn `disabled`
-with a tooltip saying where that job lives, rather than as a button that silently does nothing — Save, Build,
-play mode and the viewport's renderer options are all in that category today. Undo and Redo are not: they are
-live, and greyed out only when their stack is empty.
+with a tooltip saying where that job lives, rather than as a button that silently does nothing — Save, Build and
+the viewport's renderer options are all in that category today. Undo, Redo and the transport are not: they are
+live, and greyed out only when there is nothing for them to do.
 
 The inspector's Transform is the ImGui one's three Vector3 rows — Position, Rotation and Scale — with each
 field labelled by its axis in the same red/green/blue (`TransformRows`, `.vec-axis`). Rotation is shown as
@@ -409,3 +409,44 @@ the menu items are the working path.
 each one stays testable off the render thread because `Execute` takes the scene as an argument.
 
 `ComponentCatalog` lives with the components in `src/Cherris`, so both front ends offer the same list.
+
+## Play mode
+
+The transport drives the scene for real. `EditorPlaySession` (`src/CherrisEditorWeb/Engine/EditorPlaySession.cs`)
+holds the same three states as the desktop editor's `PlayModeManager`, and the engine only advances the world
+while the state is `Playing`:
+
+| Button | Enabled when | What it does |
+| :--- | :--- | :--- |
+| Play / Pause — one toggle, like ImGui's | a scene is open | `Editing` or `Paused` → `Playing`; `Playing` → `Paused` |
+| Stop | playing or paused | writes the authored values back, then returns to `Editing` |
+| Restart | playing or paused | writes the authored values back, then plays again from them |
+
+`WebEditorEngine` sets `AutoUpdateScene = false` and calls `EditorPlaySession.Tick` itself, so physics, audio and
+scripts are stepped only while playing. Everything else — camera input, the viewport, the panels, editing — keeps
+running in all three states, which is what makes pause a freeze rather than a stop. The built-in demo's cube
+spins only while playing, for the same reason: an edited scene is not a running one.
+
+The snapshot is taken on the way out of editing, kept across a pause, and thrown away by Stop. It holds
+everything the inspector can change, by value: the name, the transform, parenting, which objects exist, which
+components are on them, and every editable property of those components (`ComponentProperties`, the same list the
+inspector draws). Stop writes those back in place, so ids survive and the selection, hierarchy and inspector keep
+working across play and stop. Objects play created are removed through `SceneManager` so their physics bodies go
+with them; a `RigidBody` is moved with `Teleport` and its velocity zeroed, because the body — not the transform —
+is the authority once physics has stepped, and a leftover velocity would throw it straight back out of position.
+
+What it does not do is replace the desktop editor's reload:
+
+- a script keeps its own fields, so the second play carries on from where the first left off rather than from a
+  fresh instance, because a web session has no compiler to rebuild the assembly;
+- `Scene.Start()` is not run again, because the engine already started the scene when it loaded it and a second
+  `Start()` would register a second physics body for every `RigidBody`;
+- a live edit made while playing is undone by Stop, but the undo stack is not: undoing a play-time edit afterwards
+  writes back the play-time value.
+
+Transport actions cross the thread the same way edits do, as a queued value rather than a lock: `WebEditorHost`
+writes one `PlaybackRequest` that the render loop takes at the top of the frame, before the commands and the
+snapshot. The toolbar reads `EditorHostService.PlayState` — the action last asked for, which is what the buttons
+should show while the render thread catches up — and the engine logs what it actually did (`[play] Playing.`,
+`[play] Stopped; the scene is back to how it was authored.`) to the console, so the two never disagree for longer
+than one frame.

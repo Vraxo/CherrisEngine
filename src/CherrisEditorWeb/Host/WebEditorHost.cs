@@ -100,6 +100,17 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     /// <summary>Most recent scene snapshot published by the render thread, or null before the first one.</summary>
     public SceneSnapshot? LatestScene => Volatile.Read(ref _latestScene);
 
+    /// <summary>What the transport is doing in the running session; editing when nothing is running.</summary>
+    public EditorPlayState PlayState => _engine?.PlayState ?? EditorPlayState.Editing;
+
+    /// <summary>
+    /// Queues a transport action for the render thread. Safe from any thread; the render loop carries it out
+    /// at the top of its next frame.
+    /// </summary>
+    /// <param name="request">The action.</param>
+    /// <returns>False when no engine is running to take it.</returns>
+    public bool RequestPlayback(PlaybackRequest request) => _engine?.RequestPlayback(request) ?? false;
+
     /// <summary>
     /// Queues a change for the render thread. Safe from any thread, including Blazor's dispatcher; the
     /// command runs on the next frame, before that frame is captured.
