@@ -37,7 +37,7 @@
         _ => "status-bad"
     };
 
-    private string EngineText => Host.IsRunning ? "engine running" : "engine stopped";
+    private string EngineText => Host.State == EditorSessionState.Running ? "engine running" : "engine stopped";
 
     private string RendererText => Host.RendererInfo ?? "renderer starting";
 

@@ -1,4 +1,5 @@
 using Cherris.Core.Logging;
+using Cherris.Projects;
 using Cherris.Rendering.Headless;
 using CherrisEditorWeb;
 using CherrisEditorWeb.Host;
@@ -9,24 +10,50 @@ using System.Runtime.InteropServices;
 
 namespace CherrisEditorPhotino.Services;
 
+/// <summary>Lifecycle of the editor's render session.</summary>
+public enum EditorSessionState
+{
+    /// <summary>No session: the launcher is showing.</summary>
+    Idle,
+
+    /// <summary>A session is being prepared (graphics context, listener, render thread).</summary>
+    Starting,
+
+    /// <summary>The render thread is running.</summary>
+    Running,
+
+    /// <summary>The last attempt failed; <see cref="EditorHostService.FailureMessage"/> says why.</summary>
+    Failed
+}
+
+/// <summary>One row in the launcher's recent-projects list.</summary>
+/// <param name="Path">Project folder.</param>
+/// <param name="Name">Project name from <c>project.yaml</c>, or the folder name.</param>
+/// <param name="Exists">False when the folder or its <c>project.yaml</c> has gone away.</param>
+public sealed record RecentProjectEntry(string Path, string Name, bool Exists);
+
 /// <summary>
-/// Owns the in-process editor host: the GL context, the render thread, the HTTP/WebSocket listener and the
-/// latest scene snapshot. The Blazor components read UI state from here, while pixels reach the viewport
-/// canvas over the socket that this host serves.
+/// Owns the editor's render session: the GL context, the render thread, the HTTP/WebSocket listener and the
+/// latest scene snapshot, plus the project it was opened from.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The window's main thread belongs to the native Photino message loop, so the engine runs on its own
-/// background thread. That is the opposite arrangement from the browser host, where the engine owns the
-/// main thread.
+/// The window's main thread belongs to the native Photino message loop and to Blazor's dispatcher, so each
+/// session puts the engine on its own background thread. That is the opposite arrangement from the browser
+/// host, where the engine owns the main thread.
 /// </para>
 /// <para>
 /// One step cannot live on that thread: OpenTK refuses to initialise GLFW anywhere but the process' main
 /// thread (<c>GLFWProvider.CheckForMainThread</c>), and <see cref="Cherris.Core.Engine"/>'s constructor
 /// initialises the backend. The hidden window is therefore created here, on the thread that called
-/// <see cref="Start"/>, and the render thread only makes the context current. A GL context is portable
-/// between threads; the window handle is never presented, so its creating thread does not matter
-/// afterwards.
+/// <see cref="OpenProjectAsync"/> — Blazor's dispatcher, which is the main thread — and the render thread
+/// only makes the context current. GL contexts are portable between threads and the hidden window is never
+/// presented.
+/// </para>
+/// <para>
+/// Switching projects stops the session and starts a new one: the scene, the project's asset root and the
+/// GL resources of the previous project do not have to be untangled that way, and opening a project is a
+/// user-initiated action where a second of work is invisible.
 /// </para>
 /// </remarks>
 public sealed class EditorHostService : IDisposable
@@ -34,82 +61,79 @@ public sealed class EditorHostService : IDisposable
     private const int MaximumLogLines = 400;
     private const int ContextWidth = 1920;
     private const int ContextHeight = 1080;
+    private const int StopTimeoutSeconds = 5;
+    private const int StartTimeoutSeconds = 20;
 
-    private readonly WebEditorOptions _options;
-    private readonly HeadlessBackend _graphicsBackend;
-    private readonly WebEditorHost _host;
-    private readonly Thread _thread;
-    private readonly ManualResetEventSlim _exited = new(false);
+    private readonly string _webRoot;
+    private readonly int _port;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly int _targetFrameRate;
+    private readonly Cherris.Projects.RecentProjects _recent = new();
     private readonly Queue<string> _log = new();
     private readonly object _logLock = new();
 
-    private readonly string _webRoot;
-
+    private Session? _session;
+    private volatile EditorSessionState _state = EditorSessionState.Idle;
     private volatile string? _failure;
     private volatile string? _failureDetail;
+    private volatile string? _projectRoot;
+    private string _sessionName = EditorSceneRequest.Demo.DisplayName;
     private string? _logFilePath;
     private bool _disposed;
 
-    private EditorHostService(WebEditorOptions options, string webRoot)
+    /// <param name="webRoot">Directory served over HTTP; only the frame socket matters to the UI.</param>
+    /// <param name="width">Initial render width in device pixels.</param>
+    /// <param name="height">Initial render height in device pixels.</param>
+    /// <param name="targetFrameRate">Render loop rate.</param>
+    public EditorHostService(string webRoot, int width = 1280, int height = 720, int targetFrameRate = 60)
     {
-        _options = options;
+        ArgumentException.ThrowIfNullOrWhiteSpace(webRoot);
+
         _webRoot = webRoot;
+        _width = width;
+        _height = height;
+        _targetFrameRate = targetFrameRate;
 
-        // Created here, on the caller's thread, so the hidden window and GLFW belong to the main thread.
-        _graphicsBackend = new HeadlessBackend();
-        _host = new WebEditorHost(options, webRoot, _graphicsBackend, WriteLog);
+        // One port for the whole app: the viewport's socket reconnects to the same URL when a session is
+        // swapped, so switching projects does not have to re-mount the canvas.
+        _port = FindFreePort();
 
-        _thread = new Thread(RunHost)
-        {
-            IsBackground = true,
-            Name = "Cherris Engine"
-        };
+        OpenLogFile();
+        LogEnvironment();
+        SubscribeToEngineLog();
     }
+
+    /// <summary>Project the launcher should open on its first render, from the command line. Cleared after use.</summary>
+    public string? PendingProject { get; set; }
 
     /// <summary>
-    /// Prepares the host on the calling thread and starts the render thread. The calling thread must be the
-    /// process' main thread, because that is where GLFW has to be initialised.
+    /// Native folder picker, supplied by the host once the window exists. Null when unavailable, and the
+    /// launcher then falls back to typed paths.
     /// </summary>
-    /// <param name="args">Command line, forwarded for <c>--port</c>, <c>--width</c>, <c>--height</c> and <c>--fps</c>.</param>
-    public static EditorHostService Start(string[] args)
-    {
-        ArgumentNullException.ThrowIfNull(args);
+    public Func<string, string?, Task<string[]>>? FolderPicker { get; set; }
 
-        WebEditorOptions options = BuildOptions(args);
-        string baseDirectory = AppContext.BaseDirectory;
-        string webRoot = Path.Combine(baseDirectory, "wwwroot");
+    /// <summary>Current session state.</summary>
+    public EditorSessionState State => _state;
 
-        EditorHostService service = new(options, webRoot);
+    /// <summary>Root of the open project, or null for the demo scene.</summary>
+    public string? ProjectRoot => _projectRoot;
 
-        service.OpenLogFile();
-        service.LogEnvironment(baseDirectory);
-        service.SubscribeToEngineLog();
+    /// <summary>Name shown for the open session: the project name, or the demo scene's.</summary>
+    public string SessionName => _sessionName;
 
-        if (!service.TryCreateGraphicsContext())
-        {
-            return service;
-        }
+    /// <summary>True when a project (rather than the demo scene) is open.</summary>
+    public bool HasProject => _projectRoot is not null;
 
-        service._thread.Start();
-        service._host.WaitForStart(TimeSpan.FromSeconds(20));
-
-        if (service._host.StartFailed)
-        {
-            service._failure = $"The editor host could not listen on port {service._options.Port}.";
-        }
-
-        return service;
-    }
-
-    /// <summary>URL of the in-process host, or null while it is not listening.</summary>
-    public string? Url => _host.Url;
+    /// <summary>URL of the current session's host, or null while nothing is listening.</summary>
+    public string? Url => _session?.Host.Url;
 
     /// <summary>WebSocket endpoint the viewport script connects to for frames.</summary>
     public string WebSocketUrl
     {
         get
         {
-            string? url = _host.Url;
+            string? url = _session?.Host.Url;
 
             if (url is null)
             {
@@ -129,22 +153,24 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>Most recent scene snapshot from the render thread, or null before the first frame.</summary>
-    public SceneSnapshot? LatestScene => _host.LatestScene;
-
-    /// <summary>True while the render thread is still running.</summary>
-    public bool IsRunning => !_exited.IsSet;
+    public SceneSnapshot? LatestScene => _session?.Host.LatestScene;
 
     /// <summary>Human-readable reason the host is not usable, or null when it is fine.</summary>
     public string? FailureMessage => _failure;
 
     /// <summary>The exception behind <see cref="FailureMessage"/>, verbatim, or null.</summary>
-    public string? FailureDetail => _failureDetail ?? _host.FailureDetail;
+    public string? FailureDetail => _failureDetail ?? _session?.Host.FailureDetail;
 
     /// <summary>Renderer, vendor and GL version, or null while the renderer is starting.</summary>
-    public string? RendererInfo => _host.RendererInfo;
+    public string? RendererInfo => _session?.Host.RendererInfo;
 
     /// <summary>Where the diagnostics log is written, or null when no file could be created.</summary>
     public string? LogFilePath => _logFilePath;
+
+    /// <summary>Recent projects, most recent first, with their state resolved for display.</summary>
+    public IReadOnlyList<RecentProjectEntry> RecentProjects => _recent.Get()
+        .Select(path => new RecentProjectEntry(path, ProjectWorkspace.DisplayName(path), ProjectWorkspace.Exists(path)))
+        .ToArray();
 
     /// <summary>The environment report a user can copy out of the window.</summary>
     public string Diagnostics => HostDiagnostics.Build(new HostDiagnosticsInfo(
@@ -154,10 +180,88 @@ public sealed class EditorHostService : IDisposable
         WebRoot: _webRoot,
         WebRootExists: Directory.Exists(_webRoot),
         EditorResourcesPresent: Directory.Exists(Path.Combine(AppContext.BaseDirectory, "EditorResources")),
-        HostUrl: _host.Url,
-        RendererInfo: _host.RendererInfo,
+        HostUrl: _session?.Host.Url,
+        RendererInfo: _session?.Host.RendererInfo,
         Failure: FailureDetail,
         LogFilePath: _logFilePath));
+
+    /// <summary>
+    /// Opens a project folder: validates it, remembers it in the shared history and starts a session that
+    /// renders the project's start scene. Returns false when the project could not be opened; the reason is
+    /// in <see cref="FailureMessage"/>.
+    /// </summary>
+    public async Task<bool> OpenProjectAsync(string projectRoot, bool rememberInHistory = true)
+    {
+        string root;
+        ProjectConfig project;
+
+        try
+        {
+            root = ProjectWorkspace.Validate(projectRoot);
+            project = ProjectConfig.Load(root);
+        }
+        catch (Exception exception)
+        {
+            Fail($"Could not open that project: {exception.Message}", exception.ToString());
+            return false;
+        }
+
+        if (rememberInHistory)
+        {
+            _recent.Remember(root);
+        }
+
+        WriteLog($"[editor] opening project '{project.Name}' at {root}");
+
+        return await StartSessionAsync(EditorSceneRequest.FromProject(project), root).ConfigureAwait(true);
+    }
+
+    /// <summary>Starts a session that renders the built-in demo scene.</summary>
+    public Task<bool> OpenDemoSceneAsync()
+    {
+        WriteLog("[editor] opening the built-in demo scene");
+
+        return StartSessionAsync(EditorSceneRequest.Demo, null);
+    }
+
+    /// <summary>Stops the session and drops the project reference, leaving the launcher in charge.</summary>
+    public void CloseSession()
+    {
+        Close();
+        _projectRoot = null;
+        _sessionName = EditorSceneRequest.Demo.DisplayName;
+        _failure = null;
+        _failureDetail = null;
+        _state = EditorSessionState.Idle;
+    }
+
+    /// <summary>Removes a project from the launcher's history without touching its files.</summary>
+    public void ForgetProject(string projectRoot)
+    {
+        try
+        {
+            _recent.Forget(projectRoot);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            WriteLog($"[editor] could not update the recent projects: {exception.Message}");
+        }
+    }
+
+    /// <summary>Shows the native folder picker. Returns null when it is unavailable or the user cancels.</summary>
+    public async Task<string?> PickFolderAsync(string title, string? startIn)
+    {
+        Func<string, string?, Task<string[]>>? picker = FolderPicker;
+
+        if (picker is null)
+        {
+            return null;
+        }
+
+        string[] folders = await picker(title, startIn).ConfigureAwait(true);
+
+        return folders.Length > 0 ? folders[0] : null;
+    }
 
     /// <summary>Writes a diagnostic line to the console, the in-memory log and the log file.</summary>
     public void WriteLog(string message)
@@ -206,7 +310,7 @@ public sealed class EditorHostService : IDisposable
         }
     }
 
-    /// <summary>Stops the render loop and releases the listener and the GL context.</summary>
+    /// <summary>Stops the session and releases everything it owns.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -217,53 +321,144 @@ public sealed class EditorHostService : IDisposable
         _disposed = true;
 
         Logger.OnMessageLogged -= OnEngineLog;
-
-        // Request the stop first: the engine cleans up its GL objects while the context is still current,
-        // and only then is it safe for the host to tear down the plumbing the render thread was using.
-        _host.RequestStop();
-
-        if (!_exited.Wait(TimeSpan.FromSeconds(5)))
-        {
-            WriteLog("[editor] render thread did not stop within 5 seconds");
-        }
-
-        _host.Dispose();
-        _graphicsBackend.Dispose();
-        _exited.Dispose();
-
+        Close();
         WriteLog("[editor] stopped");
         GC.SuppressFinalize(this);
     }
 
-    private bool TryCreateGraphicsContext()
+    private async Task<bool> StartSessionAsync(EditorSceneRequest scene, string? projectRoot)
     {
-        string shaders = Path.Combine(AppContext.BaseDirectory, "EditorResources", "Shaders");
+        Close();
 
-        if (!Directory.Exists(shaders))
-        {
-            WriteLog($"[editor] shaders not found at {shaders}");
-        }
+        _state = EditorSessionState.Starting;
+        _failure = null;
+        _failureDetail = null;
+        _projectRoot = projectRoot;
+        _sessionName = scene.DisplayName;
+
+        // GLFW has to be initialised on the main thread, which is where this method's synchronous part runs
+        // (Blazor's dispatcher). The render thread takes over the context below.
+        HeadlessBackend backend = new();
 
         try
         {
-            _graphicsBackend.CreateGraphicsContext("Cherris Editor", ContextWidth, ContextHeight);
+            backend.CreateGraphicsContext("Cherris Editor", ContextWidth, ContextHeight);
+            GLFWProvider.CheckForMainThread = false;
             WriteLog("[editor] hidden GL context created on the main thread");
         }
         catch (Exception exception)
         {
-            _failure = "The graphics context could not be created on this machine.";
-            _failureDetail = exception.ToString();
-            WriteLog($"[editor] could not create the graphics context: {exception}");
+            backend.Dispose();
+            Fail("The graphics context could not be created on this machine.", exception.ToString());
             return false;
         }
 
-        // The context exists now, so GLFW may legitimately be reached from the render thread: the engine's
-        // constructor makes it current there. OpenTK's guard only checks the creating thread, which is
-        // satisfied above, and would reject every later call from the render thread.
-        GLFWProvider.CheckForMainThread = false;
+        WebEditorHost host = new(CreateOptions(), _webRoot, backend, WriteLog, scene);
+        ManualResetEventSlim exited = new(false);
+
+        // The thread body needs the session, so the closure reads it after it has been assigned.
+        Session? session = null;
+        Thread worker = new(() => RunHost(session!))
+        {
+            IsBackground = true,
+            Name = "Cherris Engine"
+        };
+
+        session = new Session(host, backend, exited);
+        _session = session;
+        worker.Start();
+
+        // Waiting off the dispatcher keeps the launcher responsive; the hand-off is already done, so the
+        // continuation does not need the main thread.
+        await Task.Run(() => host.WaitForStart(TimeSpan.FromSeconds(StartTimeoutSeconds))).ConfigureAwait(true);
+
+        if (host.StartFailed)
+        {
+            Fail($"The editor host could not listen on port {_port}.", host.FailureDetail);
+            return false;
+        }
+
+        _state = EditorSessionState.Running;
+        WriteLog($"[editor] session running at {host.Url}");
 
         return true;
     }
+
+    private void Close()
+    {
+        Session? session = _session;
+
+        if (session is null)
+        {
+            return;
+        }
+
+        // Drop the reference first: the finishing render thread checks that it still owns the session before
+        // writing state, so a late exit cannot overwrite the next session's state.
+        _session = null;
+
+        session.Host.RequestStop();
+
+        if (!session.Exited.Wait(TimeSpan.FromSeconds(StopTimeoutSeconds)))
+        {
+            WriteLog("[editor] render thread did not stop within " +
+                $"{StopTimeoutSeconds} seconds; abandoning it");
+        }
+
+        session.Host.Dispose();
+        session.Backend.Dispose();
+        session.Exited.Dispose();
+
+        WriteLog("[editor] session closed");
+    }
+
+    private void RunHost(Session session)
+    {
+        try
+        {
+            int exitCode = session.Host.Run();
+
+            WriteLog($"[editor] host exited with code {exitCode}");
+
+            if (exitCode != 0 && ReferenceEquals(_session, session))
+            {
+                _failure = "The renderer stopped.";
+                _state = EditorSessionState.Failed;
+            }
+        }
+        catch (Exception exception)
+        {
+            WriteLog($"[editor] host failed: {exception}");
+
+            if (ReferenceEquals(_session, session))
+            {
+                Fail("The editor host threw an exception.", exception.ToString());
+            }
+        }
+        finally
+        {
+            session.Exited.Set();
+        }
+    }
+
+    private void Fail(string message, string? detail)
+    {
+        _state = EditorSessionState.Failed;
+        _failure = message;
+        _failureDetail = detail;
+        WriteLog($"[editor] {message}{(detail is null ? string.Empty : $" {detail}")}");
+    }
+
+    private WebEditorOptions CreateOptions() => new()
+    {
+        Port = _port,
+        Width = _width,
+        Height = _height,
+        TargetFrameRate = _targetFrameRate,
+
+        // The window is the UI; opening a browser as well would be a second, unrelated viewport.
+        OpenBrowser = false
+    };
 
     private void OpenLogFile()
     {
@@ -286,12 +481,13 @@ public sealed class EditorHostService : IDisposable
         }
     }
 
-    private void LogEnvironment(string baseDirectory)
+    private void LogEnvironment()
     {
         WriteLog($"[editor] starting, process {Environment.ProcessId}, {Environment.Version} " +
             $"on {RuntimeInformation.OSDescription} ({RuntimeInformation.ProcessArchitecture})");
-        WriteLog($"[editor] base directory: {baseDirectory}");
+        WriteLog($"[editor] base directory: {AppContext.BaseDirectory}");
         WriteLog($"[editor] web root: {_webRoot} ({(Directory.Exists(_webRoot) ? "present" : "missing")})");
+        WriteLog($"[editor] recent projects: {_recent.HistoryDirectory}");
 
         if (_logFilePath is not null)
         {
@@ -309,82 +505,6 @@ public sealed class EditorHostService : IDisposable
         WriteLog($"[{message.Level}] {message.Message}");
     }
 
-    private void RunHost()
-    {
-        try
-        {
-            int exitCode = _host.Run();
-
-            WriteLog($"[editor] host exited with code {exitCode}");
-
-            if (exitCode != 0)
-            {
-                _failure = "The renderer stopped.";
-            }
-        }
-        catch (Exception exception)
-        {
-            _failure = "The editor host threw an exception.";
-            _failureDetail = exception.ToString();
-            WriteLog($"[editor] host failed: {exception}");
-        }
-        finally
-        {
-            _exited.Set();
-        }
-    }
-
-    /// <summary>
-    /// Rebuilds the host options from command-line arguments. Only the render options are forwarded, so
-    /// flags meant for the Blazor builder (or for the framework's own configuration) are ignored, and a
-    /// free port is picked unless one was requested explicitly.
-    /// </summary>
-    private static WebEditorOptions BuildOptions(string[] args)
-    {
-        List<string> forwarded = [];
-        bool portRequested = false;
-
-        for (int index = 0; index < args.Length; index++)
-        {
-            switch (args[index])
-            {
-                case "--port" or "--width" or "--height" or "--fps":
-                    portRequested |= args[index] == "--port";
-                    forwarded.Add(args[index]);
-
-                    if (index + 1 < args.Length)
-                    {
-                        forwarded.Add(args[++index]);
-                    }
-
-                    break;
-            }
-        }
-
-        WebEditorOptions parsed;
-
-        try
-        {
-            parsed = WebEditorOptions.Parse([.. forwarded]);
-        }
-        catch (ArgumentException)
-        {
-            parsed = WebEditorOptions.Parse([]);
-            portRequested = false;
-        }
-
-        return new WebEditorOptions
-        {
-            Port = portRequested ? parsed.Port : FindFreePort(),
-            Width = parsed.Width,
-            Height = parsed.Height,
-            TargetFrameRate = parsed.TargetFrameRate,
-
-            // The window is the UI; opening a browser as well would be a second, unrelated viewport.
-            OpenBrowser = false
-        };
-    }
-
     /// <summary>Reserves a port by binding to port 0, so two editor instances never collide.</summary>
     private static int FindFreePort()
     {
@@ -399,6 +519,19 @@ public sealed class EditorHostService : IDisposable
         {
             probe.Stop();
         }
+    }
+
+    /// <summary>One render session: the host, its GL context and the signal its thread sets when it ends.</summary>
+    private sealed class Session(
+        WebEditorHost host,
+        HeadlessBackend backend,
+        ManualResetEventSlim exited)
+    {
+        public WebEditorHost Host { get; } = host;
+
+        public HeadlessBackend Backend { get; } = backend;
+
+        public ManualResetEventSlim Exited { get; } = exited;
     }
 }
 

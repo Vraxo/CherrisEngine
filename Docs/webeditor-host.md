@@ -17,17 +17,56 @@ viewport is a pixel stream and not an embedded GL surface.
 
 ```bash
 dotnet run --project src/CherrisEditorPhotino
+dotnet run --project src/CherrisEditorPhotino -- --project "D:\Games\MyGame"
 ```
 
-Opens a 1600x900 native window: WebView2 on Windows, WKWebView on macOS, WebKitGTK 4.1 on Linux. The
-Blazor UI fills the window, the game view fills the viewport panel, and the hierarchy panel shows the live
+Opens a 1600x900 native window: WebView2 on Windows, WKWebView on macOS, WebKitGTK 4.1 on Linux. It starts
+on the **project launcher**; opening a project starts a render session that shows that project's start
 scene.
 
 | Option | Meaning |
 | :--- | :--- |
-| `--port <n>` | Port for the internal frame socket. Default: a free loopback port, picked at startup. |
+| `--project <path>` | Open this project on startup instead of waiting in the launcher. A bare existing folder works too. |
 | `--width <n>` / `--height <n>` | Initial render size in device pixels (the viewport overrides it once it measures the canvas). |
 | `--fps <n>` | Render loop rate (default 60). |
+
+## Launcher and projects
+
+The launcher mirrors the ImGui editor's (`src/CherrisEditor/Projects/ProjectSelector.cs`), because a project
+folder is the same thing to both front ends:
+
+- **Projects** — recent projects with a search box, a ready/missing badge per entry, Open and Remove.
+  **Open folder…** uses the window's native folder dialog (`ShowOpenFolderAsync`); the path field works
+  without it.
+- **New project** — name plus location, with a live preview of the folder that will be created. A new
+  project gets `project.yaml` and an empty start scene, exactly like the ImGui editor's.
+- **Skip: demo scene** — opens the built-in scene (camera, light, floor, spinning cube) without a project.
+
+History lives in `%APPDATA%\Cherris\recent_projects` and `last_project` (`~/.config/Cherris/` on Linux).
+The ImGui editor writes the same two files, so a project opened in one front end appears in the other's
+launcher. The model behind it — `Cherris.Projects.ProjectConfig`, `ProjectWorkspace`, `RecentProjects` —
+lives in the engine library and is unit-tested (`tests/Cherris.Tests/Projects/`).
+
+### What opening a project does
+
+1. `ProjectWorkspace.Validate` resolves the folder and rejects anything without `project.yaml`, so a typo
+   cannot reach the renderer.
+2. The session starts (see threading below) with an `EditorSceneRequest` naming the project and its
+   `StartScenePath`.
+3. On the render thread, `WebEditorEngine.LoadContent` points `ProjectFiles` at the project root (this is
+   what makes scene-relative asset paths and a packaged `Assets.pak` resolve), loads the start scene with
+   the engine's `SceneLoader`, and opens it.
+4. A scene with no camera gets a default one — a brand-new project's start scene is empty, and the renderer
+   needs a camera to draw anything. The reason lands in the log.
+5. If the scene is missing, unreadable or empty, the demo scene is shown and the log says why, so the
+   viewport is never a blank rectangle without an explanation.
+
+### Switching projects
+
+`Projects…` in the editor toolbar stops the session and returns to the launcher; opening another project
+starts a fresh session. The engine is not re-entered: the previous project's GL resources, asset root and
+scene are dropped with the session, and the frame socket keeps the same port, so the viewport canvas
+reconnects on its own.
 
 The browser dev harness is still available when iterating on the protocol or on a machine without a webview
 runtime:
@@ -73,9 +112,10 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | Piece | Thread | Responsibility |
 | :--- | :--- | :--- |
 | `PhotinoBlazorApp` message loop | main (`[STAThread]`) | Window, webview, Blazor renderer. Owns the UI thread. |
+| `Launcher` / `Editor` pages | main | Project picker and editor shell; they only call `EditorHostService` and read what it publishes. |
 | `HeadlessBackend` hidden window | main, before the loop starts | Creates the GLFW window/context. OpenTK only allows GLFW init on the process' main thread. |
 | `WebEditorEngine` | background ("Cherris Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
-| `EditorHostService` | main, then any | Prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics and failures to the UI. |
+| `EditorHostService` | main, then any | One session at a time: validates the project, prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics, recent projects and failures. |
 | `WebEditorHost` | any | Owns the listener, the desired viewport size, the active client, and input translation into `HeadlessInput`. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
@@ -215,7 +255,11 @@ Blazor UI grows a project browser; the hierarchy panel then shows real project c
   1080p viewport is 8.3 MB per frame; the canvas is capped at 1920x1200 and scaled up by CSS.
 - **Element-level picking and gizmos are not implemented.** The hierarchy panel selects by object; there is
   no viewport picking, so `Engine.CreateRayFromMouse` has no caller yet.
-- **Demo scene only.** Project/scene/script loading, undo and asset editing are still in the ImGui editor.
+- **Scenes, not projects.** Opening a project loads its start scene and renders it; the hierarchy panel is
+  read-only, there is no scene switching inside a session, no script compilation and no undo. Those stay in
+  the ImGui editor for now.
+- **No fly camera.** The web viewport forwards input, but a project scene is shown from its own camera; the
+  ImGui editor's `EditorController` is editor-specific and is not attached here.
 - **Uncompressed frames.** RGBA8 only. A JPEG/WebCodecs path would be the next step for remote use.
 - **Platform coverage.** The build is verified by CI on Linux (`dotnet build` + tests); running the window
   needs a webview runtime and a GL 3.3 driver. WebView2 (Windows) and WebKitGTK (Linux) are the primary

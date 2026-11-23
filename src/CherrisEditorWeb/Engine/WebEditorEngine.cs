@@ -1,8 +1,11 @@
 using Cherris;
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Core.Logging;
+using Cherris.Projects;
 using Cherris.Rendering.Headless;
 using Cherris.Rendering.OpenTK;
+using Cherris.Utils;
 using CherrisEditorWeb.Host;
 using OpenTK.Graphics.OpenGL4;
 using System.Numerics;
@@ -29,6 +32,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private readonly HeadlessBackend _backend;
     private readonly IViewportSink _sink;
     private readonly ISceneSnapshotSink? _snapshotSink;
+    private readonly EditorSceneRequest _scene;
 
     private SceneFrameCapture? _capture;
     private GameObject? _spinTarget;
@@ -37,12 +41,21 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private volatile string? _rendererInfo;
     private long _frameNumber;
 
-    public WebEditorEngine(HeadlessBackend backend, IViewportSink sink, ISceneSnapshotSink? snapshotSink = null)
+    /// <param name="backend">Off-screen rendering backend.</param>
+    /// <param name="sink">Receives captured frames and the desired viewport size.</param>
+    /// <param name="snapshotSink">Optional receiver of scene snapshots for the UI.</param>
+    /// <param name="scene">Project scene to open; the demo scene when omitted.</param>
+    public WebEditorEngine(
+        HeadlessBackend backend,
+        IViewportSink sink,
+        ISceneSnapshotSink? snapshotSink = null,
+        EditorSceneRequest? scene = null)
         : base("Cherris Web Editor", false, backend)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
         _snapshotSink = snapshotSink;
+        _scene = scene ?? EditorSceneRequest.Demo;
 
         Exposure = 0.5f;
         OnDrawUI = _ => CaptureAndPublish();
@@ -70,10 +83,79 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
         ResourceManager.LoadInitialAssets();
 
-        Scene scene = DemoScene.Create(ResourceManager);
+        Scene scene = OpenRequestedScene();
         SceneManager.OpenScene(scene);
 
-        _spinTarget = scene.GameObjects.FirstOrDefault(gameObject => gameObject.Name == "Cube");
+        // Only the built-in demo spins; a project's objects must sit exactly where they were authored.
+        _spinTarget = scene.GameObjects.FirstOrDefault(gameObject => gameObject.Name == "Cube")
+            is { } cube && _scene.ProjectRoot is null ? cube : null;
+    }
+
+    /// <summary>
+    /// Loads the project's start scene, or the demo scene when no project is open. A missing, empty or
+    /// unreadable scene falls back to the demo scene instead of leaving the viewport blank: the user gets
+    /// something to look at and the reason is in the log.
+    /// </summary>
+    private Scene OpenRequestedScene()
+    {
+        if (_scene.ProjectRoot is null || string.IsNullOrEmpty(_scene.ScenePath))
+        {
+            return DemoScene.Create(ResourceManager);
+        }
+
+        try
+        {
+            // Asset paths in the scene are relative to the project, and a packaged project keeps them in
+            // Assets.pak, so both have to be pointed at the project folder before the scene is read.
+            ProjectFiles.ProjectRoot = _scene.ProjectRoot;
+            ProjectFiles.Initialize(_scene.ProjectRoot);
+
+            List<GameObject> objects = SceneLoader.LoadScene(_scene.ScenePath);
+
+            if (objects.Count == 0)
+            {
+                Logger.Warning(
+                    $"[web-editor] '{_scene.ScenePath}' is empty or could not be read; showing the demo scene.");
+
+                return DemoScene.Create(ResourceManager);
+            }
+
+            Scene scene = new(_scene.ScenePath, objects);
+
+            EnsureCamera(scene);
+
+            Logger.Info($"[web-editor] Opened '{_scene.DisplayName}' ({objects.Count} objects).");
+
+            return scene;
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(
+                $"[web-editor] Could not open '{_scene.ScenePath}': {exception.Message}; showing the demo scene.");
+
+            return DemoScene.Create(ResourceManager);
+        }
+    }
+
+    /// <summary>
+    /// Adds a camera to a scene that has none. A new project's start scene is empty, and the renderer needs
+    /// a camera to draw anything at all.
+    /// </summary>
+    private static void EnsureCamera(Scene scene)
+    {
+        if (scene.MainCamera is not null)
+        {
+            return;
+        }
+
+        GameObject cameraObject = new("Camera");
+        cameraObject.Transform.Position = new Vector3(0f, 2.2f, 6.5f);
+        cameraObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -0.2f);
+        cameraObject.AddComponent(new Camera());
+        scene.AddGameObject(cameraObject);
+        scene.FindMainComponents();
+
+        Logger.Warning("[web-editor] The scene has no camera; added one at the default view.");
     }
 
     /// <inheritdoc />

@@ -61,6 +61,338 @@ body {
     min-height: 0;
 }
 
+/* ---- launcher ---- */
+
+.launcher {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+}
+
+.launcher-nav {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 20px 16px;
+    background: var(--surface-raised);
+    border-right: 1px solid var(--border);
+}
+
+.launcher-brand {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+}
+
+.launcher-caption {
+    margin-top: 4px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+
+.launcher-nav-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.launcher-nav-item {
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.launcher-nav-item:hover {
+    background: rgba(79, 157, 255, 0.08);
+}
+
+.launcher-nav-item.active {
+    border-color: var(--border);
+    background: rgba(79, 157, 255, 0.14);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.launcher-nav-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11.5px;
+}
+
+.launcher-main {
+    min-width: 0;
+    overflow: auto;
+    padding: 32px 24px 48px;
+}
+
+.launcher-column {
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+.launcher-headline {
+    margin: 6px 0 4px;
+    font-size: 26px;
+    font-weight: 600;
+}
+
+.launcher-muted {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.launcher-path {
+    overflow-wrap: anywhere;
+}
+
+.launcher-card {
+    margin-top: 18px;
+    padding: 16px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+}
+
+.launcher-card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.launcher-label {
+    display: block;
+    margin: 12px 0 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.launcher-input {
+    width: 100%;
+    margin: 6px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #12141a;
+    color: var(--text);
+    font: inherit;
+}
+
+.launcher-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.launcher-field {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.launcher-field .launcher-input {
+    margin: 6px 0;
+}
+
+.launcher-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.launcher-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #12141a;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+}
+
+.launcher-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.launcher-row-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.launcher-row-path {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.launcher-row-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.launcher-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.launcher-badge.ready {
+    color: var(--ok);
+    background: rgba(63, 185, 80, 0.12);
+}
+
+.launcher-badge.missing {
+    color: var(--warn);
+    background: rgba(210, 153, 34, 0.14);
+}
+
+.launcher-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.launcher-error {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--bad);
+    border-radius: 8px;
+    background: rgba(248, 81, 73, 0.08);
+    color: #ffb4ae;
+}
+
+.launcher-busy {
+    margin-top: 16px;
+    color: var(--accent);
+}
+
+.launcher-link {
+    padding: 0;
+    margin-top: 10px;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.launcher-link:hover {
+    text-decoration: underline;
+}
+
+.editor-button.subtle {
+    color: var(--text-muted);
+}
+
+.editor-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.editor-button.primary {
+    border-color: var(--accent);
+    background: rgba(79, 157, 255, 0.16);
+    color: var(--text);
+}
+
+/* ---- editor window chrome ---- */
+
+.editor-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-raised);
+}
+
+.editor-toolbar-project {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+}
+
+.editor-toolbar-name {
+    font-weight: 600;
+}
+
+.editor-toolbar-path {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.editor-toolbar-state {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.editor-starting {
+    margin: 32px;
+    color: var(--text-muted);
+}
+
+.app-project {
+    padding-left: 10px;
+    margin-left: 2px;
+    border-left: 1px solid var(--border);
+    color: var(--text-muted);
+}
+
 /* ---- editor layout ---- */
 
 .editor-grid {
@@ -69,7 +401,8 @@ body {
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 12px;
     padding: 12px;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
 }
 
 .editor-viewport {
