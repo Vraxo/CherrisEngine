@@ -1,7 +1,8 @@
 # Hosting the game view in a webview (PhotinoX / Blazor)
 
 This note explains the off-screen render path in `src/Cherris/Rendering/Headless/` and the contract a
-webview-hosted editor (or a remote viewer) has to implement to show the game view. It is the "can the
+webview-hosted editor (or a remote viewer) has to implement to show the game view. A working
+implementation of the contract lives in [`src/CherrisEditorWeb`](webeditor-host.md). It is the "can the
 viewport work in a Blazor UI?" prototype: **yes, as a streamed image** — a webview cannot host a native
 OpenGL surface, so the viewport becomes a pixel stream instead of a control.
 

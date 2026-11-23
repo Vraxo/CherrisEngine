@@ -54,6 +54,12 @@ public sealed class HeadlessBackend : IRenderingInterface
     /// <remarks>Headless hosts draw their own UI, so the engine has no in-engine UI controller.</remarks>
     public IUIController? UIController => null;
 
+    /// <summary>
+    /// Frame rate the render loop is throttled to. Applied to the window stand-in when the backend is
+    /// initialized; set it before <see cref="Initialize"/>.
+    /// </summary>
+    public double TargetFrameRate { get; set; } = 60;
+
     /// <summary>The window stand-in, for resizing and frame pacing.</summary>
     public HeadlessGameWindow? HeadlessWindow => _headlessWindow;
 
@@ -82,7 +88,7 @@ public sealed class HeadlessBackend : IRenderingInterface
 
         _contextWindow?.MakeCurrent();
 
-        _headlessWindow = new HeadlessGameWindow(width, height);
+        _headlessWindow = new HeadlessGameWindow(width, height) { TargetFrameRate = TargetFrameRate };
         GameWindow = _headlessWindow;
         Renderer = new OpenTKRenderer();
         ResourceManager = new OpenTKResourceManager();

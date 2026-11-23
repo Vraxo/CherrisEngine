@@ -1,0 +1,96 @@
+:root {
+    color-scheme: dark;
+    --background: #101214;
+    --panel: #171a1d;
+    --text: #d7dbdf;
+    --muted: #8b949b;
+    --accent: #d24f6a;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    background: var(--background);
+    color: var(--text);
+    font: 13px/1.4 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    overflow: hidden;
+}
+
+#stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #000;
+}
+
+#viewport {
+    display: block;
+    width: 100%;
+    height: 100%;
+    outline: none;
+    cursor: crosshair;
+}
+
+#overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(16, 18, 20, 0.86);
+    color: var(--text);
+    text-align: center;
+    font-size: 14px;
+    white-space: pre-wrap;
+}
+
+#overlay[hidden] {
+    display: none;
+}
+
+footer {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 6px 10px;
+    border-top: 1px solid #23282c;
+    background: var(--panel);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+#status.connected {
+    color: var(--text);
+}
+
+#status.disconnected {
+    color: var(--accent);
+}
+
+.hint {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+kbd {
+    padding: 0 4px;
+    border: 1px solid #33393e;
+    border-radius: 3px;
+    background: #1d2124;
+    color: var(--text);
+    font: inherit;
+}
