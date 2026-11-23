@@ -87,9 +87,14 @@ public class OpenTKRenderer : IRenderer, IDisposable
         GL.CullFace(CullFaceMode.Back);
         GL.Disable(EnableCap.Blend);
         var view = ToOpenTKMatrix(mainCamera.GetViewMatrix());
+
+        // The camera keeps its own values inside what a perspective projection accepts — a near plane of -0.02
+        // used to throw here and take the render loop with it — and the aspect is floored, so a viewport that
+        // has not been measured yet cannot divide by zero either.
+        float aspect = (float)_viewportSize.X / MathF.Max(1f, _viewportSize.Y);
         var projection = Matrix4.CreatePerspectiveFieldOfView(
-            mainCamera.FieldOfView * (float)Math.PI / 180.0f,
-            (float)_viewportSize.X / _viewportSize.Y,
+            mainCamera.FieldOfViewRadians,
+            aspect,
             mainCamera.NearClipPlane,
             mainCamera.FarClipPlane);
         if (skybox?.CubeMapTexture is not null)

@@ -330,7 +330,9 @@ A whole drag is still **one** command and **one** undo step, which is what `Prop
 The step opens and closes on the UI side without a call per frame: the script sends one `input` event when a
 drag begins and the panel's `@oninput` closes the previous live session, while typing, `Undo`, `Redo`,
 `SetProperty` and `SetTransform` all close it too — so two drags of the same field, or a drag followed by a
-typed value, are separate steps.
+typed value, are separate steps. A drag also takes the focus while it runs and gives it up when the pointer
+comes up, which is what rebuilds the field from the snapshot: a value the engine held back cannot stay on
+screen as if it had been stored.
 
 The drag lives in `wwwroot/js/numberdrag.js`, is wired by class (`drag-number`) with a document-level listener,
 and needs no interop at all — fields Blazor renders later scrub without being registered.
@@ -361,6 +363,21 @@ button: a name has no default to go back to, only whatever the author typed.
 A reset is an ordinary edit — the same `SetPropertyCommand`/`SetTransformCommand` with
 `DefaultText`/`TransformRow.Default` as the value — so it is one undo step, one console line, and it closes any
 drag in progress before it records.
+
+### Values the engine holds back
+
+A field is never the only opinion about a value. `Camera` clamps its own three numbers as they are written —
+`FieldOfView` into 1…179°, `NearClipPlane` at or above 0.001, `FarClipPlane` at least twice the near plane, and
+a value that is not a number ignored rather than stored — because a near clip plane of -0.02 reaches
+`Matrix4.CreatePerspectiveFieldOfView`, which throws `ArgumentOutOfRangeException: depthNear cannot be negative`
+and takes the render thread with it. That crash is why the camera owns the rule instead of the inspector: the
+editor's number field, a drag, a reset, a scene file and a script all write through the same setters
+(`src/Cherris/Rendering/Camera.cs`), and `OpenTKRenderer` builds its projection from those values with the
+aspect floored, so no camera a scene can hold stops the render loop.
+
+When that happens the panel does not argue: the drag releases the focus, the field is rebuilt from the next
+snapshot and shows what was actually stored, and the console line names that value rather than the one that was
+typed.
 
 ### Undo and Redo
 
