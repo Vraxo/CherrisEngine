@@ -135,13 +135,9 @@ window.cherrisNumberDrag = (() => {
             drag.moving = true;
             drag.input.classList.add('dragging');
 
-            // A field that kept the caret from an earlier click would take the next keystroke, so it is blurred
-            // — unless it is the field being dragged, whose element must survive the drag.
-            const active = document.activeElement;
-
-            if (active && active !== drag.input && typeof active.blur === 'function') {
-                active.blur();
-            }
+            // Taking the focus moves it off whatever field held it, so the next keystroke cannot land in a field
+            // the pointer has left, and it gives the drag somewhere to blur from when it ends.
+            drag.input.focus();
 
             // Opens a new live session: the panel closes whatever the previous drag recorded before this one
             // writes its first value, so each drag is its own undo step.
@@ -216,6 +212,10 @@ window.cherrisNumberDrag = (() => {
             state.published = state.input.value;
             state.input.dispatchEvent(new Event('change', { bubbles: true }));
         }
+
+        // Letting the focus go is what tells the panel the drag is over: it rebuilds the field from the snapshot,
+        // so a value the engine held back — a camera's clip plane, say — takes the place of the one scrubbed in.
+        state.input.blur();
     }
 
     function stop() {

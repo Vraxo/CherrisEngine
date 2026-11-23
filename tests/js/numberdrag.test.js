@@ -57,8 +57,25 @@ function makeInput(data = {}) {
             add(name) { this.classes.add(name); },
             remove(name) { this.classes.delete(name); }
         },
-        focus() { this.focused = true; },
-        blur() { this.focused = false; },
+        // One element has the focus at a time, so focusing this one takes it off whoever had it, as a browser
+        // would. `document.activeElement` is what the script reads and what a test can inspect.
+        focus() {
+            const previous = document.activeElement;
+
+            this.focused = true;
+            document.activeElement = this;
+
+            if (previous && previous !== this && typeof previous.blur === 'function') {
+                previous.blur();
+            }
+        },
+        blur() {
+            this.focused = false;
+
+            if (document.activeElement === this) {
+                document.activeElement = undefined;
+            }
+        },
         setSelectionRange() {},
         dispatchEvent(event) { this.events.push(event.type); return true; }
     };
@@ -148,29 +165,21 @@ check('a second drag of the same field opens a step of its own', () => {
     assert.deepStrictEqual(input.events, ['input', 'change', 'input', 'change']);
 });
 
-check('a drag lets go of the caret a field kept, except on the field it is dragging', () => {
-    const focused = makeInput();
+check('a drag holds the focus while it runs, and lets go when it ends', () => {
+    const left = makeInput();
     const dragged = makeInput();
 
-    focused.focus();
-    document.activeElement = focused;
+    left.focus();
     press(dragged, 17, 0);
     move(17, 40);
 
-    assert.strictEqual(focused.focused, false, 'the field that kept the caret would take the next keystroke');
+    assert.strictEqual(dragged.focused, true, "the dragged field takes the caret, so the next keystroke lands in it");
+    assert.strictEqual(left.focused, false, 'the field the drag moved away from gives the caret up');
+    assert.strictEqual(dragged.value, '5');
+
     release(17);
 
-    // The dragged field keeps its own element: blurring it would rebuild it and cut the drag short.
-    const itself = makeInput();
-
-    itself.focus();
-    document.activeElement = itself;
-    press(itself, 18, 0);
-    move(18, 40);
-
-    assert.strictEqual(itself.focused, true);
-    assert.strictEqual(itself.value, '5');
-    release(18);
+    assert.strictEqual(dragged.focused, false, 'and the end of the drag is what the panel rebuilds the field on');
 
     delete document.activeElement;
 });
