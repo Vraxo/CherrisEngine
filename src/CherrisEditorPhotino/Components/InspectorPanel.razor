@@ -1,10 +1,13 @@
 @using Cherris.Components
+@using CherrisEditorWeb
+@using CherrisEditorWeb.Host
 @inject SceneStore Store
 @inject SceneSelection Selection
 @inject EditorHostService Host
 @implements IDisposable
 
-@* ImGui's Inspector: object name, Transform, then one collapsible section per component. *@
+@* ImGui's Inspector: object name, Transform, then one collapsible section per component. Fields are live:
+   an edit is queued for the render thread, and the next snapshot shows the result. *@
 <section class="panel">
     <header class="panel-tabstrip">
         <span class="panel-tab active">Inspector</span>
@@ -17,8 +20,11 @@
         }
         else
         {
-            <input type="text" class="imgui-input" value="@node.Name" readonly
-                   aria-label="Object name" title="Renaming is driven by the ImGui editor" />
+            string nameKey = node.Id.ToString() + ":name";
+
+            <input type="text" class="imgui-input" value="@node.Name" disabled="@(!CanEdit)"
+                   @key="KeyFor(nameKey)" aria-label="Object name" title="Rename this object"
+                   @onchange="e => Rename(node, e.Value?.ToString())" />
 
             <div class="imgui-separator"></div>
 
@@ -49,13 +55,16 @@
                                 {
                                     string letter = TransformRow.Axes[axis];
                                     string axisClass = "vec-axis axis-" + letter.ToLowerInvariant();
-                                    string text = row.Components[axis].ToString("0.###", CultureInfo.InvariantCulture);
+                                    string text = Format(row.Components[axis]);
                                     string fieldName = row.Label + " " + letter;
+                                    string fieldKey = node.Id.ToString() + ":transform." + row.Field + "." + letter;
+                                    int axisIndex = axis;
 
                                     <span class="vec-cell">
                                         <span class="@axisClass">@letter</span>
                                         <input type="text" class="imgui-input vec-field" value="@text"
-                                               readonly tabindex="-1" aria-label="@fieldName" />
+                                               @key="KeyFor(fieldKey)" disabled="@(!CanEdit)" aria-label="@fieldName"
+                                               @onchange="e => OnTransformChanged(node, row, axisIndex, e.Value?.ToString())" />
                                     </span>
                                 }
                             </div>
@@ -64,7 +73,7 @@
                 </div>
             </div>
 
-            @foreach (string component in node.Components)
+            @foreach (ComponentSnapshot component in node.Components)
             {
                 <div class="inspector-section">
                     <div class="inspector-section-header">
@@ -74,11 +83,101 @@
                                       stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
                             </svg>
                         </span>
-                        <span>@component</span>
+                        <span>@component.TypeName</span>
                     </div>
 
                     <div class="inspector-section-body">
-                        <p class="inspector-muted">Fields are edited in the ImGui editor.</p>
+                        @if (component.Properties.Count == 0)
+                        {
+                            <p class="inspector-muted">Nothing on this component is editable yet.</p>
+                        }
+                        else
+                        {
+                            @foreach (PropertySnapshot property in component.Properties)
+                            {
+                                string propertyKey = PropertyKey(node, component, property);
+
+                                <div class="prop-row">
+                                    <span class="prop-label" title="@property.Name">@property.Name</span>
+
+                                    <div class="prop-value">
+                                        @switch (property.Kind)
+                                        {
+                                            case PropertyKind.Boolean:
+                                                <input type="checkbox" class="imgui-check" checked="@property.IsOn"
+                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                break;
+
+                                            case PropertyKind.Choice:
+                                                <select class="imgui-input imgui-select" disabled="@(!CanEdit)"
+                                                        aria-label="@property.Name"
+                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())">
+                                                    @foreach (string choice in property.Choices)
+                                                    {
+                                                        <option value="@choice" selected="@(choice == property.Text)">@choice</option>
+                                                    }
+                                                </select>
+                                                break;
+
+                                            case PropertyKind.Number:
+                                                @if (property.HasBoundedRange && property.Minimum is float minimum
+                                                     && property.Maximum is float maximum)
+                                                {
+                                                    <input type="range" class="imgui-slider" disabled="@(!CanEdit)"
+                                                           aria-label="@property.Name"
+                                                           min="@Format(minimum)" max="@Format(maximum)" step="any"
+                                                           value="@Format(property.Components[0])"
+                                                           @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                }
+                                                <input type="text" class="imgui-input" value="@property.Text"
+                                                       @key="KeyFor(propertyKey)"
+                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                break;
+
+                                            case PropertyKind.Integer:
+                                            case PropertyKind.Text:
+                                                <input type="text" class="imgui-input" value="@property.Text"
+                                                       @key="KeyFor(propertyKey)"
+                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                break;
+
+                                            case PropertyKind.Vector2:
+                                            case PropertyKind.Vector3:
+                                                @if (property.IsColor)
+                                                {
+                                                    <input type="color" class="colour-swatch" disabled="@(!CanEdit)"
+                                                           aria-label="@property.Name"
+                                                           value="@Hex(property.Components)"
+                                                           @onchange="e => OnColourChanged(node, component, property, e.Value?.ToString())" />
+                                                }
+                                                <span class="prop-vec">
+                                                    @for (int axis = 0; axis < property.Components.Count; axis++)
+                                                    {
+                                                        string letter = TransformRow.Axes[axis];
+                                                        string axisClass = "vec-axis axis-" + letter.ToLowerInvariant();
+                                                        string fieldName = property.Name + " " + letter;
+                                                        string fieldKey = propertyKey + "." + letter;
+                                                        int axisIndex = axis;
+
+                                                        <span class="vec-cell">
+                                                            <span class="@axisClass">@letter</span>
+                                                            <input type="text" class="imgui-input vec-field"
+                                                                   value="@Format(property.Components[axis])"
+                                                                   @key="KeyFor(fieldKey)" disabled="@(!CanEdit)"
+                                                                   aria-label="@fieldName"
+                                                                   @onchange="e => OnVectorChanged(node, component, property, axisIndex, e.Value?.ToString())" />
+                                                        </span>
+                                                    }
+                                                </span>
+                                                break;
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
                     </div>
                 </div>
             }
@@ -134,6 +233,28 @@
     /// <summary>True while a session is running to apply an edit to.</summary>
     private bool CanEdit => Host.State == EditorSessionState.Running;
 
+    private string? _editedField;
+    private int _editRevision;
+
+    /// <summary>
+    /// The key of a field: the field's own id, except for the one an edit came from, which changes so Blazor
+    /// rebuilds it when the next snapshot arrives. That is how a refused value goes back to what the engine
+    /// actually holds — an input's <c>value</c> attribute alone cannot, because the value it would be set back
+    /// to is the one already in the render tree. Only the edited field is rebuilt, so nothing else loses focus.
+    /// </summary>
+    private string KeyFor(string field) => String.Equals(field, _editedField, StringComparison.Ordinal)
+        ? field + "#" + _editRevision.ToString(CultureInfo.InvariantCulture)
+        : field;
+
+    private void Touched(string field)
+    {
+        _editedField = field;
+        _editRevision++;
+    }
+
+    private static string PropertyKey(SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property) =>
+        node.Id.ToString() + ":" + component.TypeName + "." + property.Name;
+
     private string AddTitle => CanEdit
         ? "Add a component to this object"
         : "No render session is running";
@@ -145,7 +266,8 @@
     /// <summary>The catalog entries this object does not have yet: an object holds one of each type.</summary>
     private static IReadOnlyList<ComponentCatalog.Entry> AddableTypes(SceneNodeSnapshot node) =>
         ComponentCatalog.BuiltIn
-            .Where(entry => !node.Components.Contains(entry.ComponentType.Name, StringComparer.Ordinal))
+            .Where(entry => !node.Components.Any(component =>
+                String.Equals(component.TypeName, entry.ComponentType.Name, StringComparison.Ordinal)))
             .ToArray();
 
     private void AddComponent(SceneNodeSnapshot node, ComponentCatalog.Entry entry)
@@ -153,6 +275,91 @@
         _addMenuFor = null;
         Host.AddComponent(node.Id, entry.DisplayName);
     }
+
+    private void Rename(SceneNodeSnapshot node, string? name)
+    {
+        if (name is null || String.Equals(name, node.Name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Host.RenameObject(node.Id, name);
+        Touched(node.Id.ToString() + ":name");
+    }
+
+    private void OnTransformChanged(SceneNodeSnapshot node, TransformRow row, int axis, string? text)
+    {
+        if (!TryParse(text, out float value))
+        {
+            return;
+        }
+
+        Vector3 updated = row.Value;
+        updated = axis switch
+        {
+            0 => new Vector3(value, updated.Y, updated.Z),
+            1 => new Vector3(updated.X, value, updated.Z),
+            _ => new Vector3(updated.X, updated.Y, value)
+        };
+
+        Host.SetTransform(node.Id, row.Field, updated.X, updated.Y, updated.Z);
+        Touched(node.Id.ToString() + ":transform." + row.Field + "." + TransformRow.Axes[axis]);
+    }
+
+    private void OnPropertyChanged(
+        SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, string? text)
+    {
+        Host.SetProperty(node.Id, component.TypeName, property.Name, text ?? string.Empty);
+        Touched(PropertyKey(node, component, property));
+    }
+
+    /// <summary>One axis of a vector: the other components come from the snapshot, so the row stays whole.</summary>
+    private void OnVectorChanged(
+        SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, int axis, string? text)
+    {
+        if (!TryParse(text, out float value))
+        {
+            return;
+        }
+
+        string[] parts = property.Components.Select(Format).ToArray();
+        parts[axis] = Format(value);
+
+        Host.SetProperty(node.Id, component.TypeName, property.Name, String.Join(", ", parts));
+        Touched(PropertyKey(node, component, property) + "." + TransformRow.Axes[axis]);
+    }
+
+    /// <summary>A colour picker hands back #rrggbb; the property holds normalized components.</summary>
+    private void OnColourChanged(
+        SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, string? hex)
+    {
+        if (hex is null || hex.Length != 7 || hex[0] != '#')
+        {
+            return;
+        }
+
+        string text = String.Join(", ", new[]
+        {
+            Format(Convert.ToInt32(hex.Substring(1, 2), 16) / 255f),
+            Format(Convert.ToInt32(hex.Substring(3, 2), 16) / 255f),
+            Format(Convert.ToInt32(hex.Substring(5, 2), 16) / 255f)
+        });
+
+        Host.SetProperty(node.Id, component.TypeName, property.Name, text);
+    }
+
+    private static string Hex(IReadOnlyList<float> components)
+    {
+        static int Channel(float value) => (int)Math.Clamp(MathF.Round(value * 255f), 0f, 255f);
+
+        return String.Format(
+            CultureInfo.InvariantCulture, "#{0:x2}{1:x2}{2:x2}", Channel(components[0]), Channel(components[1]), Channel(components[2]));
+    }
+
+    private static string Format(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static bool TryParse(string? text, out float value) =>
+        Single.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 
     protected override void OnInitialized()
     {

@@ -56,13 +56,13 @@
         @if (IsOpen("edit"))
         {
             <div class="menu-popup" role="menu">
-                <button type="button" class="menu-item" role="menuitem" disabled
-                        title="Undo is owned by the ImGui editor">
+                <button type="button" class="menu-item" role="menuitem" disabled="@(!Host.CanUndo)"
+                        title="@UndoTitle" @onclick="Undo">
                     <span>Undo</span>
                     <span class="menu-shortcut">Ctrl+Z</span>
                 </button>
-                <button type="button" class="menu-item" role="menuitem" disabled
-                        title="Redo is owned by the ImGui editor">
+                <button type="button" class="menu-item" role="menuitem" disabled="@(!Host.CanRedo)"
+                        title="@RedoTitle" @onclick="Redo">
                     <span>Redo</span>
                     <span class="menu-shortcut">Ctrl+Y</span>
                 </button>
@@ -172,6 +172,22 @@
         {
             Host.CloseSession();
         }
+    }
+
+    private string UndoTitle => Host.UndoLabel is { } label ? "Undo " + label : "Nothing to undo";
+
+    private string RedoTitle => Host.RedoLabel is { } label ? "Redo " + label : "Nothing to redo";
+
+    private void Undo()
+    {
+        CloseMenus();
+        Host.Undo();
+    }
+
+    private void Redo()
+    {
+        CloseMenus();
+        Host.Redo();
     }
 
     private async Task SelectTheme(string id)

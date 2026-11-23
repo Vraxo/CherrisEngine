@@ -218,10 +218,10 @@ them in `localStorage` the way ImGui persists its ini layout, and is reset by **
 Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hierarchy selection drives the
 inspector without either component talking to the other.
 
-Two rules keep the panels honest about what they can do. Values are read-only, because editing a component's
-fields is still the ImGui editor's job. Anything the web UI *cannot* do is drawn `disabled` with a tooltip
-saying where that job lives, rather than as a button that silently does nothing — Save, Build, Undo/Redo,
-play mode and the viewport's renderer options are all in that category today.
+One rule keeps the panels honest about what they can do: anything the web UI *cannot* do is drawn `disabled`
+with a tooltip saying where that job lives, rather than as a button that silently does nothing — Save, Build,
+play mode and the viewport's renderer options are all in that category today. Undo and Redo are not: they are
+live, and greyed out only when their stack is empty.
 
 The inspector's Transform is the ImGui one's three Vector3 rows — Position, Rotation and Scale — with each
 field labelled by its axis in the same red/green/blue (`TransformRows`, `.vec-axis`). Rotation is shown as
@@ -230,95 +230,61 @@ Euler degrees rather than as a quaternion, which is what the ImGui inspector edi
 
 ## Editing from the web UI
 
-Add Component is real: the inspector offers **Add ▾**, and choosing an entry edits the live scene. The path is
-a queue rather than a lock, because the scene belongs to the render thread while the panels render from
-published snapshots:
+Everything the inspector shows is editable, and every edit is a command: **Add ▾**, the object's name, the
+transform rows, and each component property. The path is a queue rather than a lock, because the scene belongs
+to the render thread while the panels render from published snapshots:
 
 | Step | Where |
 | :--- | :--- |
-| The panel queues an `AddComponentCommand`, naming the object id and a `ComponentCatalog` entry | `InspectorPanel.razor` → `EditorHostService.AddComponent` → `WebEditorHost.Enqueue` |
-| The render thread drains the queue at the top of the frame, before it captures the frame | `WebEditorEngine.ExecuteCommands` → `EditorCommandQueue.Drain` |
-| The command adds the component, marks the scene dirty and returns the line to log | `AddComponentCommand` |
-| The console shows the result; the next snapshot carries the new section | `Logger` → `EditorHostService` log → `ConsolePanel` |
+| The panel queues a command — `AddComponentCommand`, `SetPropertyCommand`, `SetTransformCommand`, `RenameObjectCommand`, `UndoCommand`, `RedoCommand` | `InspectorPanel.razor` / `MenuBar.razor` → `EditorHostService` → `WebEditorHost.Enqueue` |
+| The render thread drains the queue at the top of the frame, before it captures the frame | `WebEditorEngine.ExecuteCommands` → `EditorCommandDispatcher.Drain` |
+| The command edits the live scene, marks it dirty and records itself on the history | `IEditorCommand.Execute(EditorCommandContext)` |
+| The console shows the result; the next snapshot carries the new values | `Logger` → `EditorHostService` log → `ConsolePanel` |
 
 The same rule the ImGui inspector applies holds here: an object holds at most one of each type, so the menu
-hides what is already there and the command refuses a duplicate if a stale menu asks anyway. `IEditorCommand`
-is the extension point — property edits, play mode and save can become commands without changing this path,
-and each new one stays testable off the render thread because `Execute` takes the scene as an argument.
+hides what is already there and the command refuses a duplicate if a stale menu asks anyway.
+
+### Which properties, and how they are drawn
+
+`ComponentProperties` is the bridge, and it follows `DefaultInspector`'s filter: public instance properties
+that are readable *and* writable and not `[HideInInspector]`, in declaration order, limited to the types the
+ImGui drawer handles (string, bool, int, float, enum, Vector2, Vector3). Each one becomes a `PropertySnapshot`
+with a `Kind`, which picks the control:
+
+| Attribute / type | `PropertyKind` | Control |
+| :--- | :--- | :--- |
+| `bool` | `Boolean` | checkbox |
+| `enum` | `Choice` | select |
+| `float` with a usable `[Range]` | `Number` | slider plus a number field |
+| `float` with an open-ended `[Range]` (`0 … float.MaxValue`) | `Number` | number field only — a slider cannot show it |
+| `int`, `string` | `Integer`, `Text` | text field |
+| `Vector2`, `Vector3` | `Vector2`, `Vector3` | one field per axis |
+| `Vector3` with `[ColorUsage]` | `Vector3`, `IsColor` | colour well plus the axes |
+
+Text is the wire format in both directions — the panel sends what the user typed, and `TryApply` parses it once,
+on the render thread. `[Range]` clamps the written value, exactly as the ImGui slider does. A value that will
+not parse is logged as one `[editor]` line and changes nothing, so a typo can never half-apply an edit or
+throw on the render thread.
+
+### Undo and Redo
+
+`EditorHistory` holds two stacks capped at 200; recording a change clears the redo branch. Only commands that
+really changed something record themselves, and the commands that record capture the value they replaced, so
+undo restores it exactly:
+
+| Command | What undo restores |
+| :--- | :--- |
+| `AddComponentCommand` | removes the component again |
+| `SetPropertyCommand` | the previous text of that property, re-applied through the same parser |
+| `SetTransformCommand` | the whole position/rotation/scale triple |
+| `RenameObjectCommand` | the previous name; an empty name is refused |
+
+The stacks live on the dispatcher, so they belong to the render thread; `CanUndo`, `CanRedo`, `UndoLabel` and
+`RedoLabel` are lock-guarded so the Edit menu can read them while it draws. The menu shows what it would take
+back ("Undo add Light") and is disabled only when there is nothing there. Ctrl+Z and Ctrl+Y are not bound yet —
+the menu items are the working path.
+
+`IEditorCommand` is the extension point: play mode and save can become commands without changing this path, and
+each one stays testable off the render thread because `Execute` takes the scene as an argument.
 
 `ComponentCatalog` lives with the components in `src/Cherris`, so both front ends offer the same list.
-
-## Protocol
-
-`ViewportProtocol` (C#) and `js/viewport.js` (JS) are the two halves of this contract; they are versioned
-together and the client refuses a mismatched `protocol`.
-
-Server to client, text, once on connect:
-
-```json
-{"type":"hello","protocol":1,"width":1280,"height":720,"fps":60}
-```
-
-Server to client, binary, per frame (13-byte header + pixels):
-
-| Offset | Size | Meaning |
-| :--- | :--- | :--- |
-| 0 | 1 | format, `1` = RGBA8 |
-| 1 | 4 | width, int32 little-endian |
-| 5 | 4 | height, int32 little-endian |
-| 9 | 4 | sequence, int32 little-endian (monotonic; lets the client ignore stale frames) |
-| 13 | w*h*4 | pixels, RGBA8, **row 0 is the top of the image** |
-
-Client to server, text, one command per message:
-
-| Message | Effect |
-| :--- | :--- |
-| `{"type":"resize","width":w,"height":h}` | Render at this size (device pixels) |
-| `{"type":"key","code":"KeyW","down":true}` | `KeyboardEvent.code` → `BrowserKeyMap` → `Input` |
-| `{"type":"mouseButton","button":2,"down":true}` | `MouseEvent.button` → `MouseButton` |
-| `{"type":"mouseMove","dx":4,"dy":-2}` | Pointer-locked relative movement |
-| `{"type":"mouse","x":10,"y":200}` | Absolute position, viewport device pixels |
-| `{"type":"wheel","x":0,"y":-1}` | Wheel notches |
-| `{"type":"lock","locked":true}` | Pointer lock acquired/released |
-| `{"type":"blur"}` | Page hidden or unfocused: clears held keys |
-
-Frame timing: `HeadlessGameWindow.SwapBuffers` paces the loop to `--fps`; the transport never blocks the
-render thread, so a slow client lowers the visible frame rate instead of adding latency.
-
-## Demo scene
-
-The viewport shows a built-in scene (floor, spinning cube, directional light) because project loading still
-lives in the ImGui editor. Replace `WebEditorEngine.LoadContent` with `SceneLoader.LoadScene(...)` when the
-Blazor UI grows a project browser; the hierarchy panel then shows real project content without changes.
-
-## Troubleshooting
-
-| Symptom | Cause |
-| :--- | :--- |
-| Panel says the graphics context could not be created; detail mentions `GLFW`, `WGL`, `GLX` or `EGL` | No OpenGL 3.3 driver, a remote session without GPU acceleration, or no X/Wayland display on Linux. |
-| Detail mentions `GLFW can only be called from the main thread` | The hidden window was created off the main thread — see the threading section; `EditorHostService.Start` must run on the thread that called `Main`. |
-| Detail mentions `WGL: Failed to make context current: The requested resource is in use` | The context is still current on the thread that created it. `HeadlessBackend.CreateGraphicsContext` releases it; a host that creates its own context must do the same before handing it to another thread. |
-| Window stays blank, no failure panel, log says the host is listening | The frame socket never connected: check `_framework/blazor.webview.js` and `js/viewport.js` loaded (the log records the WebSocket URL), and that the webview supports WebGL2. |
-| No window at all | Missing WebView2 runtime (Windows) or WebKitGTK 4.1 (Linux). |
-| `EditorResources MISSING` in diagnostics | The build did not copy `EditorResources/`; build from the repository root so the `Content Include` in `CherrisEditorPhotino.csproj` runs. |
-
-## Limitations
-
-- **One editor window at a time.** A new connection replaces the previous one; the render loop keeps
-  running with no client attached (frames are simply not published).
-- **Local only.** The frame socket is loopback-only, unauthenticated and unencrypted. It is an
-  implementation detail of one process, not a remote protocol.
-- **Viewport cost.** One frame of readback latency, plus a GPU readback and a texture upload per frame. A
-  1080p viewport is 8.3 MB per frame; the canvas is capped at 1920x1200 and scaled up by CSS.
-- **Element-level picking and gizmos are not implemented.** The hierarchy panel selects by object; there is
-  no viewport picking, so `Engine.CreateRayFromMouse` has no caller yet.
-- **Scenes, not projects.** Opening a project loads its start scene and renders it; the hierarchy panel is
-  read-only, there is no scene switching inside a session, no script compilation and no undo. Those stay in
-  the ImGui editor for now.
-- **No fly camera.** The web viewport forwards input, but a project scene is shown from its own camera; the
-  ImGui editor's `EditorController` is editor-specific and is not attached here.
-- **Uncompressed frames.** RGBA8 only. A JPEG/WebCodecs path would be the next step for remote use.
-- **Platform coverage.** The build is verified by CI on Linux (`dotnet build` + tests); running the window
-  needs a webview runtime and a GL 3.3 driver. WebView2 (Windows) and WebKitGTK (Linux) are the primary
-  targets; WKWebView on macOS is untested, including whether GLFW wants the main thread there.
-- **Linux audio.** `SceneManager` initializes OpenAL; on machines without it the engine logs and continues.

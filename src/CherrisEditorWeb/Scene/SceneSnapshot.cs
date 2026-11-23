@@ -5,13 +5,20 @@ using System.Numerics;
 
 namespace CherrisEditorWeb;
 
+/// <summary>
+/// One component on an object, as the inspector shows it: its type name and its editable properties.
+/// </summary>
+/// <param name="TypeName">The component's type name, which an edit names to find it again.</param>
+/// <param name="Properties">The properties the inspector draws, in declaration order.</param>
+public sealed record ComponentSnapshot(string TypeName, IReadOnlyList<PropertySnapshot> Properties);
+
 /// <summary>One object in a <see cref="SceneSnapshot"/>.</summary>
 /// <param name="Id">Stable object identity, for selection and diffing.</param>
 /// <param name="Name">Object name as shown in the hierarchy.</param>
 /// <param name="Position">World position.</param>
 /// <param name="Rotation">World rotation.</param>
 /// <param name="Scale">Local scale.</param>
-/// <param name="Components">Component type names attached to the object.</param>
+/// <param name="Components">The components attached to the object, with their editable properties.</param>
 /// <param name="ParentId">Parent object, or null for a root; used to rebuild the hierarchy tree.</param>
 public sealed record SceneNodeSnapshot(
     Guid Id,
@@ -19,7 +26,7 @@ public sealed record SceneNodeSnapshot(
     Vector3 Position,
     Quaternion Rotation,
     Vector3 Scale,
-    IReadOnlyList<string> Components,
+    IReadOnlyList<ComponentSnapshot> Components,
     Guid? ParentId = null)
 {
     /// <summary>
@@ -64,11 +71,15 @@ public static class SceneSnapshotBuilder
 
         foreach (GameObject gameObject in scene.GameObjects)
         {
-            List<string> components = [];
+            List<ComponentSnapshot> components = [];
 
             foreach (Component component in gameObject.Components)
             {
-                components.Add(component.GetType().Name);
+                // Read here, on the thread that owns the scene: the values are snapshotted with everything else,
+                // so a panel never reflects over a live component.
+                components.Add(new ComponentSnapshot(
+                    component.GetType().Name,
+                    ComponentProperties.Read(component)));
             }
 
             nodes.Add(new SceneNodeSnapshot(
