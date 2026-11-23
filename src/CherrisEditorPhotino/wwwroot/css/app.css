@@ -1,14 +1,37 @@
 :root {
     color-scheme: dark;
-    --surface: #16181c;
-    --surface-raised: #1e2127;
-    --border: #2a2e36;
-    --text: #e4e8ef;
-    --text-muted: #8b93a3;
-    --accent: #4f9dff;
+
+    /* Launcher surfaces, tuned to the same greys as the editor theme. */
+    --surface: #191a1b;
+    --surface-raised: #202122;
+    --border: #141516;
+    --text: #f2f2f2;
+    --text-muted: #8f8f8f;
+    --accent: #429ef9;
     --ok: #3fb950;
     --warn: #d29922;
     --bad: #f85149;
+
+    /* ImGui / UE5 style editor palette (src/CherrisEditor/Core/EditorTheme.cs). */
+    --imgui-window: #1a1b1c;
+    --imgui-child: #1b1c1d;
+    --imgui-popup: #141517;
+    --imgui-menubar: #262626;
+    --imgui-title: #262626;
+    --imgui-frame: #333435;
+    --imgui-frame-hover: #4c4d4f;
+    --imgui-frame-active: #3f4041;
+    --imgui-tab: #262626;
+    --imgui-tab-hover: #616161;
+    --imgui-border: #0f1011;
+    --imgui-separator: #3c3c3c;
+    --imgui-text: #ffffff;
+    --imgui-text-disabled: #808080;
+    --imgui-accent: #429ef9;
+    --imgui-scrollbar: #4f4f4f;
+    --imgui-warning: #ffff00;
+    --imgui-error: #ff3333;
+    --imgui-radius: 2px;
 }
 
 * {
@@ -331,97 +354,696 @@ body {
 
 /* ---- editor window chrome ---- */
 
+
+/* ============================================================================
+   Editor — a replica of the ImGui editor's chrome and dock layout:
+
+     menubar
+     transport toolbar (play / pause / stop / restart)
+     +----------------+-------------------------------+----------------+
+     | Hierarchy (20%)| Viewport (72%)                | Inspector (24%)|
+     |                +-------------------------------+                |
+     |                | Content Browser | Console (28%)|                |
+     +----------------+-------------------------------+----------------+
+     status strip
+   ========================================================================== */
+
 .editor-shell {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    background: var(--imgui-window);
+    color: var(--imgui-text);
 }
 
-.editor-toolbar {
+/* ---- menu bar ---- */
+
+.menubar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 4px;
+    background: var(--imgui-menubar);
+    border-bottom: 1px solid var(--imgui-border);
+    font-size: 12.5px;
+    user-select: none;
+    z-index: 30;
+}
+
+.menubar-brand {
+    padding: 3px 8px;
+    margin-right: 6px;
+    border: none;
+    border-radius: var(--imgui-radius);
+    background: transparent;
+    color: var(--imgui-text);
+    font: inherit;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+.menubar-brand:hover {
+    background: var(--imgui-frame-hover);
+}
+
+.menubar-item {
+    position: relative;
+}
+
+.menubar-button {
+    padding: 3px 10px;
+    border: none;
+    border-radius: var(--imgui-radius);
+    background: transparent;
+    color: var(--imgui-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.menubar-button:hover,
+.menubar-button.open {
+    background: var(--imgui-accent);
+    color: #ffffff;
+}
+
+.menubar-spacer {
+    flex: 1;
+}
+
+.menubar-session {
+    padding-right: 8px;
+    color: var(--imgui-text-disabled);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 40%;
+}
+
+.menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+.menu-popup {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    min-width: 210px;
+    padding: 3px 0;
+    background: var(--imgui-popup);
+    border: 1px solid #363636;
+    border-radius: var(--imgui-radius);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+    font-size: 12.5px;
+}
+
+.viewport-toolbar .menu-popup {
+    top: calc(100% + 2px);
+}
+
+.menu-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-raised);
+    gap: 24px;
+    width: 100%;
+    padding: 4px 12px;
+    border: none;
+    background: transparent;
+    color: var(--imgui-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
-.editor-toolbar-project {
+.menu-item:hover:not(:disabled) {
+    background: var(--imgui-accent);
+    color: #ffffff;
+}
+
+.menu-item:disabled {
+    color: var(--imgui-text-disabled);
+    cursor: default;
+}
+
+.menu-shortcut {
+    color: var(--imgui-text-disabled);
+    font-size: 11px;
+}
+
+.menu-separator {
+    height: 1px;
+    margin: 3px 0;
+    background: var(--imgui-separator);
+}
+
+/* ---- transport toolbar ---- */
+
+.editor-toolbar-strip {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    justify-content: center;
+    padding: 3px 0;
+    background: var(--imgui-window);
+    border-bottom: 1px solid var(--imgui-border);
+}
+
+.transport {
+    display: flex;
+    gap: 6px;
+}
+
+.transport-button {
+    display: inline-flex;
+}
+
+.transport-button button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 62px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--imgui-border);
+    border-radius: var(--imgui-radius);
+    background: var(--imgui-frame);
+    color: var(--imgui-text);
+    cursor: pointer;
+}
+
+.transport-button button:hover:not(:disabled) {
+    background: var(--imgui-frame-hover);
+}
+
+.transport-button button:active:not(:disabled) {
+    background: var(--imgui-frame-active);
+}
+
+.transport-button button:disabled {
+    color: var(--imgui-text-disabled);
+    cursor: default;
+}
+
+.transport-button svg {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+    stroke: none;
+}
+
+/* ---- dockspace ---- */
+
+.dockspace {
+    --dock-left: 20%;
+    --dock-right: 24%;
+    --dock-bottom: 28%;
+
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: var(--dock-left) 5px minmax(0, 1fr) 5px var(--dock-right);
+    grid-template-rows: minmax(0, 1fr);
+    padding: 3px;
+    gap: 0;
+    background: var(--imgui-window);
+}
+
+.dock-middle {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 5px var(--dock-bottom);
     min-width: 0;
+    min-height: 0;
 }
 
-.editor-toolbar-name {
-    font-weight: 600;
+.dock-pane {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
-.editor-toolbar-path {
-    color: var(--text-muted);
-    font-size: 11.5px;
+.dock-splitter {
+    background: transparent;
+    transition: background 90ms linear;
+}
+
+.dock-splitter-x {
+    cursor: col-resize;
+}
+
+.dock-splitter-y {
+    cursor: row-resize;
+}
+
+.dock-splitter:hover,
+.dockspace.is-dragging .dock-splitter {
+    background: rgba(66, 158, 249, 0.45);
+}
+
+body.dock-dragging-x,
+body.dock-dragging-x * {
+    cursor: col-resize !important;
+    user-select: none;
+}
+
+body.dock-dragging-y,
+body.dock-dragging-y * {
+    cursor: row-resize !important;
+    user-select: none;
+}
+
+/* ---- panel chrome (an ImGui window) ---- */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--imgui-window);
+    border: 1px solid var(--imgui-border);
+    border-radius: var(--imgui-radius);
+    overflow: hidden;
+}
+
+.panel-tabstrip {
+    display: flex;
+    align-items: stretch;
+    min-height: 24px;
+    background: var(--imgui-tab);
+    border-bottom: 1px solid var(--imgui-border);
+    user-select: none;
+}
+
+.panel-tab {
+    padding: 4px 12px;
+    border: none;
+    border-right: 1px solid var(--imgui-border);
+    background: transparent;
+    color: var(--imgui-text-disabled);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.panel-tab:hover {
+    color: var(--imgui-text);
+    background: var(--imgui-tab-hover);
+}
+
+.panel-tab.active,
+.panel-tab.active:hover {
+    background: var(--imgui-window);
+    color: var(--imgui-text);
+}
+
+.panel-tab-spacer {
+    flex: 1;
+}
+
+.panel-tab-meta {
+    align-self: center;
+    padding: 0 10px;
+    color: var(--imgui-text-disabled);
+    font-size: 11px;
+}
+
+.panel-body {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 8px;
+    overflow: auto;
+}
+
+.panel-body.nopad {
+    padding: 0;
+    overflow: hidden;
+}
+
+.panel-empty {
+    margin: 8px 2px;
+    color: var(--imgui-text-disabled);
+}
+
+/* ---- shared widgets ---- */
+
+.imgui-input {
+    width: 100%;
+    padding: 3px 6px;
+    border: 1px solid #1b1c1d;
+    border-radius: var(--imgui-radius);
+    background: var(--imgui-frame);
+    color: var(--imgui-text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.imgui-input:focus {
+    outline: none;
+    border-color: var(--imgui-accent);
+}
+
+.imgui-input[readonly] {
+    cursor: default;
+}
+
+.imgui-button {
+    padding: 3px 10px;
+    border: 1px solid var(--imgui-border);
+    border-radius: var(--imgui-radius);
+    background: var(--imgui-frame);
+    color: var(--imgui-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.imgui-button:hover:not(:disabled) {
+    background: var(--imgui-frame-hover);
+}
+
+.imgui-button:active:not(:disabled) {
+    background: var(--imgui-frame-active);
+}
+
+.imgui-button:disabled {
+    color: var(--imgui-text-disabled);
+    cursor: default;
+}
+
+.imgui-separator {
+    height: 1px;
+    margin: 6px 0;
+    background: var(--imgui-separator);
+}
+
+.imgui-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--imgui-text);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.imgui-checkbox input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    accent-color: var(--imgui-accent);
+}
+
+/* ---- hierarchy ---- */
+
+.tree {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding-bottom: 6px;
+}
+
+.tree-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 4px;
+    border-radius: var(--imgui-radius);
+    color: var(--imgui-text);
+    font-size: 12px;
+    cursor: default;
+    user-select: none;
+}
+
+.tree-row:hover {
+    background: #2b2c2e;
+}
+
+.tree-row.selected,
+.tree-row.selected:hover {
+    background: var(--imgui-accent);
+    color: #ffffff;
+}
+
+.tree-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--imgui-text-disabled);
+    font-size: 9px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.tree-row.selected .tree-arrow {
+    color: #ffffff;
+}
+
+.tree-arrow.empty {
+    cursor: default;
+    visibility: hidden;
+}
+
+.tree-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.editor-toolbar-actions {
+/* ---- inspector ---- */
+
+.inspector-section {
+    margin-bottom: 6px;
+    border: 1px solid #242526;
+    border-radius: var(--imgui-radius);
+    background: var(--imgui-child);
+}
+
+.inspector-section-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px;
+    background: var(--imgui-title);
+    color: var(--imgui-text);
+    font-size: 12px;
+    user-select: none;
+}
+
+.inspector-section-body {
+    padding: 6px 6px 4px;
+}
+
+.inspector-muted {
+    margin: 0;
+    color: var(--imgui-text-disabled);
+    font-size: 11.5px;
+}
+
+.inspector-add {
+    padding-top: 4px;
+}
+
+.vec-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.vec-label {
+    width: 62px;
+    flex: none;
+    color: var(--imgui-text-disabled);
+    font-size: 11.5px;
+}
+
+.vec-fields {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+.imgui-input.vec-field {
+    min-width: 0;
+    padding: 2px 4px;
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+}
+
+/* ---- console ---- */
+
+.console {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: 5px 7px;
+}
+
+.console-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.console-count {
+    margin-left: auto;
+    color: var(--imgui-text-disabled);
+    font-size: 11px;
+}
+
+.console-log {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+.log-line {
+    display: flex;
+    gap: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.log-time {
+    color: #9a9a9a;
+    flex: none;
+}
+
+.log-level {
+    flex: none;
+}
+
+.log-info {
+    color: var(--imgui-text);
+}
+
+.log-warning,
+.log-warning .log-time {
+    color: var(--imgui-warning);
+}
+
+.log-error,
+.log-error .log-time {
+    color: var(--imgui-error);
+}
+
+/* ---- content browser ---- */
+
+.content-browser {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: 5px 7px;
+}
+
+.cb-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-shrink: 0;
+    min-width: 0;
 }
 
-.editor-toolbar-state {
-    color: var(--text-muted);
-    font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+.cb-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--imgui-text);
+    font-size: 12px;
 }
 
-.editor-starting {
-    margin: 32px;
-    color: var(--text-muted);
+.cb-count {
+    color: var(--imgui-text-disabled);
+    font-size: 11px;
+    flex: none;
 }
 
-.app-project {
-    padding-left: 10px;
-    margin-left: 2px;
-    border-left: 1px solid var(--border);
-    color: var(--text-muted);
-}
-
-/* ---- editor layout ---- */
-
-.editor-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 12px;
-    padding: 12px;
+.cb-grid {
     flex: 1;
     min-height: 0;
-}
-
-.editor-viewport {
-    grid-column: 1;
-    grid-row: 1;
-    min-width: 0;
-    min-height: 0;
-}
-
-.editor-sidebar {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    min-height: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 2px;
     overflow: auto;
+    padding-bottom: 6px;
 }
 
-.editor-statusbar {
-    grid-column: 1;
-    grid-row: 2;
+.cb-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    width: 78px;
+    padding: 6px 3px;
+    border: 1px solid transparent;
+    border-radius: var(--imgui-radius);
+    background: transparent;
+    color: var(--imgui-text);
+    font: inherit;
+    cursor: default;
+    user-select: none;
+}
+
+.cb-item:hover {
+    background: rgba(66, 158, 249, 0.18);
+}
+
+.cb-item.selected {
+    border-color: var(--imgui-accent);
+    background: rgba(66, 158, 249, 0.26);
+}
+
+.cb-glyph {
+    width: 24px;
+    height: 24px;
+    color: #d9d9d9;
+    flex: none;
+}
+
+.cb-name {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+}
+
+/* ---- viewport ---- */
+
+.viewport-toolbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--imgui-border);
+    background: var(--imgui-window);
+}
+
+.viewport-toolbar .imgui-button {
+    padding: 2px 10px;
+}
+
+.viewport-panel .panel-body,
+.viewport-body {
+    padding: 0;
+    overflow: hidden;
 }
 
 .viewport-frame {
@@ -429,8 +1051,6 @@ body {
     width: 100%;
     height: 100%;
     background: #101113;
-    border: 1px solid var(--border);
-    border-radius: 8px;
     overflow: hidden;
 }
 
@@ -455,120 +1075,42 @@ body {
     background: rgba(9, 10, 12, 0.85);
 }
 
-/* ---- scene panel ---- */
-
-.panel {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    height: 100%;
-    padding: 12px;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-}
-
-.panel-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    font-weight: 600;
-    text-transform: uppercase;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-}
-
-.panel-hint {
-    font-weight: 400;
-    text-transform: none;
-    letter-spacing: 0;
-    color: var(--text-muted);
-}
-
-.panel-empty {
-    margin: 0;
-    color: var(--text-muted);
-    font-style: italic;
-}
-
-.scene-tree {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    overflow: auto;
-}
-
-.scene-node {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-}
-
-.scene-node:hover {
-    background: rgba(79, 157, 255, 0.08);
-}
-
-.scene-node.selected {
-    background: rgba(79, 157, 255, 0.16);
-    box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.scene-node-components {
-    color: var(--text-muted);
-    font-size: 11px;
-}
-
-.panel-inspector {
-    border-top: 1px solid var(--border);
-    padding-top: 10px;
-}
-
-.panel-inspector h3 {
-    margin: 0 0 8px;
-    font-size: 13px;
-}
-
-.panel-inspector dl {
-    display: grid;
-    grid-template-columns: 74px minmax(0, 1fr);
-    gap: 4px 8px;
-    margin: 0;
-}
-
-.panel-inspector dt {
-    color: var(--text-muted);
-}
-
-.panel-inspector dd {
-    margin: 0;
-    font-variant-numeric: tabular-nums;
-    overflow-wrap: anywhere;
-}
-
-/* ---- status bar ---- */
+/* ---- status strip ---- */
 
 .statusbar {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 6px 12px;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
+    gap: 10px;
+    padding: 2px 10px;
+    background: var(--imgui-menubar);
+    border-top: 1px solid var(--imgui-border);
+    color: var(--imgui-text);
+    font-size: 11.5px;
     font-variant-numeric: tabular-nums;
+    user-select: none;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .statusbar-muted {
-    color: var(--text-muted);
+    color: var(--imgui-text-disabled);
 }
 
 .statusbar-spacer {
     flex: 1;
+}
+
+.statusbar-sep {
+    width: 1px;
+    height: 11px;
+    background: var(--imgui-separator);
+}
+
+.statusbar-renderer {
+    max-width: 32%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--imgui-text-disabled);
 }
 
 .status-pill {
@@ -580,8 +1122,8 @@ body {
 
 .status-pill::before {
     content: "";
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: currentColor;
 }
@@ -598,14 +1140,20 @@ body {
     color: var(--bad);
 }
 
-/* ---- failure state ---- */
+/* ---- starting / failure states ---- */
+
+.editor-starting {
+    margin: 32px;
+    color: var(--text-muted);
+}
 
 .editor-error {
     margin: 24px;
     padding: 18px 20px;
     border: 1px solid var(--bad);
-    border-radius: 8px;
+    border-radius: var(--imgui-radius);
     background: rgba(248, 81, 73, 0.08);
+    overflow: auto;
 }
 
 .editor-error h2 {
@@ -638,21 +1186,6 @@ body {
     margin: 10px 0 4px;
 }
 
-.editor-button {
-    padding: 5px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface-raised);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-}
-
-.editor-button:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
 .editor-error-confirm {
     color: var(--ok);
 }
@@ -664,8 +1197,8 @@ body {
     margin: 8px 0 0;
     padding: 10px 12px;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #12141a;
+    border-radius: var(--imgui-radius);
+    background: #121314;
     color: var(--text);
     font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
     font-size: 11.5px;
@@ -679,12 +1212,29 @@ body {
     color: var(--text);
 }
 
-.statusbar-renderer {
-    max-width: 44%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-muted);
+/* ---- ImGui-like scrollbars ---- */
+
+::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0a0b0b;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--imgui-scrollbar);
+    border: 2px solid #0a0b0b;
+    border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #6a6a6a;
+}
+
+::-webkit-scrollbar-corner {
+    background: #0a0b0b;
 }
 
 #blazor-error-ui {

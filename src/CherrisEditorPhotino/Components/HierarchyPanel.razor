@@ -1,0 +1,140 @@
+@inject SceneStore Store
+@inject SceneSelection Selection
+@implements IDisposable
+
+@* ImGui's Hierarchy: search field, separator, then the scene tree. *@
+<section class="panel">
+    <header class="panel-tabstrip">
+        <span class="panel-tab active">Hierarchy</span>
+    </header>
+
+    <div class="panel-body">
+        <input type="search" class="imgui-input" placeholder="Search..." aria-label="Search the hierarchy"
+               @bind="_search" @bind:event="oninput" />
+
+        <div class="imgui-separator"></div>
+
+        @if (_rows.Count == 0)
+        {
+            <p class="panel-empty">@(_search.Length > 0 ? "No matches." : "No scene loaded.")</p>
+        }
+        else
+        {
+            <div class="tree" role="tree">
+                @foreach (Row row in _rows)
+                {
+                    <div class="tree-row @(Selection.SelectedId == row.Node.Id ? "selected" : "")"
+                         role="treeitem" aria-selected="@AriaSelected(row.Node.Id)"
+                         style="padding-left:@(4 + (row.Depth * 14))px"
+                         @onclick="() => Select(row.Node.Id)">
+                        <button type="button" class="tree-arrow @(row.HasChildren ? "" : "empty")"
+                                tabindex="-1" title="@(row.Expanded ? "Collapse" : "Expand")"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => Toggle(row.Node.Id)">
+                            @(row.HasChildren ? (row.Expanded ? "▾" : "▸") : "")
+                        </button>
+                        <span class="tree-label">@row.Node.Name</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private readonly HashSet<Guid> _collapsed = [];
+    private string _search = string.Empty;
+    private List<Row> _rows = [];
+
+    private sealed record Row(SceneNodeSnapshot Node, int Depth, bool HasChildren, bool Expanded);
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnSceneChanged;
+        Rebuild();
+    }
+
+    private void OnSceneChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            Rebuild();
+            StateHasChanged();
+        });
+    }
+
+    private void Rebuild()
+    {
+        List<Row> rows = [];
+
+        foreach (SceneTreeNode root in Store.Roots)
+        {
+            AddNode(root, 0, rows);
+        }
+
+        _rows = rows;
+    }
+
+    private void AddNode(SceneTreeNode node, int depth, List<Row> rows)
+    {
+        if (!IsVisible(node))
+        {
+            return;
+        }
+
+        bool hasChildren = node.Children.Count > 0;
+        bool expanded = IsExpanded(node.Node.Id);
+
+        rows.Add(new Row(node.Node, depth, hasChildren, expanded));
+
+        if (!expanded || !hasChildren)
+        {
+            return;
+        }
+
+        foreach (SceneTreeNode child in node.Children)
+        {
+            AddNode(child, depth + 1, rows);
+        }
+    }
+
+    // A search keeps a node when it matches itself or has a matching descendant, like ImGui's filter.
+    private bool IsVisible(SceneTreeNode node)
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            return true;
+        }
+
+        return node.Node.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || node.Children.Any(IsVisible);
+    }
+
+    private bool IsExpanded(Guid id)
+    {
+        // Matches stay expanded so a filtered tree is readable without extra clicks.
+        return !string.IsNullOrWhiteSpace(_search) || !_collapsed.Contains(id);
+    }
+
+    private void Toggle(Guid id)
+    {
+        if (!_collapsed.Remove(id))
+        {
+            _collapsed.Add(id);
+        }
+
+        Rebuild();
+    }
+
+    private string AriaSelected(Guid id) => Selection.SelectedId == id ? "true" : "false";
+
+    private void Select(Guid id)
+    {
+        Selection.Select(Selection.SelectedId == id ? null : id);
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= OnSceneChanged;
+    }
+}

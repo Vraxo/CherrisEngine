@@ -1,10 +1,37 @@
 @inject IJSRuntime JS
+@inject SceneStore Store
 @implements IAsyncDisposable
 
-<div class="viewport-frame">
-    <canvas id="viewport-canvas" tabindex="0"></canvas>
-    <div id="viewport-canvas-overlay" class="viewport-overlay" hidden></div>
-</div>
+@* ImGui's Viewport window: scene tab strip, the Options toolbar row, then the render surface. *@
+<section class="panel viewport-panel">
+    <header class="panel-tabstrip">
+        <span class="panel-tab active">@SceneName</span>
+        <span class="panel-tab-spacer"></span>
+        <span class="panel-tab-meta">@ObjectCount objects</span>
+    </header>
+
+    <div class="viewport-toolbar">
+        <button type="button" class="imgui-button" @onclick="ToggleOptions">Options</button>
+
+        @if (_optionsOpen)
+        {
+            <div class="menu-popup" role="menu">
+                <button type="button" class="menu-item" role="menuitem" disabled
+                        title="The grid is a renderer setting owned by the engine">
+                    <span>Show Grid</span>
+                </button>
+            </div>
+            <div class="menu-scrim" @onclick="() => _optionsOpen = false"></div>
+        }
+    </div>
+
+    <div class="panel-body viewport-body">
+        <div class="viewport-frame">
+            <canvas id="viewport-canvas" tabindex="0"></canvas>
+            <div id="viewport-canvas-overlay" class="viewport-overlay" hidden></div>
+        </div>
+    </div>
+</section>
 
 @code {
     /// <summary>WebSocket endpoint of the in-process editor host.</summary>
@@ -12,6 +39,16 @@
     public string WebSocketUrl { get; set; } = string.Empty;
 
     private bool _mounted;
+    private bool _optionsOpen;
+
+    private string SceneName => Store.Current?.SceneName ?? "Viewport";
+
+    private int ObjectCount => Store.Current?.Nodes.Count ?? 0;
+
+    private void ToggleOptions()
+    {
+        _optionsOpen = !_optionsOpen;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

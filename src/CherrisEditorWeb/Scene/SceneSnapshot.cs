@@ -11,13 +11,15 @@ namespace CherrisEditorWeb;
 /// <param name="Rotation">World rotation.</param>
 /// <param name="Scale">Local scale.</param>
 /// <param name="Components">Component type names attached to the object.</param>
+/// <param name="ParentId">Parent object, or null for a root; used to rebuild the hierarchy tree.</param>
 public sealed record SceneNodeSnapshot(
     Guid Id,
     string Name,
     Vector3 Position,
     Quaternion Rotation,
     Vector3 Scale,
-    IReadOnlyList<string> Components);
+    IReadOnlyList<string> Components,
+    Guid? ParentId = null);
 
 /// <summary>
 /// Immutable view of the active scene, safe to read from a UI thread while the render thread keeps
@@ -63,7 +65,8 @@ public static class SceneSnapshotBuilder
                 gameObject.Transform.Position,
                 gameObject.Transform.Rotation,
                 gameObject.Transform.Scale,
-                components));
+                components,
+                gameObject.Transform.Parent?.GameObject.Id));
         }
 
         return new SceneSnapshot(scene.Name, nodes, frame, capturedAt);

@@ -33,6 +33,11 @@ internal static class Program
             appBuilder.RootComponents.Add<App>("app");
             appBuilder.Services.AddSingleton(editorHost);
 
+            // One snapshot poller and one selection shared by the hierarchy, inspector and viewport, so the
+            // panels agree on the frame and the selected object.
+            appBuilder.Services.AddSingleton<SceneStore>();
+            appBuilder.Services.AddSingleton<SceneSelection>();
+
             var app = appBuilder.Build();
 
             app.MainWindow
@@ -42,6 +47,9 @@ internal static class Program
             // The launcher's Browse buttons use the window's native folder dialog, which only exists once
             // the window does. Without it the launcher still accepts typed paths.
             editorHost.FolderPicker = (title, startIn) => app.MainWindow.ShowOpenFolderAsync(title, startIn);
+
+            // File > Exit closes the window the same way the window's own close button does.
+            editorHost.CloseRequested = app.MainWindow.Close;
 
             AppDomain.CurrentDomain.UnhandledException += (_, error) =>
                 app.MainWindow.ShowMessage(

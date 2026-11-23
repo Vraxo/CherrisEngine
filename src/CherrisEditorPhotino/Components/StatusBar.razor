@@ -4,13 +4,16 @@
 
 <div class="statusbar">
     <span class="status-pill @StatusClass">@StatusText</span>
+    <span class="statusbar-sep"></span>
     <span>@_stats.Width×@_stats.Height</span>
     <span>@_stats.Fps fps</span>
-    <span>@_stats.Frames frames</span>
-    <span class="statusbar-muted">protocol @_protocol</span>
+    <span class="statusbar-muted">@_stats.Frames frames</span>
+    <span class="statusbar-sep"></span>
+    <span class="statusbar-muted" title="@Host.ProjectRoot">@SessionText</span>
+    <span class="statusbar-muted">@SceneText</span>
     <span class="statusbar-spacer"></span>
+    <span class="statusbar-muted">protocol @_protocol</span>
     <span class="statusbar-renderer" title="@RendererText">@RendererText</span>
-    <span class="statusbar-muted">@ObjectsText</span>
     <span class="statusbar-muted">@EngineText</span>
 </div>
 
@@ -41,8 +44,10 @@
 
     private string RendererText => Host.RendererInfo ?? "renderer starting";
 
-    private string ObjectsText => Host.LatestScene is SceneSnapshot scene
-        ? $"{scene.Nodes.Count} objects"
+    private string SessionText => Host.ProjectRoot ?? "demo scene";
+
+    private string SceneText => Host.LatestScene is SceneSnapshot scene
+        ? $"{scene.SceneName ?? "untitled"} · {scene.Nodes.Count} objects"
         : "no snapshot";
 
     protected override async Task OnInitializedAsync()

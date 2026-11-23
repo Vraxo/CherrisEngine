@@ -11,7 +11,7 @@ The solution (`Cherris.slnx`) contains four production projects under `src`:
 | [`Cherris`](src/Cherris/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
 | [`CherrisEditor`](src/CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
 | [`CherrisRuntime`](src/CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
-| [`CherrisEditorPhotino`](src/CherrisEditorPhotino/) | Executable | Experimental PhotinoX Blazor editor: a native webview window (WebView2 / WKWebView / WebKitGTK) hosting a Blazor UI, with the engine rendering off-screen (`Cherris.Rendering.Headless`), streaming the game view into a WebGL canvas, and a project launcher that opens real `project.yaml` projects. |
+| [`CherrisEditorPhotino`](src/CherrisEditorPhotino/) | Executable | Experimental PhotinoX Blazor editor: a native webview window (WebView2 / WKWebView / WebKitGTK) hosting a Blazor UI, with the engine rendering off-screen (`Cherris.Rendering.Headless`), streaming the game view into a WebGL canvas, a project launcher that opens real `project.yaml` projects, and an editor window laid out like the ImGui editor (menu bar, transport toolbar, hierarchy / viewport / inspector docks). |
 | [`CherrisEditorWeb`](src/CherrisEditorWeb/) | Executable | Transport behind the PhotinoX window: render host, frame pipe, wire protocol and input bridge, shared by both front ends and runnable on its own as a browser dev harness. |
 
 ## 🔧 Capabilities
