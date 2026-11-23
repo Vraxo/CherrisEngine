@@ -59,8 +59,13 @@ lives in the engine library and is unit-tested (`tests/Cherris.Tests/Projects/`)
    the engine's `SceneLoader`, and opens it.
 4. A scene with no camera gets a default one — a brand-new project's start scene is empty, and the renderer
    needs a camera to draw anything. The reason lands in the log.
-5. If the scene is missing, unreadable or empty, the demo scene is shown and the log says why, so the
-   viewport is never a blank rectangle without an explanation.
+5. **The file is opened as it is, empty included.** A new project's `Main.yaml` is `GameObjects: []`, so the
+   session opens with that one scene and the camera from step 4 in it; nothing is invented on top of the file.
+   Only a file that does not parse as a scene at all falls back to the demo scene.
+6. Whatever step 4 or 5 had to do is stated in the hierarchy panel, in a notice above the search field:
+   `Main.yaml has no objects yet. The editor added a camera so the viewport can draw.` The hierarchy shows the
+   session and the content browser's tiles preview the file, so the two can honestly differ — this is where
+   the difference is said out loud instead of being left to be guessed at.
 
 ### Switching projects
 
@@ -237,7 +242,7 @@ What it is not: a render. A mesh is drawn at the footprint its scale describes, 
 is not in the file — the demo's 20-unit floor is a plane at scale 1, so it reads as a 1×1 tile — and rotations
 become headings rather than geometry. A file that does not parse as a scene, `project.yaml` included, keeps its
 ordinary icon; a scene with no objects at all shows a dashed empty box, which is what a new project's start
-scene is.
+scene is — and the hierarchy says the same thing in so many words when the session opens that empty scene.
 
 One rule keeps the panels honest about what they can do: anything the web UI *cannot* do is drawn `disabled`
 with a tooltip saying where that job lives, rather than as a button that silently does nothing — Save, Build and

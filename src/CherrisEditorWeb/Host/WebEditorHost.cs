@@ -104,6 +104,12 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     public EditorPlayState PlayState => _engine?.PlayState ?? EditorPlayState.Editing;
 
     /// <summary>
+    /// Something the session had to say about the scene it opened — an empty file, a camera it had to add, a
+    /// file that is not a scene — or null when the scene opened exactly as it is on disk.
+    /// </summary>
+    public string? SceneNotice => _engine?.SceneNotice;
+
+    /// <summary>
     /// Queues a transport action for the render thread. Safe from any thread; the render loop carries it out
     /// at the top of its next frame.
     /// </summary>

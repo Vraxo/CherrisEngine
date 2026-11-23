@@ -1447,6 +1447,21 @@ span.panel-tab:hover {
     padding: 5px 7px;
 }
 
+/* Something the session had to say about the scene it opened — an empty file, a camera it had to add, a file
+   that is not a scene. It sits above the hierarchy's search field, because that is where the question "why does
+   the tree look like this?" is asked. */
+.panel-notice {
+    margin: 0 0 6px;
+    padding: 4px 8px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-left: 2px solid var(--theme-warning);
+    border-radius: var(--theme-radius);
+    background: var(--theme-recessed);
+    color: var(--theme-foreground-header);
+    font-size: var(--theme-font-small);
+    line-height: 1.45;
+}
+
 .cb-header {
     display: flex;
     align-items: center;
