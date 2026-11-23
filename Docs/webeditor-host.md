@@ -209,6 +209,9 @@ chrome is deliberately the same so muscle memory carries over:
 | `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, read-only over the open project folder |
 | Theme: `EditorTheme.ApplyUnrealEngineStyle` | `--imgui-*` tokens in `wwwroot/css/app.css`, same greys and the accent blue |
 
+Colors come from the engine's own palette rather than an approximation of it — see
+[UE5 Theme](ue5-theme.md) for every value, its source file and the widget styles it maps to.
+
 Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
 which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists
 them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.
