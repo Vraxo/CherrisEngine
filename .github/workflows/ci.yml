@@ -26,18 +26,7 @@ jobs:
 
       - run: dotnet build
 
-      # TEMPORARY: surface the failure text as annotations, because job logs are unreachable from here.
-      - name: Test
-        run: |
-          set -o pipefail
-          dotnet test --no-build --logger "console;verbosity=normal" 2>&1 | tee /tmp/test.log
-
-      - name: Surface failures
-        if: failure()
-        run: |
-          grep -E "Failed |Error Message|Assert|Expected|Exception|at Cherris" /tmp/test.log | head -80 | while IFS= read -r line; do
-            echo "::error::$(printf '%s' "$line" | tr -d '\r' | cut -c1-900)"
-          done || true
+      - run: dotnet test --no-build
 
       # The number-field drag is plain JavaScript without a browser, so node can check it directly.
       - run: node tests/js/numberdrag.test.js
