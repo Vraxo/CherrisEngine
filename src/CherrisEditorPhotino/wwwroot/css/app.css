@@ -1146,6 +1146,74 @@ span.panel-tab:hover {
     padding-top: 4px;
 }
 
+/* One editable property: name on the left, editor on the right, like the ImGui row table. */
+.prop-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.prop-label {
+    width: 38%;
+    flex: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-foreground);
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+.prop-value {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+.prop-value .imgui-input {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 6px;
+    font-variant-numeric: tabular-nums;
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+.prop-vec {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* [Range] properties get a slider next to the number, the way the ImGui inspector draws them. */
+.prop-value .imgui-slider {
+    flex: 2;
+    min-width: 0;
+    height: 14px;
+    accent-color: var(--theme-primary);
+}
+
+.imgui-check {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    flex: none;
+    accent-color: var(--theme-primary);
+}
+
+.colour-swatch {
+    width: 22px;
+    height: var(--theme-control-height);
+    flex: none;
+    padding: 0;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: none;
+}
+
 /* The Add Component list opens inline: the panel body scrolls, so an absolutely positioned menu would be
    clipped by its own scroll container. Menu colors, so it reads as the same menu either way. */
 .add-menu {

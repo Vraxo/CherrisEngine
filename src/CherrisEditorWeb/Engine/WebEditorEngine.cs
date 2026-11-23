@@ -33,7 +33,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private readonly IViewportSink _sink;
     private readonly ISceneSnapshotSink? _snapshotSink;
     private readonly EditorSceneRequest _scene;
-    private readonly EditorCommandQueue? _commands;
+    private readonly EditorCommandDispatcher? _commands;
 
     private SceneFrameCapture? _capture;
     private GameObject? _spinTarget;
@@ -52,7 +52,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
         IViewportSink sink,
         ISceneSnapshotSink? snapshotSink = null,
         EditorSceneRequest? scene = null,
-        EditorCommandQueue? commands = null)
+        EditorCommandDispatcher? commands = null)
         : base("Cherris Web Editor", false, backend)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -83,12 +83,12 @@ public sealed class WebEditorEngine : Engine, IDisposable
     /// <summary>Runs the UI's pending edits against the active scene.</summary>
     private void ExecuteCommands()
     {
-        if (_commands is null || _commands.Count == 0 || SceneManager.ActiveScene is not { } scene)
+        if (_commands is null || _commands.Pending == 0 || SceneManager.ActiveScene is not { } scene)
         {
             return;
         }
 
-        _commands.Drain(command => command.Execute(scene), Logger.Info);
+        _commands.Drain(scene, Logger.Info);
     }
 
     /// <summary>

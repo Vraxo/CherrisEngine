@@ -1,16 +1,30 @@
 namespace CherrisEditorWeb;
 
+/// <summary>Which part of a transform a row, and therefore an edit of that row, changes.</summary>
+public enum TransformField
+{
+    /// <summary>World position.</summary>
+    Position,
+
+    /// <summary>World rotation, shown and written as Euler degrees.</summary>
+    Rotation,
+
+    /// <summary>Local scale.</summary>
+    Scale
+}
+
 /// <summary>
 /// One Vector3 row of the Transform component, as the inspector draws it: a label and three components.
 /// </summary>
 /// <param name="Label">Row label: Position, Rotation or Scale.</param>
+/// <param name="Field">Which part of the transform an edit of this row changes.</param>
 /// <param name="Value">The row's value, X first.</param>
 /// <remarks>
 /// Both front ends label a vector's components the same way — X red, Y green, Z blue — so the axis letters
 /// live here rather than in the markup. The ImGui inspector draws the same letters in the same colors
 /// (<c>TransformInspector.DrawVector3Control</c>).
 /// </remarks>
-public sealed record TransformRow(string Label, System.Numerics.Vector3 Value)
+public sealed record TransformRow(string Label, TransformField Field, System.Numerics.Vector3 Value)
 {
     /// <summary>Axis letters in component order, for the label of each field.</summary>
     public static IReadOnlyList<string> Axes { get; } = ["X", "Y", "Z"];
@@ -33,9 +47,9 @@ public static class TransformRows
 
         return
         [
-            new TransformRow("Position", node.Position),
-            new TransformRow("Rotation", node.RotationDegrees),
-            new TransformRow("Scale", node.Scale)
+            new TransformRow("Position", TransformField.Position, node.Position),
+            new TransformRow("Rotation", TransformField.Rotation, node.RotationDegrees),
+            new TransformRow("Scale", TransformField.Scale, node.Scale)
         ];
     }
 }

@@ -85,6 +85,6 @@ public class TransformRowsTests
             position ?? Vector3.Zero,
             rotation ?? Quaternion.Identity,
             scale ?? Vector3.One,
-            ["Transform"]);
+            [new ComponentSnapshot("Transform", [])]);
     }
 }

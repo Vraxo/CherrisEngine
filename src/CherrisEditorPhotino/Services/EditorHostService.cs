@@ -244,6 +244,18 @@ public sealed class EditorHostService : IDisposable
         return StartSessionAsync(EditorSceneRequest.Demo, null);
     }
 
+    /// <summary>True when there is an edit to take back.</summary>
+    public bool CanUndo => _session?.Host.History.CanUndo ?? false;
+
+    /// <summary>True when there is an edit to re-apply.</summary>
+    public bool CanRedo => _session?.Host.History.CanRedo ?? false;
+
+    /// <summary>What Undo would take back, for the menu's label, or null.</summary>
+    public string? UndoLabel => _session?.Host.History.UndoLabel;
+
+    /// <summary>What Redo would re-apply, for the menu's label, or null.</summary>
+    public string? RedoLabel => _session?.Host.History.RedoLabel;
+
     /// <summary>
     /// Adds a component to an object in the live scene. The render thread applies it on its next frame, and
     /// the snapshot the panels read picks it up from there; the outcome is logged to the console.
@@ -251,17 +263,75 @@ public sealed class EditorHostService : IDisposable
     /// <param name="objectId">The object to add to.</param>
     /// <param name="componentName">One of <see cref="ComponentTypes"/>' display names.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool AddComponent(Guid objectId, string componentName)
+    public bool AddComponent(Guid objectId, string componentName) =>
+        Enqueue(new AddComponentCommand(objectId, componentName), "add " + componentName);
+
+    /// <summary>Writes one property of a component from the inspector's text.</summary>
+    /// <param name="objectId">The object that owns the component.</param>
+    /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
+    /// <param name="propertyName">The property's name.</param>
+    /// <param name="text">The new value, in the inspector's text format.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool SetProperty(Guid objectId, string componentTypeName, string propertyName, string text) =>
+        Enqueue(
+            new SetPropertyCommand(objectId, componentTypeName, propertyName, text),
+            $"set {componentTypeName}.{propertyName}");
+
+    /// <summary>Writes one transform row of an object.</summary>
+    /// <param name="objectId">The object.</param>
+    /// <param name="transformField">Position, rotation (Euler degrees) or scale.</param>
+    /// <param name="x">X component.</param>
+    /// <param name="y">Y component.</param>
+    /// <param name="z">Z component.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool SetTransform(Guid objectId, TransformField transformField, float x, float y, float z) =>
+        Enqueue(
+            new SetTransformCommand(objectId, transformField, new System.Numerics.Vector3(x, y, z)),
+            "move the object");
+
+    /// <summary>Renames an object.</summary>
+    /// <param name="objectId">The object.</param>
+    /// <param name="name">The new name.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool RenameObject(Guid objectId, string name) =>
+        Enqueue(new RenameObjectCommand(objectId, name), "rename the object");
+
+    /// <summary>Takes the newest edit back.</summary>
+    /// <returns>False when there is nothing to undo, or no session.</returns>
+    public bool Undo()
+    {
+        if (!CanUndo)
+        {
+            return false;
+        }
+
+        return Enqueue(new UndoCommand(), "undo");
+    }
+
+    /// <summary>Re-applies the newest undone edit.</summary>
+    /// <returns>False when there is nothing to redo, or no session.</returns>
+    public bool Redo()
+    {
+        if (!CanRedo)
+        {
+            return false;
+        }
+
+        return Enqueue(new RedoCommand(), "redo");
+    }
+
+    /// <summary>Hands an edit to the render thread, or says why it could not.</summary>
+    private bool Enqueue(CherrisEditorWeb.Host.IEditorCommand command, string action)
     {
         WebEditorHost? host = _session?.Host;
 
         if (host is null)
         {
-            WriteLog($"[editor] cannot add {componentName}: no session is running.", LogLevel.Warning);
+            WriteLog($"[editor] cannot {action}: no session is running.", LogLevel.Warning);
             return false;
         }
 
-        host.Enqueue(new AddComponentCommand(objectId, componentName));
+        host.Enqueue(command);
         return true;
     }
 

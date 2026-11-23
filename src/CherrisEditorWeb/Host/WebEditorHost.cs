@@ -36,8 +36,8 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private readonly Action<string>? _log;
     private readonly EditorSceneRequest _scene;
 
-    /// <summary>Edits the UI asked for, waiting for the render thread.</summary>
-    private readonly EditorCommandQueue _commands = new();
+    /// <summary>Edits the UI asked for, and the session's undo history.</summary>
+    private readonly EditorCommandDispatcher _commands = new();
 
     private ViewerConnection? _activeConnection;
     private WebEditorServer? _server;
@@ -105,6 +105,9 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     {
         _commands.Enqueue(command);
     }
+
+    /// <summary>The session's undo and redo stacks, for the menus to enable themselves.</summary>
+    public EditorHistory History => _commands.History;
 
     /// <summary>
     /// Blocks until the listener is up or failed. Lets a host that runs <see cref="Run"/> on a background

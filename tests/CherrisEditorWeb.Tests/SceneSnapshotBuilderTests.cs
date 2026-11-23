@@ -45,9 +45,28 @@ public class SceneSnapshotBuilderTests
         camera.Name.Should().Be("Camera");
         camera.Position.Should().Be(new Vector3(1f, 2f, 3f));
         camera.Scale.Should().Be(new Vector3(2f, 2f, 2f));
-        camera.Components.Should().ContainSingle().Which.Should().Be(nameof(Camera));
+        camera.Components.Should().ContainSingle().Which.TypeName.Should().Be(nameof(Camera));
 
-        snapshot.Nodes[1].Components.Should().ContainSingle().Which.Should().Be(nameof(Light));
+        snapshot.Nodes[1].Components.Should().ContainSingle().Which.TypeName.Should().Be(nameof(Light));
+    }
+
+    [Fact]
+    public void Build_CopiesAClickableSnapshotOfEachComponentsProperties()
+    {
+        GameObject sun = new("Sun");
+        Light light = sun.AddComponent(new Light { Intensity = 2f, Type = LightType.Point });
+        Scene scene = new(string.Empty, [sun]);
+
+        SceneSnapshot snapshot = SceneSnapshotBuilder.Build(scene, 1, DateTimeOffset.UtcNow);
+
+        ComponentSnapshot component = snapshot.Nodes[0].Components.Single();
+        component.TypeName.Should().Be(nameof(Light));
+        component.Properties.Single(property => property.Name == nameof(Light.Intensity)).Text.Should().Be("2");
+        component.Properties.Single(property => property.Name == nameof(Light.Type)).Text.Should().Be("Point");
+
+        // The snapshot is a copy: editing the live component afterwards must not rewrite what a panel holds.
+        light.Intensity = 9f;
+        component.Properties.Single(property => property.Name == nameof(Light.Intensity)).Text.Should().Be("2");
     }
 
     [Fact]
@@ -92,7 +111,7 @@ public class SceneSnapshotBuilderTests
         first.Nodes[0].Components.Should().BeEmpty();
 
         second.Nodes[0].Position.Should().Be(new Vector3(0f, 5f, 0f));
-        second.Nodes[0].Components.Should().ContainSingle().Which.Should().Be(nameof(Light));
+        second.Nodes[0].Components.Should().ContainSingle().Which.TypeName.Should().Be(nameof(Light));
         second.SceneName.Should().Be("scene.json");
     }
 }
