@@ -4,9 +4,11 @@
 // scrub the value, click without moving to type instead. It is wired by a class rather than per element, so
 // any input marked `drag-number` — including ones Blazor adds later — scrubs without further JavaScript.
 //
-// Nothing round-trips to .NET while the pointer is down: the field shows the scrubbed value itself and one
-// `change` event is dispatched on release, which is the event typing already sends. A whole drag is therefore
-// a single edit, and so a single undo step, which is what PropertyDrawer does with IsItemDeactivatedAfterEdit.
+// The value is *live*: while the pointer moves, one `change` event goes out per animation frame, which is the
+// event typing sends, so the scene follows the pointer at frame rate. The panel feeds those into a single
+// command, so the whole drag is one undo step — the same compromise PropertyDrawer makes by recording on
+// IsItemDeactivatedAfterEdit. The `input` event that opens a drag is what tells the panel a new one has begun,
+// so two drags of the same field never merge into one step.
 window.cherrisNumberDrag = (() => {
     const THRESHOLD = 3;   // pixels of movement before a press counts as a drag rather than a click
     const DECIMALS = 3;    // matches the "0.###" the panels read and write
@@ -14,6 +16,7 @@ window.cherrisNumberDrag = (() => {
     const SLOW = 0.01;     // Alt, as in ImGui
 
     let drag = null;
+    let frame = 0;
 
     function bound(text) {
         if (text === undefined || text === '') {
@@ -50,6 +53,45 @@ window.cherrisNumberDrag = (() => {
         return String(Number(value.toFixed(DECIMALS)));
     }
 
+    // One `change` per animation frame: the render thread drains its queue once a frame, so publishing faster
+    // would only queue work that a later tick overwrites.
+    function publish() {
+        frame = 0;
+
+        if (!drag || !drag.moving || drag.input.value === drag.published) {
+            return;
+        }
+
+        drag.published = drag.input.value;
+        drag.input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function schedule() {
+        if (frame) {
+            return;
+        }
+
+        frame = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame(publish)
+            : 0;
+
+        if (!frame) {
+            publish();
+        }
+    }
+
+    function cancelFrame() {
+        if (!frame) {
+            return;
+        }
+
+        if (typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(frame);
+        }
+
+        frame = 0;
+    }
+
     function begin(event) {
         const input = event.target;
 
@@ -67,6 +109,7 @@ window.cherrisNumberDrag = (() => {
             pointerId: event.pointerId,
             startX: event.clientX,
             text: input.value,
+            published: input.value,
             config: setup(input),
             moving: false
         };
@@ -92,8 +135,17 @@ window.cherrisNumberDrag = (() => {
             drag.moving = true;
             drag.input.classList.add('dragging');
 
-            // A focused field scrolls its text under the pointer instead of staying put.
-            drag.input.blur();
+            // A field that kept the caret from an earlier click would take the next keystroke, so it is blurred
+            // — unless it is the field being dragged, whose element must survive the drag.
+            const active = document.activeElement;
+
+            if (active && active !== drag.input && typeof active.blur === 'function') {
+                active.blur();
+            }
+
+            // Opens a new live session: the panel closes whatever the previous drag recorded before this one
+            // writes its first value, so each drag is its own undo step.
+            drag.input.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         event.preventDefault();
@@ -119,6 +171,7 @@ window.cherrisNumberDrag = (() => {
         }
 
         drag.input.value = format(value, drag.config.integer);
+        schedule();
     }
 
     function end(event) {
@@ -126,13 +179,28 @@ window.cherrisNumberDrag = (() => {
             return;
         }
 
-        const state = drag;
-        stop();
-        state.input.classList.remove('dragging');
+        finish();
+    }
 
-        if (dragWasDropped(state)) {
+    // A cancelled pointer or a window that lost focus ends the drag where it is: the scene already has every
+    // value published so far, so there is nothing to put back.
+    function cancel() {
+        if (drag) {
+            finish();
+        }
+    }
+
+    function finish() {
+        const state = drag;
+
+        drag = null;
+        stop();
+
+        if (!state.input.isConnected) {
             return;
         }
+
+        state.input.classList.remove('dragging');
 
         if (!state.moving) {
             // A click: the press was taken earlier, so the caret is placed here instead.
@@ -142,33 +210,17 @@ window.cherrisNumberDrag = (() => {
             return;
         }
 
-        if (state.input.value !== state.text) {
-            // The same event typing sends: the panel reads the value back and queues one edit.
+        // The value the pointer last moved to, which the frame that is now cancelled would have published;
+        // nothing goes out when the drag ended on the value it started from.
+        if (state.input.value !== state.published) {
+            state.published = state.input.value;
             state.input.dispatchEvent(new Event('change', { bubbles: true }));
         }
     }
 
-    function cancel() {
-        if (!drag) {
-            return;
-        }
-
-        const state = drag;
-        stop();
-        state.input.classList.remove('dragging');
-
-        if (!dragWasDropped(state)) {
-            state.input.value = state.text;
-        }
-    }
-
-    // The element went away mid-drag — the panel re-rendered it — so there is nothing left to commit.
-    function dragWasDropped(state) {
-        return !state.input.isConnected;
-    }
-
     function stop() {
-        drag = null;
+        cancelFrame();
+
         window.removeEventListener('pointermove', move, true);
         window.removeEventListener('pointerup', end, true);
         window.removeEventListener('pointercancel', cancel, true);

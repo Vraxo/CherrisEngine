@@ -363,7 +363,15 @@ public sealed class AddComponentCommand(Guid objectId, string componentName) : I
 /// <param name="PropertyName">The property's name.</param>
 /// <param name="Text">The new value, in the inspector's text format.</param>
 /// <remarks>
+/// <para>
 /// The command keeps the value it replaced, so Undo is exact and needs no re-parsing of the old text.
+/// </para>
+/// <para>
+/// It can also be fed: while a field is being dragged the same command is given a new
+/// <see cref="Text"/> and queued again, so the scene follows the pointer every frame. Only the first run
+/// records the command and logs it, so a whole drag is one undo step and one console line — the same
+/// compromise <c>PropertyDrawer</c> makes by recording on <c>IsItemDeactivatedAfterEdit</c>.
+/// </para>
 /// </remarks>
 public sealed class SetPropertyCommand(
     Guid objectId,
@@ -371,8 +379,20 @@ public sealed class SetPropertyCommand(
     string propertyName,
     string text) : IUndoableCommand
 {
+    private string _text = text;
     private string? _before;
     private string? _after;
+    private bool _recorded;
+
+    /// <summary>
+    /// The value to write. The UI thread swaps this while a drag feeds the same command again; the render
+    /// thread reads it once per run.
+    /// </summary>
+    public string Text
+    {
+        get => Volatile.Read(ref _text);
+        set => Volatile.Write(ref _text, value ?? string.Empty);
+    }
 
     /// <inheritdoc />
     public string Describe => $"set {componentTypeName}.{propertyName}";
@@ -392,7 +412,7 @@ public sealed class SetPropertyCommand(
             return $"[editor] could not {Describe}: no such property.";
         }
 
-        if (!ComponentProperties.TryApply(component, propertyName, text, out string? error))
+        if (!ComponentProperties.TryApply(component, propertyName, Text, out string? error))
         {
             return $"[editor] could not {Describe}: {error}";
         }
@@ -405,13 +425,21 @@ public sealed class SetPropertyCommand(
             return null;
         }
 
-        _before = before;
+        bool first = !_recorded;
+
+        if (first)
+        {
+            // What undo must restore is the value before the first run of this command, never a value the
+            // drag itself put there.
+            _before = before;
+            _recorded = true;
+            context.History.Record(this);
+        }
+
         _after = after;
-
         context.Scene.IsDirty = true;
-        context.History.Record(this);
 
-        return $"[editor] {componentTypeName}.{propertyName} = {after}";
+        return first ? $"[editor] {componentTypeName}.{propertyName} = {after}" : null;
     }
 
     /// <inheritdoc />
@@ -463,15 +491,48 @@ public sealed class SetPropertyCommand(
 /// <param name="Field">Which row.</param>
 /// <param name="Value">The three components the row shows.</param>
 /// <remarks>
+/// <para>
 /// The parameter is <c>transformField</c> rather than <c>field</c> on purpose: C# 14 reads <c>field</c> inside a
 /// property accessor as the property's own backing field, which silently turned <see cref="Describe"/> into a
 /// read of an uninitialized string.
+/// </para>
+/// <para>
+/// Like <see cref="SetPropertyCommand"/> it can be fed: a dragged row hands the same command a new
+/// <see cref="Value"/> and queues it again, so the object moves every frame while the drag is one undo step.
+/// The triple the drag started from is captured on the first run, never from a value the drag itself wrote.
+/// </para>
 /// </remarks>
 public sealed class SetTransformCommand(Guid objectId, TransformField transformField, Vector3 value) : IUndoableCommand
 {
+    private readonly object _gate = new();
+    private Vector3 _value = value;
     private Vector3 _beforePosition;
     private Quaternion _beforeRotation = Quaternion.Identity;
     private Vector3 _beforeScale;
+    private bool _recorded;
+
+    /// <summary>
+    /// The row to write. The UI thread swaps this while a drag feeds the same command again; the render thread
+    /// reads it once per run.
+    /// </summary>
+    public Vector3 Value
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _value;
+            }
+        }
+
+        set
+        {
+            lock (_gate)
+            {
+                _value = value;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public string Describe => $"set transform {transformField.ToString().ToLowerInvariant()}";
@@ -486,20 +547,34 @@ public sealed class SetTransformCommand(Guid objectId, TransformField transformF
             return $"[editor] could not {Describe}: that object is no longer in the scene.";
         }
 
-        if ((transformField is TransformField.Position or TransformField.Scale) && Field(transform) == value)
+        Vector3 target = Value;
+
+        if ((transformField is TransformField.Position or TransformField.Scale) && Field(transform) == target)
         {
             return null;
         }
 
-        _beforePosition = transform.Position;
-        _beforeRotation = transform.Rotation;
-        _beforeScale = transform.Scale;
+        bool first = !_recorded;
 
-        ApplyField(transform);
+        if (first)
+        {
+            _beforePosition = transform.Position;
+            _beforeRotation = transform.Rotation;
+            _beforeScale = transform.Scale;
+            _recorded = true;
+        }
+
+        ApplyField(transform, target);
         context.Scene.IsDirty = true;
+
+        if (!first)
+        {
+            return null;
+        }
+
         context.History.Record(this);
 
-        return $"[editor] {Describe} = {Number(value.X)}, {Number(value.Y)}, {Number(value.Z)}";
+        return $"[editor] {Describe} = {Number(target.X)}, {Number(target.Y)}, {Number(target.Z)}";
     }
 
     /// <inheritdoc />
@@ -530,17 +605,19 @@ public sealed class SetTransformCommand(Guid objectId, TransformField transformF
             return null;
         }
 
-        ApplyField(transform);
+        Vector3 target = Value;
+
+        ApplyField(transform, target);
         context.Scene.IsDirty = true;
 
-        return $"[editor] {Describe} = {Number(value.X)}, {Number(value.Y)}, {Number(value.Z)}";
+        return $"[editor] {Describe} = {Number(target.X)}, {Number(target.Y)}, {Number(target.Z)}";
     }
 
     private Vector3 Field(Transform transform) => transformField == TransformField.Position
         ? transform.Position
         : transform.Scale;
 
-    private void ApplyField(Transform transform)
+    private void ApplyField(Transform transform, Vector3 value)
     {
         switch (transformField)
         {

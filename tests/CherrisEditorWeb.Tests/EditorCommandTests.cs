@@ -179,6 +179,79 @@ public class EditorCommandTests
     }
 
     [Fact]
+    public void SetProperty_FeedingTheSameCommandIsOneUndoStep()
+    {
+        Harness scene = new();
+        Light light = scene.Target.AddComponent(new Light());
+        SetPropertyCommand command = new(scene.Target.Id, nameof(Light), nameof(Light.Intensity), "2");
+
+        scene.Run(command).Should().Contain("Intensity", "the first frame of a drag is the one worth logging");
+
+        // What a drag does: the same command, a newer value, queued and run again on the next frame.
+        string[] frames = ["3", "4", "5", "6"];
+
+        foreach (string text in frames)
+        {
+            command.Text = text;
+            scene.Run(command).Should().BeNull("every frame of one drag must not add a console line");
+        }
+
+        light.Intensity.Should().Be(6f, "the scene followed every frame");
+
+        scene.Run(new UndoCommand());
+        light.Intensity.Should().Be(1f, "undo goes back to where the drag started, not back one frame");
+        scene.History.CanUndo.Should().BeFalse("the whole drag was a single step");
+
+        scene.Run(new RedoCommand());
+        light.Intensity.Should().Be(6f, "redo lands on the value the drag ended on");
+    }
+
+    [Fact]
+    public void SetProperty_AFrameThatChangesNothingDoesNotRecord()
+    {
+        Harness scene = new();
+        Light light = scene.Target.AddComponent(new Light());
+        SetPropertyCommand command = new(scene.Target.Id, nameof(Light), nameof(Light.Intensity), "1");
+
+        scene.Run(command).Should().BeNull("the text parses to the value it would replace");
+        scene.History.CanUndo.Should().BeFalse("a frame that changes nothing is not a step to take back");
+
+        command.Text = "2";
+        scene.Run(command).Should().Contain("Intensity");
+
+        scene.Run(new UndoCommand());
+        light.Intensity.Should().Be(1f, "the step starts from the value the drag found");
+    }
+
+    [Fact]
+    public void SetTransform_FeedingTheSameCommandIsOneUndoStep()
+    {
+        Harness scene = new();
+        SetTransformCommand command =
+            new(scene.Target.Id, TransformField.Position, new Vector3(1f, 1f, 0f));
+
+        scene.Run(command).Should().Contain("position");
+        scene.Target.Transform.Position.Should().Be(new Vector3(1f, 1f, 0f));
+
+        float[] frames = [2f, 3f, 4f];
+
+        foreach (float x in frames)
+        {
+            command.Value = new Vector3(x, 1f, 0f);
+            scene.Run(command).Should().BeNull("every frame of one drag must not add a console line");
+        }
+
+        scene.Target.Transform.Position.Should().Be(new Vector3(4f, 1f, 0f));
+
+        scene.Run(new UndoCommand());
+        scene.Target.Transform.Position.Should().Be(new Vector3(0f, 1f, 0f), "the drag started at 0, 1, 0");
+        scene.History.CanUndo.Should().BeFalse("the whole drag was a single step");
+
+        scene.Run(new RedoCommand());
+        scene.Target.Transform.Position.Should().Be(new Vector3(4f, 1f, 0f));
+    }
+
+    [Fact]
     public void SetTransform_WritesPosition_AndEulerRotation()
     {
         Harness scene = new();
