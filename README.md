@@ -4,13 +4,14 @@ Cherris is a 3D game engine, visual scene editor, and standalone runtime written
 
 ## 🧱 Architecture
 
-The solution (`Cherris.slnx`) contains three production projects under `src/`:
+The solution (`Cherris.slnx`) contains four production projects under `src`:
 
 | Project | Output | Purpose |
 | :--- | :--- | :--- |
 | [`Cherris`](src/Cherris/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
 | [`CherrisEditor`](src/CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
 | [`CherrisRuntime`](src/CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
+| [`CherrisEditorWeb`](src/CherrisEditorWeb/) | Executable | Experimental browser-hosted editor: renders off-screen (`Cherris.Rendering.Headless`), serves an HTML/WebGL page over a local WebSocket, and streams the game view to it. Also usable inside a PhotinoX window. |
 
 ## 🔧 Capabilities
 
@@ -135,3 +136,4 @@ Current limitations:
 - [Color Consistency & Rendering Pipeline](Docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](Docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](Docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
+- [Web Editor Host](Docs/webeditor-host.md): The browser-hosted editor in `src/CherrisEditorWeb`, its wire protocol, how to wrap it in a PhotinoX window, and its current limitations.

@@ -161,6 +161,16 @@ public sealed class SceneFrameCapture : IDisposable
     }
 
     /// <summary>
+    /// Same as <see cref="TryCapture(int, int, int, out SceneFrame)"/>, for texture handles that the
+    /// renderer exposes as <see cref="IntPtr"/> (for example
+    /// <c>OpenTKRenderer.GetSceneTextureHandle()</c>).
+    /// </summary>
+    public bool TryCapture(IntPtr colorTexture, int width, int height, out SceneFrame frame)
+    {
+        return TryCapture(colorTexture.ToInt32(), width, height, out frame);
+    }
+
+    /// <summary>
     /// Reverses row order in place, turning OpenGL's bottom-up pixels into top-down pixels.
     /// </summary>
     public static void FlipRows(Span<byte> pixels, int rowBytes, int height)
