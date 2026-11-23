@@ -1,6 +1,7 @@
 @* The reset slot that ends every editable row: an arrow that puts the value back to what a freshly constructed
-   component has. Subdued and inert when the value is already there, so a row nobody touched does not shout, and
-   the slot is always present, so the value column of every row lines up. *@
+   component has. Two looks only — washed out and inert when the value is already there, a filled button with an
+   arrow at full strength when it is not — so what you see is what a click would do, never a shade in between.
+   The slot keeps its width either way, so the value column of every row lines up. *@
 <button type="button" class="prop-reset @(CanReset ? "modified" : null)"
         disabled="@(!CanReset)" title="@Title" aria-label="@(Label is null ? Title : Label + ": " + Title)"
         @onclick="OnReset">

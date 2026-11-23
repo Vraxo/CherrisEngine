@@ -355,10 +355,17 @@ that cannot be constructed with `Activator.CreateInstance` simply gets no button
 | Transform → Rotation | the identity, i.e. 0, 0, 0 Euler degrees |
 | Transform → Scale | 1, 1, 1 |
 
-The button is quiet and inert while the row already holds its default, and solid and clickable once the row is
-away from it — `PropertySnapshot.CanReset` and `TransformRow.CanReset` decide which, and neither 0.3 shown as
-"0.3" nor a quaternion read back as Euler degrees at 1e-6 counts as a change. The object's name has no reset
-button: a name has no default to go back to, only whatever the author typed.
+The button has two looks and each says one thing, so the arrow's brightness never has to be decoded:
+
+| The row | The button |
+| :--- | :--- |
+| holds its default | a washed-out arrow (30% of `AccentGray`), inert, and it does not react to the row being hovered |
+| is away from the default | a filled button (`Secondary`) with the arrow at full reading strength, `cursor: pointer` |
+
+Hovering a button only lightens that fill; the arrow keeps its colour in both states, so `#ffffff` never appears
+on a control that was already bright. `PropertySnapshot.CanReset` and `TransformRow.CanReset` decide which state a
+row is in, and neither 0.3 shown as "0.3" nor a quaternion read back as Euler degrees at 1e-6 counts as a change.
+The object's name has no reset button: a name has no default to go back to, only whatever the author typed.
 
 A reset is an ordinary edit — the same `SetPropertyCommand`/`SetTransformCommand` with
 `DefaultText`/`TransformRow.Default` as the value — so it is one undo step, one console line, and it closes any
