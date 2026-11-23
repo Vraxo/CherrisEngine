@@ -269,6 +269,52 @@ public class EditorCommandTests
     }
 
     [Fact]
+    public void SetProperty_ResettingToTheDefaultIsAnOrdinaryStep()
+    {
+        Harness scene = new();
+        Light light = scene.Target.AddComponent(new Light());
+
+        scene.Run(new SetPropertyCommand(scene.Target.Id, nameof(Light), nameof(Light.Intensity), "4.5"));
+        light.Intensity.Should().Be(4.5f);
+
+        // What the reset button does: the same command with the value the type's default snapshot carries.
+        ComponentProperties.TryReadDefaultText(typeof(Light), nameof(Light.Intensity), out string reset)
+            .Should().BeTrue();
+
+        scene.Run(new SetPropertyCommand(scene.Target.Id, nameof(Light), nameof(Light.Intensity), reset))
+            .Should().Contain("Intensity");
+
+        light.Intensity.Should().Be(1f, "a new Light starts at intensity 1");
+
+        scene.Run(new UndoCommand());
+        light.Intensity.Should().Be(4.5f, "a reset is nothing special to undo");
+    }
+
+    [Fact]
+    public void SetTransform_ResettingARowIsAnOrdinaryStep()
+    {
+        Harness scene = new();
+
+        scene.Target.Transform.Position.Should().Be(new Vector3(0f, 1f, 0f), "the harness starts it at y = 1");
+
+        // What the row's reset button hands the command: the row as the inspector sees it, and its default.
+        SceneNodeSnapshot node = new(
+            scene.Target.Id, "Cube", scene.Target.Transform.Position, scene.Target.Transform.Rotation,
+            scene.Target.Transform.Scale, []);
+
+        TransformRow position = TransformRows.From(node)[0];
+
+        position.CanReset.Should().BeTrue("the object is away from the origin");
+
+        scene.Run(new SetTransformCommand(scene.Target.Id, position.Field, position.Default));
+
+        scene.Target.Transform.Position.Should().Be(Vector3.Zero);
+
+        scene.Run(new UndoCommand());
+        scene.Target.Transform.Position.Should().Be(new Vector3(0f, 1f, 0f));
+    }
+
+    [Fact]
     public void Rename_ChangesTheName_AndUndoTakesItBack()
     {
         Harness scene = new();

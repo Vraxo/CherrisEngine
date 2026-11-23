@@ -67,6 +67,38 @@ public class TransformRowsTests
     }
 
     [Fact]
+    public void EveryRow_KnowsWhatItIsResetTo()
+    {
+        IReadOnlyList<TransformRow> rows = TransformRows.From(Node(
+            position: new Vector3(0f, 1f, 0f),
+            rotation: Quaternion.Identity,
+            scale: new Vector3(2f, 2f, 2f)));
+
+        rows[0].Default.Should().Be(Vector3.Zero, "a new object sits at the origin");
+        rows[1].Default.Should().Be(Vector3.Zero, "a new object is unrotated, which is zero in Euler degrees");
+        rows[2].Default.Should().Be(Vector3.One, "a new object is unscaled");
+
+        rows[0].CanReset.Should().BeTrue("the object sits at y = 1");
+        rows[1].CanReset.Should().BeFalse("it is already at the identity rotation");
+        rows[2].CanReset.Should().BeTrue();
+
+        rows[0].DefaultText.Should().Be("0, 0, 0");
+        rows[2].DefaultText.Should().Be("1, 1, 1");
+    }
+
+    [Fact]
+    public void CanReset_IgnoresTheNoiseOfAQuaternionReadBack()
+    {
+        // A rotation that is a hair off the identity — a quaternion round trip leaves such dust — must still read
+        // as being at the default, or the reset arrow would light up on rows nobody touched.
+        TransformRow nearlyZero = TransformRows.From(
+            Node(rotation: Quaternion.CreateFromYawPitchRoll(0.0000001f, 0f, 0f)))[1];
+
+        nearlyZero.Value.X.Should().BeApproximately(0f, 0.001f);
+        nearlyZero.CanReset.Should().BeFalse();
+    }
+
+    [Fact]
     public void From_RejectsANullNode()
     {
         Action act = () => TransformRows.From(null!);

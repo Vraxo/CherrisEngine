@@ -338,6 +338,30 @@ and needs no interop at all — fields Blazor renders later scrub without being 
 runs that after `dotnet test`; it needs no browser because the script only touches `window`, `document` and the
 input it is handed.
 
+### Resetting a value
+
+Every value row ends in a reset button, in the narrow third column the ImGui inspector keeps for its own reset
+(`DefaultInspector`/`TransformInspector`, `Reset` texture), and it restores the same thing: the value a freshly
+constructed component of that type has, which is what the type's own initialisers write. The defaults are read
+once per type and cached (`ComponentProperties.Defaults`), because the snapshot is rebuilt every frame; a type
+that cannot be constructed with `Activator.CreateInstance` simply gets no button rather than a wrong value.
+
+| Row | Reset to |
+| :--- | :--- |
+| a component property | its default: `Light.Intensity` → 1, `AudioSource.Volume` → 0.5, a `[ColorUsage]` colour → 1, 1, 1 |
+| Transform → Position | 0, 0, 0 |
+| Transform → Rotation | the identity, i.e. 0, 0, 0 Euler degrees |
+| Transform → Scale | 1, 1, 1 |
+
+The button is quiet and inert while the row already holds its default, and solid and clickable once the row is
+away from it — `PropertySnapshot.CanReset` and `TransformRow.CanReset` decide which, and neither 0.3 shown as
+"0.3" nor a quaternion read back as Euler degrees at 1e-6 counts as a change. The object's name has no reset
+button: a name has no default to go back to, only whatever the author typed.
+
+A reset is an ordinary edit — the same `SetPropertyCommand`/`SetTransformCommand` with
+`DefaultText`/`TransformRow.Default` as the value — so it is one undo step, one console line, and it closes any
+drag in progress before it records.
+
 ### Undo and Redo
 
 `EditorHistory` holds two stacks capped at 200; recording a change clears the redo branch. Only commands that

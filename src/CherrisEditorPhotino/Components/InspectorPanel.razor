@@ -77,6 +77,12 @@
                                     </span>
                                 }
                             </div>
+
+                            @* Position, rotation and scale each go back to what a new object has: zero,
+                               the identity and one. *@
+                            <ResetButton CanReset="@(CanEdit && row.CanReset)" Default="@row.DefaultText"
+                                         Label="@row.Label"
+                                         OnReset="() => ResetTransform(node.Id, row)" />
                         </div>
                     }
                 </div>
@@ -109,6 +115,8 @@
                                 <div class="prop-row">
                                     <span class="prop-label" title="@property.Name">@property.Name</span>
 
+                                    @* The value column keeps its width whether or not the button is usable, so
+                                       the editors line up down the component. *@
                                     <div class="prop-value">
                                         @switch (property.Kind)
                                         {
@@ -217,6 +225,10 @@
                                                 break;
                                         }
                                     </div>
+
+                                    <ResetButton CanReset="@(CanEdit && property.CanReset)"
+                                                 Default="@property.DefaultText" Label="@property.Name"
+                                                 OnReset="() => ResetProperty(node, component, property)" />
                                 </div>
                             }
                         }
@@ -301,7 +313,7 @@
     /// <summary>True while a session is running to apply an edit to.</summary>
     private bool CanEdit => Host.State == EditorSessionState.Running;
 
-    private string? _editedField;
+    private HashSet<string> _editedFields = [];
     private int _editRevision;
 
     /// <summary>
@@ -310,13 +322,18 @@
     /// actually holds — an input's <c>value</c> attribute alone cannot, because the value it would be set back
     /// to is the one already in the render tree. Only the edited field is rebuilt, so nothing else loses focus.
     /// </summary>
-    private string KeyFor(string field) => String.Equals(field, _editedField, StringComparison.Ordinal)
+    private string KeyFor(string field) => _editedFields.Contains(field)
         ? field + "#" + _editRevision.ToString(CultureInfo.InvariantCulture)
         : field;
 
-    private void Touched(string field)
+    /// <summary>
+    /// Makes the named fields new elements on the next render, so the snapshot's value shows even when the
+    /// element holds text the author typed. The revision in each key is what makes them new.
+    /// </summary>
+    /// <param name="fields">Field keys, the same ones <see cref="KeyFor"/> is given.</param>
+    private void Touched(params string[] fields)
     {
-        _editedField = field;
+        _editedFields = [.. fields];
         _editRevision++;
     }
 
@@ -368,6 +385,55 @@
 
     /// <summary>Ends a drag without rebuilding: a keystroke means the next typed value is its own step.</summary>
     private void EndLiveEdit() => Host.EndLiveEdit();
+
+    /// <summary>
+    /// Puts a property back to the value a freshly constructed component of its type has — the same default the
+    /// ImGui inspector's reset button restores. It is an ordinary edit, so it undoes in one step.
+    /// </summary>
+    /// <param name="node">The object that owns the component.</param>
+    /// <param name="component">The component.</param>
+    /// <param name="property">The property to put back.</param>
+    private void ResetProperty(
+        SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property)
+    {
+        if (property.DefaultText is not { } text)
+        {
+            return;
+        }
+
+        Host.SetProperty(node.Id, component.TypeName, property.Name, text);
+
+        if (property.Kind is not (PropertyKind.Vector2 or PropertyKind.Vector3))
+        {
+            Touched(PropertyKey(node, component, property));
+            return;
+        }
+
+        // A vector is one key per axis, so every component has to be rebuilt, not just the first.
+        string propertyKey = PropertyKey(node, component, property);
+        string[] axes = [.. TransformRow.Axes.Take(property.Components.Count)
+            .Select(axis => propertyKey + "." + axis)];
+
+        Touched(axes);
+    }
+
+    /// <summary>Puts a transform row back to zero, the identity or one: what a new object starts with.</summary>
+    /// <param name="objectId">The object to move.</param>
+    /// <param name="row">The row the button belongs to.</param>
+    private void ResetTransform(Guid objectId, TransformRow row)
+    {
+        if (!row.CanReset)
+        {
+            return;
+        }
+
+        Host.SetTransform(objectId, row.Field, row.Default.X, row.Default.Y, row.Default.Z);
+
+        string prefix = objectId.ToString() + ":transform." + row.Field + ".";
+        string[] axes = [.. TransformRow.Axes.Select(axis => prefix + axis)];
+
+        Touched(axes);
+    }
 
     private void Search(string? text)
     {

@@ -48,6 +48,10 @@ public enum PropertyKind
 /// <param name="Maximum">Range upper bound, when the property declares one.</param>
 /// <param name="IsColor">True when a <see cref="Vector3"/> is marked <see cref="ColorUsageAttribute"/>.</param>
 /// <param name="Choices">Enum names, for <see cref="PropertyKind.Choice"/>.</param>
+/// <param name="DefaultText">
+/// The value a freshly constructed component of this type has, in the same format as <paramref name="Text"/>, or
+/// null when the type cannot be constructed and so has no default to offer. The reset button restores it.
+/// </param>
 public sealed record PropertySnapshot(
     string Name,
     PropertyKind Kind,
@@ -56,10 +60,17 @@ public sealed record PropertySnapshot(
     IReadOnlyList<string> Choices,
     float? Minimum = null,
     float? Maximum = null,
-    bool IsColor = false)
+    bool IsColor = false,
+    string? DefaultText = null)
 {
     /// <summary>True when a toggle is on, so markup can bind it without comparing strings.</summary>
     public bool IsOn => String.Equals(Text, "true", StringComparison.Ordinal);
+
+    /// <summary>
+    /// True when the property differs from the value a new component would have, which is when resetting it does
+    /// something. Compared as text, because that is what an edit carries and what the field shows.
+    /// </summary>
+    public bool CanReset => DefaultText is not null && !String.Equals(Text, DefaultText, StringComparison.Ordinal);
 
     /// <summary>
     /// True when the declared range is one a slider can show. <c>[Range(0, float.MaxValue)]</c> (Light's
@@ -121,6 +132,14 @@ public static class ComponentProperties
     // A component's editable properties do not change at runtime: the attributes are on the type.
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> EditableCache = new();
 
+    // What a reset puts back: the value a freshly constructed component of the type has, which is the rule the
+    // ImGui inspector's reset button follows (Activator.CreateInstance, then read the property). Cached per type
+    // because the snapshot is rebuilt every frame and constructing a component is not free.
+    private static readonly ConcurrentDictionary<Type, IReadOnlyDictionary<string, string>> DefaultsCache = new();
+
+    // Handed to the readers that build the cache: the defaults of a default instance are what is being computed.
+    private static readonly IReadOnlyDictionary<string, string> NoDefaults = new Dictionary<string, string>();
+
     /// <summary>The properties the inspector shows for a component type, in declaration order.</summary>
     /// <param name="componentType">A concrete <see cref="Component"/> type.</param>
     public static IReadOnlyList<PropertyInfo> Editable(Type componentType)
@@ -141,16 +160,48 @@ public static class ComponentProperties
         ArgumentNullException.ThrowIfNull(component);
 
         List<PropertySnapshot> properties = [];
+        IReadOnlyDictionary<string, string> defaults = Defaults(component.GetType());
 
         foreach (PropertyInfo property in Editable(component.GetType()))
         {
-            if (Read(component, property) is { } snapshot)
+            if (Read(component, property, defaults) is { } snapshot)
             {
                 properties.Add(snapshot);
             }
         }
 
         return properties;
+    }
+
+    /// <summary>The default of every editable property of a component type, as text, keyed by property name.</summary>
+    /// <param name="componentType">A concrete <see cref="Component"/> type.</param>
+    /// <remarks>
+    /// The defaults come from one instance constructed the way the Add menu constructs a component, so they are
+    /// the values its own initialisers write. A type that cannot be constructed that way has no defaults, and its
+    /// properties offer no reset button rather than a wrong value.
+    /// </remarks>
+    public static IReadOnlyDictionary<string, string> Defaults(Type componentType)
+    {
+        ArgumentNullException.ThrowIfNull(componentType);
+
+        return DefaultsCache.GetOrAdd(componentType, BuildDefaults);
+    }
+
+    /// <summary>Reads the value a freshly constructed component of this type has for one property.</summary>
+    /// <param name="componentType">A concrete <see cref="Component"/> type.</param>
+    /// <param name="propertyName">Property name.</param>
+    /// <param name="text">The default, in the format an edit sends.</param>
+    /// <returns>False when the type has no default for that property.</returns>
+    public static bool TryReadDefaultText(Type componentType, string propertyName, out string text)
+    {
+        if (Defaults(componentType).TryGetValue(propertyName, out string? value))
+        {
+            text = value;
+            return true;
+        }
+
+        text = string.Empty;
+        return false;
     }
 
     /// <summary>Reads one property, or null when it is not one the inspector shows.</summary>
@@ -163,7 +214,7 @@ public static class ComponentProperties
         PropertyInfo? property = Editable(component.GetType())
             .FirstOrDefault(candidate => String.Equals(candidate.Name, propertyName, StringComparison.Ordinal));
 
-        return property is null ? null : Read(component, property);
+        return property is null ? null : Read(component, property, Defaults(component.GetType()));
     }
 
     /// <summary>Reads one property as the text an edit would send back.</summary>
@@ -331,6 +382,58 @@ public static class ComponentProperties
         return type == typeof(Vector2)
             ? new Vector2(numbers[0], numbers[1])
             : new Vector3(numbers[0], numbers[1], numbers[2]);
+    }
+
+    /// <summary>Reads one property and states the default it would be reset to, when its type has one.</summary>
+    private static PropertySnapshot? Read(
+        Component component, PropertyInfo property, IReadOnlyDictionary<string, string> defaults)
+    {
+        if (Read(component, property) is not { } snapshot)
+        {
+            return null;
+        }
+
+        return defaults.TryGetValue(property.Name, out string? text) ? snapshot with { DefaultText = text } : snapshot;
+    }
+
+    /// <summary>Reads every editable property of a default instance, as the text a reset would write.</summary>
+    private static IReadOnlyDictionary<string, string> BuildDefaults(Type componentType)
+    {
+        Dictionary<string, string> defaults = [];
+
+        Component? instance;
+
+        try
+        {
+            instance = Activator.CreateInstance(componentType) as Component;
+        }
+        catch (Exception)
+        {
+            // No parameterless constructor, or one that cannot run without a file: nothing to reset to.
+            return defaults;
+        }
+
+        if (instance is null)
+        {
+            return defaults;
+        }
+
+        foreach (PropertyInfo property in Editable(componentType))
+        {
+            try
+            {
+                if (Read(instance, property, NoDefaults) is { } snapshot)
+                {
+                    defaults[property.Name] = snapshot.Text;
+                }
+            }
+            catch (Exception)
+            {
+                // A getter that throws on a bare instance: that property keeps no default.
+            }
+        }
+
+        return defaults;
     }
 
     private static PropertySnapshot? Read(Component component, PropertyInfo property)
