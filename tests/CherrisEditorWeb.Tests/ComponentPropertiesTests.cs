@@ -177,4 +177,59 @@ public class ComponentPropertiesTests
 
         ComponentProperties.TryReadText(light, "Nope", out _).Should().BeFalse();
     }
+
+    [Fact]
+    public void Defaults_AreTheValuesANewComponentStartsWith()
+    {
+        Light fresh = new();
+        IReadOnlyDictionary<string, string> defaults = ComponentProperties.Defaults(typeof(Light));
+
+        defaults.Keys.Should().BeEquivalentTo(
+            ComponentProperties.Read(fresh).Select(property => property.Name),
+            "every property the inspector shows offers the value a reset would restore");
+
+        defaults[nameof(Light.Intensity)].Should().Be("1");
+        defaults[nameof(Light.Type)].Should().Be("Directional");
+        defaults[nameof(Light.Color)].Should().Be("1, 1, 1");
+        defaults[nameof(Light.AmbientStrength)].Should().Be("0.3");
+    }
+
+    [Fact]
+    public void CanReset_IsTrueOnlyAwayFromTheDefault()
+    {
+        Light light = new() { Intensity = 3.5f, Type = LightType.Spot };
+
+        PropertySnapshot changed = ComponentProperties.Read(light, nameof(Light.Intensity))!;
+        changed.DefaultText.Should().Be("1");
+        changed.CanReset.Should().BeTrue();
+
+        ComponentProperties.Read(light, nameof(Light.Type))!.CanReset.Should().BeTrue();
+
+        PropertySnapshot untouched = ComponentProperties.Read(light, nameof(Light.AmbientStrength))!;
+        untouched.CanReset.Should().BeFalse("0.3 is where a new Light starts");
+    }
+
+    [Fact]
+    public void CanReset_SurvivesAFormattingRoundTrip()
+    {
+        // 1.0f and 1 are the same value and the same text, so a property set to its default by hand is still
+        // "at the default": the snapshot compares the text the field shows, not the object it came from.
+        Light light = new() { Intensity = 1f, Color = new Vector3(1f, 1f, 1f) };
+
+        ComponentProperties.Read(light, nameof(Light.Intensity))!.CanReset.Should().BeFalse();
+        ComponentProperties.Read(light, nameof(Light.Color))!.CanReset.Should().BeFalse();
+
+        light.Intensity = 2f;
+        ComponentProperties.Read(light, nameof(Light.Intensity))!.CanReset.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryReadDefaultText_ReportsAPropertyWithNoDefault()
+    {
+        ComponentProperties.TryReadDefaultText(typeof(Light), nameof(Light.Intensity), out string text)
+            .Should().BeTrue();
+        text.Should().Be("1");
+
+        ComponentProperties.TryReadDefaultText(typeof(Light), "Nope", out _).Should().BeFalse();
+    }
 }

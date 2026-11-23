@@ -1238,6 +1238,50 @@ span.panel-tab:hover {
     accent-color: var(--theme-primary);
 }
 
+/* The reset slot that ends a value row, in the column the ImGui inspector keeps for its reset button. A
+   default value gets a quiet arrow that is inert; a changed one gets a solid arrow that puts it back. The slot
+   is always there, so every row's editor ends on the same line. */
+.prop-reset {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--theme-accent-gray);
+    opacity: 0.3;
+    cursor: default;
+    transition: opacity 90ms linear, color 90ms linear, background 90ms linear;
+}
+
+.prop-reset svg {
+    width: 11px;
+    height: 11px;
+}
+
+/* Hovering the row says the slot is there, without promising a click that would do nothing. */
+.prop-row:hover .prop-reset,
+.vec-row:hover .prop-reset {
+    opacity: 0.6;
+}
+
+/* Away from the default there is something to put back: full strength, and the pointer says so. */
+.prop-reset.modified {
+    color: var(--theme-foreground-hover);
+    opacity: 1;
+    cursor: pointer;
+}
+
+.prop-reset.modified:hover,
+.prop-reset.modified:focus-visible {
+    color: var(--theme-white);
+    background: var(--theme-hover);
+    outline: none;
+}
+
 .imgui-check {
     width: 13px;
     height: 13px;
