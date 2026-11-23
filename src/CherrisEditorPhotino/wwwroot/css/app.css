@@ -1238,15 +1238,17 @@ span.panel-tab:hover {
     accent-color: var(--theme-primary);
 }
 
-/* The reset slot that ends a value row, in the column the ImGui inspector keeps for its reset button. A
-   default value gets a quiet arrow that is inert; a changed one gets a solid arrow that puts it back. The slot
-   is always there, so every row's editor ends on the same line. */
+/* The reset slot that ends a value row, in the column the ImGui inspector keeps for its reset button.
+   Two states, and each says exactly one thing: a washed-out arrow means there is nothing to put back, and a
+   button-shaped one means there is. The arrow keeps its colour in both; only the surface behind it changes on
+   hover, so brightness is never what decides whether a click will work. The slot keeps its width either way,
+   so every row's editor ends on the same line. */
 .prop-reset {
     flex: none;
     display: grid;
     place-items: center;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     padding: 0;
     border: none;
     border-radius: 3px;
@@ -1254,7 +1256,7 @@ span.panel-tab:hover {
     color: var(--theme-accent-gray);
     opacity: 0.3;
     cursor: default;
-    transition: opacity 90ms linear, color 90ms linear, background 90ms linear;
+    transition: background 90ms linear;
 }
 
 .prop-reset svg {
@@ -1262,24 +1264,23 @@ span.panel-tab:hover {
     height: 11px;
 }
 
-/* Hovering the row says the slot is there, without promising a click that would do nothing. */
-.prop-row:hover .prop-reset,
-.vec-row:hover .prop-reset {
-    opacity: 0.6;
-}
-
-/* Away from the default there is something to put back: full strength, and the pointer says so. */
+/* Away from the default: a button, with the fill a small menu button has and an arrow at reading strength.
+   Hovering only lightens that fill. */
 .prop-reset.modified {
-    color: var(--theme-foreground-hover);
+    color: var(--theme-foreground);
+    background: var(--theme-secondary);
     opacity: 1;
     cursor: pointer;
 }
 
-.prop-reset.modified:hover,
-.prop-reset.modified:focus-visible {
-    color: var(--theme-white);
+.prop-reset.modified:hover {
     background: var(--theme-hover);
-    outline: none;
+}
+
+/* Keyboard users get a ring: the fill alone cannot say "this is focused" for them. */
+.prop-reset.modified:focus-visible {
+    outline: var(--theme-border-width) solid var(--theme-primary);
+    outline-offset: 1px;
 }
 
 .imgui-check {
