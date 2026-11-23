@@ -224,6 +224,24 @@ them in `localStorage` the way ImGui persists its ini layout, and is reset by **
 Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hierarchy selection drives the
 inspector without either component talking to the other.
 
+### Selecting in the viewport
+
+Clicking the rendered viewport selects what is under the pointer, exactly as clicking a hierarchy row does: the
+same `SceneSelection` is written, so the inspector follows and the hierarchy highlights the row. Clicking empty
+space clears the selection.
+
+The rule is the ImGui editor's (`src/CherrisEditor/Scenes/EditorSelection.cs`): a ray from the main camera through
+the clicked pixel, tested against every object's world-space bounds, nearest hit wins (`ViewportPicker`). Two
+things are not clickable there and are not clickable here either — cameras and the skybox — and bounds are the
+objects' boxes rather than their meshes, so a rotated object picks as if it filled its axis-aligned box.
+
+The click comes in as an ordinary mouse press on the existing input path; what is new is that the press carries
+the position it happened at (`mouseButton` with `x`/`y`), so a click that arrives before any move still picks
+where it landed instead of wherever the pointer was last. Picking runs on the render thread, which owns the
+scene, and the id crosses to the UI through `WebEditorHost.ObjectPicked` and `EditorHostService.SelectionSink`
+— that is the whole hand-off, and it is why `SceneSelection` guards its id with a lock. A press with the pointer
+captured (the position frozen at the capture point) picks nothing.
+
 ### Scene previews
 
 The content browser draws a scene file as a preview of the scene instead of a page icon: a top-down map of the

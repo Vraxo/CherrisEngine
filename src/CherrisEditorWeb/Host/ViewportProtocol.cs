@@ -111,6 +111,13 @@ public static class ViewportProtocol
                     return true;
 
                 case "mouseButton":
+                    // A press carries where it happened, so a click that arrives before any move still picks
+                    // where it landed. The position goes in first: the press is what triggers the pick.
+                    if (root.TryGetProperty("x", out _) && root.TryGetProperty("y", out _))
+                    {
+                        sink.MouseMovedTo(ReadFloat(root, "x"), ReadFloat(root, "y"));
+                    }
+
                     sink.MouseButtonChanged(ReadInt(root, "button"), ReadBool(root, "down"));
                     return true;
 

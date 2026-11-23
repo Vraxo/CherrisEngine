@@ -110,6 +110,12 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     public string? SceneNotice => _engine?.SceneNotice;
 
     /// <summary>
+    /// Raised on the render thread when a click in the viewport picked an object: its id, or null when the click
+    /// landed on empty space. Handlers must hand the id to the UI rather than touch the scene.
+    /// </summary>
+    public event Action<Guid?>? ObjectPicked;
+
+    /// <summary>
     /// Queues a transport action for the render thread. Safe from any thread; the render loop carries it out
     /// at the top of its next frame.
     /// </summary>
@@ -323,6 +329,19 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         return connection;
     }
 
+    /// <summary>Forwards a pick from the render thread; a throwing handler must not end the render loop.</summary>
+    private void OnObjectPicked(Guid? id)
+    {
+        try
+        {
+            ObjectPicked?.Invoke(id);
+        }
+        catch (Exception exception)
+        {
+            WriteLog($"[web-editor] Selection handler failed: {exception.Message}");
+        }
+    }
+
     private void RunEngine()
     {
         HeadlessBackend backend;
@@ -346,6 +365,9 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             return;
         }
 
+        // A click in the viewport is picked on the render thread, which owns the scene; the UI decides what a
+        // selection means.
+        engine.ObjectPicked += OnObjectPicked;
         _engine = engine;
 
         // Ctrl+C can arrive between starting the watcher and reaching this point.

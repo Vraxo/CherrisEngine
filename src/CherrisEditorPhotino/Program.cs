@@ -34,12 +34,18 @@ internal static class Program
             appBuilder.Services.AddSingleton(editorHost);
 
             // One snapshot poller and one selection shared by the hierarchy, inspector and viewport, so the
-            // panels agree on the frame and the selected object.
+            // panels agree on the frame and the selected object. The selection is built here rather than by the
+            // container because the host needs it too: a click in the viewport is picked on the render thread and
+            // handed straight to it.
+            SceneSelection selection = new();
+
             // Themes are data: the catalog reads the shipped Themes folder and the user's, and applying one
             // sets CSS custom properties on the document (wwwroot/js/theme.js).
             appBuilder.Services.AddSingleton<ThemeService>();
             appBuilder.Services.AddSingleton<SceneStore>();
-            appBuilder.Services.AddSingleton<SceneSelection>();
+            appBuilder.Services.AddSingleton(selection);
+
+            editorHost.SelectionSink = selection.Select;
 
             // Scene previews are read from the scene files themselves, on a worker thread, and reused until the
             // files change.

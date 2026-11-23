@@ -140,6 +140,12 @@ public sealed class WebEditorEngine : Engine, IDisposable
         _stopRequested = true;
     }
 
+    /// <summary>
+    /// Raised on the render thread when a click in the viewport picked an object, or null when it landed on empty
+    /// space. The host hands it to the UI's selection; nothing here knows what a selection is.
+    /// </summary>
+    public event Action<Guid?>? ObjectPicked;
+
     /// <summary>Runs the UI's pending edits against the active scene.</summary>
     private void ExecuteCommands()
     {
@@ -340,6 +346,8 @@ public sealed class WebEditorEngine : Engine, IDisposable
             return;
         }
 
+        HandleViewportClick();
+
         base.Update(deltaTime);
 
         // Physics, audio and scripts advance only while play is running; a paused or edited scene stands still.
@@ -352,6 +360,30 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
         _spinAngle += deltaTime * 0.4f;
         _spinTarget.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _spinAngle);
+    }
+
+    /// <summary>
+    /// A left click in the viewport selects whatever is under it, and a click on empty space clears the
+    /// selection — the behaviour the ImGui editor's viewport has. The press is read from the engine's input
+    /// state, which the host fills from the browser before every frame.
+    /// </summary>
+    private void HandleViewportClick()
+    {
+        // A captured pointer keeps reporting the position it was captured at, so a click while it is captured has
+        // nowhere real to pick at.
+        if (Input.IsMouseLocked || !Input.WasMouseButtonPressed(MouseButton.Left))
+        {
+            return;
+        }
+
+        (int width, int height) = _sink.ViewportSize;
+
+        GameObject? picked = ViewportPicker.Pick(
+            SceneManager.ActiveScene,
+            Input.MousePosition,
+            new Vector2(width, height));
+
+        ObjectPicked?.Invoke(picked?.Id);
     }
 
     /// <inheritdoc />

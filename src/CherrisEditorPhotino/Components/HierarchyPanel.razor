@@ -72,7 +72,15 @@
     protected override void OnInitialized()
     {
         Store.Changed += OnSceneChanged;
+
+        // A click in the viewport selects on the render thread; the highlight has to follow it straight away.
+        Selection.Changed += OnSelectionChanged;
         Rebuild();
+    }
+
+    private void OnSelectionChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void OnSceneChanged()
@@ -157,5 +165,6 @@
     public void Dispose()
     {
         Store.Changed -= OnSceneChanged;
+        Selection.Changed -= OnSelectionChanged;
     }
 }
