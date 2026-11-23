@@ -105,6 +105,51 @@ public class ViewportProtocolTests
         sink.Calls.Should().Be(0);
     }
 
+    [Fact]
+    public void TryReadCommand_PressCarriesItsOwnPositionAndAppliesItFirst()
+    {
+        OrderedSink sink = new();
+
+        ViewportProtocol.TryReadCommand(
+            """{"type":"mouseButton","button":0,"down":true,"x":312,"y":180}""",
+            sink).Should().BeTrue();
+
+        sink.Calls.Should().Equal("position:312:180", "button:0:up");
+    }
+
+    [Fact]
+    public void TryReadCommand_PressWithoutAPositionLeavesTheLastOne()
+    {
+        OrderedSink sink = new();
+
+        ViewportProtocol.TryReadCommand("""{"type":"mouseButton","button":0,"down":true}""", sink)
+            .Should().BeTrue();
+
+        sink.Calls.Should().Equal("button:0:up", "a release says nothing about where the pointer is");
+    }
+
+    private sealed class OrderedSink : IViewportInputSink
+    {
+        public List<string> Calls { get; } = [];
+
+        public void Resize(int width, int height) => Calls.Add($"resize:{width}x{height}");
+
+        public void KeyChanged(string code, bool isDown) => Calls.Add($"key:{code}:{isDown}");
+
+        public void MouseButtonChanged(int button, bool isDown) =>
+            Calls.Add($"button:{button}:{(isDown ? "down" : "up")}");
+
+        public void MouseMoved(float deltaX, float deltaY) => Calls.Add($"move:{deltaX}:{deltaY}");
+
+        public void MouseMovedTo(float x, float y) => Calls.Add($"position:{x}:{y}");
+
+        public void Wheel(float x, float y) => Calls.Add($"wheel:{x}:{y}");
+
+        public void MouseLockChanged(bool locked) => Calls.Add($"lock:{locked}");
+
+        public void FocusLost() => Calls.Add("blur");
+    }
+
     private sealed class RecordingSink : IViewportInputSink
     {
         public List<(int Width, int Height)> Resizes { get; } = [];

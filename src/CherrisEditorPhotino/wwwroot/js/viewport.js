@@ -322,7 +322,14 @@ void main() {
                     canvas.requestPointerLock();
                 }
 
-                send({ type: 'mouseButton', button: event.button, down: true });
+                // The press carries where it happened: the editor picks the object under the click, and a click
+                // that comes before any move must not pick wherever the pointer was last time. A captured
+                // pointer has no free position, so then the press says nothing about where it landed.
+                const point = isPointerLocked() ? null : viewportPoint(event);
+
+                send(point
+                    ? { type: 'mouseButton', button: event.button, down: true, x: point.x, y: point.y }
+                    : { type: 'mouseButton', button: event.button, down: true });
             });
 
             on(window, 'mouseup', (event) => send({ type: 'mouseButton', button: event.button, down: false }));
@@ -333,12 +340,9 @@ void main() {
                     return;
                 }
 
-                const rect = canvas.getBoundingClientRect();
-                send({
-                    type: 'mouse',
-                    x: (event.clientX - rect.left) * (canvas.width / Math.max(1, rect.width)),
-                    y: (event.clientY - rect.top) * (canvas.height / Math.max(1, rect.height))
-                });
+                const point = viewportPoint(event);
+
+                send({ type: 'mouse', x: point.x, y: point.y });
             });
 
             on(canvas, 'wheel', (event) => {
@@ -434,6 +438,17 @@ void main() {
 
         function isPointerLocked() {
             return document.pointerLockElement === canvas;
+        }
+
+        // A pointer position in the frame's own pixels: CSS pixels scaled to the canvas's drawing buffer, and
+        // relative to the canvas. That is the space the engine renders in and the space picking works in.
+        function viewportPoint(event) {
+            const rect = canvas.getBoundingClientRect();
+
+            return {
+                x: (event.clientX - rect.left) * (canvas.width / Math.max(1, rect.width)),
+                y: (event.clientY - rect.top) * (canvas.height / Math.max(1, rect.height))
+            };
         }
 
         function stats() {

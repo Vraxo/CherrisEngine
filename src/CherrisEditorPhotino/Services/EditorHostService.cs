@@ -127,6 +127,12 @@ public sealed class EditorHostService : IDisposable
     /// <summary>Closes the window; supplied by the host once the window exists (File &gt; Exit).</summary>
     public Action? CloseRequested { get; set; }
 
+    /// <summary>
+    /// Where a pick from the viewport goes — normally <c>SceneSelection.Select</c>. Called on the render thread,
+    /// so the target has to be safe to call from there; when nothing is registered, picks are ignored.
+    /// </summary>
+    public Action<Guid?>? SelectionSink { get; set; }
+
     /// <summary>The log the console panel shows, oldest first.</summary>
     public IReadOnlyList<EditorLogEntry> LogEntries
     {
@@ -632,6 +638,9 @@ public sealed class EditorHostService : IDisposable
         }
 
         WebEditorHost host = new(CreateOptions(), _webRoot, backend, WriteLog, scene);
+
+        // A viewport click is picked on the render thread; this is the hand-off to the UI's selection.
+        host.ObjectPicked += OnObjectPicked;
         ManualResetEventSlim exited = new(false);
 
         // The thread body needs the session, so the closure reads it after it has been assigned.
@@ -719,6 +728,12 @@ public sealed class EditorHostService : IDisposable
             session.Exited.Set();
         }
     }
+
+    /// <summary>
+    /// Applies a pick that came from the render thread to the UI's selection. The host already keeps a throwing
+    /// handler from ending the render loop, so this stays a plain hand-off.
+    /// </summary>
+    private void OnObjectPicked(Guid? id) => SelectionSink?.Invoke(id);
 
     /// <summary>
     /// Hands a transport action to the render thread and remembers the state it leads to. The engine applies
