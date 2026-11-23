@@ -219,6 +219,11 @@ Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hier
 inspector without either component talking to the other. Editing stays in the ImGui editor: names, values
 and the Add-component menu are drawn read-only/enabled-off rather than faked.
 
+The inspector's Transform is the ImGui one's three Vector3 rows — Position, Rotation and Scale — with each
+field labelled by its axis in the same red/green/blue (`TransformRows`, `.vec-axis`). Rotation is shown as
+Euler degrees rather than as a quaternion, which is what the ImGui inspector edits
+(`Quaternion.CreateFromYawPitchRoll` on the way back).
+
 ## Protocol
 
 `ViewportProtocol` (C#) and `js/viewport.js` (JS) are the two halves of this contract; they are versioned

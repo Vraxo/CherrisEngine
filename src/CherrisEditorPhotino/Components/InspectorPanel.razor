@@ -31,10 +31,34 @@
                     <span>Transform</span>
                 </div>
 
+                @* One row per Vector3, each component labelled with its axis the way the ImGui inspector
+                   does: X red, Y green, Z blue. Rotation is shown as Euler degrees, so all three rows read
+                   the same. *@
                 <div class="inspector-section-body">
-                    @(VectorRow("Position", node.Position.X, node.Position.Y, node.Position.Z))
-                    @(VectorRow("Rotation", node.Rotation.X, node.Rotation.Y, node.Rotation.Z, node.Rotation.W))
-                    @(VectorRow("Scale", node.Scale.X, node.Scale.Y, node.Scale.Z))
+                    @foreach (TransformRow row in TransformRows.From(node))
+                    {
+                        <div class="vec-row">
+                            <span class="vec-label">@row.Label</span>
+
+                            <div class="vec-fields">
+                                @* Strings are built as locals: an attribute cannot hold a C# string literal
+                                   without its own quotes ending the attribute. *@
+                                @for (int axis = 0; axis < row.Components.Count; axis++)
+                                {
+                                    string letter = TransformRow.Axes[axis];
+                                    string axisClass = "vec-axis axis-" + letter.ToLowerInvariant();
+                                    string text = row.Components[axis].ToString("0.###", CultureInfo.InvariantCulture);
+                                    string fieldName = row.Label + " " + letter;
+
+                                    <span class="vec-cell">
+                                        <span class="@axisClass">@letter</span>
+                                        <input type="text" class="imgui-input vec-field" value="@text"
+                                               readonly tabindex="-1" aria-label="@fieldName" />
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -90,40 +114,6 @@
     {
         _ = InvokeAsync(StateHasChanged);
     }
-
-    private static RenderFragment VectorRow(string label, float x, float y, float z, float? w = null) =>
-        w is null
-            ? BuildRow(label, [x, y, z])
-            : BuildRow(label, [x, y, z, w.Value]);
-
-    private static RenderFragment BuildRow(string label, float[] values) => builder =>
-    {
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "vec-row");
-
-        builder.OpenElement(2, "span");
-        builder.AddAttribute(3, "class", "vec-label");
-        builder.AddContent(4, label);
-        builder.CloseElement();
-
-        builder.OpenElement(5, "div");
-        builder.AddAttribute(6, "class", "vec-fields");
-
-        for (int index = 0; index < values.Length; index++)
-        {
-            builder.OpenElement(7, "input");
-            builder.AddAttribute(8, "type", "text");
-            builder.AddAttribute(9, "class", "imgui-input vec-field");
-            builder.AddAttribute(10, "value", values[index].ToString("0.###", CultureInfo.InvariantCulture));
-            builder.AddAttribute(11, "readonly", true);
-            builder.AddAttribute(12, "tabindex", "-1");
-            builder.AddAttribute(13, "aria-label", $"{label} {index}");
-            builder.CloseElement();
-        }
-
-        builder.CloseElement();
-        builder.CloseElement();
-    };
 
     public void Dispose()
     {

@@ -1,3 +1,4 @@
+using Cherris;
 using Cherris.Components;
 using Cherris.Core;
 using System.Numerics;
@@ -19,7 +20,18 @@ public sealed record SceneNodeSnapshot(
     Quaternion Rotation,
     Vector3 Scale,
     IReadOnlyList<string> Components,
-    Guid? ParentId = null);
+    Guid? ParentId = null)
+{
+    /// <summary>
+    /// <see cref="Rotation"/> as Euler degrees, X pitch, Y yaw, Z roll — the reading the inspector shows,
+    /// because a quaternion's four components are not what an editor user types.
+    /// </summary>
+    /// <remarks>
+    /// Same conversion as the ImGui inspector (<c>TransformInspector</c>), which writes the angles back with
+    /// <see cref="Quaternion.CreateFromYawPitchRoll"/>.
+    /// </remarks>
+    public Vector3 RotationDegrees => EngineMath.ToEulerAngles(Rotation) * (180f / MathF.PI);
+}
 
 /// <summary>
 /// Immutable view of the active scene, safe to read from a UI thread while the render thread keeps

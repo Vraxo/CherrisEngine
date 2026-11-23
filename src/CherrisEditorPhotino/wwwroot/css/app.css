@@ -207,6 +207,12 @@
     --ok: var(--theme-success);
     --warn: var(--theme-warning);
     --bad: var(--theme-error);
+
+    /* Vector axis letters: X red, Y green, Z blue in every theme, the same values the ImGui inspector
+       draws them in (TransformInspector.DrawVector3Control), so a vector reads the same in both windows. */
+    --axis-x: #cc3333;
+    --axis-y: #33cc33;
+    --axis-z: #334ccc;
 }
 
 * {
@@ -1161,7 +1167,38 @@ span.panel-tab:hover {
     min-width: 0;
 }
 
+/* One component: its axis letter, then the field. */
+.vec-cell {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+}
+
+.vec-axis {
+    flex: none;
+    width: 8px;
+    font-size: calc(var(--theme-font-size) - 2px);
+    font-weight: var(--theme-font-weight-bold);
+    text-align: center;
+    cursor: default;
+}
+
+.axis-x {
+    color: var(--axis-x);
+}
+
+.axis-y {
+    color: var(--axis-y);
+}
+
+.axis-z {
+    color: var(--axis-z);
+}
+
 .imgui-input.vec-field {
+    flex: 1;
     min-width: 0;
     padding: 2px 6px;
     font-variant-numeric: tabular-nums;
