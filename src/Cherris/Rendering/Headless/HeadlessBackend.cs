@@ -102,6 +102,21 @@ public sealed class HeadlessBackend : IRenderingInterface
         };
 
         _contextWindow = new NativeWindow(settings);
+
+        // NativeWindow made the context current on this thread, and a GL context can only be current on one
+        // thread at a time: leaving it current here makes the render thread's Initialize fail with
+        // "WGL: Failed to make context current: The requested resource is in use". Release it; Initialize
+        // makes it current on whichever thread runs the engine.
+        ReleaseGraphicsContext();
+    }
+
+    /// <summary>
+    /// Unbinds the GL context from the calling thread, if it is current there. Call before handing the
+    /// backend to another thread and before disposing it from a different thread than the render loop's.
+    /// </summary>
+    public void ReleaseGraphicsContext()
+    {
+        _contextWindow?.Context?.MakeNoneCurrent();
     }
 
     /// <inheritdoc />
