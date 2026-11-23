@@ -1,4 +1,5 @@
 @inject EditorHostService Host
+@inject ScenePreviewStore Previews
 @implements IDisposable
 
 @* ImGui's Content Browser: <- Back and a path line, separator, then a grid of folders and assets. *@
@@ -30,10 +31,17 @@
             @foreach (Entry entry in _entries)
             {
                 <button type="button" class="cb-item @(_selectedPath == entry.FullPath ? "selected" : "")"
-                        title="@entry.Name"
+                        title="@EntryTitle(entry)"
                         @onclick="() => Select(entry)"
                         @ondblclick="() => Activate(entry)">
-                    @Glyph(entry)
+                    @if (Previews.Get(entry.FullPath) is SceneThumbnail preview)
+                    {
+                        <SceneThumbnailView Thumbnail="preview" />
+                    }
+                    else
+                    {
+                        @Glyph(entry)
+                    }
                     <span class="cb-name">@entry.Name</span>
                 </button>
             }
@@ -87,7 +95,14 @@
     {
         _currentDirectory = Host.ProjectRoot;
         Refresh();
+        Previews.Changed += OnPreviewsChanged;
         _timer = new Timer(_ => _ = PollAsync(), null, PollInterval, PollInterval);
+    }
+
+    private void OnPreviewsChanged()
+    {
+        // Previews are read on a worker thread; the renderer is the only one allowed to redraw the panel.
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async Task PollAsync()
@@ -108,12 +123,53 @@
             _entries.AddRange(entries);
             StateHasChanged();
         });
+
+        LoadPreviews();
     }
 
     private void Refresh()
     {
         _entries.Clear();
         _entries.AddRange(ReadEntries());
+        LoadPreviews();
+    }
+
+    /// <summary>Asks for the previews of the scenes in this folder; unchanged files are not read again.</summary>
+    private void LoadPreviews()
+    {
+        _ = Previews.LoadAsync(_entries.Where(IsScene).Select(entry => entry.FullPath));
+    }
+
+    /// <summary>
+    /// A candidate for a preview. <c>project.yaml</c> is the project descriptor rather than a scene, and a file
+    /// that turns out not to be a scene simply keeps its icon.
+    /// </summary>
+    private static bool IsScene(Entry entry)
+    {
+        string extension = Path.GetExtension(entry.Name);
+
+        return !entry.IsDirectory
+            && (extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".yml", StringComparison.OrdinalIgnoreCase))
+            && !entry.Name.Equals(ProjectConfig.FileName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The name, plus what the preview found in the file.</summary>
+    private string EntryTitle(Entry entry)
+    {
+        if (Previews.Get(entry.FullPath) is not SceneThumbnail preview)
+        {
+            return entry.Name;
+        }
+
+        string contents = preview.Objects.Count switch
+        {
+            0 => "empty scene",
+            1 => "1 object",
+            int count => $"{count} objects"
+        };
+
+        return $"{entry.Name} — {contents}";
     }
 
     private List<Entry> ReadEntries()
@@ -232,6 +288,7 @@
 
     public void Dispose()
     {
+        Previews.Changed -= OnPreviewsChanged;
         _timer?.Dispose();
         _timer = null;
     }

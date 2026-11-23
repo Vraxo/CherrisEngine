@@ -207,7 +207,7 @@ chrome is deliberately the same so muscle memory carries over:
 | Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
 | `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel` (Show Grid is a renderer setting, so it is shown disabled) |
 | `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
-| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, read-only over the open project folder |
+| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, read-only over the open project folder, with a preview per scene (see [Scene previews](#scene-previews)) |
 | Theme: `ImGuiTheme.Apply(EditorTheme)` | the same `EditorTheme`, applied as `--theme-*` tokens (see [themes.md](themes.md)) |
 
 Colors come from the engine's own palette rather than an approximation of it — see
@@ -218,6 +218,26 @@ which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `-
 them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.
 Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hierarchy selection drives the
 inspector without either component talking to the other.
+
+### Scene previews
+
+The content browser draws a scene file as a preview of the scene instead of a page icon: a top-down map of the
+objects the file describes, with meshes as the ground they cover, lights as dots and cameras as markers pointing
+where they look. The name stays under it and the tile's tooltip says what the preview found
+("Main.yaml — 12 objects", or "empty scene").
+
+Previews come from the YAML the serializer already writes — `GameObjects`, each object's `Transform`, and which
+components it carries — read with the same YamlDotNet the serializer uses. Nothing is loaded, no components are
+constructed and no GL context is involved, so a folder of scenes can be previewed without opening any of them.
+`SceneThumbnail` holds the flattened scene, `SceneThumbnailLayout` fits it into the tile with one scale for both
+axes so a square on the floor stays square, and `ScenePreviewStore` does the reading on a worker thread and
+keeps each result until the file's write time or size changes.
+
+What it is not: a render. A mesh is drawn at the footprint its scale describes, because how big a *named* mesh is
+is not in the file — the demo's 20-unit floor is a plane at scale 1, so it reads as a 1×1 tile — and rotations
+become headings rather than geometry. A file that does not parse as a scene, `project.yaml` included, keeps its
+ordinary icon; a scene with no objects at all shows a dashed empty box, which is what a new project's start
+scene is.
 
 One rule keeps the panels honest about what they can do: anything the web UI *cannot* do is drawn `disabled`
 with a tooltip saying where that job lives, rather than as a button that silently does nothing — Save, Build and
