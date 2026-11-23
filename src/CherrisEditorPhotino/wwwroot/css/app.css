@@ -1518,6 +1518,53 @@ span.panel-tab:hover {
     flex: none;
 }
 
+/* A scene's preview in the content browser: a top-down map of the scene's objects, read from the scene file's
+   YAML. The box matches the component's viewBox (76x46) so nothing is letterboxed or stretched. */
+.cb-thumb {
+    display: block;
+    width: 76px;
+    height: 46px;
+    flex: none;
+}
+
+.cb-thumb-floor {
+    fill: var(--theme-input);
+    stroke: var(--theme-input-outline);
+    stroke-width: 1;
+}
+
+.cb-thumb-empty {
+    fill: none;
+    stroke: var(--theme-input-outline);
+    stroke-dasharray: 3 3;
+}
+
+.cb-thumb-mesh {
+    fill: var(--theme-accent-gray);
+    fill-opacity: 0.5;
+    stroke: var(--theme-foreground);
+    stroke-width: 0.6;
+}
+
+.cb-thumb-other {
+    fill: none;
+    stroke: var(--theme-hover-2);
+    stroke-width: 0.8;
+}
+
+.cb-thumb-camera {
+    fill: var(--theme-accent-blue);
+}
+
+.cb-thumb-light {
+    fill: var(--theme-accent-yellow);
+}
+
+.cb-thumb-light-glow {
+    fill: var(--theme-accent-yellow);
+    fill-opacity: 0.18;
+}
+
 .cb-name {
     max-width: 76px;
     overflow: hidden;

@@ -41,6 +41,10 @@ internal static class Program
             appBuilder.Services.AddSingleton<SceneStore>();
             appBuilder.Services.AddSingleton<SceneSelection>();
 
+            // Scene previews are read from the scene files themselves, on a worker thread, and reused until the
+            // files change.
+            appBuilder.Services.AddSingleton<ScenePreviewStore>();
+
             var app = appBuilder.Build();
 
             app.MainWindow
