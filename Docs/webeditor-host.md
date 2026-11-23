@@ -1,72 +1,128 @@
-# Web editor host (`src/CherrisEditorWeb`)
+# Web / PhotinoX editor host
 
-A minimal editor host that runs the engine off-screen and streams the game view to a browser page:
-HTML/JS for the UI, `Cherris.Rendering.Headless` for rendering, a local HTTP/WebSocket server for the
-transport.
+The editor has a second front end next to the ImGui window: a **PhotinoX Blazor** desktop app that renders
+the game view off-screen and shows it inside a native webview window. It is additive — `src/CherrisEditor`,
+`src/CherrisRuntime` and the engine's ImGui path are untouched.
 
-It is the runnable half of the PhotinoX/Blazor design: the same page and the same protocol work inside a
-webview window, so it can be developed in a normal browser first. See
-[photinox-blazor-viewport.md](photinox-blazor-viewport.md) for the rendering-side contract.
+| Project | What it is |
+| :--- | :--- |
+| `src/CherrisEditorPhotino` | The editor window. `PhotinoX.Blazor` host, Blazor components, viewport canvas, scene panel. |
+| `src/CherrisEditorWeb` | The transport it reuses: render host, frame pipe, wire protocol, input bridge. Also runs standalone as a browser dev harness. |
+| `src/Cherris/Rendering/Headless` | Off-screen rendering: hidden GL context, frame pacing, GPU readback. |
 
-## Why a local server instead of PhotinoX packages in this repo
-
-The host deliberately has **no NuGet dependencies**: `HttpListener` + `System.Net.WebSockets` ship with the
-runtime. Two reasons:
-
-1. It keeps `dotnet build Cherris.slnx` working everywhere, including machines where the WebView2 or
-   WebKitGTK runtimes are not installed.
-2. PhotinoX only needs a URL. Wrapping this host in a native window is a five-line program (below) rather
-   than a load-bearing part of the build.
+See [photinox-blazor-viewport.md](photinox-blazor-viewport.md) for the rendering-side contract: why the
+viewport is a pixel stream and not an embedded GL surface.
 
 ## Running it
 
 ```bash
-dotnet run --project src/CherrisEditorWeb
+dotnet run --project src/CherrisEditorPhotino
 ```
 
-Defaults to <http://localhost:5178/>, size 1280x720, 60 fps, and opens the default browser. Options:
+Opens a 1600x900 native window: WebView2 on Windows, WKWebView on macOS, WebKitGTK 4.1 on Linux. The
+Blazor UI fills the window, the game view fills the viewport panel, and the hierarchy panel shows the live
+scene.
 
 | Option | Meaning |
 | :--- | :--- |
-| `--port <n>` | HTTP/WebSocket port (default 5178) |
-| `--width <n>` / `--height <n>` | Initial render size in device pixels |
-| `--fps <n>` | Render loop rate (default 60) |
-| `--listen-all` | Bind all interfaces (needs an URL ACL reservation on Windows) |
-| `--no-browser` | Do not launch a browser |
-| `--help` | Usage |
+| `--port <n>` | Port for the internal frame socket. Default: a free loopback port, picked at startup. |
+| `--width <n>` / `--height <n>` | Initial render size in device pixels (the viewport overrides it once it measures the canvas). |
+| `--fps <n>` | Render loop rate (default 60). |
 
-The page shows a demo scene (floor, spinning cube, directional light) because project loading still lives
-in the ImGui editor. Replace `WebEditorEngine.LoadContent` to load a real scene with
-`SceneLoader.LoadScene(...)` when the web UI grows a project browser.
+The browser dev harness is still available when iterating on the protocol or on a machine without a webview
+runtime:
+
+```bash
+dotnet run --project src/CherrisEditorWeb            # http://localhost:5178/
+dotnet run --project src/CherrisEditorWeb --no-browser --port 5179
+```
+
+It serves `src/CherrisEditorWeb/wwwroot` and has the same options plus `--listen-all` and `--help`.
+
+## The window
+
+`src/CherrisEditorPhotino/Program.cs` is the whole host:
+
+```csharp
+[STAThread]
+private static int Main(string[] args)
+{
+    EditorHostService editorHost = EditorHostService.Start(args);
+
+    var appBuilder = PhotinoBlazorApp.CreateBuilder(args);
+    appBuilder.RootComponents.Add<App>("app");          // <app> in wwwroot/index.html
+    appBuilder.Services.AddSingleton(editorHost);
+
+    var app = appBuilder.Build();
+    app.MainWindow.SetTitle("Cherris Editor").SetSize(1600, 900);
+    app.Run();                                          // native message loop, returns on close
+
+    return editorHost.FailureMessage is null ? 0 : 1;
+}
+```
+
+`PhotinoX.Blazor` 5.5.0 pulls in `PhotinoX.App` → `PhotinoX` → `PhotinoX.Native` and
+`Microsoft.AspNetCore.Components.WebView`. It targets `net11.0` among others, so the project needs no
+pinning tricks. The package's root namespace is still `Photino.Blazor`.
+
+`wwwroot/index.html` is a standard Blazor WebView host page — `<app>` for the root component and
+`_framework/blazor.webview.js` to boot the renderer — plus `js/viewport.js`, the frame bridge.
 
 ## Architecture
 
 | Piece | Thread | Responsibility |
 | :--- | :--- | :--- |
-| `WebEditorEngine` | main thread | Engine + `HeadlessBackend`; captures the previous frame from `OnDrawUI` and publishes it. |
-| `WebEditorHost` | any | Owns the server, the desired viewport size, the active client, and translation of input commands into `HeadlessInput`. |
+| `PhotinoBlazorApp` message loop | main (`[STAThread]`) | Window, webview, Blazor renderer. Owns the UI thread. |
+| `WebEditorEngine` | background ("Cherris Engine") | Engine + `HeadlessBackend`; captures the previous frame from `OnDrawUI` and publishes it. |
+| `EditorHostService` | any | Starts the render thread, exposes the URL, the latest scene snapshot and failures to the UI. |
+| `WebEditorHost` | any | Owns the listener, the desired viewport size, the active client, and input translation into `HeadlessInput`. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
 | `FramePipe` | shared | Single-slot frame hand-off: newest frame wins, stale frames are dropped and pooled. |
+| `SceneSnapshotBuilder` | render thread | Copies the hierarchy into an immutable `SceneSnapshot` every 15 frames. |
+| `ScenePanel` / `StatusBar` | UI thread | Poll (`250 ms` / `500 ms`) what the other threads publish; never touch engine state. |
 
 ```
-main thread                           socket thread                    browser
------------                           -------------                    -------
-Draw() ..... RenderFrame -> FBO
-Update() ... OnDrawUI -> TryCapture -> PublishFrame -> FramePipe --->  binary frame
-                                     <- TryReadCommand <- text msg  <-  key/mouse/resize
-Update() ... HeadlessInput queue -> Input state (next frame)
+main thread (native loop + Blazor)        engine thread                 socket thread
+----------------------------------        -------------                 -------------
+window / webview / components
+  ViewportPanel --mount(ws)----> socket <---- PublishFrame <--- FramePipe
+  ScenePanel ----poll---------- LatestScene <-- SceneSnapshotBuilder
+  StatusBar -----getStats()---> JS bridge ---> send key/mouse/resize ---> HeadlessInput
 ```
 
-The engine owns the process' main thread: an OpenGL context is thread-affine, and on macOS GLFW and
-NSWindow want the main thread. The HTTP listener and WebSocket loops run on the thread pool, so the
-server keeps accepting requests while the engine renders. Shutdown is requested from any thread (Ctrl+C)
-and delivered to the loop through `WebEditorEngine.RequestStop`, which is polled once per frame.
+The window's main thread belongs to the native message loop, so the engine gets its own thread — the
+opposite arrangement from the browser harness, where the engine owns the main thread. GL stays
+thread-affine: the context, the renderer, `SceneFrameCapture` and every GL call live on the engine thread,
+and nothing there touches Blazor state or `StateHasChanged`. Cross-thread data moves only through
+`Volatile` fields holding immutable objects (`SceneSnapshot`, `FramePipe`'s slot).
 
-Frame timing: `HeadlessGameWindow.SwapBuffers` paces the loop to `--fps`; the transport never blocks the
-render thread, so a slow client lowers the visible frame rate instead of adding latency.
+### Why pixels still travel over a socket
+
+The Blazor UI is in-process, so the frame path could be JS interop. It is a loopback WebSocket instead:
+
+- A 1080p frame is 8.3 MB; serialising that through `IJSRuntime` per frame puts it on the Blazor renderer's
+  dispatcher path, where it competes with UI work and is copied as base64 or a stream per call.
+- The socket transfer is binary, zero-copy on the C# side (`ArraySegment<byte>` straight from the pool) and
+  naturally drops frames when the client is slow — `FramePipe` keeps one pending frame.
+- The listener binds loopback only, inside the same process, and picks a free port at startup, so two
+  editor instances can never collide and nothing is exposed beyond the machine.
+
+`wwwroot/js/viewport.js` is the other half: it mounts a WebGL2 canvas on the socket, uploads each frame with
+`texSubImage2D`, and forwards keyboard/mouse/wheel/pointer-lock events back. It is the same code that the
+browser harness uses, wrapped in `mount()` / `dispose()` / `getStats()` so Blazor can own its lifetime.
+
+### Scene snapshots
+
+The render thread publishes a `SceneSnapshot` (objects, transform, component type names) every 15 frames.
+`ScenePanel` polls `EditorHostService.LatestScene` and diffs by reference, so the UI shows the hierarchy at
+4 Hz without ever locking the engine. Snapshots are immutable copies: an older one cannot change while a
+component is rendering it.
 
 ## Protocol
+
+`ViewportProtocol` (C#) and `js/viewport.js` (JS) are the two halves of this contract; they are versioned
+together and the client refuses a mismatched `protocol`.
 
 Server to client, text, once on connect:
 
@@ -97,53 +153,28 @@ Client to server, text, one command per message:
 | `{"type":"lock","locked":true}` | Pointer lock acquired/released |
 | `{"type":"blur"}` | Page hidden or unfocused: clears held keys |
 
-`ViewportProtocol` (C#) and `wwwroot/app.js` (JS) are the two halves of this contract; they are
-versioned together and the client refuses a mismatched `protocol`.
+Frame timing: `HeadlessGameWindow.SwapBuffers` paces the loop to `--fps`; the transport never blocks the
+render thread, so a slow client lowers the visible frame rate instead of adding latency.
 
-## Wrapping it in PhotinoX
+## Demo scene
 
-The host only needs to be running; the window just points at its URL. A separate project with the PhotinoX
-packages (`PhotinoX`, `PhotinoX.Native`) can do this without touching anything here:
-
-On Windows and Linux, run the host beside the window loop:
-
-```csharp
-using Photino.NET;
-
-var hostThread = new Thread(() => new WebEditorHost(options, webRoot).Run()) { IsBackground = true };
-hostThread.Start();
-
-var window = new PhotinoWindow()
-    .SetTitle("Cherris Editor")
-    .SetSize(new System.Drawing.Size(1600, 900))
-    .Center()
-    .Load("http://localhost:5178/");
-
-window.WaitForClose();
-window.Close();          // also stop the host: engine.RequestStop() through the host's shutdown path
-```
-
-Exact member names follow the `PhotinoX` package's samples; the important part is that no JS interop is
-needed, so the same page works in a browser, in WebView2, in WKWebView and in WebKitGTK.
-
-On macOS both the GL context and the window loop want the main thread. There, create the hidden context on
-the main thread first (`new HeadlessBackend()`), then run the engine loop on a background thread after
-`MakeCurrent` on that thread, and keep PhotinoX's loop on the main thread. That path is untested; see the
-threading notes in [photinox-blazor-viewport.md](photinox-blazor-viewport.md).
-
-To move to JS interop later (a Blazor or `.js`-driven UI in the same process), implement
-`IViewportSink`/`IViewportInputSink` on the Blazor component host instead of the socket host; nothing in
-`Cherris.Rendering.Headless` changes.
+The viewport shows a built-in scene (floor, spinning cube, directional light) because project loading still
+lives in the ImGui editor. Replace `WebEditorEngine.LoadContent` with `SceneLoader.LoadScene(...)` when the
+Blazor UI grows a project browser; the hierarchy panel then shows real project content without changes.
 
 ## Limitations
 
 - **One editor window at a time.** A new connection replaces the previous one; the render loop keeps
   running with no client attached (frames are simply not published).
-- **No HTTP security.** Loopback only by default, no authentication, no TLS. Do not expose `--listen-all`
-  on an untrusted network.
-- **Element-level picking and gizmos are not implemented.** The page draws the frames and forwards input;
-  there is no HTML overlay yet, so `Engine.CreateRayFromMouse` has no caller.
-- **Demo scene only.** Project/scene/script loading is still in the ImGui editor.
-- **Uncompressed frames.** RGBA8 only, roughly 3.7 MB per 1280x720 frame. A JPEG/WebCodecs path would be
-  the next step for remote use over a slow link.
+- **Local only.** The frame socket is loopback-only, unauthenticated and unencrypted. It is an
+  implementation detail of one process, not a remote protocol.
+- **Viewport cost.** One frame of readback latency, plus a GPU readback and a texture upload per frame. A
+  1080p viewport is 8.3 MB per frame; the canvas is capped at 1920x1200 and scaled up by CSS.
+- **Element-level picking and gizmos are not implemented.** The hierarchy panel selects by object; there is
+  no viewport picking, so `Engine.CreateRayFromMouse` has no caller yet.
+- **Demo scene only.** Project/scene/script loading, undo and asset editing are still in the ImGui editor.
+- **Uncompressed frames.** RGBA8 only. A JPEG/WebCodecs path would be the next step for remote use.
+- **Platform coverage.** The build is verified by CI on Linux (`dotnet build` + tests); running the window
+  needs a webview runtime and a GL 3.3 driver. WebView2 (Windows) and WebKitGTK (Linux) are the primary
+  targets; WKWebView on macOS is untested, including whether GLFW wants the main thread there.
 - **Linux audio.** `SceneManager` initializes OpenAL; on machines without it the engine logs and continues.

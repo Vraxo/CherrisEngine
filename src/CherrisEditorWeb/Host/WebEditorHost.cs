@@ -22,7 +22,7 @@ namespace CherrisEditorWeb.Host;
 /// One editor window is supported at a time: a newly connected client replaces the previous one.
 /// </para>
 /// </remarks>
-public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposable
+public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSnapshotSink, IDisposable
 {
     private const int MinimumViewport = 32;
     private const int MaximumViewportWidth = 2560;
@@ -30,6 +30,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
 
     private readonly WebEditorOptions _options;
     private readonly ManualResetEventSlim _shutdown = new(false);
+    private readonly ManualResetEventSlim _started = new(false);
     private readonly string _webRoot;
 
     private ViewerConnection? _activeConnection;
@@ -39,6 +40,8 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
     private int _height;
     private int _shuttingDown;
     private volatile bool _renderFailed;
+    private volatile bool _startFailed;
+    private SceneSnapshot? _latestScene;
     private bool _disposed;
 
     public WebEditorHost(WebEditorOptions options, string webRoot)
@@ -51,6 +54,31 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
 
     /// <inheritdoc />
     public (int Width, int Height) ViewportSize => (Volatile.Read(ref _width), Volatile.Read(ref _height));
+
+    /// <summary>URL the HTTP/WebSocket listener serves, or null before <see cref="Run"/> starts it.</summary>
+    public string? Url => _server?.Url;
+
+    /// <summary>True when the listener could not be started; <see cref="Url"/> stays null.</summary>
+    public bool StartFailed => _startFailed;
+
+    /// <summary>Most recent scene snapshot published by the render thread, or null before the first one.</summary>
+    public SceneSnapshot? LatestScene => Volatile.Read(ref _latestScene);
+
+    /// <summary>
+    /// Blocks until the listener is up or failed. Lets a host that runs <see cref="Run"/> on a background
+    /// thread discover the URL before it shows a window.
+    /// </summary>
+    public bool WaitForStart(TimeSpan timeout) => _started.Wait(timeout);
+
+    /// <summary>
+    /// Asks the host to stop from any thread. The engine loop stops on its next update and
+    /// <see cref="Run"/> returns; unlike <see cref="Dispose"/>, this does not tear anything down while the
+    /// render thread is still using it.
+    /// </summary>
+    public void RequestStop()
+    {
+        _shutdown.Set();
+    }
 
     /// <summary>
     /// Runs until the process is interrupted. Returns the process exit code.
@@ -71,8 +99,12 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
         {
             Console.Error.WriteLine($"[web-editor] Could not listen on {prefix}: {exception.Message}");
             Console.Error.WriteLine("If the port is busy, pass --port <n>.");
+            _startFailed = true;
+            _started.Set();
             return 1;
         }
+
+        _started.Set();
 
         Console.WriteLine($"[web-editor] Serving the editor at {_server.Url}");
         Console.WriteLine("[web-editor] Press Ctrl+C to stop.");
@@ -101,6 +133,12 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
 
         Shutdown();
         return _renderFailed ? 1 : 0;
+    }
+
+    /// <inheritdoc />
+    public void PublishScene(SceneSnapshot snapshot)
+    {
+        Volatile.Write(ref _latestScene, snapshot);
     }
 
     /// <inheritdoc />
@@ -182,6 +220,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
         _disposed = true;
         Shutdown();
         _shutdown.Dispose();
+        _started.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -210,7 +249,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, IDisposab
         try
         {
             backend = new HeadlessBackend { TargetFrameRate = _options.TargetFrameRate };
-            engine = new WebEditorEngine(backend, this);
+            engine = new WebEditorEngine(backend, this, this);
         }
         catch (Exception exception)
         {

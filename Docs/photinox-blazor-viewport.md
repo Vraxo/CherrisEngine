@@ -1,10 +1,12 @@
 # Hosting the game view in a webview (PhotinoX / Blazor)
 
 This note explains the off-screen render path in `src/Cherris/Rendering/Headless/` and the contract a
-webview-hosted editor (or a remote viewer) has to implement to show the game view. A working
-implementation of the contract lives in [`src/CherrisEditorWeb`](webeditor-host.md). It is the "can the
-viewport work in a Blazor UI?" prototype: **yes, as a streamed image** — a webview cannot host a native
-OpenGL surface, so the viewport becomes a pixel stream instead of a control.
+webview-hosted editor (or a remote viewer) has to implement to show the game view.
+
+Both halves exist: [`src/CherrisEditorPhotino`](webeditor-host.md) is the PhotinoX Blazor editor window, and
+[`src/CherrisEditorWeb`](webeditor-host.md) is the transport it reuses (also runnable as a browser harness).
+The answer to "can the viewport work in a Blazor UI?" is **yes, as a streamed image** — a webview cannot
+host a native OpenGL surface, so the viewport becomes a pixel stream instead of a control.
 
 ## Why streaming instead of embedding
 
@@ -36,8 +38,9 @@ protected Engine(string windowTitle, bool startWithMouseLocked, IRenderingInterf
 
 ## Frame contract
 
-The host owns the loop, because the webview's message loop owns the UI thread. Run the engine on its own
-thread and follow this order every frame:
+The host owns the loop, because the webview's message loop owns the UI thread. In
+`src/CherrisEditorPhotino` the native Photino message loop runs on the `[STAThread]` main thread and the
+engine runs on a dedicated "Cherris Engine" thread. Follow this order every frame:
 
 1. `backend.SetViewportSize(width, height)` — device pixels, once per frame **before** rendering. The
    renderer only takes its off-screen path (`isRuntimeMode == false`, no blit to the window) on frames
@@ -134,10 +137,10 @@ engine.OnDrawUI = _ =>
 engine.Run();
 ```
 
-`Run()` blocks until something calls `backend.Close()`, so start it on a dedicated thread. The `Publish`
-step is deliberately not implemented: it can be a `JSInterop` call into
-`canvas.getContext('webgl2').texSubImage2D(...)`, a `WebSocket`/MJPEG endpoint, or shared memory. In JS
-the upload looks like:
+`Run()` blocks until something calls `backend.Close()`, so start it on a dedicated thread. `Publish` is
+host-defined; the shipping host hands frames to a loopback WebSocket (see
+[webeditor-host.md](webeditor-host.md) for why a socket rather than JS interop per frame). In JS the upload
+looks like:
 
 ```js
 function drawFrame(bytes, width, height) {
@@ -154,8 +157,13 @@ function drawFrame(bytes, width, height) {
 - The host executable needs `EditorResources/` next to it, because shaders are loaded from
   `<BaseDirectory>/EditorResources/Shaders/...` (`EditorResources.Find`). `GameBuilder` already copies that
   folder for exported builds; a webview editor project has to do the same (`Content Include="..\..\src\CherrisEditor\EditorResources\**\*"` with `CopyToOutputDirectory`).
-- PhotinoX packages target .NET 8/9/10. A `net11.0` host can consume them, but check the `PhotinoX.Blazor`
-  dispatcher does not assume it owns the thread you start the engine on.
+- Use `PhotinoX.Blazor` (5.5.0 at the time of writing). It targets `net8.0`/`net9.0`/`net10.0`/`net11.0`
+  and brings `PhotinoX.App`, `PhotinoX`, `PhotinoX.Native` and `Microsoft.AspNetCore.Components.WebView`
+  with it. The root namespace is still `Photino.Blazor`, and the host page boots with
+  `_framework/blazor.webview.js`.
+- Threading is the reverse of the browser host: `PhotinoBlazorApp.Run()` owns the main thread and the engine
+  gets its own thread. Do not start the engine on the Blazor dispatcher — every published frame would then
+  block a UI message.
 - Windows needs the WebView2 runtime (present on Windows 10/11 by default, missing on clean server images);
   Linux needs WebKitGTK 4.1 plus its dev packages.
 
@@ -164,9 +172,10 @@ function drawFrame(bytes, width, height) {
 - **Latency and throughput.** One frame of readback latency plus the transport. Fine for an editor
   viewport; not appropriate for shipping a 60 fps game inside the same webview. Keep the standalone
   runtime on its native window.
-- **Threading.** The hidden `NativeWindow`, the renderer, and `SceneFrameCapture` must all live on one
-  thread, and that thread must create them before the webview handles UI work. On macOS, GLFW also needs
-  the process' main thread to initialize, so create the backend before starting PhotinoX's message loop.
+- **Threading.** The hidden `NativeWindow`, the renderer, `SceneFrameCapture` and every GL call must live on
+  one thread. That thread is the engine thread, not the Blazor one; UI state crosses over as immutable
+  snapshots. On macOS, GLFW may additionally require the process' main thread to initialize, which would
+  collide with PhotinoX's message loop there — that combination is untested.
 - **Recreate on resize cost.** A viewport resize reallocates the post-processor framebuffers and both
   pack buffers, and drops the pending frame (`TryCapture` returns `false` once). Debounce CSS animations
   instead of chasing every frame of a resize.
@@ -176,5 +185,5 @@ function drawFrame(bytes, width, height) {
   expects viewport-local coordinates for the webview path.
 - **Selection outlines and debug draws** are part of the scene pass and are captured, but the editor's
   ImGui-drawn overlays are not.
-- **Not included in this prototype:** the Blazor project itself, the transport (JS interop/WebSocket),
-  browser key mapping, and a compressed (JPEG/WebCodecs) variant for low-bandwidth remoting.
+- **Not implemented yet:** viewport picking/gizmos on top of the stream, a project/scene browser, a
+  compressed (JPEG/WebCodecs) variant for low-bandwidth remoting, and audio-device selection.

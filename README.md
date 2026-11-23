@@ -11,7 +11,8 @@ The solution (`Cherris.slnx`) contains four production projects under `src`:
 | [`Cherris`](src/Cherris/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
 | [`CherrisEditor`](src/CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
 | [`CherrisRuntime`](src/CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
-| [`CherrisEditorWeb`](src/CherrisEditorWeb/) | Executable | Experimental browser-hosted editor: renders off-screen (`Cherris.Rendering.Headless`), serves an HTML/WebGL page over a local WebSocket, and streams the game view to it. Also usable inside a PhotinoX window. |
+| [`CherrisEditorPhotino`](src/CherrisEditorPhotino/) | Executable | Experimental PhotinoX Blazor editor: a native webview window (WebView2 / WKWebView / WebKitGTK) hosting a Blazor UI, with the engine rendering off-screen (`Cherris.Rendering.Headless`) and streaming the game view into a WebGL canvas. |
+| [`CherrisEditorWeb`](src/CherrisEditorWeb/) | Executable | Transport behind the PhotinoX window: render host, frame pipe, wire protocol and input bridge, shared by both front ends and runnable on its own as a browser dev harness. |
 
 ## 🔧 Capabilities
 
@@ -136,4 +137,4 @@ Current limitations:
 - [Color Consistency & Rendering Pipeline](Docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](Docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](Docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
-- [Web Editor Host](Docs/webeditor-host.md): The browser-hosted editor in `src/CherrisEditorWeb`, its wire protocol, how to wrap it in a PhotinoX window, and its current limitations.
+- [Web Editor Host](Docs/webeditor-host.md): The PhotinoX Blazor editor in `src/CherrisEditorPhotino`, the transport it shares with `src/CherrisEditorWeb`, its wire protocol, threading model and current limitations.

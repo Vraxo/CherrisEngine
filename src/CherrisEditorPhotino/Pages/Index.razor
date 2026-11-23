@@ -1,0 +1,31 @@
+@page "/"
+@inject EditorHostService Host
+
+<PageTitle>Cherris Editor</PageTitle>
+
+@if (Host.FailureMessage is string failure)
+{
+    <div class="editor-error">
+        <h2>The editor host is not running</h2>
+        <p>@failure</p>
+        <p class="editor-error-hint">
+            Frames cannot be streamed without the renderer, so the viewport is unavailable.
+        </p>
+    </div>
+}
+else
+{
+    <div class="editor-grid">
+        <section class="editor-viewport">
+            <ViewportPanel WebSocketUrl="@Host.WebSocketUrl" />
+        </section>
+
+        <aside class="editor-sidebar">
+            <ScenePanel />
+        </aside>
+
+        <footer class="editor-statusbar">
+            <StatusBar />
+        </footer>
+    </div>
+}

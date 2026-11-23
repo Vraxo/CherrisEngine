@@ -1,0 +1,108 @@
+@inject EditorHostService Host
+@implements IDisposable
+
+<section class="panel">
+    <header class="panel-header">
+        <span>Hierarchy</span>
+        <span class="panel-hint">@SceneName</span>
+    </header>
+
+    @if (Nodes.Count == 0)
+    {
+        <p class="panel-empty">Waiting for the first scene snapshot…</p>
+    }
+    else
+    {
+        <ul class="scene-tree">
+            @foreach (SceneNodeSnapshot node in Nodes)
+            {
+                <li class="@(node.Id == _selectedId ? "scene-node selected" : "scene-node")"
+                    @onclick="() => Select(node.Id)">
+                    <span class="scene-node-name">@node.Name</span>
+                    <span class="scene-node-components">@Describe(node)</span>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (SelectedNode is SceneNodeSnapshot selected)
+    {
+        <div class="panel-inspector">
+            <h3>@selected.Name</h3>
+            <dl>
+                <dt>Position</dt>
+                <dd>@FormatVector(selected.Position)</dd>
+                <dt>Rotation</dt>
+                <dd>@FormatRotation(selected.Rotation)</dd>
+                <dt>Scale</dt>
+                <dd>@FormatVector(selected.Scale)</dd>
+                <dt>Frame</dt>
+                <dd>@(_snapshot?.Frame.ToString() ?? "-")</dd>
+            </dl>
+        </div>
+    }
+</section>
+
+@code {
+    private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(250);
+
+    private SceneSnapshot? _snapshot;
+    private Guid? _selectedId;
+    private Timer? _timer;
+
+    private string SceneName => _snapshot?.SceneName ?? "no scene";
+
+    private IReadOnlyList<SceneNodeSnapshot> Nodes => _snapshot?.Nodes ?? [];
+
+    private SceneNodeSnapshot? SelectedNode =>
+        _selectedId is Guid id ? Nodes.FirstOrDefault(node => node.Id == id) : null;
+
+    protected override void OnInitialized()
+    {
+        // The render thread publishes snapshots; this component only reads the latest one. Polling keeps the
+        // UI off the engine's thread and needs no cross-thread event plumbing.
+        _timer = new Timer(_ => _ = RefreshAsync(), null, TimeSpan.Zero, RefreshInterval);
+    }
+
+    private async Task RefreshAsync()
+    {
+        SceneSnapshot? latest = Host.LatestScene;
+
+        if (latest is null || ReferenceEquals(latest, _snapshot))
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _snapshot = latest;
+
+            if (_selectedId is null && latest.Nodes.Count > 0)
+            {
+                _selectedId = latest.Nodes[0].Id;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private void Select(Guid id)
+    {
+        _selectedId = id;
+    }
+
+    private static string Describe(SceneNodeSnapshot node) =>
+        node.Components.Count == 0 ? "no components" : string.Join(" · ", node.Components);
+
+    private static string FormatVector(Vector3 value) =>
+        $"{value.X:0.##}, {value.Y:0.##}, {value.Z:0.##}";
+
+    private static string FormatRotation(Quaternion value) =>
+        $"{value.X:0.##}, {value.Y:0.##}, {value.Z:0.##}, {value.W:0.##}";
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+}
