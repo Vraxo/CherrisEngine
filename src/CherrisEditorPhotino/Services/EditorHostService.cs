@@ -80,6 +80,11 @@ public sealed class EditorHostService : IDisposable
     private volatile string? _failure;
     private volatile string? _failureDetail;
     private volatile string? _projectRoot;
+
+    // What the pointer is dragging: the command it feeds, and a key that stops a different field in the same
+    // inspector from feeding it too.
+    private string? _liveKey;
+    private IEditorCommand? _liveCommand;
     private string _sessionName = EditorSceneRequest.Demo.DisplayName;
     private string? _logFilePath;
     private bool _disposed;
@@ -267,16 +272,109 @@ public sealed class EditorHostService : IDisposable
     public bool AddComponent(Guid objectId, string componentName) =>
         Enqueue(new AddComponentCommand(objectId, componentName), "add " + componentName);
 
+    /// <summary>
+    /// Writes one property of a component while the author drags it. Consecutive calls for the same property
+    /// feed a single command, so the scene follows the pointer every frame while the whole drag stays one undo
+    /// step. The panel calls <see cref="EndLiveEdit"/> when a drag begins, a keystroke or a menu edit arrives, so
+    /// neither two drags nor a drag and the value typed after it are ever the same step.
+    /// </summary>
+    /// <param name="objectId">The object that owns the component.</param>
+    /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
+    /// <param name="propertyName">The property's name.</param>
+    /// <param name="text">The value the pointer is on, in the inspector's text format.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool SetPropertyLive(Guid objectId, string componentTypeName, string propertyName, string text)
+    {
+        WebEditorHost? host = _session?.Host;
+
+        if (host is null)
+        {
+            WriteLog("[editor] cannot set a property: no session is running.", LogLevel.Warning);
+            return false;
+        }
+
+        string key = $"property:{objectId:N}:{componentTypeName}.{propertyName}";
+
+        if (_liveCommand is SetPropertyCommand live && String.Equals(_liveKey, key, StringComparison.Ordinal))
+        {
+            live.Text = text;
+            host.Enqueue(live);
+            return true;
+        }
+
+        SetPropertyCommand command = new(objectId, componentTypeName, propertyName, text);
+
+        _liveKey = key;
+        _liveCommand = command;
+        host.Enqueue(command);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Writes one transform row while the author drags it, feeding a single command the way
+    /// <see cref="SetPropertyLive"/> does for a property.
+    /// </summary>
+    /// <param name="objectId">The object.</param>
+    /// <param name="transformField">Position, rotation (Euler degrees) or scale.</param>
+    /// <param name="x">The row's first component, which is the one the pointer is usually on.</param>
+    /// <param name="y">The row's second component.</param>
+    /// <param name="z">The row's third component.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool SetTransformLive(Guid objectId, TransformField transformField, float x, float y, float z)
+    {
+        WebEditorHost? host = _session?.Host;
+
+        if (host is null)
+        {
+            WriteLog("[editor] cannot move the object: no session is running.", LogLevel.Warning);
+            return false;
+        }
+
+        System.Numerics.Vector3 value = new(x, y, z);
+        string key = $"transform:{objectId:N}:{transformField}";
+
+        if (_liveCommand is SetTransformCommand live && String.Equals(_liveKey, key, StringComparison.Ordinal))
+        {
+            live.Value = value;
+            host.Enqueue(live);
+            return true;
+        }
+
+        SetTransformCommand command = new(objectId, transformField, value);
+
+        _liveKey = key;
+        _liveCommand = command;
+        host.Enqueue(command);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Ends the drag: the value the pointer is on is already queued, so this only closes the session, and the
+    /// next edit of that property records a new step instead of joining the drag that just finished.
+    /// </summary>
+    public void EndLiveEdit()
+    {
+        _liveKey = null;
+        _liveCommand = null;
+    }
+
     /// <summary>Writes one property of a component from the inspector's text.</summary>
     /// <param name="objectId">The object that owns the component.</param>
     /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
     /// <param name="propertyName">The property's name.</param>
     /// <param name="text">The new value, in the inspector's text format.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetProperty(Guid objectId, string componentTypeName, string propertyName, string text) =>
-        Enqueue(
+    public bool SetProperty(Guid objectId, string componentTypeName, string propertyName, string text)
+    {
+        // A field that is no longer being dragged starts its own step.
+        EndLiveEdit();
+
+        return Enqueue(
             new SetPropertyCommand(objectId, componentTypeName, propertyName, text),
             $"set {componentTypeName}.{propertyName}");
+    }
 
     /// <summary>
     /// Adds a lua script to an object, creating the file in the project's <c>Scripts/</c> folder when it is not
@@ -299,10 +397,14 @@ public sealed class EditorHostService : IDisposable
     /// <param name="y">Y component.</param>
     /// <param name="z">Z component.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetTransform(Guid objectId, TransformField transformField, float x, float y, float z) =>
-        Enqueue(
+    public bool SetTransform(Guid objectId, TransformField transformField, float x, float y, float z)
+    {
+        EndLiveEdit();
+
+        return Enqueue(
             new SetTransformCommand(objectId, transformField, new System.Numerics.Vector3(x, y, z)),
             "move the object");
+    }
 
     /// <summary>Renames an object.</summary>
     /// <param name="objectId">The object.</param>
@@ -315,6 +417,8 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when there is nothing to undo, or no session.</returns>
     public bool Undo()
     {
+        EndLiveEdit();
+
         if (!CanUndo)
         {
             return false;
@@ -327,6 +431,8 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when there is nothing to redo, or no session.</returns>
     public bool Redo()
     {
+        EndLiveEdit();
+
         if (!CanRedo)
         {
             return false;

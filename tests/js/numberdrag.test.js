@@ -15,14 +15,21 @@ const source = fs.readFileSync(
 
 let documentHandlers = {};
 let windowHandlers = {};
+let frames = new Map();
+let nextFrameId = 0;
 
 function load() {
     documentHandlers = {};
     windowHandlers = {};
+    frames = new Map();
+    nextFrameId = 0;
 
     global.window = {
         addEventListener: (type, handler) => { windowHandlers[type] = handler; },
-        removeEventListener: (type) => { delete windowHandlers[type]; }
+        removeEventListener: (type) => { delete windowHandlers[type]; },
+        // A frame is only run when a test asks for one, so a per-frame publish can be counted exactly.
+        requestAnimationFrame: (callback) => { frames.set(++nextFrameId, callback); return nextFrameId; },
+        cancelAnimationFrame: (id) => { frames.delete(id); }
     };
     global.document = {
         addEventListener: (type, handler) => { documentHandlers[type] = handler; }
@@ -71,6 +78,14 @@ function release(pointerId) {
     windowHandlers.pointerup({ pointerId });
 }
 
+/** Runs the animation frames that are due, as the browser would once the frame is drawn. */
+function tick() {
+    const due = [...frames.values()];
+
+    frames.clear();
+    due.forEach((callback) => callback());
+}
+
 const results = [];
 
 function check(name, run) {
@@ -84,22 +99,87 @@ function check(name, run) {
 
 load();
 
-check('30px at 0.1/px moves 1 to 4, and sends one change', () => {
+check('a drag publishes one change per frame, so the scene follows the pointer', () => {
     const input = makeInput();
     press(input, 1, 100);
+    move(1, 110);
+    assert.strictEqual(input.value, '2');
+    assert.deepStrictEqual(input.events, ['input'], 'the movement opens the drag before any value is sent');
+
+    // Nothing is sent until the frame is drawn, however many moves land in it.
+    move(1, 115);
+    assert.deepStrictEqual(input.events, ['input']);
+    tick();
+    assert.deepStrictEqual(input.events, ['input', 'change']);
+
     move(1, 130);
+    tick();
     assert.strictEqual(input.value, '4');
+    assert.deepStrictEqual(input.events, ['input', 'change', 'change']);
 
     release(1);
-    assert.deepStrictEqual(input.events, ['change']);
+    assert.deepStrictEqual(input.events, ['input', 'change', 'change'], 'the last value was already published');
     assert.deepStrictEqual(Object.keys(windowHandlers), [], 'listeners are removed on release');
+});
+
+check('a release before the next frame still sends the value the pointer is on', () => {
+    const input = makeInput();
+    press(input, 2, 0);
+    move(2, 30);
+    release(2);
+
+    assert.strictEqual(input.value, '4');
+    assert.deepStrictEqual(input.events, ['input', 'change']);
+});
+
+check('a second drag of the same field opens a step of its own', () => {
+    const input = makeInput();
+
+    press(input, 3, 0);
+    move(3, 10);
+    tick();
+    release(3);
+
+    press(input, 3, 0);
+    move(3, 10);
+    tick();
+    release(3);
+
+    assert.deepStrictEqual(input.events, ['input', 'change', 'input', 'change']);
+});
+
+check('a drag lets go of the caret a field kept, except on the field it is dragging', () => {
+    const focused = makeInput();
+    const dragged = makeInput();
+
+    focused.focus();
+    document.activeElement = focused;
+    press(dragged, 17, 0);
+    move(17, 40);
+
+    assert.strictEqual(focused.focused, false, 'the field that kept the caret would take the next keystroke');
+    release(17);
+
+    // The dragged field keeps its own element: blurring it would rebuild it and cut the drag short.
+    const itself = makeInput();
+
+    itself.focus();
+    document.activeElement = itself;
+    press(itself, 18, 0);
+    move(18, 40);
+
+    assert.strictEqual(itself.focused, true);
+    assert.strictEqual(itself.value, '5');
+    release(18);
+
+    delete document.activeElement;
 });
 
 check('a press that does not move places the caret instead of editing', () => {
     const input = makeInput();
-    press(input, 2, 100);
-    move(2, 102);
-    release(2);
+    press(input, 4, 100);
+    move(4, 102);
+    release(4);
 
     assert.strictEqual(input.value, '1');
     assert.strictEqual(input.focused, true);
@@ -148,14 +228,14 @@ check('no floating point noise in the field', () => {
     release(7);
 });
 
-check('a cancel puts the value back and sends nothing', () => {
+check('a cancel keeps the value the pointer reached, which the scene already has', () => {
     const input = makeInput();
     press(input, 8, 0);
     move(8, 40);
     windowHandlers.pointercancel({ pointerId: 8 });
 
-    assert.strictEqual(input.value, '1');
-    assert.deepStrictEqual(input.events, []);
+    assert.strictEqual(input.value, '5');
+    assert.deepStrictEqual(input.events, ['input', 'change'], 'one last value, and no frame left pending');
     assert.deepStrictEqual(Object.keys(windowHandlers), []);
 });
 
@@ -166,7 +246,7 @@ check('an element re-rendered mid-drag is dropped rather than written', () => {
     input.isConnected = false;
     release(9);
 
-    assert.deepStrictEqual(input.events, [], 'a replaced input cannot be committed through');
+    assert.deepStrictEqual(input.events, ['input'], 'a replaced input cannot be committed through');
 });
 
 check('a drag continues from the value the field shows', () => {
@@ -179,14 +259,15 @@ check('a drag continues from the value the field shows', () => {
     release(16);
 });
 
-check('a drag that ends on its starting value sends nothing', () => {
+check('a drag that ends on its starting value sends no value at all', () => {
     const input = makeInput();
     press(input, 10, 0);
     move(10, 40);
     move(10, 0);
     release(10);
 
-    assert.deepStrictEqual(input.events, []);
+    assert.strictEqual(input.value, '1');
+    assert.deepStrictEqual(input.events, ['input'], 'the drag opened, but the value never left where it was');
 });
 
 check('other inputs are left alone', () => {

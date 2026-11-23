@@ -237,8 +237,9 @@ to the render thread while the panels render from published snapshots:
 | Step | Where |
 | :--- | :--- |
 | The panel queues a command — `AddComponentCommand`, `AddScriptCommand`, `SetPropertyCommand`, `SetTransformCommand`, `RenameObjectCommand`, `UndoCommand`, `RedoCommand` | `InspectorPanel.razor` / `MenuBar.razor` → `EditorHostService` → `WebEditorHost.Enqueue` |
+| A dragged number queues **the same** command again every frame, so the scene moves with the pointer while the edit stays one step | `EditorHostService.SetPropertyLive` / `SetTransformLive` |
 | The render thread drains the queue at the top of the frame, before it captures the frame | `WebEditorEngine.ExecuteCommands` → `EditorCommandDispatcher.Drain` |
-| The command edits the live scene, marks it dirty and records itself on the history | `IEditorCommand.Execute(EditorCommandContext)` |
+| The command edits the live scene, marks it dirty and records itself on the history — a fed command records and logs on its first effective run only | `IEditorCommand.Execute(EditorCommandContext)` |
 | The console shows the result; the next snapshot carries the new values | `Logger` → `EditorHostService` log → `ConsolePanel` |
 
 The same rule the ImGui inspector applies holds here: an object holds at most one of each type, so the menu
@@ -310,13 +311,32 @@ widgets), and a plain click without movement still puts the caret in so the valu
 **Shift** multiplies the step by ten and **Alt** divides it by a hundred, as ImGui's drag behaviour does.
 `[Range]` clamps the drag too, and integers round, so what the field shows is what the command will accept.
 
-The drag lives in `wwwroot/js/numberdrag.js` and costs the engine nothing while it runs: the field shows the
-scrubbed value itself, and a whole drag sends **one** `change` event on release — the same event typing sends.
-That makes a drag one command and so one undo step, which is what `PropertyDrawer` gets from
-`IsItemDeactivatedAfterEdit`. The script is wired by class (`drag-number`) with a document-level listener, so
-fields Blazor renders later scrub without any interop call. `node tests/js/numberdrag.test.js` checks it, and
-CI runs that after `dotnet test`; it needs no browser because the script only touches `window`, `document` and
-the input it is handed.
+The value is **live**, not applied on release: while the pointer moves, one `change` event goes out per
+animation frame — the same event typing sends — so the scene, the gizmos and every other panel follow the
+pointer at frame rate, exactly as `DragFloat` feeds its value once per frame. Moves that land between two
+frames are coalesced, and a frame whose scrubbed value equals the one already sent is dropped.
+
+A whole drag is still **one** command and **one** undo step, which is what `PropertyDrawer` gets from
+`IsItemDeactivatedAfterEdit`:
+
+* the panel sends every frame into `EditorHostService.SetPropertyLive` / `SetTransformLive`, which re-queue
+  **the same** command object under a key of `property:{objectId}:{Type}.{Name}` or
+  `transform:{objectId}:{Field}`;
+* `SetPropertyCommand`/`SetTransformCommand` therefore run many times, but they record history, capture the
+  value they replaced and log their console line **only on their first effective run**. Undo restores the
+  value the drag found; Redo lands on the value it ended on; the console prints one line, not sixty a second;
+* a frame that changes nothing records nothing, so dragging out and back to the starting value leaves no step.
+
+The step opens and closes on the UI side without a call per frame: the script sends one `input` event when a
+drag begins and the panel's `@oninput` closes the previous live session, while typing, `Undo`, `Redo`,
+`SetProperty` and `SetTransform` all close it too — so two drags of the same field, or a drag followed by a
+typed value, are separate steps.
+
+The drag lives in `wwwroot/js/numberdrag.js`, is wired by class (`drag-number`) with a document-level listener,
+and needs no interop at all — fields Blazor renders later scrub without being registered.
+`node tests/js/numberdrag.test.js` checks it (per-frame `change`, one final value, one `input` per drag), and CI
+runs that after `dotnet test`; it needs no browser because the script only touches `window`, `document` and the
+input it is handed.
 
 ### Undo and Redo
 
@@ -328,8 +348,8 @@ undo restores it exactly:
 | :--- | :--- |
 | `AddComponentCommand` | removes the component again |
 | `AddScriptCommand` | removes the script component; the file stays in the project |
-| `SetPropertyCommand` | the previous text of that property, re-applied through the same parser |
-| `SetTransformCommand` | the whole position/rotation/scale triple |
+| `SetPropertyCommand` | the previous text of that property, re-applied through the same parser; on a drag, the value the drag started from |
+| `SetTransformCommand` | the whole position/rotation/scale triple, as it stood when the drag started |
 | `RenameObjectCommand` | the previous name; an empty name is refused |
 
 The stacks live on the dispatcher, so they belong to the render thread; `CanUndo`, `CanRedo`, `UndoLabel` and

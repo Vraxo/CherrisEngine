@@ -64,11 +64,16 @@
                                     <span class="vec-cell">
                                         <span class="@axisClass">@letter</span>
                                         @* Dragging scrubs at 0.1 per pixel, the speed TransformInspector's
-                                           DragFloat uses; a click without movement still types. *@
+                                           DragFloat uses, and the object follows every frame; a click without
+                                           movement still types. The drag script sends an input event when a drag
+                                           begins and a change per frame while it runs, so oninput ending the live
+                                           session is what keeps each drag, and each typed value, its own undo step. *@
                                         <input type="text" class="imgui-input vec-field drag-number"
                                                value="@text" data-value="@text" data-speed="0.1"
                                                @key="KeyFor(fieldKey)" disabled="@(!CanEdit)" aria-label="@fieldName"
-                                               @onchange="e => OnTransformChanged(node, row, axisIndex, e.Value?.ToString())" />
+                                               @onchange="e => OnTransformChanged(node, row, axisIndex, e.Value?.ToString())"
+                                               @oninput="EndLiveEdit"
+                                               @onblur="() => Blurred(fieldKey)" />
                                     </span>
                                 }
                             </div>
@@ -128,11 +133,15 @@
                                                 @if (property.HasBoundedRange && property.Minimum is float minimum
                                                      && property.Maximum is float maximum)
                                                 {
+                                                    @* A range input reports every step while the thumb moves
+                                                       and once more when it is released, which is exactly a drag
+                                                       and its end. *@
                                                     <input type="range" class="imgui-slider" disabled="@(!CanEdit)"
                                                            aria-label="@property.Name"
                                                            min="@Format(minimum)" max="@Format(maximum)" step="any"
                                                            value="@Format(property.Components[0])"
-                                                           @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                           @oninput="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
+                                                           @onchange="EndLiveEdit" />
                                                 }
                                                 <input type="text" class="imgui-input drag-number"
                                                        value="@property.Text"
@@ -142,7 +151,9 @@
                                                        data-max="@RangeText(property.Maximum)"
                                                        @key="KeyFor(propertyKey)"
                                                        disabled="@(!CanEdit)" aria-label="@property.Name"
-                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                       @onchange="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
+                                                       @oninput="EndLiveEdit"
+                                                       @onblur="() => Blurred(propertyKey)" />
                                                 break;
 
                                             case PropertyKind.Integer:
@@ -155,7 +166,9 @@
                                                        data-max="@RangeText(property.Maximum)"
                                                        @key="KeyFor(propertyKey)"
                                                        disabled="@(!CanEdit)" aria-label="@property.Name"
-                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                       @onchange="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
+                                                       @oninput="EndLiveEdit"
+                                                       @onblur="() => Blurred(propertyKey)" />
                                                 break;
 
                                             case PropertyKind.Text:
@@ -195,7 +208,9 @@
                                                                    data-min="@floorBound"
                                                                    @key="KeyFor(fieldKey)" disabled="@(!CanEdit)"
                                                                    aria-label="@fieldName"
-                                                                   @onchange="e => OnVectorChanged(node, component, property, axisIndex, e.Value?.ToString())" />
+                                                                   @onchange="e => OnVectorChanged(node, component, property, axisIndex, e.Value?.ToString())"
+                                                                   @oninput="EndLiveEdit"
+                                                                   @onblur="() => Blurred(fieldKey)" />
                                                         </span>
                                                     }
                                                 </span>
@@ -341,6 +356,19 @@
         _focusSearch = false;
     }
 
+    /// <summary>
+    /// A number field lost the focus: the drag is over, so the next edit starts its own undo step, and the field
+    /// is rebuilt from the snapshot — which is what puts a refused value back to what the engine holds.
+    /// </summary>
+    private void Blurred(string field)
+    {
+        Host.EndLiveEdit();
+        Touched(field);
+    }
+
+    /// <summary>Ends a drag without rebuilding: a keystroke means the next typed value is its own step.</summary>
+    private void EndLiveEdit() => Host.EndLiveEdit();
+
     private void Search(string? text)
     {
         _search = text ?? string.Empty;
@@ -481,15 +509,23 @@
             _ => new Vector3(updated.X, updated.Y, value)
         };
 
-        Host.SetTransform(node.Id, row.Field, updated.X, updated.Y, updated.Z);
-        Touched(node.Id.ToString() + ":transform." + row.Field + "." + TransformRow.Axes[axis]);
+        // Live: the row moves with the pointer, and the whole drag is one undo step.
+        Host.SetTransformLive(node.Id, row.Field, updated.X, updated.Y, updated.Z);
     }
 
+    /// <summary>A checkbox or a dropdown: one value, one step.</summary>
     private void OnPropertyChanged(
         SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, string? text)
     {
         Host.SetProperty(node.Id, component.TypeName, property.Name, text ?? string.Empty);
         Touched(PropertyKey(node, component, property));
+    }
+
+    /// <summary>A number the pointer is moving: applied every frame, recorded once.</summary>
+    private void OnPropertyDragged(
+        SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, string? text)
+    {
+        Host.SetPropertyLive(node.Id, component.TypeName, property.Name, text ?? string.Empty);
     }
 
     /// <summary>One axis of a vector: the other components come from the snapshot, so the row stays whole.</summary>
@@ -504,8 +540,7 @@
         string[] parts = property.Components.Select(Format).ToArray();
         parts[axis] = Format(value);
 
-        Host.SetProperty(node.Id, component.TypeName, property.Name, String.Join(", ", parts));
-        Touched(PropertyKey(node, component, property) + "." + TransformRow.Axes[axis]);
+        Host.SetPropertyLive(node.Id, component.TypeName, property.Name, String.Join(", ", parts));
     }
 
     /// <summary>A colour picker hands back #rrggbb; the property holds normalized components.</summary>
