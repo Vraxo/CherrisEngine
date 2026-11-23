@@ -114,7 +114,7 @@ public class ViewportProtocolTests
             """{"type":"mouseButton","button":0,"down":true,"x":312,"y":180}""",
             sink).Should().BeTrue();
 
-        sink.Calls.Should().Equal("position:312:180", "button:0:up");
+        sink.Calls.Should().Equal("position:312:180", "button:0:down");
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class ViewportProtocolTests
         ViewportProtocol.TryReadCommand("""{"type":"mouseButton","button":0,"down":true}""", sink)
             .Should().BeTrue();
 
-        sink.Calls.Should().Equal("button:0:up", "a release says nothing about where the pointer is");
+        sink.Calls.Should().Equal("button:0:down", "a press without a position says nothing about where it was");
     }
 
     private sealed class OrderedSink : IViewportInputSink
