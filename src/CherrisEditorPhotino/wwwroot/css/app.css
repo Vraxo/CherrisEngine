@@ -1142,8 +1142,34 @@ span.panel-tab:hover {
     font-size: calc(var(--theme-font-size) - 1px);
 }
 
+/* The button sits centred under the component list; the menu below it keeps the panel's width. */
 .inspector-add {
+    display: flex;
+    flex-direction: column;
     padding-top: 4px;
+}
+
+.inspector-add > .imgui-button {
+    align-self: center;
+}
+
+/* The search box takes the focus when the menu opens, so it reads as the menu's first row. */
+.add-search {
+    display: block;
+    width: 100%;
+    margin-bottom: 3px;
+    padding: 2px 6px;
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+/* "New script: ..." is an offer, not a component in the list, so it is tinted. */
+.add-script span {
+    color: var(--theme-primary);
+    font-style: italic;
+}
+
+.add-script:hover:not(:disabled) span {
+    color: var(--theme-foreground-hover);
 }
 
 /* One editable property: name on the left, editor on the right, like the ImGui row table. */

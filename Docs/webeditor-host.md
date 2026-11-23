@@ -236,13 +236,39 @@ to the render thread while the panels render from published snapshots:
 
 | Step | Where |
 | :--- | :--- |
-| The panel queues a command — `AddComponentCommand`, `SetPropertyCommand`, `SetTransformCommand`, `RenameObjectCommand`, `UndoCommand`, `RedoCommand` | `InspectorPanel.razor` / `MenuBar.razor` → `EditorHostService` → `WebEditorHost.Enqueue` |
+| The panel queues a command — `AddComponentCommand`, `AddScriptCommand`, `SetPropertyCommand`, `SetTransformCommand`, `RenameObjectCommand`, `UndoCommand`, `RedoCommand` | `InspectorPanel.razor` / `MenuBar.razor` → `EditorHostService` → `WebEditorHost.Enqueue` |
 | The render thread drains the queue at the top of the frame, before it captures the frame | `WebEditorEngine.ExecuteCommands` → `EditorCommandDispatcher.Drain` |
 | The command edits the live scene, marks it dirty and records itself on the history | `IEditorCommand.Execute(EditorCommandContext)` |
 | The console shows the result; the next snapshot carries the new values | `Logger` → `EditorHostService` log → `ConsolePanel` |
 
 The same rule the ImGui inspector applies holds here: an object holds at most one of each type, so the menu
 hides what is already there and the command refuses a duplicate if a stale menu asks anyway.
+
+### Add ▾: search, and scripts that do not exist yet
+
+`Add ▾` sits centred under the component list, and opens a search box with the focus already in it — an inline
+menu cannot use the `autofocus` attribute, so the panel takes the focus in `OnAfterRenderAsync` once the box is
+on screen. Typing filters the catalog, ignoring case and matching anywhere in the name. **Enter** takes the
+first match and **Escape** closes the menu, so the whole thing works without the mouse.
+
+When the typed name matches no component — the way Unity's Add Component menu behaves — the only row becomes an
+offer to make it a script:
+
+| State of the typed name | Row |
+| :--- | :--- |
+| not a usable name (`my script`, `2Player`) | `New script: "my script"`, disabled, tooltip saying which characters are allowed |
+| no project open (the built-in demo scene) | disabled, tooltip pointing at the project's `Scripts/` folder |
+| `Scripts/Player.lua` already exists | `Script: "Player" (already in this project)` — it attaches that file |
+| otherwise | `New script: "Player"` — it writes the file and attaches it |
+
+`ScriptTemplate` owns all of that knowledge — the `Scripts/` folder, the `[A-Za-z_][A-Za-z0-9_]*` name rule, and
+the starter source — so the editor, the command and `LanguageScript` cannot drift apart on it. `AddScriptCommand`
+writes the file **once**: a name whose file exists is reused and never overwritten, because the user may have
+work in it, and undo removes the component rather than the file. The template is the two handlers the lua
+adapter calls, `start()` and `update(deltaTime)`, with nothing in them; the script runs when the scene starts.
+
+Writing happens on the render thread, inside the command, so the UI thread never touches the project folder. The
+one read the panel does itself is `File.Exists`, to label the row honestly.
 
 ### Which properties, and how they are drawn
 
@@ -275,6 +301,7 @@ undo restores it exactly:
 | Command | What undo restores |
 | :--- | :--- |
 | `AddComponentCommand` | removes the component again |
+| `AddScriptCommand` | removes the script component; the file stays in the project |
 | `SetPropertyCommand` | the previous text of that property, re-applied through the same parser |
 | `SetTransformCommand` | the whole position/rotation/scale triple |
 | `RenameObjectCommand` | the previous name; an empty name is refused |

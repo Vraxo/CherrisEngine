@@ -2,6 +2,7 @@ using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Projects;
 using Cherris.Rendering.Headless;
+using Cherris.Scripting;
 using CherrisEditorWeb;
 using CherrisEditorWeb.Host;
 using OpenTK.Windowing.Desktop;
@@ -276,6 +277,20 @@ public sealed class EditorHostService : IDisposable
         Enqueue(
             new SetPropertyCommand(objectId, componentTypeName, propertyName, text),
             $"set {componentTypeName}.{propertyName}");
+
+    /// <summary>
+    /// Adds a lua script to an object, creating the file in the project's <c>Scripts/</c> folder when it is not
+    /// there yet. The render thread does the writing, so the UI thread never touches the project folder.
+    /// </summary>
+    /// <param name="objectId">The object to add the script to.</param>
+    /// <param name="scriptName">The name the author typed; a <c>.lua</c> extension is forgiven.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool AddScript(Guid objectId, string scriptName) =>
+        Enqueue(new AddScriptCommand(objectId, scriptName), "add script " + scriptName);
+
+    /// <summary>True when the open project already holds a script file with this name.</summary>
+    /// <param name="scriptName">The name the author typed.</param>
+    public bool ScriptExists(string? scriptName) => ScriptTemplate.Exists(_projectRoot, scriptName);
 
     /// <summary>Writes one transform row of an object.</summary>
     /// <param name="objectId">The object.</param>

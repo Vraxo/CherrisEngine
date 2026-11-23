@@ -37,7 +37,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private readonly EditorSceneRequest _scene;
 
     /// <summary>Edits the UI asked for, and the session's undo history.</summary>
-    private readonly EditorCommandDispatcher _commands = new();
+    private readonly EditorCommandDispatcher _commands;
 
     private ViewerConnection? _activeConnection;
     private WebEditorServer? _server;
@@ -71,6 +71,10 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         _graphicsBackend = graphicsBackend;
         _log = log;
         _scene = scene ?? EditorSceneRequest.Demo;
+
+        // The project folder travels with the edits: adding a script writes a file into it, and the demo scene
+        // has none to write to.
+        _commands = new EditorCommandDispatcher(_scene.ProjectRoot);
         _width = options.Width;
         _height = options.Height;
     }

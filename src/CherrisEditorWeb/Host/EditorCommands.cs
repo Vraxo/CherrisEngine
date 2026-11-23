@@ -1,5 +1,6 @@
 using Cherris.Components;
 using Cherris.Core;
+using Cherris.Scripting;
 using System.Collections.Concurrent;
 using System.Numerics;
 
@@ -40,16 +41,23 @@ public interface IUndoableCommand : IEditorCommand
     string? Redo(EditorCommandContext context);
 }
 
-/// <summary>What a command runs against: the scene, and the history it may record itself in.</summary>
+/// <summary>What a command runs against: the scene, the history it may record itself in, and the project.</summary>
 /// <param name="scene">The active scene, owned by the render thread.</param>
 /// <param name="history">The undo stack for this session.</param>
-public sealed class EditorCommandContext(Scene scene, EditorHistory history)
+/// <param name="projectRoot">
+/// Absolute folder of the open project, or null in the built-in demo scene. A command that writes a file —
+/// a new script — needs it; nothing else does.
+/// </param>
+public sealed class EditorCommandContext(Scene scene, EditorHistory history, string? projectRoot = null)
 {
     /// <summary>The active scene.</summary>
     public Scene Scene { get; } = scene ?? throw new ArgumentNullException(nameof(scene));
 
     /// <summary>The session's history.</summary>
     public EditorHistory History { get; } = history ?? throw new ArgumentNullException(nameof(history));
+
+    /// <summary>The open project's folder, or null when there is no project to write to.</summary>
+    public string? ProjectRoot { get; } = projectRoot;
 }
 
 /// <summary>
@@ -232,9 +240,12 @@ public sealed class EditorCommandQueue
 /// Both halves are per session, because a history that outlived the scene it describes would undo into the
 /// wrong one.
 /// </remarks>
-public sealed class EditorCommandDispatcher
+public sealed class EditorCommandDispatcher(string? projectRoot = null)
 {
     private readonly EditorCommandQueue _queue = new();
+
+    /// <summary>The open project's folder, or null in the built-in demo scene.</summary>
+    public string? ProjectRoot { get; } = projectRoot;
 
     /// <summary>How many edits are waiting for the render thread.</summary>
     public int Pending => _queue.Count;
@@ -253,7 +264,7 @@ public sealed class EditorCommandDispatcher
     {
         ArgumentNullException.ThrowIfNull(scene);
 
-        EditorCommandContext context = new(scene, History);
+        EditorCommandContext context = new(scene, History, ProjectRoot);
 
         return _queue.Drain(command => command.Execute(context), log);
     }
@@ -553,6 +564,97 @@ public sealed class SetTransformCommand(Guid objectId, TransformField transformF
         scene.GameObjects.FirstOrDefault(gameObject => gameObject.Id == objectId)?.Transform;
 
     private static string Number(float number) => number.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// Adds a lua script to an object — what the inspector's Add ▾ menu sends when the typed name matches no
+/// component, the way Unity offers to make a script.
+/// </summary>
+/// <param name="ObjectId">The object to add the script to.</param>
+/// <param name="ScriptName">The name the user typed; a <c>.lua</c> extension and surrounding space are forgiven.</param>
+/// <remarks>
+/// The file is written once and then left alone: undoing removes the component, not the script, so work done in
+/// an external editor survives. Attaching a name whose file already exists reuses that file.
+/// </remarks>
+public sealed class AddScriptCommand(Guid objectId, string scriptName) : IUndoableCommand
+{
+    private LanguageScript? _added;
+    private string _path = string.Empty;
+
+    /// <inheritdoc />
+    public string Describe => $"add script {scriptName}";
+
+    /// <inheritdoc />
+    public string? Execute(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (FindTarget(context.Scene) is not { } target)
+        {
+            return $"[editor] could not {Describe}: that object is no longer in the scene.";
+        }
+
+        if (ScriptTemplate.Normalize(scriptName) is { } name)
+        {
+            string candidate = ScriptTemplate.RelativePath(name);
+
+            if (target.Components.OfType<LanguageScript>().Any(script =>
+                    String.Equals(script.SourcePath, candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                return $"[editor] {target.Name} already has the script {candidate}.";
+            }
+        }
+
+        if (!ScriptTemplate.TryCreate(context.ProjectRoot, scriptName, out string path, out string? error))
+        {
+            return $"[editor] could not {Describe}: {error}";
+        }
+
+        _path = path;
+        _added = new LanguageScript { Language = ScriptTemplate.Language, SourcePath = _path };
+        target.AddComponent(_added);
+
+        context.Scene.IsDirty = true;
+        context.History.Record(this);
+
+        return $"[editor] added script {_path} to {target.Name}.";
+    }
+
+    /// <inheritdoc />
+    public string? Undo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_added is null || FindTarget(context.Scene) is not { } target)
+        {
+            return null;
+        }
+
+        target.RemoveComponent(_added);
+        context.Scene.IsDirty = true;
+
+        // The file stays: it is the user's, and another object may use it.
+        return $"[editor] removed script {_path} from {target.Name}; the file is still there.";
+    }
+
+    /// <inheritdoc />
+    public string? Redo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_added is null || FindTarget(context.Scene) is not { } target)
+        {
+            return null;
+        }
+
+        target.AddComponent(_added);
+        context.Scene.IsDirty = true;
+
+        return $"[editor] added script {_path} back to {target.Name}.";
+    }
+
+    private GameObject? FindTarget(Scene scene) =>
+        scene.GameObjects.FirstOrDefault(gameObject => gameObject.Id == objectId);
 }
 
 /// <summary>Renames an object.</summary>
