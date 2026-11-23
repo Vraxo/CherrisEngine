@@ -63,7 +63,7 @@ public class EditorAppLogic : IDisposable
         LoadIcons();
 
         _projectSelector.OnProjectSelected += OnProjectSelected;
-        EditorTheme.ApplyUnrealEngineStyle();
+        EditorThemes.Reapply();
     }
 
     private void InitializePanels()

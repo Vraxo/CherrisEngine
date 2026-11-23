@@ -46,7 +46,7 @@
     font-family: "Roboto";
     font-style: normal;
     font-display: swap;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold);
     src: url("../fonts/roboto-latin-700-normal.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
         U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -62,6 +62,57 @@
         U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* Inter — Unity's editor font (Editor Foundations: "Inter as the primary font family on every platform",
+   with Verdana / Lucida Grande as the documented fallbacks). Same subsets and licence handling as Roboto. */
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-cyrillic-400-normal.woff2") format("woff2");
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-greek-400-normal.woff2") format("woff2");
+    unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-latin-ext-400-normal.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+        U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-latin-400-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 600;
+    src: url("../fonts/inter-latin-600-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
     color-scheme: dark;
 
@@ -73,73 +124,89 @@
        COLOR("#RRGGBBAA") = FLinearColor::FromSRGBColor(FColor::FromHex(...)), so the hex below is the color
        you see on screen and is used verbatim here.
 
-       Kept in sync with Cherris.UI.Ue5Colors (src/Cherris/UI/Ue5Colors.cs) by
-       tests/CherrisEditorWeb.Tests/Ue5PaletteTests.cs, which parses this file.
+       These are the fallback values for the default theme, Unreal Engine 5: the stylesheet has to work
+       before Blazor starts and without JavaScript. The editor applies whichever theme is selected at runtime
+       by setting the same custom properties on the document root (wwwroot/js/theme.js), so every rule below
+       reads roles, never a particular editor's numbers. Kept in sync with Cherris.UI.Ue5Colors by
+       tests/CherrisEditorWeb.Tests.Ue5PaletteTests.cs, which parses this file.
        ------------------------------------------------------------------------------------ */
 
-    --ue-black: #000000;
-    --ue-title: #151515;
-    --ue-background: #151515;
-    --ue-window-border: #0f0f0f;
-    --ue-foldout: #0f0f0f;
-    --ue-input: #0f0f0f;
-    --ue-input-outline: #383838;
-    --ue-recessed: #1a1a1a;
-    --ue-panel: #242424;
-    --ue-header: #2f2f2f;
-    --ue-dropdown: #383838;
-    --ue-dropdown-outline: #4c4c4c;
-    --ue-hover: #575757;
-    --ue-hover-2: #808080;
-    --ue-white: #ffffff;
-    --ue-white-25: #ffffff40;
-    --ue-highlight: #0070e0;
-    --ue-primary: #0070e0;
-    --ue-primary-hover: #0e86ff;
-    --ue-primary-press: #0050a0;
-    --ue-secondary: #383838;
-    --ue-foreground: #c0c0c0;
-    --ue-foreground-hover: #ffffff;
-    --ue-foreground-inverted: #0f0f0f;
-    --ue-foreground-header: #c8c8c8;
-    --ue-select: #0070e0;
-    --ue-select-inactive: #40576f;
-    --ue-select-parent: #2c323a;
-    --ue-select-hover: #242424;
-    --ue-notifications: #464b50;
-    --ue-accent-blue: #26bbff;
-    --ue-accent-purple: #a139bf;
-    --ue-accent-pink: #ff729c;
-    --ue-accent-red: #ff4040;
-    --ue-accent-orange: #fe9b07;
-    --ue-accent-yellow: #ffdc1a;
-    --ue-accent-green: #8bc24a;
-    --ue-accent-brown: #804d39;
-    --ue-accent-black: #242424;
-    --ue-accent-gray: #808080;
-    --ue-accent-white: #ffffff;
-    --ue-accent-folder: #b68f55;
-    --ue-warning: #ffb800;
-    --ue-error: #ef3535;
-    --ue-success: #1fe44b;
+    --theme-black: #000000;
+    --theme-title: #151515;
+    --theme-background: #151515;
+    --theme-window-border: #0f0f0f;
+    --theme-foldout: #0f0f0f;
+    --theme-input: #0f0f0f;
+    --theme-input-outline: #383838;
+    --theme-recessed: #1a1a1a;
+    --theme-panel: #242424;
+    --theme-header: #2f2f2f;
+    --theme-dropdown: #383838;
+    --theme-dropdown-outline: #4c4c4c;
+    --theme-hover: #575757;
+    --theme-hover-2: #808080;
+    --theme-white: #ffffff;
+    --theme-white-25: #ffffff40;
+    --theme-highlight: #0070e0;
+    --theme-primary: #0070e0;
+    --theme-primary-hover: #0e86ff;
+    --theme-primary-press: #0050a0;
+    --theme-secondary: #383838;
+    --theme-foreground: #c0c0c0;
+    --theme-foreground-hover: #ffffff;
+    --theme-foreground-inverted: #0f0f0f;
+    --theme-foreground-header: #c8c8c8;
+    --theme-select: #0070e0;
+    --theme-select-inactive: #40576f;
+    --theme-select-parent: #2c323a;
+    --theme-select-hover: #242424;
+    --theme-notifications: #464b50;
+    --theme-accent-blue: #26bbff;
+    --theme-accent-purple: #a139bf;
+    --theme-accent-pink: #ff729c;
+    --theme-accent-red: #ff4040;
+    --theme-accent-orange: #fe9b07;
+    --theme-accent-yellow: #ffdc1a;
+    --theme-accent-green: #8bc24a;
+    --theme-accent-brown: #804d39;
+    --theme-accent-black: #242424;
+    --theme-accent-gray: #808080;
+    --theme-accent-white: #ffffff;
+    --theme-accent-folder: #b68f55;
+    --theme-warning: #ffb800;
+    --theme-error: #ef3535;
+    --theme-success: #1fe44b;
     /* StarshipCoreStyle's SelectionColor: the engine's drag/drop and selector blue. */
-    --ue-selection: #18a0fb;
+    --theme-selection: #18a0fb;
     /* SelectionColor_Pressed: the style set stores it linear (0.701, 0.225, 0.003); this is that
        value sRGB-encoded, which is what a pressed toolbar button looks like on screen. */
-    --ue-selection-pressed: #da820a;
+    --theme-selection-pressed: #da820a;
     /* A hovered dock tab: Panel at 80% over Background, the way Slate blends it. */
-    --ue-tab-hover: #212121;
+    --theme-tab-hover: #212121;
+
+    /* Type and dimensions: see Cherris.UI.ThemeTypography and ThemeMetrics. */
+    --theme-font-ui: "Roboto", "Segoe UI", system-ui, sans-serif;
+    --theme-font-mono: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
+    --theme-font-size: 13px;
+    --theme-font-small: 11px;
+    --theme-font-large: 19px;
+    --theme-radius: 4px;
+    --theme-border-width: 1px;
+    --theme-control-height: 22px;
+    --theme-scrollbar-width: 8px;
+    /* Bold weight: Roboto ships 700, Inter 600. */
+    --theme-font-weight-bold: 700;
 
     /* Launcher surfaces reuse the palette so both windows match. */
-    --surface: var(--ue-background);
-    --surface-raised: var(--ue-panel);
-    --border: var(--ue-input-outline);
-    --text: var(--ue-foreground);
-    --text-muted: var(--ue-accent-gray);
-    --accent: var(--ue-primary);
-    --ok: var(--ue-success);
-    --warn: var(--ue-warning);
-    --bad: var(--ue-error);
+    --surface: var(--theme-background);
+    --surface-raised: var(--theme-panel);
+    --border: var(--theme-input-outline);
+    --text: var(--theme-foreground);
+    --text-muted: var(--theme-accent-gray);
+    --accent: var(--theme-primary);
+    --ok: var(--theme-success);
+    --warn: var(--theme-warning);
+    --bad: var(--theme-error);
 }
 
 * {
@@ -154,8 +221,8 @@ body {
     color: var(--text);
     /* FStyleFonts: Normal 10pt, Small 8pt, Large 14pt. 10pt is 13.33px at 96 DPI; the UI stays on 13px so
        Roboto sits on the pixel grid. Keep in step with Cherris.UI.Ue5Typography. */
-    font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
-    font-size: 13px;
+    font-family: var(--theme-font-ui);
+    font-size: var(--theme-font-size);
     line-height: 1.35;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -164,8 +231,8 @@ body {
 
 /* Editable text selects into Highlight with ForegroundHover text, as SEditableText does. */
 ::selection {
-    background: var(--ue-primary);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-primary);
+    color: var(--theme-foreground-hover);
 }
 
 .app-shell {
@@ -184,7 +251,8 @@ body {
 }
 
 .app-title {
-    font-weight: 700;
+    font-size: var(--theme-font-large);
+    font-weight: var(--theme-font-weight-bold);
     letter-spacing: 0.01em;
 }
 
@@ -193,7 +261,7 @@ body {
     border: 1px solid var(--border);
     border-radius: 999px;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--theme-font-small);
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
@@ -224,14 +292,14 @@ body {
 
 .launcher-brand {
     font-size: 20px;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold);
     letter-spacing: 0.14em;
     color: var(--accent);
 }
 
 .launcher-caption {
     margin-top: 4px;
-    font-size: 11px;
+    font-size: var(--theme-font-small);
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--text-muted);
@@ -268,7 +336,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    font-size: 11px;
+    font-size: var(--theme-font-small);
 }
 
 .launcher-main {
@@ -285,7 +353,7 @@ body {
 .launcher-headline {
     margin: 6px 0 4px;
     font-size: 26px;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold);
 }
 
 .launcher-muted {
@@ -311,8 +379,8 @@ body {
     align-items: baseline;
     justify-content: space-between;
     margin-bottom: 10px;
-    font-weight: 700;
-    font-size: 12px;
+    font-weight: var(--theme-font-weight-bold);
+    font-size: calc(var(--theme-font-size) - 1px);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
@@ -320,7 +388,7 @@ body {
 .launcher-label {
     display: block;
     margin: 12px 0 4px;
-    font-size: 12px;
+    font-size: calc(var(--theme-font-size) - 1px);
     color: var(--text-muted);
 }
 
@@ -330,7 +398,7 @@ body {
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: var(--ue-input);
+    background: var(--theme-input);
     color: var(--text);
     font: inherit;
 }
@@ -365,7 +433,7 @@ body {
     justify-content: space-between;
     gap: 12px;
     padding: 10px 12px;
-    background: var(--ue-input);
+    background: var(--theme-input);
     border: 1px solid var(--border);
     border-radius: 7px;
 }
@@ -381,12 +449,12 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold);
 }
 
 .launcher-row-path {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--theme-font-small);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -401,8 +469,8 @@ body {
 .launcher-badge {
     padding: 1px 7px;
     border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: var(--theme-font-small);
+    font-weight: var(--theme-font-weight-bold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
@@ -433,7 +501,7 @@ body {
     border: 1px solid var(--bad);
     border-radius: 8px;
     background: rgba(239, 53, 53, 0.08);
-    color: var(--ue-error);
+    color: var(--theme-error);
 }
 
 .launcher-busy {
@@ -462,24 +530,24 @@ body {
 
 /* FButtonStyle's disabled state: Dropdown fill, Recessed outline. */
 .editor-button:disabled {
-    border-color: var(--ue-recessed);
-    background: var(--ue-dropdown);
-    color: var(--ue-foreground);
+    border-color: var(--theme-recessed);
+    background: var(--theme-dropdown);
+    color: var(--theme-foreground);
     opacity: 1;
     cursor: default;
 }
 
 /* PrimaryButton: Primary fill, PrimaryHover on hover. */
 .editor-button.primary {
-    border-color: var(--ue-input);
-    background: var(--ue-primary);
-    color: var(--ue-foreground-hover);
+    border-color: var(--theme-input);
+    background: var(--theme-primary);
+    color: var(--theme-foreground-hover);
 }
 
 .editor-button.primary:hover:not(:disabled) {
-    border-color: var(--ue-input);
-    background: var(--ue-primary-hover);
-    color: var(--ue-foreground-hover);
+    border-color: var(--theme-input);
+    background: var(--theme-primary-hover);
+    color: var(--theme-foreground-hover);
 }
 
 
@@ -504,8 +572,8 @@ body {
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: var(--ue-background);
-    color: var(--ue-foreground);
+    background: var(--theme-background);
+    color: var(--theme-foreground);
 }
 
 /* ---- menu bar (WindowMenuBar) ---- */
@@ -518,9 +586,9 @@ body {
     /* WindowMenuBar.MenuBar.Padding = FMargin(12, 4). */
     padding: 4px 12px;
     /* WindowMenuBar.Background is unpainted, so the window background shows through. */
-    background: var(--ue-background);
-    border-bottom: 1px solid var(--ue-window-border);
-    font-size: 13px;
+    background: var(--theme-background);
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    font-size: var(--theme-font-size);
     user-select: none;
     z-index: 30;
 }
@@ -529,11 +597,11 @@ body {
     padding: 2px 8px;
     margin-right: 6px;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--theme-radius);
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     font: inherit;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold);
     letter-spacing: 0.01em;
     cursor: default;
 }
@@ -541,8 +609,8 @@ body {
 .menubar-brand:hover,
 .menubar-button:hover {
     /* WindowMenuBar.Button: hovered fill is Hover, hovered text is ForegroundHover. */
-    background: var(--ue-hover);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-hover);
+    color: var(--theme-foreground-hover);
 }
 
 .menubar-item {
@@ -554,17 +622,17 @@ body {
 .menubar-button {
     padding: 2px 8px;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--theme-radius);
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     font: inherit;
     cursor: default;
 }
 
 /* WindowMenuBar.Button.SubMenuOpen */
 .menubar-button.open {
-    background: var(--ue-primary);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-primary);
+    color: var(--theme-foreground-hover);
 }
 
 .menubar-spacer {
@@ -573,7 +641,7 @@ body {
 
 .menubar-session {
     padding-right: 8px;
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -594,11 +662,11 @@ body {
     z-index: 50;
     min-width: 210px;
     padding: 4px 0;
-    background: var(--ue-dropdown);
-    border: 1px solid var(--ue-dropdown-outline);
+    background: var(--theme-dropdown);
+    border: var(--theme-border-width) solid var(--theme-dropdown-outline);
     border-radius: 0;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-    font-size: 13px;
+    font-size: var(--theme-font-size);
 }
 
 .viewport-toolbar .menu-popup {
@@ -616,33 +684,38 @@ body {
     padding: 1px 5px 1px 12px;
     border: none;
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--theme-font-size);
     text-align: left;
     cursor: default;
 }
 
 .menu-item:hover:not(:disabled) {
-    background: var(--ue-primary);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-primary);
+    color: var(--theme-foreground-hover);
 }
 
 .menu-item:disabled {
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
     cursor: default;
 }
 
+/* The theme menu is a radio group: the applied theme reads as plain text, the rest as muted. */
+.menu-item[aria-checked="true"] {
+    color: var(--theme-white);
+}
+
 .menu-shortcut {
-    color: var(--ue-accent-gray);
-    font-size: 11px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
 }
 
 /* Menu.Separator is White25. */
 .menu-separator {
     height: 1px;
     margin: 6px 12px;
-    background: var(--ue-white-25);
+    background: var(--theme-white-25);
 }
 
 /* ---- transport toolbar ---- */
@@ -652,8 +725,8 @@ body {
     justify-content: center;
     /* FToolBarStyle BackgroundPadding = FMargin(0, 4, 0, 4). */
     padding: 4px 0;
-    background: var(--ue-background);
-    border-bottom: 1px solid var(--ue-window-border);
+    background: var(--theme-background);
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
 }
 
 .transport {
@@ -676,28 +749,28 @@ body {
     height: 22px;
     padding: 2px;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: var(--theme-radius);
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     cursor: default;
 }
 
 .transport-button button:hover:not(:disabled) {
-    background: var(--ue-selection);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-selection);
+    color: var(--theme-foreground-hover);
 }
 
 /* SelectionColor_Pressed: the style set's linear (0.701, 0.225, 0.003), i.e. #DA820A on screen. */
 .transport-button button:active:not(:disabled) {
-    background: var(--ue-selection-pressed);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-selection-pressed);
+    color: var(--theme-foreground-hover);
 }
 
 /* A disabled toolbar button stays unpainted and keeps the normal foreground color. */
 .transport-button button:disabled {
     border-color: transparent;
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     cursor: default;
 }
 
@@ -724,7 +797,7 @@ body {
     padding: 3px;
     gap: 0;
     /* Docking.Background / DockingEmptyBg are the window background. */
-    background: var(--ue-background);
+    background: var(--theme-background);
 }
 
 .dock-middle {
@@ -756,7 +829,7 @@ body {
 /* SelectionColor is the engine's drag/selector affordance. */
 .dock-splitter:hover,
 .dockspace.is-dragging .dock-splitter {
-    background: var(--ue-selection);
+    background: var(--theme-selection);
 }
 
 body.dock-dragging-x,
@@ -779,8 +852,8 @@ body.dock-dragging-y * {
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: var(--ue-panel);
-    border: 1px solid var(--ue-window-border);
+    background: var(--theme-panel);
+    border: var(--theme-border-width) solid var(--theme-window-border);
     border-radius: 4px;
     overflow: hidden;
 }
@@ -790,8 +863,8 @@ body.dock-dragging-y * {
     display: flex;
     align-items: stretch;
     min-height: 26px;
-    background: var(--ue-background);
-    border-bottom: 1px solid var(--ue-window-border);
+    background: var(--theme-background);
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     user-select: none;
 }
 
@@ -802,25 +875,25 @@ body.dock-dragging-y * {
     padding: 3px 10px 4px;
     border: none;
     /* Docking.Tab.InactiveTabSeparator is Hover. */
-    border-right: 1px solid var(--ue-hover);
+    border-right: var(--theme-border-width) solid var(--theme-hover);
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--theme-font-size);
     cursor: default;
 }
 
 /* A hovered tab is Panel at 80% opacity over the well. */
 .panel-tab:hover {
     background: rgba(36, 36, 36, 0.8);
-    color: var(--ue-foreground-hover);
+    color: var(--theme-foreground-hover);
 }
 
 /* The foreground/active tab brush is Panel, its text ForegroundHover. */
 .panel-tab.active,
 .panel-tab.active:hover {
-    background: var(--ue-panel);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-panel);
+    color: var(--theme-foreground-hover);
 }
 
 /* Docking.Tab.ActiveTabIndicatorColor: a Primary gradient along the bottom edge, like SDockTab draws it. */
@@ -831,7 +904,7 @@ body.dock-dragging-y * {
     right: 0;
     bottom: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, var(--ue-primary), transparent);
+    background: linear-gradient(90deg, transparent, var(--theme-primary), transparent);
 }
 
 /* A panel with a single tab (Hierarchy, Inspector) shows a label, not a control, and no trailing separator. */
@@ -842,7 +915,7 @@ span.panel-tab {
 
 span.panel-tab:hover {
     background: transparent;
-    color: var(--ue-foreground-hover);
+    color: var(--theme-foreground-hover);
 }
 
 .panel-tab-spacer {
@@ -852,8 +925,8 @@ span.panel-tab:hover {
 .panel-tab-meta {
     align-self: center;
     padding: 0 10px;
-    color: var(--ue-accent-gray);
-    font-size: 11px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
 }
 
 .panel-body {
@@ -870,7 +943,7 @@ span.panel-tab:hover {
 
 .panel-empty {
     margin: 8px 2px;
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
 }
 
 /* ---- shared widgets ---- */
@@ -878,66 +951,67 @@ span.panel-tab:hover {
 /* NormalEditableTextBox: Input fill, InputOutline border, Foreground text. */
 .imgui-input {
     width: 100%;
+    height: var(--theme-control-height);
     padding: 3px 8px 4px;
-    border: 1px solid var(--ue-input-outline);
-    border-radius: 4px;
-    background: var(--ue-input);
-    color: var(--ue-foreground);
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    color: var(--theme-foreground);
     font: inherit;
-    font-size: 12px;
+    font-size: calc(var(--theme-font-size) - 1px);
 }
 
 /* HoveredBackgroundBrush keeps the fill and paints the outline Hover. */
 .imgui-input:hover {
-    border-color: var(--ue-hover);
+    border-color: var(--theme-hover);
 }
 
 /* FocusedBackgroundBrush paints the outline Primary and the text White. */
 .imgui-input:focus {
     outline: none;
-    border-color: var(--ue-primary);
-    color: var(--ue-white);
+    border-color: var(--theme-primary);
+    color: var(--theme-white);
 }
 
 /* Read-only inputs are filled with Header and outlined with InputOutline. */
 .imgui-input[readonly] {
-    background: var(--ue-header);
-    border-color: var(--ue-input-outline);
+    background: var(--theme-header);
+    border-color: var(--theme-input-outline);
     cursor: default;
 }
 
 .imgui-input[readonly]:hover,
 .imgui-input[readonly]:focus {
-    border-color: var(--ue-input-outline);
+    border-color: var(--theme-input-outline);
 }
 
 /* FButtonStyle: Secondary -> Hover -> Header, Input outline, ForegroundHover text. */
 .imgui-button {
     /* ButtonMargins = FMargin(12, 1.5, 12, 1.5), rounded to whole pixels. */
     padding: 2px 12px;
-    border: 1px solid var(--ue-input);
-    border-radius: 4px;
-    background: var(--ue-secondary);
-    color: var(--ue-foreground-hover);
+    border: var(--theme-border-width) solid var(--theme-input);
+    border-radius: var(--theme-radius);
+    background: var(--theme-secondary);
+    color: var(--theme-foreground-hover);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--theme-font-size);
     cursor: default;
 }
 
 .imgui-button:hover:not(:disabled) {
-    background: var(--ue-hover);
+    background: var(--theme-hover);
 }
 
 /* PressedButtonMargins pushes the label one pixel down without changing the button's height. */
 .imgui-button:active:not(:disabled) {
     padding: 3px 12px 1px;
-    background: var(--ue-header);
+    background: var(--theme-header);
 }
 
 .imgui-button:disabled {
-    border-color: var(--ue-recessed);
-    background: var(--ue-dropdown);
-    color: var(--ue-foreground);
+    border-color: var(--theme-recessed);
+    background: var(--theme-dropdown);
+    color: var(--theme-foreground);
     cursor: default;
 }
 
@@ -945,15 +1019,15 @@ span.panel-tab:hover {
 .imgui-separator {
     height: 1px;
     margin: 6px 0;
-    background: var(--ue-recessed);
+    background: var(--theme-recessed);
 }
 
 .imgui-checkbox {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--ue-foreground);
-    font-size: 12px;
+    color: var(--theme-foreground);
+    font-size: calc(var(--theme-font-size) - 1px);
     cursor: pointer;
     user-select: none;
 }
@@ -962,7 +1036,7 @@ span.panel-tab:hover {
     width: 13px;
     height: 13px;
     margin: 0;
-    accent-color: var(--ue-primary);
+    accent-color: var(--theme-primary);
 }
 
 /* ---- hierarchy (STableView rows) ---- */
@@ -973,9 +1047,9 @@ span.panel-tab:hover {
     flex-direction: column;
     gap: 1px;
     padding: 2px;
-    background: var(--ue-recessed);
-    border: 1px solid var(--ue-input-outline);
-    border-radius: 4px;
+    background: var(--theme-recessed);
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
 }
 
 .tree-row {
@@ -984,20 +1058,20 @@ span.panel-tab:hover {
     gap: 3px;
     padding: 3px 4px;
     border-radius: 0;
-    color: var(--ue-foreground);
-    font-size: 13px;
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-size);
     cursor: default;
     user-select: none;
 }
 
 .tree-row:hover {
-    background: var(--ue-select-hover);
+    background: var(--theme-select-hover);
 }
 
 .tree-row.selected,
 .tree-row.selected:hover {
-    background: var(--ue-select);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-select);
+    color: var(--theme-foreground-hover);
 }
 
 .tree-arrow {
@@ -1009,13 +1083,13 @@ span.panel-tab:hover {
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     line-height: 1;
     cursor: default;
 }
 
 .tree-row.selected .tree-arrow {
-    color: var(--ue-foreground-hover);
+    color: var(--theme-foreground-hover);
 }
 
 .tree-arrow.empty {
@@ -1033,9 +1107,9 @@ span.panel-tab:hover {
 
 .inspector-section {
     margin-bottom: 6px;
-    border: 1px solid var(--ue-window-border);
-    border-radius: 4px;
-    background: var(--ue-panel);
+    border: var(--theme-border-width) solid var(--theme-window-border);
+    border-radius: var(--theme-radius);
+    background: var(--theme-panel);
     overflow: hidden;
 }
 
@@ -1044,11 +1118,11 @@ span.panel-tab:hover {
     align-items: center;
     gap: 4px;
     padding: 4px;
-    border-bottom: 1px solid var(--ue-recessed);
-    background: var(--ue-header);
-    color: var(--ue-foreground-header);
-    font-size: 13px;
-    font-weight: 700;
+    border-bottom: var(--theme-border-width) solid var(--theme-recessed);
+    background: var(--theme-header);
+    color: var(--theme-foreground-header);
+    font-size: var(--theme-font-size);
+    font-weight: var(--theme-font-weight-bold);
     user-select: none;
 }
 
@@ -1058,8 +1132,8 @@ span.panel-tab:hover {
 
 .inspector-muted {
     margin: 0;
-    color: var(--ue-accent-gray);
-    font-size: 12px;
+    color: var(--theme-accent-gray);
+    font-size: calc(var(--theme-font-size) - 1px);
 }
 
 .inspector-add {
@@ -1076,8 +1150,8 @@ span.panel-tab:hover {
 .vec-label {
     width: 62px;
     flex: none;
-    color: var(--ue-accent-gray);
-    font-size: 12px;
+    color: var(--theme-accent-gray);
+    font-size: calc(var(--theme-font-size) - 1px);
 }
 
 .vec-fields {
@@ -1091,7 +1165,7 @@ span.panel-tab:hover {
     min-width: 0;
     padding: 2px 6px;
     font-variant-numeric: tabular-nums;
-    font-size: 12px;
+    font-size: calc(var(--theme-font-size) - 1px);
 }
 
 /* ---- console ---- */
@@ -1112,8 +1186,8 @@ span.panel-tab:hover {
 
 .console-count {
     margin-left: auto;
-    color: var(--ue-accent-gray);
-    font-size: 11px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
 }
 
 /* The log region is a recessed list surface. */
@@ -1122,11 +1196,11 @@ span.panel-tab:hover {
     min-height: 0;
     overflow: auto;
     padding: 3px 6px;
-    background: var(--ue-recessed);
-    border: 1px solid var(--ue-input-outline);
-    border-radius: 4px;
-    font-family: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
-    font-size: 12px;
+    background: var(--theme-recessed);
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    font-family: var(--theme-font-mono);
+    font-size: calc(var(--theme-font-size) - 1px);
     line-height: 1.4;
 }
 
@@ -1138,7 +1212,7 @@ span.panel-tab:hover {
 }
 
 .log-time {
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
     flex: none;
 }
 
@@ -1147,17 +1221,17 @@ span.panel-tab:hover {
 }
 
 .log-info {
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
 }
 
 .log-warning,
 .log-warning .log-time {
-    color: var(--ue-warning);
+    color: var(--theme-warning);
 }
 
 .log-error,
 .log-error .log-time {
-    color: var(--ue-error);
+    color: var(--theme-error);
 }
 
 /* ---- content browser ---- */
@@ -1183,13 +1257,13 @@ span.panel-tab:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--ue-foreground);
-    font-size: 12px;
+    color: var(--theme-foreground);
+    font-size: calc(var(--theme-font-size) - 1px);
 }
 
 .cb-count {
-    color: var(--ue-accent-gray);
-    font-size: 11px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
     flex: none;
 }
 
@@ -1202,9 +1276,9 @@ span.panel-tab:hover {
     gap: 2px;
     overflow: auto;
     padding: 3px;
-    background: var(--ue-recessed);
-    border: 1px solid var(--ue-input-outline);
-    border-radius: 4px;
+    background: var(--theme-recessed);
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
 }
 
 .cb-item {
@@ -1215,29 +1289,29 @@ span.panel-tab:hover {
     width: 84px;
     padding: 8px 4px;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: var(--theme-radius);
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     font: inherit;
     cursor: default;
     user-select: none;
 }
 
 .cb-item:hover {
-    background: var(--ue-select-hover);
+    background: var(--theme-select-hover);
 }
 
 /* Selected tiles: the engine outlines tiles with the selection blue over SelectParent. */
 .cb-item.selected {
-    border-color: var(--ue-primary);
-    background: var(--ue-select-parent);
-    color: var(--ue-foreground-hover);
+    border-color: var(--theme-primary);
+    background: var(--theme-select-parent);
+    color: var(--theme-foreground-hover);
 }
 
 .cb-glyph {
     width: 28px;
     height: 28px;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     flex: none;
 }
 
@@ -1246,7 +1320,7 @@ span.panel-tab:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: calc(var(--theme-font-size) - 1px);
 }
 
 /* ---- viewport ---- */
@@ -1257,8 +1331,8 @@ span.panel-tab:hover {
     align-items: center;
     gap: 4px;
     padding: 4px 6px;
-    border-bottom: 1px solid var(--ue-recessed);
-    background: var(--ue-panel);
+    border-bottom: var(--theme-border-width) solid var(--theme-recessed);
+    background: var(--theme-panel);
 }
 
 .viewport-toolbar .imgui-button {
@@ -1275,7 +1349,7 @@ span.panel-tab:hover {
     position: relative;
     width: 100%;
     height: 100%;
-    background: var(--ue-black);
+    background: var(--theme-black);
     overflow: hidden;
 }
 
@@ -1296,7 +1370,7 @@ span.panel-tab:hover {
     text-align: center;
     white-space: pre-line;
     line-height: 1.5;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
     background: rgba(0, 0, 0, 0.85);
 }
 
@@ -1310,7 +1384,7 @@ span.panel-tab:hover {
 .menubar-button:focus-visible,
 .menu-item:focus-visible,
 .tree-row:focus-visible {
-    outline: 1px solid var(--ue-primary);
+    outline: 1px solid var(--theme-primary);
     outline-offset: -1px;
 }
 
@@ -1335,7 +1409,7 @@ span.panel-tab:hover {
     width: 16px;
     height: 16px;
     transform: translateY(-50%);
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
     pointer-events: none;
 }
 
@@ -1355,24 +1429,24 @@ span.panel-tab:hover {
 .imgui-button.flat {
     border-color: transparent;
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
 }
 
 .imgui-button.flat:hover:not(:disabled),
 .imgui-button.flat:active:not(:disabled) {
-    background: var(--ue-dropdown);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-dropdown);
+    color: var(--theme-foreground-hover);
 }
 
 .imgui-button.flat:disabled {
     border-color: transparent;
     background: transparent;
-    color: var(--ue-foreground);
+    color: var(--theme-foreground);
 }
 
 /* Folder icons carry the engine's AccentFolder tint. */
 .cb-glyph.folder {
-    color: var(--ue-accent-folder);
+    color: var(--theme-accent-folder);
 }
 
 /* ---- status strip ---- */
@@ -1382,10 +1456,10 @@ span.panel-tab:hover {
     align-items: center;
     gap: 10px;
     padding: 2px 10px;
-    background: var(--ue-header);
-    border-top: 1px solid var(--ue-window-border);
-    color: var(--ue-foreground);
-    font-size: 11px;
+    background: var(--theme-header);
+    border-top: var(--theme-border-width) solid var(--theme-window-border);
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-small);
     font-variant-numeric: tabular-nums;
     user-select: none;
     overflow: hidden;
@@ -1393,7 +1467,7 @@ span.panel-tab:hover {
 }
 
 .statusbar-muted {
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
 }
 
 .statusbar-spacer {
@@ -1403,21 +1477,21 @@ span.panel-tab:hover {
 .statusbar-sep {
     width: 1px;
     height: 11px;
-    background: var(--ue-dropdown-outline);
+    background: var(--theme-dropdown-outline);
 }
 
 .statusbar-renderer {
     max-width: 32%;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
 }
 
 .status-pill {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold);
 }
 
 .status-pill::before {
@@ -1429,28 +1503,28 @@ span.panel-tab:hover {
 }
 
 .status-ok {
-    color: var(--ue-success);
+    color: var(--theme-success);
 }
 
 .status-pending {
-    color: var(--ue-warning);
+    color: var(--theme-warning);
 }
 
 .status-bad {
-    color: var(--ue-error);
+    color: var(--theme-error);
 }
 
 /* ---- starting / failure states ---- */
 
 .editor-starting {
     margin: 32px;
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
 }
 
 .editor-error {
     margin: 24px;
     padding: 18px 20px;
-    border: 1px solid var(--ue-error);
+    border: var(--theme-border-width) solid var(--theme-error);
     border-radius: 4px;
     background: rgba(239, 53, 53, 0.08);
     overflow: auto;
@@ -1467,16 +1541,16 @@ span.panel-tab:hover {
 }
 
 .editor-error-hint {
-    color: var(--ue-accent-gray);
+    color: var(--theme-accent-gray);
 }
 
 .editor-error h3 {
     margin: 16px 0 6px;
-    font-size: 12px;
+    font-size: calc(var(--theme-font-size) - 1px);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--ue-accent-gray);
-    font-weight: 700;
+    color: var(--theme-accent-gray);
+    font-weight: var(--theme-font-weight-bold);
 }
 
 .editor-error-actions {
@@ -1487,7 +1561,7 @@ span.panel-tab:hover {
 }
 
 .editor-error-confirm {
-    color: var(--ue-success);
+    color: var(--theme-success);
 }
 
 .editor-error-detail,
@@ -1496,27 +1570,27 @@ span.panel-tab:hover {
     overflow: auto;
     margin: 8px 0 0;
     padding: 10px 12px;
-    border: 1px solid var(--ue-input-outline);
-    border-radius: 4px;
-    background: var(--ue-input);
-    color: var(--ue-foreground);
-    font-family: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
-    font-size: 12px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    color: var(--theme-foreground);
+    font-family: var(--theme-font-mono);
+    font-size: calc(var(--theme-font-size) - 1px);
     line-height: 1.4;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
 .editor-error code {
-    font-family: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
-    color: var(--ue-foreground-hover);
+    font-family: var(--theme-font-mono);
+    color: var(--theme-foreground-hover);
 }
 
 /* ---- scrollbars (FScrollBarStyle: unpainted track, Hover/Hover2 rounded thumbs) ---- */
 
 ::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: var(--theme-scrollbar-width);
+    height: var(--theme-scrollbar-width);
 }
 
 ::-webkit-scrollbar-track {
@@ -1524,15 +1598,15 @@ span.panel-tab:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--ue-hover);
+    background: var(--theme-hover);
     border: 2px solid transparent;
     background-clip: content-box;
-    border-radius: 4px;
+    border-radius: var(--theme-radius);
 }
 
 ::-webkit-scrollbar-thumb:hover,
 ::-webkit-scrollbar-thumb:active {
-    background: var(--ue-hover-2);
+    background: var(--theme-hover-2);
     background-clip: content-box;
 }
 
@@ -1547,15 +1621,15 @@ span.panel-tab:hover {
     left: 0;
     right: 0;
     padding: 10px 14px;
-    background: var(--ue-notifications);
-    border-top: 1px solid var(--ue-error);
-    color: var(--ue-foreground-hover);
+    background: var(--theme-notifications);
+    border-top: var(--theme-border-width) solid var(--theme-error);
+    color: var(--theme-foreground-hover);
     z-index: 1000;
 }
 
 #blazor-error-ui .reload,
 #blazor-error-ui .dismiss {
-    color: var(--ue-accent-blue);
+    color: var(--theme-accent-blue);
     margin-left: 8px;
     cursor: pointer;
 }

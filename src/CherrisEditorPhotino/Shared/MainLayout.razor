@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @inject EditorHostService Host
+@inject ThemeService Themes
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 @* The editor page draws its own chrome (menu bar, toolbar, dockspace) so the shell header is only for
@@ -39,6 +41,25 @@
     protected override void OnInitialized()
     {
         Nav.LocationChanged += OnLocationChanged;
+    }
+
+    // The stylesheet ships the default theme so the first frame is already styled; this swaps in whichever
+    // theme the editor has selected, for the launcher and the editor alike.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await Themes.ApplyAsync(JS);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window went away before the first render finished.
+        }
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args)

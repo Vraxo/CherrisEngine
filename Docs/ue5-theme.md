@@ -1,14 +1,19 @@
 # The UE5 editor look
 
-Both editors are themed with Unreal Engine 5's own values rather than with ones picked to look similar:
+Both editors can wear Unreal Engine 5's own values rather than ones picked to look similar. This page
+documents that theme; how themes are loaded, selected and added is on [themes.md](themes.md).
 
-| Front end | Reads the palette from |
+| Front end | Gets the theme from |
 | :--- | :--- |
-| `src/CherrisEditor` (ImGui) | `Cherris.UI.Ue5Colors` (`src/Cherris/UI/Ue5Colors.cs`), applied by `EditorTheme.ApplyUnrealEngineStyle()` |
-| `src/CherrisEditorPhotino` (Blazor) | `--ue-*` custom properties in `wwwroot/css/app.css` |
+| `src/CherrisEditor` (ImGui) | `Cherris.UI.Ue5StarshipTheme`, applied by `ImGuiTheme.Apply(EditorTheme)` |
+| `src/CherrisEditorPhotino` (Blazor) | the same theme object, applied as `--theme-*` custom properties |
 
-`tests/CherrisEditorWeb.Tests/Ue5PaletteTests.cs` parses the stylesheet and fails if any `--ue-*` value
-drifts from `Ue5Colors`, so the two cannot quietly diverge.
+The palette itself lives in `src/Cherris/UI/Ue5Colors.cs`, mapped onto the theme's roles by
+`src/Cherris/UI/Themes/Ue5StarshipTheme.cs`, and is also shipped as
+`EditorResources/Themes/ue5-starship.json`. It is the default theme, so the stylesheet's `:root` block holds
+exactly its values; `tests/CherrisEditorWeb.Tests/Ue5PaletteTests.cs` fails if they drift apart. Nothing
+in `app.css` or in the ImGui theme names a color directly any more — both read roles, which is what lets the
+theme change at runtime.
 
 ## How exact is this?
 
@@ -158,8 +163,8 @@ The sizes the stylesheet reproduces, with the line each one comes from:
 | Toolbar background padding `FMargin(0, 4, 0, 4)`, button padding `FMargin(2, 0)`, icon `Icon16x16` | `FToolBarStyle` | `.editor-toolbar-strip` (`4px 0`), `.transport` (`4px` gaps), 16px SVGs |
 | Toolbar button padding `FMargin(2, 2)` | `ToolBar.Button` | `.transport-button button` |
 | 16px icons | `Icon16x16` (`CoreStyle.h`) | toolbar and search icons |
-| 1px focus rectangle, 4px radius | `InputFocusRadius` / `InputFocusThickness` | `--ue-primary` outlines, `border-radius: 4px` |
-| 8pt small text | `SmallTextSize` / `Small` text style | `.statusbar`, `.cb-count`, `.menu-shortcut` (11px) |
+| 1px focus rectangle, 4px radius | `InputFocusRadius` / `InputFocusThickness` | `--theme-primary` outlines, `--theme-radius` |
+| 8pt small text | `SmallTextSize` / `Small` text style | `.statusbar`, `.cb-count`, `.menu-shortcut` (`--theme-font-small`, 11px) |
 
 What is deliberately ours, since the engine does not state it as data: the 26px tab strip height, the 22px
 toolbar button, the details category header's lower rule and 4px padding, content-browser tile cells (16px

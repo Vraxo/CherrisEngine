@@ -207,7 +207,7 @@ chrome is deliberately the same so muscle memory carries over:
 | `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel` (Show Grid is a renderer setting, so it is shown disabled) |
 | `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
 | `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, read-only over the open project folder |
-| Theme: `EditorTheme.ApplyUnrealEngineStyle` | `--imgui-*` tokens in `wwwroot/css/app.css`, same greys and the accent blue |
+| Theme: `ImGuiTheme.Apply(EditorTheme)` | the same `EditorTheme`, applied as `--theme-*` tokens (see [themes.md](themes.md)) |
 
 Colors come from the engine's own palette rather than an approximation of it — see
 [UE5 Theme](ue5-theme.md) for every value, its source file, the widget styles it maps to, and the bundled Roboto/Roboto Mono fonts behind the typography.

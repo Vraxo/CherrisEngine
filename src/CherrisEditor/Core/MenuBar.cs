@@ -1,5 +1,6 @@
 using Cherris.Core;
 using Cherris.Core.Logging;
+using Cherris.UI;
 using Cherris.Serialization;
 using CherrisEditor.Build;
 using CherrisEditor.Undo;
@@ -108,7 +109,52 @@ public class MenuBar
             ImGui.EndMenu();
         }
 
+        DrawThemeMenu();
+
         ImGui.EndMenuBar();
+    }
+
+    /// <summary>
+    /// The theme list: one radio item per theme in the catalog, the built-ins plus anything loaded from a
+    /// JSON file, and an entry to rescan the folders after dropping one in.
+    /// </summary>
+    private static void DrawThemeMenu()
+    {
+        if (!ImGui.BeginMenu("Theme"))
+        {
+            return;
+        }
+
+        string activeId = EditorThemes.Catalog.Active.Id;
+
+        foreach (EditorTheme theme in EditorThemes.Catalog.Themes)
+        {
+            string label = theme.IsExternal ? theme.DisplayName + "  (file)" : theme.DisplayName;
+
+            if (ImGui.MenuItem(label, string.Empty, theme.Id == activeId))
+            {
+                EditorThemes.Select(theme.Id);
+            }
+
+            if (ImGui.IsItemHovered() && !String.IsNullOrEmpty(theme.Provenance))
+            {
+                ImGui.SetTooltip(theme.Provenance);
+            }
+        }
+
+        ImGui.Separator();
+
+        if (ImGui.MenuItem("Reload Themes"))
+        {
+            EditorThemes.ReloadFiles();
+        }
+
+        foreach ((string path, string error) in EditorThemes.Catalog.Errors)
+        {
+            ImGui.TextDisabled(Path.GetFileName(path) + ": " + error);
+        }
+
+        ImGui.EndMenu();
     }
 
     private static void OpenProjectLauncher(bool createProject)
