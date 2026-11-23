@@ -124,6 +124,9 @@
     --ue-success: #1fe44b;
     /* StarshipCoreStyle's SelectionColor: the engine's drag/drop and selector blue. */
     --ue-selection: #18a0fb;
+    /* SelectionColor_Pressed: the style set stores it linear (0.701, 0.225, 0.003); this is that
+       value sRGB-encoded, which is what a pressed toolbar button looks like on screen. */
+    --ue-selection-pressed: #da820a;
     /* A hovered dock tab: Panel at 80% over Background, the way Slate blends it. */
     --ue-tab-hover: #212121;
 
@@ -512,7 +515,8 @@ body {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 1px 4px;
+    /* WindowMenuBar.MenuBar.Padding = FMargin(12, 4). */
+    padding: 4px 12px;
     /* WindowMenuBar.Background is unpainted, so the window background shows through. */
     background: var(--ue-background);
     border-bottom: 1px solid var(--ue-window-border);
@@ -522,7 +526,7 @@ body {
 }
 
 .menubar-brand {
-    padding: 4px 8px;
+    padding: 2px 8px;
     margin-right: 6px;
     border: none;
     border-radius: 4px;
@@ -545,8 +549,10 @@ body {
     position: relative;
 }
 
+/* MenuButton normal padding is FMargin(0, 2); the horizontal 8px is the spacing SMenuBar
+   leaves between titles, which the engine does not express as padding. */
 .menubar-button {
-    padding: 4px 12px;
+    padding: 2px 8px;
     border: none;
     border-radius: 4px;
     background: transparent;
@@ -606,7 +612,8 @@ body {
     justify-content: space-between;
     gap: 24px;
     width: 100%;
-    padding: 3px 12px;
+    /* Menu.Block.Padding = FMargin(12, 1, 5, 1). */
+    padding: 1px 5px 1px 12px;
     border: none;
     background: transparent;
     color: var(--ue-foreground);
@@ -643,29 +650,31 @@ body {
 .editor-toolbar-strip {
     display: flex;
     justify-content: center;
-    padding: 3px 0;
+    /* FToolBarStyle BackgroundPadding = FMargin(0, 4, 0, 4). */
+    padding: 4px 0;
     background: var(--ue-background);
     border-bottom: 1px solid var(--ue-window-border);
 }
 
 .transport {
     display: flex;
-    gap: 6px;
+    /* FToolBarStyle ButtonPadding = FMargin(2, 0) on each side of a button. */
+    gap: 4px;
 }
 
 .transport-button {
     display: inline-flex;
 }
 
-/* FButtonStyle: Secondary fill, Input outline, ForegroundHover text. */
+/* The level-editor toolbar's buttons are "ToolBar.Button": unpainted normally, and hovered or
+   pressed with the style's SelectionColor (the bright selector blue), padding FMargin(2, 2). */
 .transport-button button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 62px;
     height: 22px;
-    padding: 0;
-    /* SimpleButton: no fill until hovered, then Dropdown, then Header while pressed. */
+    padding: 2px;
     border: 1px solid transparent;
     border-radius: 4px;
     background: transparent;
@@ -674,26 +683,28 @@ body {
 }
 
 .transport-button button:hover:not(:disabled) {
-    background: var(--ue-dropdown);
+    background: var(--ue-selection);
     color: var(--ue-foreground-hover);
 }
 
+/* SelectionColor_Pressed: the style set's linear (0.701, 0.225, 0.003), i.e. #DA820A on screen. */
 .transport-button button:active:not(:disabled) {
-    background: var(--ue-header);
+    background: var(--ue-selection-pressed);
     color: var(--ue-foreground-hover);
 }
 
-/* SimpleButton's disabled state is unpainted with subdued text. */
+/* A disabled toolbar button stays unpainted and keeps the normal foreground color. */
 .transport-button button:disabled {
     border-color: transparent;
     background: transparent;
-    color: var(--ue-accent-gray);
+    color: var(--ue-foreground);
     cursor: default;
 }
 
+/* Toolbar icons are Icon16x16. */
 .transport-button svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     fill: currentColor;
     stroke: none;
 }
@@ -795,7 +806,7 @@ body.dock-dragging-y * {
     background: transparent;
     color: var(--ue-foreground);
     font: inherit;
-    font-size: 12px;
+    font-size: 13px;
     cursor: default;
 }
 
@@ -902,7 +913,8 @@ span.panel-tab:hover {
 
 /* FButtonStyle: Secondary -> Hover -> Header, Input outline, ForegroundHover text. */
 .imgui-button {
-    padding: 4px 12px;
+    /* ButtonMargins = FMargin(12, 1.5, 12, 1.5), rounded to whole pixels. */
+    padding: 2px 12px;
     border: 1px solid var(--ue-input);
     border-radius: 4px;
     background: var(--ue-secondary);
@@ -916,7 +928,9 @@ span.panel-tab:hover {
     background: var(--ue-hover);
 }
 
+/* PressedButtonMargins pushes the label one pixel down without changing the button's height. */
 .imgui-button:active:not(:disabled) {
+    padding: 3px 12px 1px;
     background: var(--ue-header);
 }
 
@@ -996,9 +1010,8 @@ span.panel-tab:hover {
     border: none;
     background: transparent;
     color: var(--ue-foreground);
-    color: var(--ue-accent-gray);
     line-height: 1;
-    cursor: pointer;
+    cursor: default;
 }
 
 .tree-row.selected .tree-arrow {
@@ -1242,14 +1255,14 @@ span.panel-tab:hover {
     position: relative;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 6px;
+    gap: 4px;
+    padding: 4px 6px;
     border-bottom: 1px solid var(--ue-recessed);
     background: var(--ue-panel);
 }
 
 .viewport-toolbar .imgui-button {
-    padding: 2px 10px;
+    padding: 2px 8px;
 }
 
 .viewport-panel .panel-body,
@@ -1311,15 +1324,16 @@ span.panel-tab:hover {
 }
 
 .search-field .imgui-input {
-    padding-left: 26px;
+    padding-left: 30px;
 }
 
+/* SSearchBox's arrows are Icon16x16, drawn inside the text box's 8px padding. */
 .search-icon {
     position: absolute;
-    left: 7px;
+    left: 8px;
     top: 50%;
-    width: 13px;
-    height: 13px;
+    width: 16px;
+    height: 16px;
     transform: translateY(-50%);
     color: var(--ue-accent-gray);
     pointer-events: none;
@@ -1336,21 +1350,24 @@ span.panel-tab:hover {
     transform: rotate(90deg);
 }
 
-/* SimpleButton: flat until hovered. Used by toolbar-style buttons such as the viewport's Options. */
+/* SimpleButton: unpainted normally, Dropdown on hover *and* while pressed, Foreground when
+   disabled — the engine's SimpleButton has no separate pressed fill. */
 .imgui-button.flat {
     border-color: transparent;
     background: transparent;
     color: var(--ue-foreground);
 }
 
-.imgui-button.flat:hover:not(:disabled) {
+.imgui-button.flat:hover:not(:disabled),
+.imgui-button.flat:active:not(:disabled) {
     background: var(--ue-dropdown);
     color: var(--ue-foreground-hover);
 }
 
-.imgui-button.flat:active:not(:disabled) {
-    background: var(--ue-header);
-    color: var(--ue-foreground-hover);
+.imgui-button.flat:disabled {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ue-foreground);
 }
 
 /* Folder icons carry the engine's AccentFolder tint. */
