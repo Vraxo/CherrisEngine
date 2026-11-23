@@ -125,7 +125,9 @@ public class ViewportProtocolTests
         ViewportProtocol.TryReadCommand("""{"type":"mouseButton","button":0,"down":true}""", sink)
             .Should().BeTrue();
 
-        sink.Calls.Should().Equal("button:0:down", "a press without a position says nothing about where it was");
+        sink.Calls.Should().Equal(
+            new[] { "button:0:down" },
+            "a press without a position says nothing about where it was");
     }
 
     private sealed class OrderedSink : IViewportInputSink
