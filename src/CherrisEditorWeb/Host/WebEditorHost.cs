@@ -32,6 +32,8 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private readonly ManualResetEventSlim _shutdown = new(false);
     private readonly ManualResetEventSlim _started = new(false);
     private readonly string _webRoot;
+    private readonly HeadlessBackend? _graphicsBackend;
+    private readonly Action<string>? _log;
 
     private ViewerConnection? _activeConnection;
     private WebEditorServer? _server;
@@ -41,13 +43,27 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private int _shuttingDown;
     private volatile bool _renderFailed;
     private volatile bool _startFailed;
+    private volatile string? _failureDetail;
     private SceneSnapshot? _latestScene;
     private bool _disposed;
 
-    public WebEditorHost(WebEditorOptions options, string webRoot)
+    /// <param name="options">Render, transport and sizing options.</param>
+    /// <param name="webRoot">Directory served over HTTP; only the browser front end uses it.</param>
+    /// <param name="graphicsBackend">
+    /// A backend whose hidden window was already created on another thread, for hosts where the process'
+    /// main thread belongs to a UI message loop. Null creates it on the render thread instead.
+    /// </param>
+    /// <param name="log">Sink for host diagnostics, in addition to the console.</param>
+    public WebEditorHost(
+        WebEditorOptions options,
+        string webRoot,
+        HeadlessBackend? graphicsBackend = null,
+        Action<string>? log = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _webRoot = webRoot ?? throw new ArgumentNullException(nameof(webRoot));
+        _graphicsBackend = graphicsBackend;
+        _log = log;
         _width = options.Width;
         _height = options.Height;
     }
@@ -60,6 +76,15 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
     /// <summary>True when the listener could not be started; <see cref="Url"/> stays null.</summary>
     public bool StartFailed => _startFailed;
+
+    /// <summary>
+    /// What went wrong, verbatim, when the renderer or the render loop failed: the exception type, its
+    /// message and its stack, not a guess at the cause.
+    /// </summary>
+    public string? FailureDetail => Volatile.Read(ref _failureDetail);
+
+    /// <summary>Renderer and GL version strings captured once the renderer is live, or null before that.</summary>
+    public string? RendererInfo => _engine?.RendererInfo;
 
     /// <summary>Most recent scene snapshot published by the render thread, or null before the first one.</summary>
     public SceneSnapshot? LatestScene => Volatile.Read(ref _latestScene);
@@ -81,6 +106,21 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     }
 
     /// <summary>
+    /// Writes a diagnostic line to the host's log sink, or straight to the console when the host has no
+    /// sink (the browser front end). The sink owns console output in that case, so lines are not doubled.
+    /// </summary>
+    public void WriteLog(string message)
+    {
+        if (_log is null)
+        {
+            Console.WriteLine(message);
+            return;
+        }
+
+        _log(message);
+    }
+
+    /// <summary>
     /// Runs until the process is interrupted. Returns the process exit code.
     /// </summary>
     public int Run()
@@ -97,8 +137,9 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[web-editor] Could not listen on {prefix}: {exception.Message}");
-            Console.Error.WriteLine("If the port is busy, pass --port <n>.");
+            WriteLog($"[web-editor] Could not listen on {prefix}: {exception.Message}");
+            WriteLog("[web-editor] If the port is busy, pass --port <n>.");
+            Volatile.Write(ref _failureDetail, exception.ToString());
             _startFailed = true;
             _started.Set();
             return 1;
@@ -106,8 +147,8 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
         _started.Set();
 
-        Console.WriteLine($"[web-editor] Serving the editor at {_server.Url}");
-        Console.WriteLine("[web-editor] Press Ctrl+C to stop.");
+        WriteLog($"[web-editor] Serving the editor at {_server.Url}");
+        WriteLog("[web-editor] Press Ctrl+C to stop.");
 
         if (_options.OpenBrowser)
         {
@@ -248,15 +289,17 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
         try
         {
-            backend = new HeadlessBackend { TargetFrameRate = _options.TargetFrameRate };
+            backend = _graphicsBackend ?? new HeadlessBackend();
+            backend.TargetFrameRate = _options.TargetFrameRate;
+
             engine = new WebEditorEngine(backend, this, this);
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[web-editor] Could not create the renderer: {exception.Message}");
-            Console.Error.WriteLine(
-                "OpenGL 3.3 and the shader files under EditorResources/ are required. On a headless " +
-                "machine, run under a virtual display (Xvfb) or use the desktop editor instead.");
+            // Report the exception itself. The cause can be a missing GL 3.3 driver, a GLFW thread
+            // restriction or a missing shader, and a generic hint would hide which one it was.
+            Volatile.Write(ref _failureDetail, exception.ToString());
+            WriteLog($"[web-editor] Could not create the renderer: {exception}");
             _renderFailed = true;
             _shutdown.Set();
             return;
@@ -276,7 +319,8 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"[web-editor] Render loop failed: {exception}");
+            Volatile.Write(ref _failureDetail, exception.ToString());
+            WriteLog($"[web-editor] Render loop failed: {exception}");
             _renderFailed = true;
         }
         finally
@@ -293,7 +337,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             return;
         }
 
-        Console.WriteLine("[web-editor] Stopping...");
+        WriteLog("[web-editor] Stopping...");
 
         _engine?.RequestStop();
 
@@ -305,11 +349,11 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine($"[web-editor] Server shutdown failed: {exception.Message}");
+                WriteLog($"[web-editor] Server shutdown failed: {exception.Message}");
             }
         }
 
-        Console.WriteLine("[web-editor] Stopped.");
+        WriteLog("[web-editor] Stopped.");
     }
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs args)

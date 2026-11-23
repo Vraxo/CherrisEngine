@@ -1,5 +1,7 @@
 @page "/"
 @inject EditorHostService Host
+@inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Cherris Editor</PageTitle>
 
@@ -8,9 +10,27 @@
     <div class="editor-error">
         <h2>The editor host is not running</h2>
         <p>@failure</p>
-        <p class="editor-error-hint">
-            Frames cannot be streamed without the renderer, so the viewport is unavailable.
-        </p>
+
+        @if (Host.FailureDetail is string detail)
+        {
+            <pre class="editor-error-detail">@detail</pre>
+        }
+
+        <div class="editor-error-actions">
+            <button type="button" class="editor-button" @onclick="CopyDiagnostics">Copy diagnostics</button>
+            @if (_copied)
+            {
+                <span class="editor-error-confirm">copied to the clipboard</span>
+            }
+        </div>
+
+        @if (Host.LogFilePath is string logPath)
+        {
+            <p class="editor-error-hint">Log file: <code>@logPath</code></p>
+        }
+
+        <h3>Host log</h3>
+        <pre class="editor-log">@Host.LogTail(40)</pre>
     </div>
 }
 else
@@ -28,4 +48,54 @@ else
             <StatusBar />
         </footer>
     </div>
+}
+
+@code {
+    private static readonly TimeSpan HealthInterval = TimeSpan.FromMilliseconds(500);
+
+    private Timer? _timer;
+    private bool _copied;
+    private string? _lastFailure;
+
+    protected override void OnInitialized()
+    {
+        // The render thread can die long after the window opened (a driver reset, a lost context), so the
+        // page watches for the first failure instead of only checking once at startup.
+        _lastFailure = Host.FailureMessage;
+        _timer = new Timer(_ => _ = CheckHealthAsync(), null, HealthInterval, HealthInterval);
+    }
+
+    private async Task CheckHealthAsync()
+    {
+        string? failure = Host.FailureMessage;
+
+        if (failure == _lastFailure)
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _lastFailure = failure;
+            StateHasChanged();
+        });
+    }
+
+    private async Task CopyDiagnostics()
+    {
+        try
+        {
+            _copied = await JS.InvokeAsync<bool>("cherrisHost.copy", Host.Diagnostics);
+        }
+        catch (Exception)
+        {
+            _copied = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
 }

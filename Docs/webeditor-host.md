@@ -73,8 +73,9 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | Piece | Thread | Responsibility |
 | :--- | :--- | :--- |
 | `PhotinoBlazorApp` message loop | main (`[STAThread]`) | Window, webview, Blazor renderer. Owns the UI thread. |
-| `WebEditorEngine` | background ("Cherris Engine") | Engine + `HeadlessBackend`; captures the previous frame from `OnDrawUI` and publishes it. |
-| `EditorHostService` | any | Starts the render thread, exposes the URL, the latest scene snapshot and failures to the UI. |
+| `HeadlessBackend` hidden window | main, before the loop starts | Creates the GLFW window/context. OpenTK only allows GLFW init on the process' main thread. |
+| `WebEditorEngine` | background ("Cherris Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
+| `EditorHostService` | main, then any | Prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics and failures to the UI. |
 | `WebEditorHost` | any | Owns the listener, the desired viewport size, the active client, and input translation into `HeadlessInput`. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
@@ -97,6 +98,15 @@ thread-affine: the context, the renderer, `SceneFrameCapture` and every GL call 
 and nothing there touches Blazor state or `StateHasChanged`. Cross-thread data moves only through
 `Volatile` fields holding immutable objects (`SceneSnapshot`, `FramePipe`'s slot).
 
+The one thing that cannot move off the main thread is **context creation**. `Engine`'s constructor calls
+`IRenderingInterface.Initialize`, and OpenTK's `GLFWProvider.EnsureInitialized` throws
+`GLFWException("GLFW can only be called from the main thread!")` for anything that is not the thread whose
+stack holds the entry point — on every platform, not just macOS. So `EditorHostService.Start` runs on the
+main thread and calls `HeadlessBackend.CreateGraphicsContext(...)` there; the render thread only calls
+`MakeCurrent()`. A GL context is portable between threads and nothing is ever presented from the hidden
+window, so the split is safe. Once the context exists, `GLFWProvider.CheckForMainThread` is cleared —
+its guard only tracks the creating thread and would otherwise reject the render thread's `MakeCurrent`.
+
 ### Why pixels still travel over a socket
 
 The Blazor UI is in-process, so the frame path could be JS interop. It is a loopback WebSocket instead:
@@ -111,6 +121,21 @@ The Blazor UI is in-process, so the frame path could be JS interop. It is a loop
 `wwwroot/js/viewport.js` is the other half: it mounts a WebGL2 canvas on the socket, uploads each frame with
 `texSubImage2D`, and forwards keyboard/mouse/wheel/pointer-lock events back. It is the same code that the
 browser harness uses, wrapped in `mount()` / `dispose()` / `getStats()` so Blazor can own its lifetime.
+
+### Diagnostics
+
+Everything the host learns goes to three places: the console, an in-memory ring buffer (the "Host log" in
+the window) and `%LOCALAPPDATA%/Cherris/editor-host.log` (`~/.local/share/Cherris/editor-host.log` on
+Linux; the exact path is shown in the window and in the diagnostics block).
+
+- When the renderer or the render loop fails, the window shows the exception verbatim — type, message and
+  stack — plus the log tail and a **Copy diagnostics** button (environment, base directory, whether
+  `EditorResources/` and `wwwroot/` exist, the host URL, the renderer string, the failure).
+- Engine `Logger` output is mirrored into the same log, so shader and asset errors are visible in the
+  window instead of only on a console that a windowed app may not have.
+- The status bar shows the GL renderer string once the context is live, e.g.
+  `NVIDIA GeForce RTX 3060 (NVIDIA Corporation) · GL 4.6.0`. If that line stays at "renderer starting", the
+  failure panel explains why.
 
 ### Scene snapshots
 
@@ -161,6 +186,16 @@ render thread, so a slow client lowers the visible frame rate instead of adding 
 The viewport shows a built-in scene (floor, spinning cube, directional light) because project loading still
 lives in the ImGui editor. Replace `WebEditorEngine.LoadContent` with `SceneLoader.LoadScene(...)` when the
 Blazor UI grows a project browser; the hierarchy panel then shows real project content without changes.
+
+## Troubleshooting
+
+| Symptom | Cause |
+| :--- | :--- |
+| Panel says the graphics context could not be created; detail mentions `GLFW`, `WGL`, `GLX` or `EGL` | No OpenGL 3.3 driver, a remote session without GPU acceleration, or no X/Wayland display on Linux. |
+| Detail mentions `GLFW can only be called from the main thread` | The hidden window was created off the main thread — see the threading section; `EditorHostService.Start` must run on the thread that called `Main`. |
+| Window stays blank, no failure panel, log says the host is listening | The frame socket never connected: check `_framework/blazor.webview.js` and `js/viewport.js` loaded (the log records the WebSocket URL), and that the webview supports WebGL2. |
+| No window at all | Missing WebView2 runtime (Windows) or WebKitGTK 4.1 (Linux). |
+| `EditorResources MISSING` in diagnostics | The build did not copy `EditorResources/`; build from the repository root so the `Content Include` in `CherrisEditorPhotino.csproj` runs. |
 
 ## Limitations
 
