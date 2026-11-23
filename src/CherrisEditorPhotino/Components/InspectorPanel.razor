@@ -1,5 +1,7 @@
+@using Cherris.Components
 @inject SceneStore Store
 @inject SceneSelection Selection
+@inject EditorHostService Host
 @implements IDisposable
 
 @* ImGui's Inspector: object name, Transform, then one collapsible section per component. *@
@@ -82,15 +84,40 @@
             }
 
             <div class="inspector-add">
-                <button type="button" class="imgui-button" disabled title="Components are added in the ImGui editor">
+                <button type="button" class="imgui-button" disabled="@(!CanEdit)" title="@AddTitle"
+                        @onclick="() => ToggleAddMenu(node.Id)">
                     Add ▾
                 </button>
+
+                @if (IsAddMenuOpen(node.Id))
+                {
+                    @* The list opens inline: the panel body scrolls, so a floating menu would be clipped by
+                       its own scroll container. *@
+                    <div class="add-menu" role="menu">
+                        @if (AddableTypes(node).Count == 0)
+                        {
+                            <p class="panel-empty">This object already has every component there is.</p>
+                        }
+                        else
+                        {
+                            @foreach (ComponentCatalog.Entry entry in AddableTypes(node))
+                            {
+                                <button type="button" class="menu-item" role="menuitem"
+                                        @onclick="() => AddComponent(node, entry)">
+                                    <span>@entry.DisplayName</span>
+                                </button>
+                            }
+                        }
+                    </div>
+                }
             </div>
         }
     </div>
 </section>
 
 @code {
+    private Guid? _addMenuFor;
+
     private SceneNodeSnapshot? SelectedNode
     {
         get
@@ -102,6 +129,29 @@
 
             return scene.Nodes.FirstOrDefault(node => node.Id == id);
         }
+    }
+
+    /// <summary>True while a session is running to apply an edit to.</summary>
+    private bool CanEdit => Host.State == EditorSessionState.Running;
+
+    private string AddTitle => CanEdit
+        ? "Add a component to this object"
+        : "No render session is running";
+
+    private bool IsAddMenuOpen(Guid objectId) => CanEdit && _addMenuFor == objectId;
+
+    private void ToggleAddMenu(Guid objectId) => _addMenuFor = IsAddMenuOpen(objectId) ? null : objectId;
+
+    /// <summary>The catalog entries this object does not have yet: an object holds one of each type.</summary>
+    private static IReadOnlyList<ComponentCatalog.Entry> AddableTypes(SceneNodeSnapshot node) =>
+        ComponentCatalog.BuiltIn
+            .Where(entry => !node.Components.Contains(entry.ComponentType.Name, StringComparer.Ordinal))
+            .ToArray();
+
+    private void AddComponent(SceneNodeSnapshot node, ComponentCatalog.Entry entry)
+    {
+        _addMenuFor = null;
+        Host.AddComponent(node.Id, entry.DisplayName);
     }
 
     protected override void OnInitialized()

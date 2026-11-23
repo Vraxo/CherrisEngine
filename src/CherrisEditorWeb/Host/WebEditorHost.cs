@@ -36,6 +36,9 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private readonly Action<string>? _log;
     private readonly EditorSceneRequest _scene;
 
+    /// <summary>Edits the UI asked for, waiting for the render thread.</summary>
+    private readonly EditorCommandQueue _commands = new();
+
     private ViewerConnection? _activeConnection;
     private WebEditorServer? _server;
     private volatile WebEditorEngine? _engine;
@@ -92,6 +95,16 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
     /// <summary>Most recent scene snapshot published by the render thread, or null before the first one.</summary>
     public SceneSnapshot? LatestScene => Volatile.Read(ref _latestScene);
+
+    /// <summary>
+    /// Queues a change for the render thread. Safe from any thread, including Blazor's dispatcher; the
+    /// command runs on the next frame, before that frame is captured.
+    /// </summary>
+    /// <param name="command">The command.</param>
+    public void Enqueue(IEditorCommand command)
+    {
+        _commands.Enqueue(command);
+    }
 
     /// <summary>
     /// Blocks until the listener is up or failed. Lets a host that runs <see cref="Run"/> on a background
@@ -296,7 +309,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             backend = _graphicsBackend ?? new HeadlessBackend();
             backend.TargetFrameRate = _options.TargetFrameRate;
 
-            engine = new WebEditorEngine(backend, this, this, _scene);
+            engine = new WebEditorEngine(backend, this, this, _scene, _commands);
         }
         catch (Exception exception)
         {
