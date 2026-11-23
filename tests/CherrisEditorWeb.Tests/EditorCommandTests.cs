@@ -252,21 +252,129 @@ public class EditorCommandTests
         scene.History.UndoLabel.Should().Be("add Light");
     }
 
+    [Fact]
+    public void AddScript_WritesTheFileAndAttachesIt()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player"))
+            .Should().Contain("added script Scripts/Player.lua to Cube");
+
+        LanguageScript? script = scene.Target.GetComponent<LanguageScript>();
+        script.Should().NotBeNull();
+        script!.SourcePath.Should().Be("Scripts/Player.lua");
+        script.Language.Should().Be("lua");
+
+        File.Exists(Path.Combine(project.Root, "Scripts", "Player.lua")).Should().BeTrue();
+        File.ReadAllText(Path.Combine(project.Root, "Scripts", "Player.lua"))
+            .Should().Contain("function update(deltaTime)");
+        scene.Live.IsDirty.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddScript_ForgivesTheExtension()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player.lua"));
+
+        scene.Target.GetComponent<LanguageScript>()!.SourcePath.Should().Be("Scripts/Player.lua");
+    }
+
+    [Fact]
+    public void AddScript_ReusesAScriptThatIsAlreadyThere()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        Directory.CreateDirectory(Path.Combine(project.Root, "Scripts"));
+        string file = Path.Combine(project.Root, "Scripts", "Player.lua");
+        File.WriteAllText(file, "-- written by hand");
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player")).Should().Contain("Scripts/Player.lua");
+
+        File.ReadAllText(file).Should().Be("-- written by hand");
+        scene.Target.GetComponent<LanguageScript>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddScript_UndoRemovesTheComponent_AndKeepsTheFile()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player"));
+
+        scene.Run(new UndoCommand()).Should().Contain("the file is still there");
+        scene.Target.GetComponent<LanguageScript>().Should().BeNull();
+        File.Exists(Path.Combine(project.Root, "Scripts", "Player.lua")).Should().BeTrue();
+
+        scene.Run(new RedoCommand());
+        scene.Target.GetComponent<LanguageScript>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddScript_RefusesTheSameScriptTwice()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player"));
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player.lua")).Should().Contain("already has");
+
+        scene.Target.GetComponents<LanguageScript>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AddScript_WithoutAProject_SaysSo()
+    {
+        Harness scene = new();
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "Player")).Should().Contain("no project folder");
+        scene.Target.GetComponent<LanguageScript>().Should().BeNull();
+        scene.History.CanUndo.Should().BeFalse("nothing happened to take back");
+    }
+
+    [Fact]
+    public void AddScript_RejectsANameThatCannotBeOne()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddScriptCommand(scene.Target.Id, "my script")).Should().Contain("cannot be a script name");
+
+        scene.Target.GetComponent<LanguageScript>().Should().BeNull();
+        Directory.Exists(Path.Combine(project.Root, "Scripts")).Should().BeFalse("no file is written for a bad name");
+    }
+
+    [Fact]
+    public void AddScript_ReportsAnObjectThatIsGone()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddScriptCommand(Guid.NewGuid(), "Player")).Should().Contain("no longer in the scene");
+    }
+
     /// <summary>A scene, an object in it, and one dispatcher whose history the commands record into.</summary>
     private sealed class Harness
     {
-        public Harness()
+        /// <param name="projectRoot">A folder standing in for an open project, or null for the demo scene.</param>
+        public Harness(string? projectRoot = null)
         {
             Target = new GameObject("Cube");
             Target.Transform.Position = new Vector3(0f, 1f, 0f);
             Live = new Scene(string.Empty, [Target]);
+            Dispatcher = new EditorCommandDispatcher(projectRoot);
         }
 
         public Scene Live { get; }
 
         public GameObject Target { get; }
 
-        public EditorCommandDispatcher Dispatcher { get; } = new();
+        public EditorCommandDispatcher Dispatcher { get; }
 
         public EditorHistory History => Dispatcher.History;
 

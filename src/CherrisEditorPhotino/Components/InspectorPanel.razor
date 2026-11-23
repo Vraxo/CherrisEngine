@@ -1,6 +1,7 @@
 @using Cherris.Components
 @using CherrisEditorWeb
 @using CherrisEditorWeb.Host
+@using Cherris.Scripting
 @inject SceneStore Store
 @inject SceneSelection Selection
 @inject EditorHostService Host
@@ -190,22 +191,45 @@
 
                 @if (IsAddMenuOpen(node.Id))
                 {
+                    IReadOnlyList<ComponentCatalog.Entry> matches = Matches(node);
+                    string query = _search.Trim();
+                    bool suggestScript = query.Length > 0 && matches.Count == 0;
+                    string? scriptName = ScriptTemplate.Normalize(query);
+
                     @* The list opens inline: the panel body scrolls, so a floating menu would be clipped by
-                       its own scroll container. *@
+                       its own scroll container. The search box takes the focus, so the menu is usable from the
+                       keyboard: type to filter, Enter for the top row, Escape to close. *@
                     <div class="add-menu" role="menu">
-                        @if (AddableTypes(node).Count == 0)
+                        <input type="text" class="imgui-input add-search" value="@_search"
+                               placeholder="Search components…" aria-label="Search components"
+                               autocomplete="off" spellcheck="false" @ref="_searchBox"
+                               @oninput="e => Search(e.Value?.ToString())"
+                               @onkeydown="OnSearchKeyDown" />
+
+                        @if (matches.Count > 0)
                         {
-                            <p class="panel-empty">This object already has every component there is.</p>
-                        }
-                        else
-                        {
-                            @foreach (ComponentCatalog.Entry entry in AddableTypes(node))
+                            @foreach (ComponentCatalog.Entry entry in matches)
                             {
                                 <button type="button" class="menu-item" role="menuitem"
                                         @onclick="() => AddComponent(node, entry)">
                                     <span>@entry.DisplayName</span>
                                 </button>
                             }
+                        }
+                        else if (suggestScript)
+                        {
+                            @* The name matched nothing, so offer to make it a script — the way Unity's
+                               Add Component menu does. *@
+                            <button type="button" class="menu-item add-script" role="menuitem"
+                                    disabled="@(!CanAddScript() || scriptName is null)"
+                                    title="@ScriptTitle(query, scriptName)"
+                                    @onclick="() => AddScript(node)">
+                                <span>@ScriptLabel(query, scriptName)</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <p class="panel-empty">This object already has every component there is.</p>
                         }
                     </div>
                 }
@@ -216,6 +240,9 @@
 
 @code {
     private Guid? _addMenuFor;
+    private string _search = string.Empty;
+    private ElementReference _searchBox;
+    private bool _focusSearch;
 
     private SceneNodeSnapshot? SelectedNode
     {
@@ -261,7 +288,133 @@
 
     private bool IsAddMenuOpen(Guid objectId) => CanEdit && _addMenuFor == objectId;
 
-    private void ToggleAddMenu(Guid objectId) => _addMenuFor = IsAddMenuOpen(objectId) ? null : objectId;
+    private void ToggleAddMenu(Guid objectId)
+    {
+        if (IsAddMenuOpen(objectId))
+        {
+            CloseAddMenu();
+            return;
+        }
+
+        if (!CanEdit)
+        {
+            return;
+        }
+
+        _addMenuFor = objectId;
+        _search = string.Empty;
+
+        // The box does not exist until the menu has rendered, so the focus is taken after the render.
+        _focusSearch = true;
+    }
+
+    private void CloseAddMenu()
+    {
+        _addMenuFor = null;
+        _search = string.Empty;
+        _focusSearch = false;
+    }
+
+    private void Search(string? text)
+    {
+        _search = text ?? string.Empty;
+    }
+
+    /// <summary>The entries this object could take whose name contains the search text.</summary>
+    private IReadOnlyList<ComponentCatalog.Entry> Matches(SceneNodeSnapshot node)
+    {
+        string query = _search.Trim();
+
+        return AddableTypes(node)
+            .Where(entry => query.Length == 0 ||
+                entry.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    /// <summary>True when the typed name could become a script the render thread would write into the project.</summary>
+    private bool CanAddScript() => CanEdit && Host.HasProject;
+
+    private string ScriptLabel(string query, string? scriptName) => scriptName is null
+        ? "New script: \"" + query + "\""
+        : Host.ScriptExists(scriptName)
+            ? "Script: \"" + scriptName + "\" (already in this project)"
+            : "New script: \"" + scriptName + "\"";
+
+    private string ScriptTitle(string query, string? scriptName)
+    {
+        if (scriptName is null)
+        {
+            return $"\"{query}\" cannot name a script: start with a letter or underscore, then use letters, " +
+                "digits and underscores.";
+        }
+
+        if (!Host.HasProject)
+        {
+            return "Open a project to create scripts: they live in the project's Scripts folder.";
+        }
+
+        return Host.ScriptExists(scriptName)
+            ? "Attach the existing " + ScriptTemplate.RelativePath(scriptName) + " to this object."
+            : "Create " + ScriptTemplate.RelativePath(scriptName) + " with an empty start() and update(), " +
+                "then attach it to this object.";
+    }
+
+    /// <summary>Enter takes the first match, or the script suggestion when nothing matched; Escape closes.</summary>
+    private void OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            CloseAddMenu();
+            return;
+        }
+
+        if (e.Key != "Enter" || SelectedNode is not { } node || !IsAddMenuOpen(node.Id))
+        {
+            return;
+        }
+
+        IReadOnlyList<ComponentCatalog.Entry> matches = Matches(node);
+
+        if (matches.Count > 0)
+        {
+            AddComponent(node, matches[0]);
+        }
+        else if (CanAddScript() && ScriptTemplate.Normalize(_search) is not null)
+        {
+            AddScript(node);
+        }
+    }
+
+    private void AddScript(SceneNodeSnapshot node)
+    {
+        if (ScriptTemplate.Normalize(_search) is not { } name)
+        {
+            return;
+        }
+
+        CloseAddMenu();
+        Host.AddScript(node.Id, name);
+    }
+
+    /// <summary>Takes the focus once the box is on screen: an inline menu cannot use the autofocus attribute.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusSearch)
+        {
+            return;
+        }
+
+        _focusSearch = false;
+
+        try
+        {
+            await _searchBox.FocusAsync();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or JSDisconnectedException)
+        {
+            // No element to focus and no browser to focus it in; the menu still works with the mouse.
+        }
+    }
 
     /// <summary>The catalog entries this object does not have yet: an object holds one of each type.</summary>
     private static IReadOnlyList<ComponentCatalog.Entry> AddableTypes(SceneNodeSnapshot node) =>
@@ -272,7 +425,7 @@
 
     private void AddComponent(SceneNodeSnapshot node, ComponentCatalog.Entry entry)
     {
-        _addMenuFor = null;
+        CloseAddMenu();
         Host.AddComponent(node.Id, entry.DisplayName);
     }
 
