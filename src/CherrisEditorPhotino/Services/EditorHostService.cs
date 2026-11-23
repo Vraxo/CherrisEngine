@@ -183,6 +183,10 @@ public sealed class EditorHostService : IDisposable
     /// <summary>Where the diagnostics log is written, or null when no file could be created.</summary>
     public string? LogFilePath => _logFilePath;
 
+    /// <summary>The components the inspector's Add Component menu offers, in menu order.</summary>
+    public IReadOnlyList<Cherris.Components.ComponentCatalog.Entry> ComponentTypes =>
+        Cherris.Components.ComponentCatalog.BuiltIn;
+
     /// <summary>Recent projects, most recent first, with their state resolved for display.</summary>
     public IReadOnlyList<RecentProjectEntry> RecentProjects => _recent.Get()
         .Select(path => new RecentProjectEntry(path, ProjectWorkspace.DisplayName(path), ProjectWorkspace.Exists(path)))
@@ -238,6 +242,27 @@ public sealed class EditorHostService : IDisposable
         WriteLog("[editor] opening the built-in demo scene");
 
         return StartSessionAsync(EditorSceneRequest.Demo, null);
+    }
+
+    /// <summary>
+    /// Adds a component to an object in the live scene. The render thread applies it on its next frame, and
+    /// the snapshot the panels read picks it up from there; the outcome is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The object to add to.</param>
+    /// <param name="componentName">One of <see cref="ComponentTypes"/>' display names.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool AddComponent(Guid objectId, string componentName)
+    {
+        WebEditorHost? host = _session?.Host;
+
+        if (host is null)
+        {
+            WriteLog($"[editor] cannot add {componentName}: no session is running.", LogLevel.Warning);
+            return false;
+        }
+
+        host.Enqueue(new AddComponentCommand(objectId, componentName));
+        return true;
     }
 
     /// <summary>Stops the session and drops the project reference, leaving the launcher in charge.</summary>

@@ -33,6 +33,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private readonly IViewportSink _sink;
     private readonly ISceneSnapshotSink? _snapshotSink;
     private readonly EditorSceneRequest _scene;
+    private readonly EditorCommandQueue? _commands;
 
     private SceneFrameCapture? _capture;
     private GameObject? _spinTarget;
@@ -45,20 +46,29 @@ public sealed class WebEditorEngine : Engine, IDisposable
     /// <param name="sink">Receives captured frames and the desired viewport size.</param>
     /// <param name="snapshotSink">Optional receiver of scene snapshots for the UI.</param>
     /// <param name="scene">Project scene to open; the demo scene when omitted.</param>
+    /// <param name="commands">Edits to apply each frame, from the UI thread.</param>
     public WebEditorEngine(
         HeadlessBackend backend,
         IViewportSink sink,
         ISceneSnapshotSink? snapshotSink = null,
-        EditorSceneRequest? scene = null)
+        EditorSceneRequest? scene = null,
+        EditorCommandQueue? commands = null)
         : base("Cherris Web Editor", false, backend)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
         _snapshotSink = snapshotSink;
         _scene = scene ?? EditorSceneRequest.Demo;
+        _commands = commands;
 
         Exposure = 0.5f;
-        OnDrawUI = _ => CaptureAndPublish();
+        OnDrawUI = _ =>
+        {
+            // Edits land at the top of the frame: nothing else touches the scene while this thread runs, and
+            // the snapshot published below already includes them.
+            ExecuteCommands();
+            CaptureAndPublish();
+        };
     }
 
     /// <summary>
@@ -68,6 +78,17 @@ public sealed class WebEditorEngine : Engine, IDisposable
     public void RequestStop()
     {
         _stopRequested = true;
+    }
+
+    /// <summary>Runs the UI's pending edits against the active scene.</summary>
+    private void ExecuteCommands()
+    {
+        if (_commands is null || _commands.Count == 0 || SceneManager.ActiveScene is not { } scene)
+        {
+            return;
+        }
+
+        _commands.Drain(command => command.Execute(scene), Logger.Info);
     }
 
     /// <summary>

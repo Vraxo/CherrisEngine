@@ -1146,6 +1146,16 @@ span.panel-tab:hover {
     padding-top: 4px;
 }
 
+/* The Add Component list opens inline: the panel body scrolls, so an absolutely positioned menu would be
+   clipped by its own scroll container. Menu colors, so it reads as the same menu either way. */
+.add-menu {
+    margin-top: 4px;
+    padding: 2px;
+    background: var(--theme-dropdown);
+    border: var(--theme-border-width) solid var(--theme-dropdown-outline);
+    border-radius: var(--theme-radius);
+}
+
 .vec-row {
     display: flex;
     align-items: center;

@@ -216,13 +216,37 @@ Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragge
 which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists
 them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.
 Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hierarchy selection drives the
-inspector without either component talking to the other. Editing stays in the ImGui editor: names, values
-and the Add-component menu are drawn read-only/enabled-off rather than faked.
+inspector without either component talking to the other.
+
+Two rules keep the panels honest about what they can do. Values are read-only, because editing a component's
+fields is still the ImGui editor's job. Anything the web UI *cannot* do is drawn `disabled` with a tooltip
+saying where that job lives, rather than as a button that silently does nothing — Save, Build, Undo/Redo,
+play mode and the viewport's renderer options are all in that category today.
 
 The inspector's Transform is the ImGui one's three Vector3 rows — Position, Rotation and Scale — with each
 field labelled by its axis in the same red/green/blue (`TransformRows`, `.vec-axis`). Rotation is shown as
 Euler degrees rather than as a quaternion, which is what the ImGui inspector edits
 (`Quaternion.CreateFromYawPitchRoll` on the way back).
+
+## Editing from the web UI
+
+Add Component is real: the inspector offers **Add ▾**, and choosing an entry edits the live scene. The path is
+a queue rather than a lock, because the scene belongs to the render thread while the panels render from
+published snapshots:
+
+| Step | Where |
+| :--- | :--- |
+| The panel queues an `AddComponentCommand`, naming the object id and a `ComponentCatalog` entry | `InspectorPanel.razor` → `EditorHostService.AddComponent` → `WebEditorHost.Enqueue` |
+| The render thread drains the queue at the top of the frame, before it captures the frame | `WebEditorEngine.ExecuteCommands` → `EditorCommandQueue.Drain` |
+| The command adds the component, marks the scene dirty and returns the line to log | `AddComponentCommand` |
+| The console shows the result; the next snapshot carries the new section | `Logger` → `EditorHostService` log → `ConsolePanel` |
+
+The same rule the ImGui inspector applies holds here: an object holds at most one of each type, so the menu
+hides what is already there and the command refuses a duplicate if a stale menu asks anyway. `IEditorCommand`
+is the extension point — property edits, play mode and save can become commands without changing this path,
+and each new one stays testable off the render thread because `Execute` takes the scene as an argument.
+
+`ComponentCatalog` lives with the components in `src/Cherris`, so both front ends offer the same list.
 
 ## Protocol
 
