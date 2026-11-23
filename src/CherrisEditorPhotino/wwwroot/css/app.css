@@ -717,6 +717,93 @@ body {
     font-size: var(--theme-font-small);
 }
 
+/* ---- modal dialog (New Scene) ---- */
+
+/* The scrim only takes the clicks that dismiss the dialog; it paints nothing, so no colour has to be invented for
+   it — the same choice the menu scrim makes. */
+.dialog-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+}
+
+/* Menu.Background + Menu.Outline, so a dialog reads as the same surface as the menus it opens from. */
+.dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: min(460px, calc(100vw - 48px));
+    padding: 14px 16px 16px;
+    background: var(--theme-dropdown);
+    border: var(--theme-border-width) solid var(--theme-dropdown-outline);
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-size);
+    user-select: none;
+}
+
+/* WindowTitle / header text. */
+.dialog-title {
+    margin: 0 0 2px;
+    font-size: var(--theme-font-size);
+    font-weight: var(--theme-font-weight-bold);
+    color: var(--theme-foreground-header);
+}
+
+.dialog-text {
+    margin: 0 0 4px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
+    line-height: 1.45;
+}
+
+.dialog-label {
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-small);
+}
+
+/* The engine's Input style: Input fill, InputOutline border. */
+.dialog-input {
+    width: 100%;
+    padding: 4px 6px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: 0;
+    background: var(--theme-input);
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+}
+
+.dialog-input:focus {
+    outline: none;
+    border-color: var(--theme-primary);
+    color: var(--theme-foreground-hover);
+}
+
+.dialog-hint {
+    margin: 0;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
+    overflow-wrap: anywhere;
+}
+
+.dialog-error {
+    margin: 0;
+    color: var(--theme-error);
+    font-size: var(--theme-font-small);
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+}
+
 /* Menu.Separator is White25. */
 .menu-separator {
     height: 1px;

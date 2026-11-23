@@ -81,6 +81,22 @@ public class EditorHistoryTests
         undone.Should().Be(200, "the stack is capped so a long session cannot grow without bound");
     }
 
+    [Fact]
+    public void Clear_DropsWhatBothStacksWereHolding()
+    {
+        EditorHistory history = new();
+
+        history.Record(new StubCommand("first"));
+        history.Record(new StubCommand("second"));
+        history.TakeUndo();
+
+        history.Clear();
+
+        history.CanUndo.Should().BeFalse();
+        history.CanRedo.Should().BeFalse("a scene switch takes the redo branch with it");
+        history.UndoLabel.Should().BeNull();
+    }
+
     private sealed class StubCommand(string describe) : IUndoableCommand
     {
         public string Describe => describe;

@@ -1,5 +1,6 @@
 @inject IJSRuntime JS
 @inject SceneStore Store
+@inject EditorHostService Host
 @implements IAsyncDisposable
 
 @* ImGui's Viewport window: scene tab strip, the Options toolbar row, then the render surface. *@
@@ -16,9 +17,11 @@
         @if (_optionsOpen)
         {
             <div class="menu-popup" role="menu">
-                <button type="button" class="menu-item" role="menuitem" disabled
-                        title="The grid is a renderer setting owned by the engine">
-                    <span>Show Grid</span>
+                <button type="button" class="menu-item" role="menuitemcheckbox"
+                        aria-checked="@(Host.ShowGrid ? "true" : "false")"
+                        title="Draw the editor's grid in the viewport"
+                        @onclick="ToggleGrid">
+                    <span>@(Host.ShowGrid ? "\u2713 " : "")Show Grid</span>
                 </button>
             </div>
             <div class="menu-scrim" @onclick="() => _optionsOpen = false"></div>
@@ -48,6 +51,16 @@
     private void ToggleOptions()
     {
         _optionsOpen = !_optionsOpen;
+    }
+
+    /// <summary>
+    /// Turns the grid on or off. The session's render loop reads the setting on its next frame, so the tick in this
+    /// menu and the picture in the viewport are the same value.
+    /// </summary>
+    private void ToggleGrid()
+    {
+        Host.ShowGrid = !Host.ShowGrid;
+        _optionsOpen = false;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

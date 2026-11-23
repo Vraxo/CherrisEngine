@@ -169,7 +169,10 @@
             int count => $"{count} objects"
         };
 
-        return $"{entry.Name} — {contents}";
+        // A scene is also something to open, so its tile says so rather than only describing the file.
+        return IsScene(entry)
+            ? $"{entry.Name} — {contents}; double-click to open"
+            : $"{entry.Name} — {contents}";
     }
 
     private List<Entry> ReadEntries()
@@ -214,16 +217,28 @@
         _selectedPath = entry.FullPath;
     }
 
+    /// <summary>
+    /// Double-click: a folder opens in the browser, and a scene opens in the editor.
+    /// </summary>
+    /// <remarks>
+    /// The panel opens what it shows as a scene and leaves everything else inert. It does not wait to have read the
+    /// file first: the session reads it either way, and a YAML that turns out not to be a scene leaves the open scene
+    /// alone and says so in the hierarchy, which is a better answer than a double-click that does nothing.
+    /// </remarks>
     private void Activate(Entry entry)
     {
-        if (!entry.IsDirectory)
+        if (entry.IsDirectory)
         {
+            _currentDirectory = entry.FullPath;
+            _selectedPath = null;
+            Refresh();
             return;
         }
 
-        _currentDirectory = entry.FullPath;
-        _selectedPath = null;
-        Refresh();
+        if (IsScene(entry))
+        {
+            Host.OpenScene(entry.FullPath);
+        }
     }
 
     private void GoBack()

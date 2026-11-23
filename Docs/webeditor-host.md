@@ -210,9 +210,9 @@ chrome is deliberately the same so muscle memory carries over:
 | `MenuBar` — File / Edit / Window | `Components/MenuBar.razor` — File (New Project…, Open Project…, Exit), Edit, Window (Reset Layout) |
 | `ToolBar` — three centred transport buttons | `Components/ToolBar.razor` — Play/Pause, Stop, Restart, live (see [Play mode](#play-mode)) |
 | Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
-| `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel` (Show Grid is a renderer setting, so it is shown disabled) |
+| `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel`; **Show Grid** is a checkable item that turns the renderer's grid on and off (see [Flying the camera](#flying-the-camera)) |
 | `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
-| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, read-only over the open project folder, with a preview per scene (see [Scene previews](#scene-previews)) |
+| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, a listing of the open project folder that never writes to it; scene tiles carry a preview and open the scene on double-click (see [Scene previews](#scene-previews)) |
 | Theme: `ImGuiTheme.Apply(EditorTheme)` | the same `EditorTheme`, applied as `--theme-*` tokens (see [themes.md](themes.md)) |
 
 Colors come from the engine's own palette rather than an approximation of it — see
@@ -241,6 +241,51 @@ where it landed instead of wherever the pointer was last. Picking runs on the re
 scene, and the id crosses to the UI through `WebEditorHost.ObjectPicked` and `EditorHostService.SelectionSink`
 — that is the whole hand-off, and it is why `SceneSelection` guards its id with a lock. A press with the pointer
 captured (the position frozen at the capture point) picks nothing.
+
+### Flying the camera
+
+The viewport's camera is flown with the mouse and the keyboard, using the desktop editor's own rules
+(`ViewportCameraController`, mirroring `src/CherrisEditor/Core/EditorController.cs`):
+
+| Input | What it does |
+| :--- | :--- |
+| Right-drag | Look around: 0.0015 rad per pixel, pitch stopped just short of straight up or down. |
+| `W` `A` `S` `D` | Move along the view's yaw — 5 units a second, three times that with `Shift`. |
+| `Q` `E` | Straight down and up, in world space. |
+| Wheel | Fly along the view, half a unit per notch. |
+
+Movement uses the yaw alone, so looking down and pressing `W` walks across the floor instead of diving into it.
+The keys only count while the pointer is over the viewport, and nothing responds while the transport is playing,
+where the scene's own scripts own the camera.
+
+The right button captures the pointer (`requestPointerLock`) so a drag does not stop at the edge of the window,
+and releases it on mouseup: a captured pointer is a frozen cursor, and clicking to select needs a real one. The
+first movement after a capture is dropped, because browsers report the jump from wherever the cursor was to the
+middle of the canvas. Without a capture the drag still works — the browser's `movementX`/`movementY` are sent as
+`mouseMove` while the button is held — it just stops at the edge of the window.
+
+### Making and opening scenes
+
+**File > New Scene…** writes a scene file into the open project and opens it. The file starts with a camera at the
+default view and a sun, which is everything a scene needs to draw and be lit; the camera is the same one the editor
+adds to a scene that has none, so a new scene and a repaired one look alike. The name has to be a plain file name in
+the project folder (the extension is added when it is left off), and a name that is already taken is refused rather
+than overwritten. `SceneTemplate` decides all of that, and writes the file through the engine's own
+`SceneSerializer`, so what a new scene contains is decided by the code that saves scenes rather than by a template
+kept beside it.
+
+The dialog shows the exact path before anything is written, and reports the reason when it cannot write.
+
+Opening a scene is not a new session: the render thread loads the file in place (`RequestSceneOpen`), closes the
+scene it had, drops the undo stack — its commands name objects of the scene that has gone — and starts the new
+scene the way a session starts the first one. The viewport keeps its connection and the panels keep polling, so a
+switch costs a frame rather than a restart. A file that cannot be used leaves the open scene alone and says why in
+the hierarchy, instead of falling back to the demo scene the way a broken start scene does.
+
+Scenes are also opened by double-clicking their tile in the content browser — the way back to a scene another session
+made. A tile the browser shows as a scene responds; the file is read by the session, not by the panel, so a double-click
+never has to wait for a preview, and a YAML that turns out not to be a scene is refused in the hierarchy instead of
+taking the viewport over with the demo scene.
 
 ### Scene previews
 
