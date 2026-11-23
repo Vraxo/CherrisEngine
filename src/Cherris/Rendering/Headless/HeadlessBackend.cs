@@ -66,6 +66,44 @@ public sealed class HeadlessBackend : IRenderingInterface
     /// <summary>The concrete renderer, for viewport sizing and scene texture access.</summary>
     public OpenTKRenderer? OpenGLRenderer => Renderer as OpenTKRenderer;
 
+    /// <summary>
+    /// Creates the hidden window that provides the GL context, without making the context current.
+    /// </summary>
+    /// <remarks>
+    /// Split out from <see cref="Initialize"/> for hosts whose UI thread is not the render thread (a
+    /// native message loop owns the main thread in that case). OpenTK refuses to initialize GLFW off the
+    /// process' main thread, so create the context there first and let <see cref="Initialize"/> make it
+    /// current on the render thread. GL contexts are portable between threads; the window handle is not
+    /// used for anything after this call, because nothing is ever presented.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This backend does not own a graphics context, so there is nothing to create.
+    /// </exception>
+    public void CreateGraphicsContext(string windowTitle, int width = 1920, int height = 1080)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!_ownGraphicsContext)
+        {
+            throw new InvalidOperationException(
+                "This backend was created without its own graphics context, so there is nothing to create.");
+        }
+
+        if (_contextWindow is not null)
+        {
+            return;
+        }
+
+        NativeWindowSettings settings = new()
+        {
+            ClientSize = new Vector2i(Math.Max(1, width), Math.Max(1, height)),
+            Title = windowTitle,
+            StartVisible = false
+        };
+
+        _contextWindow = new NativeWindow(settings);
+    }
+
     /// <inheritdoc />
     public void Initialize(string windowTitle, int width, int height, bool startWithMouseLocked)
     {
@@ -74,16 +112,9 @@ public sealed class HeadlessBackend : IRenderingInterface
         width = Math.Max(1, width);
         height = Math.Max(1, height);
 
-        if (_ownGraphicsContext && _contextWindow is null)
+        if (_ownGraphicsContext)
         {
-            NativeWindowSettings settings = new()
-            {
-                ClientSize = new Vector2i(width, height),
-                Title = windowTitle,
-                StartVisible = false
-            };
-
-            _contextWindow = new NativeWindow(settings);
+            CreateGraphicsContext(windowTitle, width, height);
         }
 
         _contextWindow?.MakeCurrent();

@@ -9,6 +9,7 @@
     <span>@_stats.Frames frames</span>
     <span class="statusbar-muted">protocol @_protocol</span>
     <span class="statusbar-spacer"></span>
+    <span class="statusbar-renderer" title="@RendererText">@RendererText</span>
     <span class="statusbar-muted">@ObjectsText</span>
     <span class="statusbar-muted">@EngineText</span>
 </div>
@@ -37,6 +38,8 @@
     };
 
     private string EngineText => Host.IsRunning ? "engine running" : "engine stopped";
+
+    private string RendererText => Host.RendererInfo ?? "renderer starting";
 
     private string ObjectsText => Host.LatestScene is SceneSnapshot scene
         ? $"{scene.Nodes.Count} objects"

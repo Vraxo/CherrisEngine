@@ -172,10 +172,11 @@ function drawFrame(bytes, width, height) {
 - **Latency and throughput.** One frame of readback latency plus the transport. Fine for an editor
   viewport; not appropriate for shipping a 60 fps game inside the same webview. Keep the standalone
   runtime on its native window.
-- **Threading.** The hidden `NativeWindow`, the renderer, `SceneFrameCapture` and every GL call must live on
-  one thread. That thread is the engine thread, not the Blazor one; UI state crosses over as immutable
-  snapshots. On macOS, GLFW may additionally require the process' main thread to initialize, which would
-  collide with PhotinoX's message loop there — that combination is untested.
+- **Threading.** The renderer, `SceneFrameCapture` and every GL call must live on one thread — the engine
+  thread, not the Blazor one; UI state crosses over as immutable snapshots. Creating the GLFW window is the
+  exception: OpenTK rejects GLFW initialisation from any thread but the process' main one, so create the
+  context there (`HeadlessBackend.CreateGraphicsContext`) and let the render thread `MakeCurrent`. That also
+  covers macOS, where GLFW genuinely needs the main thread.
 - **Recreate on resize cost.** A viewport resize reallocates the post-processor framebuffers and both
   pack buffers, and drops the pending frame (`TryCapture` returns `false` once). Debounce CSS animations
   instead of chasing every frame of a resize.

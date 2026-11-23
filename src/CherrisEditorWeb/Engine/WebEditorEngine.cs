@@ -4,6 +4,7 @@ using Cherris.Core;
 using Cherris.Rendering.Headless;
 using Cherris.Rendering.OpenTK;
 using CherrisEditorWeb.Host;
+using OpenTK.Graphics.OpenGL4;
 using System.Numerics;
 
 namespace CherrisEditorWeb;
@@ -33,6 +34,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private GameObject? _spinTarget;
     private float _spinAngle;
     private volatile bool _stopRequested;
+    private volatile string? _rendererInfo;
     private long _frameNumber;
 
     public WebEditorEngine(HeadlessBackend backend, IViewportSink sink, ISceneSnapshotSink? snapshotSink = null)
@@ -55,9 +57,17 @@ public sealed class WebEditorEngine : Engine, IDisposable
         _stopRequested = true;
     }
 
+    /// <summary>
+    /// Renderer, vendor and GL version of the context in use, captured once it is current. Null until the
+    /// first frame; it is the quickest proof that the driver gave us the GL 3.3+ context the shaders need.
+    /// </summary>
+    public string? RendererInfo => _rendererInfo;
+
     /// <inheritdoc />
     protected override void LoadContent()
     {
+        _rendererInfo = DescribeRenderer();
+
         ResourceManager.LoadInitialAssets();
 
         Scene scene = DemoScene.Create(ResourceManager);
@@ -94,6 +104,21 @@ public sealed class WebEditorEngine : Engine, IDisposable
     {
         _capture?.Dispose();
         _capture = null;
+    }
+
+    private static string DescribeRenderer()
+    {
+        try
+        {
+            string renderer = GL.GetString(StringName.Renderer) ?? "unknown renderer";
+            string vendor = GL.GetString(StringName.Vendor) ?? "unknown vendor";
+            string version = GL.GetString(StringName.Version) ?? "unknown version";
+            return $"{renderer} ({vendor}) · GL {version}";
+        }
+        catch (Exception)
+        {
+            return "renderer details unavailable";
+        }
     }
 
     private void CaptureAndPublish()
