@@ -10,7 +10,12 @@ namespace CherrisEditorWeb.Tests;
 /// </summary>
 public class TransformRowsTests
 {
-    private static readonly float HalfTurn = MathF.PI / 2f;
+    private const float HalfTurn = MathF.PI / 2f;
+
+    // A float quaternion round-trip cannot land on a whole degree: yaw 90° decomposes to 89.9802°, because the
+    // stored q.Y is sin(45°) and asin() of its square lands just short of 1. A tenth of a degree is the honest
+    // bound, and it still catches a wrong axis or a radians/degrees mix-up.
+    private const float HalfDegree = 0.1f;
 
     [Fact]
     public void From_ReturnsPositionRotationAndScale_InThatOrder()
@@ -34,19 +39,19 @@ public class TransformRowsTests
 
         Vector3 euler = TransformRows.From(node)[1].Value;
 
-        euler.X.Should().BeApproximately(0f, 0.0001f);
-        euler.Y.Should().BeApproximately(90f, 0.0001f);
-        euler.Z.Should().BeApproximately(0f, 0.0001f);
+        euler.X.Should().BeApproximately(0f, HalfDegree);
+        euler.Y.Should().BeApproximately(90f, HalfDegree);
+        euler.Z.Should().BeApproximately(0f, HalfDegree);
     }
 
     [Fact]
     public void Rotation_IsShownAsEulerDegrees_PitchAroundXAndRollAroundZ()
     {
         TransformRows.From(Node(rotation: Quaternion.CreateFromYawPitchRoll(0f, HalfTurn, 0f)))[1].Value
-            .X.Should().BeApproximately(90f, 0.0001f);
+            .X.Should().BeApproximately(90f, HalfDegree);
 
         TransformRows.From(Node(rotation: Quaternion.CreateFromYawPitchRoll(0f, 0f, HalfTurn)))[1].Value
-            .Z.Should().BeApproximately(90f, 0.0001f);
+            .Z.Should().BeApproximately(90f, HalfDegree);
     }
 
     [Fact]
