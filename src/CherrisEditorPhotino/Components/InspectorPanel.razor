@@ -63,7 +63,10 @@
 
                                     <span class="vec-cell">
                                         <span class="@axisClass">@letter</span>
-                                        <input type="text" class="imgui-input vec-field" value="@text"
+                                        @* Dragging scrubs at 0.1 per pixel, the speed TransformInspector's
+                                           DragFloat uses; a click without movement still types. *@
+                                        <input type="text" class="imgui-input vec-field drag-number"
+                                               value="@text" data-value="@text" data-speed="0.1"
                                                @key="KeyFor(fieldKey)" disabled="@(!CanEdit)" aria-label="@fieldName"
                                                @onchange="e => OnTransformChanged(node, row, axisIndex, e.Value?.ToString())" />
                                     </span>
@@ -131,13 +134,30 @@
                                                            value="@Format(property.Components[0])"
                                                            @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
                                                 }
-                                                <input type="text" class="imgui-input" value="@property.Text"
+                                                <input type="text" class="imgui-input drag-number"
+                                                       value="@property.Text"
+                                                       data-value="@property.Text"
+                                                       data-speed="@Format(property.DragSpeed)"
+                                                       data-min="@RangeText(property.Minimum)"
+                                                       data-max="@RangeText(property.Maximum)"
                                                        @key="KeyFor(propertyKey)"
                                                        disabled="@(!CanEdit)" aria-label="@property.Name"
                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
                                                 break;
 
                                             case PropertyKind.Integer:
+                                                <input type="text" class="imgui-input drag-number"
+                                                       value="@property.Text"
+                                                       data-value="@property.Text"
+                                                       data-speed="@Format(property.DragSpeed)"
+                                                       data-integer="true"
+                                                       data-min="@RangeText(property.Minimum)"
+                                                       data-max="@RangeText(property.Maximum)"
+                                                       @key="KeyFor(propertyKey)"
+                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                break;
+
                                             case PropertyKind.Text:
                                                 <input type="text" class="imgui-input" value="@property.Text"
                                                        @key="KeyFor(propertyKey)"
@@ -161,12 +181,18 @@
                                                         string axisClass = "vec-axis axis-" + letter.ToLowerInvariant();
                                                         string fieldName = property.Name + " " + letter;
                                                         string fieldKey = propertyKey + "." + letter;
+                                                        // A colour component has no floor of its own; ImGui's
+                                                        // ColorEdit holds it at 0 and lets HDR go past 1.
+                                                        string floorBound = property.IsColor ? "0" : string.Empty;
                                                         int axisIndex = axis;
 
                                                         <span class="vec-cell">
                                                             <span class="@axisClass">@letter</span>
-                                                            <input type="text" class="imgui-input vec-field"
+                                                            <input type="text" class="imgui-input vec-field drag-number"
                                                                    value="@Format(property.Components[axis])"
+                                                                   data-value="@Format(property.Components[axis])"
+                                                                   data-speed="@Format(property.DragSpeed)"
+                                                                   data-min="@floorBound"
                                                                    @key="KeyFor(fieldKey)" disabled="@(!CanEdit)"
                                                                    aria-label="@fieldName"
                                                                    @onchange="e => OnVectorChanged(node, component, property, axisIndex, e.Value?.ToString())" />
@@ -510,6 +536,9 @@
     }
 
     private static string Format(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>A bound as an attribute value: empty means "none", which the drag script reads as no clamp.</summary>
+    private static string RangeText(float? bound) => bound is float value ? Format(value) : string.Empty;
 
     private static bool TryParse(string? text, out float value) =>
         Single.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
