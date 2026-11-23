@@ -44,6 +44,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private long _frameNumber;
     private int _playRequest = NoPlayRequest;
     private int _playState;
+    private volatile string? _sceneNotice;
 
     /// <summary>Sentinel for "no transport action is waiting"; every <see cref="PlaybackRequest"/> is zero or more.</summary>
     private const int NoPlayRequest = -1;
@@ -156,6 +157,17 @@ public sealed class WebEditorEngine : Engine, IDisposable
     /// </summary>
     public string? RendererInfo => _rendererInfo;
 
+    /// <summary>
+    /// Something the user should know about the scene that was opened — an empty file, a camera the editor had
+    /// to add, a file that is not a scene at all — or null when it opened exactly as it is on disk.
+    /// </summary>
+    /// <remarks>
+    /// The hierarchy shows the <em>session</em> and the content browser previews the <em>file</em>, so the two can
+    /// honestly differ. This is how the difference is said out loud instead of being left for the user to
+    /// work out.
+    /// </remarks>
+    public string? SceneNotice => _sceneNotice;
+
     /// <inheritdoc />
     protected override void LoadContent()
     {
@@ -163,7 +175,8 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
         ResourceManager.LoadInitialAssets();
 
-        Scene scene = OpenRequestedScene();
+        (Scene scene, string? notice) = OpenRequestedScene();
+        _sceneNotice = notice;
         SceneManager.OpenScene(scene);
 
         // Only the built-in demo spins, and only while play is running; a project's objects must sit exactly
@@ -173,15 +186,23 @@ public sealed class WebEditorEngine : Engine, IDisposable
     }
 
     /// <summary>
-    /// Loads the project's start scene, or the demo scene when no project is open. A missing, empty or
-    /// unreadable scene falls back to the demo scene instead of leaving the viewport blank: the user gets
-    /// something to look at and the reason is in the log.
+    /// Loads the project's start scene, or the demo scene when no project is open. The file is opened as it is,
+    /// empty included; only a file that is not a scene at all falls back to the demo scene, and either way what
+    /// happened comes back as a notice for the UI.
     /// </summary>
-    private Scene OpenRequestedScene()
+    private (Scene Scene, string? Notice) OpenRequestedScene()
     {
         if (_scene.ProjectRoot is null || string.IsNullOrEmpty(_scene.ScenePath))
         {
-            return DemoScene.Create(ResourceManager);
+            return (DemoScene.Create(ResourceManager), null);
+        }
+
+        // The notices name the file rather than the project: it is the file's contents being explained.
+        string fileName = Path.GetFileName(_scene.ScenePath);
+
+        if (string.IsNullOrEmpty(fileName))
+        {
+            fileName = _scene.DisplayName;
         }
 
         try
@@ -193,40 +214,106 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
             List<GameObject> objects = SceneLoader.LoadScene(_scene.ScenePath);
 
-            if (objects.Count == 0)
-            {
-                Logger.Warning(
-                    $"[web-editor] '{_scene.ScenePath}' is empty or could not be read; showing the demo scene.");
+            // An empty scene and a file that is not a scene both load as no objects, and they are not the same
+            // thing: the first is a project with nothing in it yet, the second is a broken start scene.
+            SceneFileKind kind = objects.Count == 0 ? Inspect(_scene.ScenePath) : SceneFileKind.Scene;
 
-                return DemoScene.Create(ResourceManager);
+            if (kind != SceneFileKind.Scene)
+            {
+                bool missing = kind == SceneFileKind.Missing;
+
+                Logger.Warning(
+                    $"[web-editor] '{_scene.ScenePath}' " +
+                    (missing ? "could not be found" : "is not a scene") + "; showing the demo scene.");
+
+                return (DemoScene.Create(ResourceManager), missing
+                    ? $"{fileName} could not be found, so the demo scene is open instead."
+                    : $"{fileName} is not a scene, so the demo scene is open instead.");
             }
 
             Scene scene = new(_scene.ScenePath, objects);
+            bool addedCamera = EnsureCamera(scene);
 
-            EnsureCamera(scene);
+            if (objects.Count == 0)
+            {
+                Logger.Info(
+                    $"[web-editor] '{_scene.ScenePath}' has no objects yet; opened it empty" +
+                    (addedCamera ? " with a camera the editor added." : "."));
+
+                return (scene, $"{fileName} has no objects yet." +
+                    (addedCamera ? " The editor added a camera so the viewport can draw." : string.Empty));
+            }
 
             Logger.Info($"[web-editor] Opened '{_scene.DisplayName}' ({objects.Count} objects).");
 
-            return scene;
+            return (scene, addedCamera
+                ? "The scene has no camera, so the editor added one at the default view."
+                : null);
         }
         catch (Exception exception)
         {
             Logger.Error(
                 $"[web-editor] Could not open '{_scene.ScenePath}': {exception.Message}; showing the demo scene.");
 
-            return DemoScene.Create(ResourceManager);
+            return (DemoScene.Create(ResourceManager),
+                $"{fileName} could not be opened, so the demo scene is showing.");
         }
+    }
+
+    /// <summary>
+    /// What a scene file that loaded as no objects actually is: a scene with nothing in it yet
+    /// (<c>GameObjects: []</c>, which is what a new project's start scene is), something else entirely, or a
+    /// file that is not there at all. The parser that answers it is the one the content browser previews scenes
+    /// with, so a tile and the hierarchy cannot disagree about whether a file is a scene.
+    /// </summary>
+    private static SceneFileKind Inspect(string path)
+    {
+        string? text;
+
+        try
+        {
+            // The project may keep its scenes in Assets.pak, so they are read the way the loader reads them.
+            using Stream? stream = ProjectFiles.Open(path);
+
+            if (stream is null)
+            {
+                return SceneFileKind.Missing;
+            }
+
+            using StreamReader reader = new(stream);
+            text = reader.ReadToEnd();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return SceneFileKind.Missing;
+        }
+
+        return SceneThumbnail.Parse(text) is null ? SceneFileKind.NotAScene : SceneFileKind.Scene;
+    }
+
+    /// <summary>What a start scene turned out to be when loading it produced no objects.</summary>
+    private enum SceneFileKind
+    {
+        /// <summary>A scene, even if it has no objects in it yet.</summary>
+        Scene,
+
+        /// <summary>A file that parses, but not as a scene.</summary>
+        NotAScene,
+
+        /// <summary>No such file, or it could not be opened.</summary>
+        Missing
     }
 
     /// <summary>
     /// Adds a camera to a scene that has none. A new project's start scene is empty, and the renderer needs
     /// a camera to draw anything at all.
     /// </summary>
-    private static void EnsureCamera(Scene scene)
+    /// <returns>True when a camera had to be added, so the caller can say so.</returns>
+    private static bool EnsureCamera(Scene scene)
     {
         if (scene.MainCamera is not null)
         {
-            return;
+            return false;
         }
 
         GameObject cameraObject = new("Camera");
@@ -237,6 +324,8 @@ public sealed class WebEditorEngine : Engine, IDisposable
         scene.FindMainComponents();
 
         Logger.Warning("[web-editor] The scene has no camera; added one at the default view.");
+
+        return true;
     }
 
     /// <inheritdoc />

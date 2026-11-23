@@ -1,3 +1,4 @@
+@inject EditorHostService Host
 @inject SceneStore Store
 @inject SceneSelection Selection
 @implements IDisposable
@@ -9,6 +10,12 @@
     </header>
 
     <div class="panel-body">
+        @* The tree is the session, the tiles are the files: when they differ, this is why. *@
+        @if (Host.SceneNotice is string notice)
+        {
+            <p class="panel-notice" title="@notice">@notice</p>
+        }
+
         <div class="search-field">
             <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.3" />

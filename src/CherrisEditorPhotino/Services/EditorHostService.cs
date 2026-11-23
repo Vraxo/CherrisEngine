@@ -208,6 +208,12 @@ public sealed class EditorHostService : IDisposable
     /// <summary>Renderer, vendor and GL version, or null while the renderer is starting.</summary>
     public string? RendererInfo => _session?.Host.RendererInfo;
 
+    /// <summary>
+    /// Something the session had to say about the scene it opened — an empty file, a camera it had to add, a
+    /// file that is not a scene — or null when the scene opened exactly as it is on disk.
+    /// </summary>
+    public string? SceneNotice => _session?.Host.SceneNotice;
+
     /// <summary>Where the diagnostics log is written, or null when no file could be created.</summary>
     public string? LogFilePath => _logFilePath;
 
