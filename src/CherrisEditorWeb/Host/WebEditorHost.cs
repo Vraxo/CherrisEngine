@@ -34,6 +34,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private readonly string _webRoot;
     private readonly HeadlessBackend? _graphicsBackend;
     private readonly Action<string>? _log;
+    private readonly EditorSceneRequest _scene;
 
     private ViewerConnection? _activeConnection;
     private WebEditorServer? _server;
@@ -54,16 +55,19 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     /// main thread belongs to a UI message loop. Null creates it on the render thread instead.
     /// </param>
     /// <param name="log">Sink for host diagnostics, in addition to the console.</param>
+    /// <param name="scene">Scene the renderer opens; the built-in demo scene when omitted.</param>
     public WebEditorHost(
         WebEditorOptions options,
         string webRoot,
         HeadlessBackend? graphicsBackend = null,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        EditorSceneRequest? scene = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _webRoot = webRoot ?? throw new ArgumentNullException(nameof(webRoot));
         _graphicsBackend = graphicsBackend;
         _log = log;
+        _scene = scene ?? EditorSceneRequest.Demo;
         _width = options.Width;
         _height = options.Height;
     }
@@ -292,7 +296,7 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             backend = _graphicsBackend ?? new HeadlessBackend();
             backend.TargetFrameRate = _options.TargetFrameRate;
 
-            engine = new WebEditorEngine(backend, this, this);
+            engine = new WebEditorEngine(backend, this, this, _scene);
         }
         catch (Exception exception)
         {

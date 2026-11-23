@@ -1,0 +1,147 @@
+@page "/editor"
+@inject EditorHostService Host
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>@Host.SessionName — Cherris Editor</PageTitle>
+
+<div class="editor-shell">
+    <header class="editor-toolbar">
+        <div class="editor-toolbar-project">
+            <span class="editor-toolbar-name">@Host.SessionName</span>
+            <span class="editor-toolbar-path" title="@Host.ProjectRoot">
+                @(Host.ProjectRoot ?? "built-in demo scene")
+            </span>
+        </div>
+
+        <div class="editor-toolbar-actions">
+            <span class="editor-toolbar-state">@StateText</span>
+            <button type="button" class="editor-button" @onclick="SwitchProject">Projects…</button>
+        </div>
+    </header>
+
+    @if (Host.State == EditorSessionState.Failed)
+    {
+        <div class="editor-error">
+            <h2>The editor host is not running</h2>
+            <p>@(Host.FailureMessage ?? "The renderer stopped.")</p>
+
+            @if (Host.FailureDetail is string detail)
+            {
+                <pre class="editor-error-detail">@detail</pre>
+            }
+
+            <div class="editor-error-actions">
+                <button type="button" class="editor-button" @onclick="CopyDiagnostics">Copy diagnostics</button>
+                <button type="button" class="editor-button" @onclick="BackToLauncher">Back to projects</button>
+                @if (_copied)
+                {
+                    <span class="editor-error-confirm">copied to the clipboard</span>
+                }
+            </div>
+
+            @if (Host.LogFilePath is string logPath)
+            {
+                <p class="editor-error-hint">Log file: <code>@logPath</code></p>
+            }
+
+            <h3>Host log</h3>
+            <pre class="editor-log">@Host.LogTail(40)</pre>
+        </div>
+    }
+    else if (Host.State == EditorSessionState.Starting)
+    {
+        <div class="editor-starting">Starting the renderer for @Host.SessionName…</div>
+    }
+    else
+    {
+        <div class="editor-grid">
+            <section class="editor-viewport">
+                <ViewportPanel WebSocketUrl="@Host.WebSocketUrl" />
+            </section>
+
+            <aside class="editor-sidebar">
+                <ScenePanel />
+            </aside>
+
+            <footer class="editor-statusbar">
+                <StatusBar />
+            </footer>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly TimeSpan HealthInterval = TimeSpan.FromMilliseconds(500);
+
+    private Timer? _timer;
+    private bool _copied;
+    private string? _lastFailure;
+    private EditorSessionState _lastState;
+
+    private string StateText => Host.State switch
+    {
+        EditorSessionState.Running => "running",
+        EditorSessionState.Starting => "starting…",
+        EditorSessionState.Failed => "stopped",
+        _ => "no session"
+    };
+
+    protected override void OnInitialized()
+    {
+        _lastFailure = Host.FailureMessage;
+        _lastState = Host.State;
+
+        // Deep-linking to /editor with nothing open (or a reload after a crash) belongs on the launcher.
+        if (Host.State == EditorSessionState.Idle)
+        {
+            Nav.NavigateTo("/");
+        }
+
+        // The render thread can die long after the window opened (a driver reset, a lost context), so the
+        // page watches for the first failure instead of only checking once at startup.
+        _timer = new Timer(_ => _ = CheckHealthAsync(), null, HealthInterval, HealthInterval);
+    }
+
+    private async Task CheckHealthAsync()
+    {
+        if (Host.FailureMessage == _lastFailure && Host.State == _lastState)
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _lastFailure = Host.FailureMessage;
+            _lastState = Host.State;
+            StateHasChanged();
+        });
+    }
+
+    private void SwitchProject() => BackToLauncher();
+
+    private void BackToLauncher()
+    {
+        Host.CloseSession();
+        Nav.NavigateTo("/");
+    }
+
+    private async Task CopyDiagnostics()
+    {
+        try
+        {
+            _copied = await JS.InvokeAsync<bool>("cherrisHost.copy", Host.Diagnostics);
+        }
+        catch (Exception)
+        {
+            _copied = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+}

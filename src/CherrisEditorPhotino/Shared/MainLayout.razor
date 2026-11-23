@@ -1,8 +1,15 @@
 @inherits LayoutComponentBase
+@inject EditorHostService Host
 
 <div class="app-shell">
     <header class="app-header">
         <span class="app-title">Cherris Editor</span>
+
+        @if (Host.State is EditorSessionState.Running or EditorSessionState.Starting)
+        {
+            <span class="app-project">@Host.SessionName</span>
+        }
+
         <span class="app-badge">PhotinoX · Blazor</span>
     </header>
 

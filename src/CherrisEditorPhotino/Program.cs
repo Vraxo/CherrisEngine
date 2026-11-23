@@ -6,14 +6,24 @@ namespace CherrisEditorPhotino;
 
 /// <summary>
 /// Entry point for the PhotinoX-hosted editor: a native Photino window whose webview runs the Blazor UI,
-/// with the Cherris render loop in the same process.
+/// with the Cherris render loop in the same process. The app opens on the project launcher; picking a
+/// project starts a render session for it.
 /// </summary>
 internal static class Program
 {
     [STAThread]
     private static int Main(string[] args)
     {
-        EditorHostService editorHost = EditorHostService.Start(args);
+        LaunchOptions launch = LaunchOptions.Parse(args);
+
+        EditorHostService editorHost = new(
+            Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+            launch.Width,
+            launch.Height,
+            launch.TargetFrameRate)
+        {
+            PendingProject = launch.ProjectPath
+        };
 
         try
         {
@@ -29,6 +39,10 @@ internal static class Program
                 .SetTitle("Cherris Editor")
                 .SetSize(1600, 900);
 
+            // The launcher's Browse buttons use the window's native folder dialog, which only exists once
+            // the window does. Without it the launcher still accepts typed paths.
+            editorHost.FolderPicker = (title, startIn) => app.MainWindow.ShowOpenFolderAsync(title, startIn);
+
             AppDomain.CurrentDomain.UnhandledException += (_, error) =>
                 app.MainWindow.ShowMessage(
                     "Cherris Editor",
@@ -36,7 +50,7 @@ internal static class Program
 
             // Runs the native message loop and returns when the window closes. The window's own native
             // resources go away with the process; the editor host is torn down explicitly because it owns
-            // a GL context and a socket listener that outlive the window otherwise.
+            // a GL context, a render thread and a socket listener that outlive the window otherwise.
             app.Run();
 
             return editorHost.FailureMessage is null ? 0 : 1;
