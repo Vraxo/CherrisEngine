@@ -292,6 +292,32 @@ on the render thread. `[Range]` clamps the written value, exactly as the ImGui s
 not parse is logged as one `[editor]` line and changes nothing, so a typo can never half-apply an edit or
 throw on the render thread.
 
+### Dragging a number
+
+Every numeric field — the transform rows, a float property, the number box beside a slider, an integer, one
+component of a Vector2/3 — also scrubs: press and move sideways and the value follows the pointer, the way
+ImGui's `DragFloat` behaves. The cursor says so (`ResizeEW`, which is the cursor ImGui puts on its drag
+widgets), and a plain click without movement still puts the caret in so the value can be typed.
+
+| Field | Pixels per step | Mirrors |
+| :--- | :--- | :--- |
+| float property, no usable `[Range]` | 0.01 | `DragFloat(…, 0.01f)` |
+| float property with a bounded `[Range]` | the range over 200 px (a 0…1 volume moves 0.005) | `SliderFloat`'s width |
+| int property | 1 | `DragInt` |
+| transform row, Vector2/3 component | 0.1 | `TransformInspector`'s `DragFloat(…, 0.1f)`, `DragFloat3` |
+| a `[ColorUsage]` colour's components | 1/255, held at 0 and up | `ColorEdit3` |
+
+**Shift** multiplies the step by ten and **Alt** divides it by a hundred, as ImGui's drag behaviour does.
+`[Range]` clamps the drag too, and integers round, so what the field shows is what the command will accept.
+
+The drag lives in `wwwroot/js/numberdrag.js` and costs the engine nothing while it runs: the field shows the
+scrubbed value itself, and a whole drag sends **one** `change` event on release — the same event typing sends.
+That makes a drag one command and so one undo step, which is what `PropertyDrawer` gets from
+`IsItemDeactivatedAfterEdit`. The script is wired by class (`drag-number`) with a document-level listener, so
+fields Blazor renders later scrub without any interop call. `node tests/js/numberdrag.test.js` checks it, and
+CI runs that after `dotnet test`; it needs no browser because the script only touches `window`, `document` and
+the input it is handed.
+
 ### Undo and Redo
 
 `EditorHistory` holds two stacks capped at 200; recording a change clears the redo branch. Only commands that

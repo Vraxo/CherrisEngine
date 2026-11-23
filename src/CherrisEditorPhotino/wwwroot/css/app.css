@@ -1172,6 +1172,22 @@ span.panel-tab:hover {
     color: var(--theme-foreground-hover);
 }
 
+/* A number field scrubs when dragged: ImGui shows ResizeEW on its drag widgets, so the cursor says so. */
+.imgui-input.drag-number {
+    cursor: ew-resize;
+}
+
+/* Nothing to drag when the field is disabled; the arrow would promise otherwise. */
+.imgui-input.drag-number:disabled {
+    cursor: default;
+}
+
+/* While dragging, the field must not try to select its own text. */
+.imgui-input.drag-number.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
 /* One editable property: name on the left, editor on the right, like the ImGui row table. */
 .prop-row {
     display: flex;

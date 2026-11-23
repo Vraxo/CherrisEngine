@@ -27,3 +27,6 @@ jobs:
       - run: dotnet build
 
       - run: dotnet test --no-build
+
+      # The number-field drag is plain JavaScript without a browser, so node can check it directly.
+      - run: node tests/js/numberdrag.test.js

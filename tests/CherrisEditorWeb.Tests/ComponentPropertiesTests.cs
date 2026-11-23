@@ -118,6 +118,55 @@ public class ComponentPropertiesTests
         source.Pitch.Should().Be(3f, "Pitch is declared [Range(0.1, 3)]");
     }
 
+    [Theory]
+    [InlineData("0.01", "a plain float drags 0.01 a pixel, as DragFloat does")]
+    [InlineData("1", "an integer drags a whole step a pixel, as DragInt does")]
+    [InlineData("0.1", "one vector component drags 0.1 a pixel, as DragFloat3 does")]
+    public void DragSpeed_MatchesTheImGuiWidgetThatPropertyWouldUse(string expected, string because)
+    {
+        PropertySnapshot snapshot = expected switch
+        {
+            "0.01" => new PropertySnapshot("Value", PropertyKind.Number, "1", [1f], []),
+            "1" => new PropertySnapshot("Count", PropertyKind.Integer, "1", [1f], []),
+            _ => new PropertySnapshot("Offset", PropertyKind.Vector3, "1, 2, 3", [1f, 2f, 3f], [])
+        };
+
+        snapshot.DragSpeed.Should().Be(Single.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), because);
+    }
+
+    [Fact]
+    public void DragSpeed_SpreadsABoundedRangeOverTwoHundredPixels()
+    {
+        // Volume is [Range(0, 1)], so a drag crosses it in 200 pixels rather than in ten.
+        ComponentProperties.Read(new AudioSource(), nameof(AudioSource.Volume))!.DragSpeed.Should().Be(0.005f);
+
+        // Light's intensity is [Range(0, float.MaxValue)]: that is a clamp, not a slider, so it drags slowly.
+        ComponentProperties.Read(new Light(), nameof(Light.Intensity))!.DragSpeed.Should().Be(0.01f);
+    }
+
+    [Fact]
+    public void DragSpeed_StepsAColourComponentByOneOverTwoFiftyFive()
+    {
+        PropertySnapshot colour = ComponentProperties.Read(new Light(), nameof(Light.Color))!;
+
+        colour.IsColor.Should().BeTrue();
+        colour.DragSpeed.Should().Be(1f / 255f, "ImGui's ColorEdit3 drags a channel in 8-bit steps");
+    }
+
+    [Fact]
+    public void TryGetRange_ReportsWhetherBothBoundsAreDeclared()
+    {
+        PropertySnapshot volume = ComponentProperties.Read(new AudioSource(), nameof(AudioSource.Volume))!;
+
+        volume.TryGetRange(out float minimum, out float maximum).Should().BeTrue();
+        minimum.Should().Be(0f);
+        maximum.Should().Be(1f);
+
+        PropertySnapshot none = new("Offset", PropertyKind.Vector3, "1, 2, 3", [1f, 2f, 3f], []);
+        none.TryGetRange(out _, out _).Should().BeFalse();
+        none.HasBoundedRange.Should().BeFalse();
+    }
+
     [Fact]
     public void TryReadText_UsesTheFormatAnEditSendsBack()
     {

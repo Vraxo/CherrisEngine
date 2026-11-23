@@ -66,7 +66,35 @@ public sealed record PropertySnapshot(
     /// intensity) is a clamp, not a slider, so such a property keeps the plain number field.
     /// </summary>
     public bool HasBoundedRange =>
-        Minimum is float minimum && Maximum is float maximum && Single.IsFinite(maximum) && maximum - minimum < 1_000_000f;
+        TryGetRange(out float minimum, out float maximum) &&
+        Single.IsFinite(maximum) && maximum - minimum < 1_000_000f;
+
+    /// <summary>The declared bounds, when the property declares both.</summary>
+    /// <param name="minimum">Lower bound, or 0 when there is none.</param>
+    /// <param name="maximum">Upper bound, or 0 when there is none.</param>
+    public bool TryGetRange(out float minimum, out float maximum)
+    {
+        minimum = Minimum ?? 0f;
+        maximum = Maximum ?? 0f;
+
+        return Minimum is not null && Maximum is not null;
+    }
+
+    /// <summary>
+    /// Per-pixel speed for dragging the value horizontally, mirroring the ImGui inspector: 0.01 for a plain
+    /// float (its <c>DragFloat</c>), the spread of a bounded range over 200 pixels (so a 0…1 volume does not
+    /// jump from end to end in ten), 1 for an integer (its <c>DragInt</c>), 0.1 for one vector component
+    /// (its <c>DragFloat3</c>) and a 0…1 colour step of 1/255 for a colour (its <c>ColorEdit3</c>).
+    /// </summary>
+    public float DragSpeed => Kind switch
+    {
+        PropertyKind.Integer => 1f,
+        PropertyKind.Number when HasBoundedRange && TryGetRange(out float minimum, out float maximum)
+            => (maximum - minimum) / 200f,
+        PropertyKind.Number => 0.01f,
+        PropertyKind.Vector3 when IsColor => 1f / 255f,
+        _ => 0.1f
+    };
 }
 
 /// <summary>
