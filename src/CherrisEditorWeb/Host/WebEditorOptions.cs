@@ -4,25 +4,25 @@ namespace CherrisEditorWeb.Host;
 public sealed class WebEditorOptions
 {
     /// <summary>TCP port the HTTP/WebSocket listener binds to.</summary>
-    public int Port { get; private init; } = 5178;
+    public int Port { get; init; } = 5178;
 
     /// <summary>Initial render width in device pixels; the client overrides it once it measures its canvas.</summary>
-    public int Width { get; private init; } = 1280;
+    public int Width { get; init; } = 1280;
 
     /// <summary>Initial render height in device pixels.</summary>
-    public int Height { get; private init; } = 720;
+    public int Height { get; init; } = 720;
 
     /// <summary>Render loop rate. The client can display slower; frames are dropped, never queued.</summary>
-    public int TargetFrameRate { get; private init; } = 60;
+    public int TargetFrameRate { get; init; } = 60;
 
     /// <summary>Bind to all interfaces instead of loopback only.</summary>
-    public bool ListenOnAllInterfaces { get; private init; }
+    public bool ListenOnAllInterfaces { get; init; }
 
     /// <summary>Launch the default browser after starting.</summary>
-    public bool OpenBrowser { get; private init; } = true;
+    public bool OpenBrowser { get; init; } = true;
 
     /// <summary>Print usage and exit.</summary>
-    public bool ShowHelp { get; private init; }
+    public bool ShowHelp { get; init; }
 
     /// <summary>Parses command-line arguments.</summary>
     /// <exception cref="ArgumentException">An argument is unknown or has an invalid value.</exception>

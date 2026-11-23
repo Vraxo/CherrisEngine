@@ -1,0 +1,55 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="viewport-frame">
+    <canvas id="viewport-canvas" tabindex="0"></canvas>
+    <div id="viewport-canvas-overlay" class="viewport-overlay" hidden></div>
+</div>
+
+@code {
+    /// <summary>WebSocket endpoint of the in-process editor host.</summary>
+    [Parameter]
+    public string WebSocketUrl { get; set; } = string.Empty;
+
+    private bool _mounted;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _mounted || string.IsNullOrEmpty(WebSocketUrl))
+        {
+            return;
+        }
+
+        // "First render only" is not enough on its own: the interop call is async, so the flag also stops a
+        // second render pass from mounting the bridge twice.
+        _mounted = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("cherrisViewport.mount", "viewport-canvas", WebSocketUrl);
+        }
+        catch (JSDisconnectedException)
+        {
+            _mounted = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_mounted)
+        {
+            return;
+        }
+
+        _mounted = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync("cherrisViewport.dispose");
+        }
+        catch (Exception)
+        {
+            // The webview can already be gone while the window is closing; the bridge dies with it.
+        }
+    }
+}

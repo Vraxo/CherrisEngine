@@ -27,17 +27,20 @@ public sealed class WebEditorEngine : Engine, IDisposable
 {
     private readonly HeadlessBackend _backend;
     private readonly IViewportSink _sink;
+    private readonly ISceneSnapshotSink? _snapshotSink;
 
     private SceneFrameCapture? _capture;
     private GameObject? _spinTarget;
     private float _spinAngle;
     private volatile bool _stopRequested;
+    private long _frameNumber;
 
-    public WebEditorEngine(HeadlessBackend backend, IViewportSink sink)
+    public WebEditorEngine(HeadlessBackend backend, IViewportSink sink, ISceneSnapshotSink? snapshotSink = null)
         : base("Cherris Web Editor", false, backend)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
+        _snapshotSink = snapshotSink;
 
         Exposure = 0.5f;
         OnDrawUI = _ => CaptureAndPublish();
@@ -95,6 +98,9 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
     private void CaptureAndPublish()
     {
+        _frameNumber++;
+        PublishSceneSnapshot();
+
         OpenTKRenderer? renderer = _backend.OpenGLRenderer;
 
         if (renderer is null)
@@ -116,5 +122,20 @@ public sealed class WebEditorEngine : Engine, IDisposable
         }
 
         _sink.PublishFrame(frame.Pixels, frame.Width, frame.Height, frame.Sequence);
+    }
+
+    /// <summary>
+    /// Copies the hierarchy into an immutable snapshot every few frames. Snapshots are cheap relative to a
+    /// frame, but a UI cannot use more than a handful per second, so this deliberately throttles.
+    /// </summary>
+    private void PublishSceneSnapshot()
+    {
+        if (_snapshotSink is null || _frameNumber % 15 != 0)
+        {
+            return;
+        }
+
+        _snapshotSink.PublishScene(
+            SceneSnapshotBuilder.Build(SceneManager.ActiveScene, _frameNumber, DateTimeOffset.UtcNow));
     }
 }

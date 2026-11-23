@@ -1,0 +1,85 @@
+@inject EditorHostService Host
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="statusbar">
+    <span class="status-pill @StatusClass">@StatusText</span>
+    <span>@_stats.Width×@_stats.Height</span>
+    <span>@_stats.Fps fps</span>
+    <span>@_stats.Frames frames</span>
+    <span class="statusbar-muted">protocol @_protocol</span>
+    <span class="statusbar-spacer"></span>
+    <span class="statusbar-muted">@ObjectsText</span>
+    <span class="statusbar-muted">@EngineText</span>
+</div>
+
+@code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
+
+    private ViewportStats _stats = new(false, 0, 0, 0, 0, "idle", "");
+    private int _protocol;
+    private Timer? _timer;
+
+    private string StatusText => _stats.Status switch
+    {
+        "connected" => "connected",
+        "connecting" => "connecting…",
+        "disconnected" => "disconnected — retrying",
+        "error" => "viewport error",
+        _ => "idle"
+    };
+
+    private string StatusClass => _stats.Status switch
+    {
+        "connected" => "status-ok",
+        "connecting" or "idle" => "status-pending",
+        _ => "status-bad"
+    };
+
+    private string EngineText => Host.IsRunning ? "engine running" : "engine stopped";
+
+    private string ObjectsText => Host.LatestScene is SceneSnapshot scene
+        ? $"{scene.Nodes.Count} objects"
+        : "no snapshot";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _protocol = await JS.InvokeAsync<int>("cherrisViewport.getProtocol");
+        }
+        catch (Exception)
+        {
+            // The bridge script is missing or the webview is not ready; the status line shows idle instead.
+        }
+
+        _timer = new Timer(_ => _ = PollAsync(), null, PollInterval, PollInterval);
+    }
+
+    private async Task PollAsync()
+    {
+        ViewportStats stats;
+
+        try
+        {
+            stats = await JS.InvokeAsync<ViewportStats>("cherrisViewport.getStats");
+        }
+        catch (Exception)
+        {
+            // Interop fails once the window is closing; stop polling rather than spamming exceptions.
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _stats = stats;
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+}

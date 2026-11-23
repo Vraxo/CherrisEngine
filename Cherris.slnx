@@ -13,5 +13,6 @@
   <Project Path="tests/CherrisEditor.Tests/CherrisEditor.Tests.csproj" />
   <Project Path="src/CherrisRuntime/CherrisRuntime.csproj" />
   <Project Path="src/CherrisEditorWeb/CherrisEditorWeb.csproj" />
+  <Project Path="src/CherrisEditorPhotino/CherrisEditorPhotino.csproj" />
   <Project Path="tests/CherrisEditorWeb.Tests/CherrisEditorWeb.Tests.csproj" />
 </Solution>
