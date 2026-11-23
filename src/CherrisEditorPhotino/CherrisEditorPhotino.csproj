@@ -19,7 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Razor SDK already includes wwwroot as Content; only the copy behaviour is added here. -->
+    <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
