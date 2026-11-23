@@ -107,7 +107,9 @@ public sealed class WebEditorServer : IAsyncDisposable
         }
 
         _lifetime.Dispose();
-        _listener.Dispose();
+
+        // HttpListener implements IDisposable explicitly; Close() is the same teardown.
+        _listener.Close();
     }
 
     private async Task AcceptLoopAsync()
