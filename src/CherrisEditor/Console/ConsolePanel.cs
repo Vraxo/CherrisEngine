@@ -1,5 +1,6 @@
 ﻿using Cherris.Core;
 using Cherris.Core.Logging;
+using Cherris.UI;
 using ImGuiNET;
 using System.Numerics;
 
@@ -61,11 +62,12 @@ public class ConsolePanel
 
     private static Vector4 GetMessageColor(LogLevel level)
     {
+        // UE5's warning and error colors, and Foreground for plain messages.
         return level switch
         {
-            LogLevel.Warning => new(1.0f, 1.0f, 0.0f, 1.0f),
-            LogLevel.Error => new(1.0f, 0.2f, 0.2f, 1.0f),
-            _ => new(1.0f, 1.0f, 1.0f, 1.0f)
+            LogLevel.Warning => Ue5Colors.Warning.ToVector4(),
+            LogLevel.Error => Ue5Colors.Error.ToVector4(),
+            _ => Ue5Colors.Foreground.ToVector4()
         };
     }
 

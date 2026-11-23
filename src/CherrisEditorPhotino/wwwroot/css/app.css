@@ -1,37 +1,78 @@
 :root {
     color-scheme: dark;
 
-    /* Launcher surfaces, tuned to the same greys as the editor theme. */
-    --surface: #191a1b;
-    --surface-raised: #202122;
-    --border: #141516;
-    --text: #f2f2f2;
-    --text-muted: #8f8f8f;
-    --accent: #429ef9;
-    --ok: #3fb950;
-    --warn: #d29922;
-    --bad: #f85149;
+    /* ------------------------------------------------------------------------------------
+       Unreal Engine 5 editor palette ("Starship") — exact sRGB values.
 
-    /* ImGui / UE5 style editor palette (src/CherrisEditor/Core/EditorTheme.cs). */
-    --imgui-window: #1a1b1c;
-    --imgui-child: #1b1c1d;
-    --imgui-popup: #141517;
-    --imgui-menubar: #262626;
-    --imgui-title: #262626;
-    --imgui-frame: #333435;
-    --imgui-frame-hover: #4c4d4f;
-    --imgui-frame-active: #3f4041;
-    --imgui-tab: #262626;
-    --imgui-tab-hover: #616161;
-    --imgui-border: #0f1011;
-    --imgui-separator: #3c3c3c;
-    --imgui-text: #ffffff;
-    --imgui-text-disabled: #808080;
-    --imgui-accent: #429ef9;
-    --imgui-scrollbar: #4f4f4f;
-    --imgui-warning: #ffff00;
-    --imgui-error: #ff3333;
-    --imgui-radius: 2px;
+       From Engine/Source/Runtime/SlateCore/Private/Styling/StyleColors.cpp
+       (USlateThemeManager::InitalizeDefaults, the built-in dark theme). The engine writes each color as
+       COLOR("#RRGGBBAA") = FLinearColor::FromSRGBColor(FColor::FromHex(...)), so the hex below is the color
+       you see on screen and is used verbatim here.
+
+       Kept in sync with Cherris.UI.Ue5Colors (src/Cherris/UI/Ue5Colors.cs) by
+       tests/CherrisEditorWeb.Tests/Ue5PaletteTests.cs, which parses this file.
+       ------------------------------------------------------------------------------------ */
+
+    --ue-black: #000000;
+    --ue-title: #151515;
+    --ue-background: #151515;
+    --ue-window-border: #0f0f0f;
+    --ue-foldout: #0f0f0f;
+    --ue-input: #0f0f0f;
+    --ue-input-outline: #383838;
+    --ue-recessed: #1a1a1a;
+    --ue-panel: #242424;
+    --ue-header: #2f2f2f;
+    --ue-dropdown: #383838;
+    --ue-dropdown-outline: #4c4c4c;
+    --ue-hover: #575757;
+    --ue-hover-2: #808080;
+    --ue-white: #ffffff;
+    --ue-white-25: #ffffff40;
+    --ue-highlight: #0070e0;
+    --ue-primary: #0070e0;
+    --ue-primary-hover: #0e86ff;
+    --ue-primary-press: #0050a0;
+    --ue-secondary: #383838;
+    --ue-foreground: #c0c0c0;
+    --ue-foreground-hover: #ffffff;
+    --ue-foreground-inverted: #0f0f0f;
+    --ue-foreground-header: #c8c8c8;
+    --ue-select: #0070e0;
+    --ue-select-inactive: #40576f;
+    --ue-select-parent: #2c323a;
+    --ue-select-hover: #242424;
+    --ue-notifications: #464b50;
+    --ue-accent-blue: #26bbff;
+    --ue-accent-purple: #a139bf;
+    --ue-accent-pink: #ff729c;
+    --ue-accent-red: #ff4040;
+    --ue-accent-orange: #fe9b07;
+    --ue-accent-yellow: #ffdc1a;
+    --ue-accent-green: #8bc24a;
+    --ue-accent-brown: #804d39;
+    --ue-accent-black: #242424;
+    --ue-accent-gray: #808080;
+    --ue-accent-white: #ffffff;
+    --ue-accent-folder: #b68f55;
+    --ue-warning: #ffb800;
+    --ue-error: #ef3535;
+    --ue-success: #1fe44b;
+    /* StarshipCoreStyle's SelectionColor: the engine's drag/drop and selector blue. */
+    --ue-selection: #18a0fb;
+    /* A hovered dock tab: Panel at 80% over Background, the way Slate blends it. */
+    --ue-tab-hover: #212121;
+
+    /* Launcher surfaces reuse the palette so both windows match. */
+    --surface: var(--ue-background);
+    --surface-raised: var(--ue-panel);
+    --border: var(--ue-input-outline);
+    --text: var(--ue-foreground);
+    --text-muted: var(--ue-accent-gray);
+    --accent: var(--ue-primary);
+    --ok: var(--ue-success);
+    --warn: var(--ue-warning);
+    --bad: var(--ue-error);
 }
 
 * {
@@ -136,12 +177,12 @@ body {
 }
 
 .launcher-nav-item:hover {
-    background: rgba(79, 157, 255, 0.08);
+    background: rgba(0, 112, 224, 0.08);
 }
 
 .launcher-nav-item.active {
     border-color: var(--border);
-    background: rgba(79, 157, 255, 0.14);
+    background: rgba(0, 112, 224, 0.14);
     box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -211,7 +252,7 @@ body {
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: #12141a;
+    background: var(--ue-input);
     color: var(--text);
     font: inherit;
 }
@@ -246,7 +287,7 @@ body {
     justify-content: space-between;
     gap: 12px;
     padding: 10px 12px;
-    background: #12141a;
+    background: var(--ue-input);
     border: 1px solid var(--border);
     border-radius: 7px;
 }
@@ -290,12 +331,12 @@ body {
 
 .launcher-badge.ready {
     color: var(--ok);
-    background: rgba(63, 185, 80, 0.12);
+    background: rgba(31, 228, 75, 0.12);
 }
 
 .launcher-badge.missing {
     color: var(--warn);
-    background: rgba(210, 153, 34, 0.14);
+    background: rgba(255, 184, 0, 0.14);
 }
 
 .launcher-actions {
@@ -313,8 +354,8 @@ body {
     padding: 12px 14px;
     border: 1px solid var(--bad);
     border-radius: 8px;
-    background: rgba(248, 81, 73, 0.08);
-    color: #ffb4ae;
+    background: rgba(239, 53, 53, 0.08);
+    color: var(--ue-error);
 }
 
 .launcher-busy {
@@ -341,22 +382,31 @@ body {
     color: var(--text-muted);
 }
 
+/* FButtonStyle's disabled state: Dropdown fill, Recessed outline. */
 .editor-button:disabled {
-    opacity: 0.45;
+    border-color: var(--ue-recessed);
+    background: var(--ue-dropdown);
+    color: var(--ue-foreground);
+    opacity: 1;
     cursor: default;
 }
 
+/* PrimaryButton: Primary fill, PrimaryHover on hover. */
 .editor-button.primary {
-    border-color: var(--accent);
-    background: rgba(79, 157, 255, 0.16);
-    color: var(--text);
+    border-color: var(--ue-input);
+    background: var(--ue-primary);
+    color: var(--ue-foreground-hover);
 }
 
-/* ---- editor window chrome ---- */
+.editor-button.primary:hover:not(:disabled) {
+    border-color: var(--ue-input);
+    background: var(--ue-primary-hover);
+    color: var(--ue-foreground-hover);
+}
 
 
 /* ============================================================================
-   Editor — a replica of the ImGui editor's chrome and dock layout:
+   Editor — the ImGui editor's chrome and dock layout, in the UE5 palette:
 
      menubar
      transport toolbar (play / pause / stop / restart)
@@ -366,6 +416,9 @@ body {
      |                | Content Browser | Console (28%)|                |
      +----------------+-------------------------------+----------------+
      status strip
+
+   Each rule names the engine widget whose brushes it reproduces, so the colors are traceable back to
+   StarshipCoreStyle.cpp instead of being picked by eye.
    ========================================================================== */
 
 .editor-shell {
@@ -373,11 +426,11 @@ body {
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: var(--imgui-window);
-    color: var(--imgui-text);
+    background: var(--ue-background);
+    color: var(--ue-foreground);
 }
 
-/* ---- menu bar ---- */
+/* ---- menu bar (WindowMenuBar) ---- */
 
 .menubar {
     position: relative;
@@ -385,8 +438,9 @@ body {
     align-items: center;
     gap: 2px;
     padding: 1px 4px;
-    background: var(--imgui-menubar);
-    border-bottom: 1px solid var(--imgui-border);
+    /* WindowMenuBar.Background is unpainted, so the window background shows through. */
+    background: var(--ue-background);
+    border-bottom: 1px solid var(--ue-window-border);
     font-size: 12.5px;
     user-select: none;
     z-index: 30;
@@ -396,17 +450,20 @@ body {
     padding: 3px 8px;
     margin-right: 6px;
     border: none;
-    border-radius: var(--imgui-radius);
+    border-radius: 4px;
     background: transparent;
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
     font: inherit;
     font-weight: 600;
     letter-spacing: 0.02em;
     cursor: pointer;
 }
 
-.menubar-brand:hover {
-    background: var(--imgui-frame-hover);
+.menubar-brand:hover,
+.menubar-button:hover {
+    /* WindowMenuBar.Button: hovered fill is Hover, hovered text is ForegroundHover. */
+    background: var(--ue-hover);
+    color: var(--ue-foreground-hover);
 }
 
 .menubar-item {
@@ -416,17 +473,17 @@ body {
 .menubar-button {
     padding: 3px 10px;
     border: none;
-    border-radius: var(--imgui-radius);
+    border-radius: 4px;
     background: transparent;
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
     font: inherit;
     cursor: pointer;
 }
 
-.menubar-button:hover,
+/* WindowMenuBar.Button.SubMenuOpen */
 .menubar-button.open {
-    background: var(--imgui-accent);
-    color: #ffffff;
+    background: var(--ue-primary);
+    color: var(--ue-foreground-hover);
 }
 
 .menubar-spacer {
@@ -435,7 +492,7 @@ body {
 
 .menubar-session {
     padding-right: 8px;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -448,16 +505,17 @@ body {
     z-index: 40;
 }
 
+/* Menu.Background + Menu.Outline */
 .menu-popup {
     position: absolute;
     top: 100%;
     left: 0;
     z-index: 50;
     min-width: 210px;
-    padding: 3px 0;
-    background: var(--imgui-popup);
-    border: 1px solid #363636;
-    border-radius: var(--imgui-radius);
+    padding: 4px 0;
+    background: var(--ue-dropdown);
+    border: 1px solid var(--ue-dropdown-outline);
+    border-radius: 0;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
     font-size: 12.5px;
 }
@@ -466,6 +524,7 @@ body {
     top: calc(100% + 2px);
 }
 
+/* Menu.Button: the hovered (and pressed) fill is Primary, the text ForegroundHover. */
 .menu-item {
     display: flex;
     align-items: center;
@@ -475,31 +534,32 @@ body {
     padding: 4px 12px;
     border: none;
     background: transparent;
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
     font: inherit;
     text-align: left;
     cursor: pointer;
 }
 
 .menu-item:hover:not(:disabled) {
-    background: var(--imgui-accent);
-    color: #ffffff;
+    background: var(--ue-primary);
+    color: var(--ue-foreground-hover);
 }
 
 .menu-item:disabled {
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     cursor: default;
 }
 
 .menu-shortcut {
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 11px;
 }
 
+/* Menu.Separator is White25. */
 .menu-separator {
     height: 1px;
-    margin: 3px 0;
-    background: var(--imgui-separator);
+    margin: 6px 0;
+    background: var(--ue-white-25);
 }
 
 /* ---- transport toolbar ---- */
@@ -508,8 +568,8 @@ body {
     display: flex;
     justify-content: center;
     padding: 3px 0;
-    background: var(--imgui-window);
-    border-bottom: 1px solid var(--imgui-border);
+    background: var(--ue-background);
+    border-bottom: 1px solid var(--ue-window-border);
 }
 
 .transport {
@@ -521,6 +581,7 @@ body {
     display: inline-flex;
 }
 
+/* FButtonStyle: Secondary fill, Input outline, ForegroundHover text. */
 .transport-button button {
     display: inline-flex;
     align-items: center;
@@ -528,23 +589,26 @@ body {
     width: 62px;
     height: 22px;
     padding: 0;
-    border: 1px solid var(--imgui-border);
-    border-radius: var(--imgui-radius);
-    background: var(--imgui-frame);
-    color: var(--imgui-text);
+    border: 1px solid var(--ue-input);
+    border-radius: 4px;
+    background: var(--ue-secondary);
+    color: var(--ue-foreground-hover);
     cursor: pointer;
 }
 
 .transport-button button:hover:not(:disabled) {
-    background: var(--imgui-frame-hover);
+    background: var(--ue-hover);
 }
 
 .transport-button button:active:not(:disabled) {
-    background: var(--imgui-frame-active);
+    background: var(--ue-header);
 }
 
+/* FButtonStyle's disabled state: Dropdown fill, Recessed outline. */
 .transport-button button:disabled {
-    color: var(--imgui-text-disabled);
+    border-color: var(--ue-recessed);
+    background: var(--ue-dropdown);
+    color: var(--ue-foreground);
     cursor: default;
 }
 
@@ -569,7 +633,8 @@ body {
     grid-template-rows: minmax(0, 1fr);
     padding: 3px;
     gap: 0;
-    background: var(--imgui-window);
+    /* Docking.Background / DockingEmptyBg are the window background. */
+    background: var(--ue-background);
 }
 
 .dock-middle {
@@ -598,9 +663,10 @@ body {
     cursor: row-resize;
 }
 
+/* SelectionColor is the engine's drag/selector affordance. */
 .dock-splitter:hover,
 .dockspace.is-dragging .dock-splitter {
-    background: rgba(66, 158, 249, 0.45);
+    background: var(--ue-selection);
 }
 
 body.dock-dragging-x,
@@ -615,48 +681,76 @@ body.dock-dragging-y * {
     user-select: none;
 }
 
-/* ---- panel chrome (an ImGui window) ---- */
+/* ---- panel chrome (SDockTab + its content area) ---- */
 
+/* Docking.Border: a Panel fill with a 4px radius. */
 .panel {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: var(--imgui-window);
-    border: 1px solid var(--imgui-border);
-    border-radius: var(--imgui-radius);
+    background: var(--ue-panel);
+    border: 1px solid var(--ue-window-border);
+    border-radius: 4px;
     overflow: hidden;
 }
 
+/* The tab well is Background; tabs themselves are unpainted until hovered. */
 .panel-tabstrip {
     display: flex;
     align-items: stretch;
-    min-height: 24px;
-    background: var(--imgui-tab);
-    border-bottom: 1px solid var(--imgui-border);
+    min-height: 25px;
+    background: var(--ue-background);
+    border-bottom: 1px solid var(--ue-window-border);
     user-select: none;
 }
 
 .panel-tab {
-    padding: 4px 12px;
+    position: relative;
+    padding: 3px 10px 4px;
     border: none;
-    border-right: 1px solid var(--imgui-border);
+    /* Docking.Tab.InactiveTabSeparator is Hover. */
+    border-right: 1px solid var(--ue-hover);
     background: transparent;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-foreground);
     font: inherit;
     font-size: 12px;
     cursor: pointer;
 }
 
+/* A hovered tab is Panel at 80% opacity over the well. */
 .panel-tab:hover {
-    color: var(--imgui-text);
-    background: var(--imgui-tab-hover);
+    background: rgba(36, 36, 36, 0.8);
+    color: var(--ue-foreground-hover);
 }
 
+/* The foreground/active tab brush is Panel, its text ForegroundHover. */
 .panel-tab.active,
 .panel-tab.active:hover {
-    background: var(--imgui-window);
-    color: var(--imgui-text);
+    background: var(--ue-panel);
+    color: var(--ue-foreground-hover);
+}
+
+/* Docking.Tab.ActiveTabIndicatorColor: a Primary gradient along the bottom edge, like SDockTab draws it. */
+.panel-tab.active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--ue-primary), transparent);
+}
+
+/* A panel with a single tab (Hierarchy, Inspector) shows a label, not a control, and no trailing separator. */
+span.panel-tab {
+    cursor: default;
+    border-right-color: transparent;
+}
+
+span.panel-tab:hover {
+    background: transparent;
+    color: var(--ue-foreground-hover);
 }
 
 .panel-tab-spacer {
@@ -666,7 +760,7 @@ body.dock-dragging-y * {
 .panel-tab-meta {
     align-self: center;
     padding: 0 10px;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 11px;
 }
 
@@ -684,66 +778,86 @@ body.dock-dragging-y * {
 
 .panel-empty {
     margin: 8px 2px;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
 }
 
 /* ---- shared widgets ---- */
 
+/* NormalEditableTextBox: Input fill, InputOutline border, Foreground text. */
 .imgui-input {
     width: 100%;
-    padding: 3px 6px;
-    border: 1px solid #1b1c1d;
-    border-radius: var(--imgui-radius);
-    background: var(--imgui-frame);
-    color: var(--imgui-text);
+    padding: 3px 8px 4px;
+    border: 1px solid var(--ue-input-outline);
+    border-radius: 4px;
+    background: var(--ue-input);
+    color: var(--ue-foreground);
     font: inherit;
     font-size: 12px;
 }
 
-.imgui-input:focus {
-    outline: none;
-    border-color: var(--imgui-accent);
+/* HoveredBackgroundBrush keeps the fill and paints the outline Hover. */
+.imgui-input:hover {
+    border-color: var(--ue-hover);
 }
 
+/* FocusedBackgroundBrush paints the outline Primary and the text White. */
+.imgui-input:focus {
+    outline: none;
+    border-color: var(--ue-primary);
+    color: var(--ue-white);
+}
+
+/* Read-only inputs are filled with Header and outlined with InputOutline. */
 .imgui-input[readonly] {
+    background: var(--ue-header);
+    border-color: var(--ue-input-outline);
     cursor: default;
 }
 
+.imgui-input[readonly]:hover,
+.imgui-input[readonly]:focus {
+    border-color: var(--ue-input-outline);
+}
+
+/* FButtonStyle: Secondary -> Hover -> Header, Input outline, ForegroundHover text. */
 .imgui-button {
     padding: 3px 10px;
-    border: 1px solid var(--imgui-border);
-    border-radius: var(--imgui-radius);
-    background: var(--imgui-frame);
-    color: var(--imgui-text);
+    border: 1px solid var(--ue-input);
+    border-radius: 4px;
+    background: var(--ue-secondary);
+    color: var(--ue-foreground-hover);
     font: inherit;
     font-size: 12px;
     cursor: pointer;
 }
 
 .imgui-button:hover:not(:disabled) {
-    background: var(--imgui-frame-hover);
+    background: var(--ue-hover);
 }
 
 .imgui-button:active:not(:disabled) {
-    background: var(--imgui-frame-active);
+    background: var(--ue-header);
 }
 
 .imgui-button:disabled {
-    color: var(--imgui-text-disabled);
+    border-color: var(--ue-recessed);
+    background: var(--ue-dropdown);
+    color: var(--ue-foreground);
     cursor: default;
 }
 
+/* Separator is painted with Recessed. */
 .imgui-separator {
     height: 1px;
     margin: 6px 0;
-    background: var(--imgui-separator);
+    background: var(--ue-recessed);
 }
 
 .imgui-checkbox {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
     font-size: 12px;
     cursor: pointer;
     user-select: none;
@@ -753,16 +867,20 @@ body.dock-dragging-y * {
     width: 13px;
     height: 13px;
     margin: 0;
-    accent-color: var(--imgui-accent);
+    accent-color: var(--ue-primary);
 }
 
-/* ---- hierarchy ---- */
+/* ---- hierarchy (STableView rows) ---- */
 
+/* Rows sit on Recessed, hovered rows become SelectHover (Panel), selected rows Select. */
 .tree {
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding-bottom: 6px;
+    padding: 2px;
+    background: var(--ue-recessed);
+    border: 1px solid var(--ue-input-outline);
+    border-radius: 4px;
 }
 
 .tree-row {
@@ -770,21 +888,21 @@ body.dock-dragging-y * {
     align-items: center;
     gap: 3px;
     padding: 2px 4px;
-    border-radius: var(--imgui-radius);
-    color: var(--imgui-text);
+    border-radius: 2px;
+    color: var(--ue-foreground);
     font-size: 12px;
     cursor: default;
     user-select: none;
 }
 
 .tree-row:hover {
-    background: #2b2c2e;
+    background: var(--ue-select-hover);
 }
 
 .tree-row.selected,
 .tree-row.selected:hover {
-    background: var(--imgui-accent);
-    color: #ffffff;
+    background: var(--ue-select);
+    color: var(--ue-foreground-hover);
 }
 
 .tree-arrow {
@@ -796,14 +914,14 @@ body.dock-dragging-y * {
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 9px;
     line-height: 1;
     cursor: pointer;
 }
 
 .tree-row.selected .tree-arrow {
-    color: #ffffff;
+    color: var(--ue-foreground-hover);
 }
 
 .tree-arrow.empty {
@@ -817,13 +935,14 @@ body.dock-dragging-y * {
     white-space: nowrap;
 }
 
-/* ---- inspector ---- */
+/* ---- inspector (details panel sections) ---- */
 
 .inspector-section {
     margin-bottom: 6px;
-    border: 1px solid #242526;
-    border-radius: var(--imgui-radius);
-    background: var(--imgui-child);
+    border: 1px solid var(--ue-window-border);
+    border-radius: 4px;
+    background: var(--ue-panel);
+    overflow: hidden;
 }
 
 .inspector-section-header {
@@ -831,8 +950,8 @@ body.dock-dragging-y * {
     align-items: center;
     gap: 4px;
     padding: 3px 4px;
-    background: var(--imgui-title);
-    color: var(--imgui-text);
+    background: var(--ue-header);
+    color: var(--ue-foreground-header);
     font-size: 12px;
     user-select: none;
 }
@@ -843,7 +962,7 @@ body.dock-dragging-y * {
 
 .inspector-muted {
     margin: 0;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 11.5px;
 }
 
@@ -861,7 +980,7 @@ body.dock-dragging-y * {
 .vec-label {
     width: 62px;
     flex: none;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 11.5px;
 }
 
@@ -874,7 +993,7 @@ body.dock-dragging-y * {
 
 .imgui-input.vec-field {
     min-width: 0;
-    padding: 2px 4px;
+    padding: 2px 6px;
     font-variant-numeric: tabular-nums;
     font-size: 11.5px;
 }
@@ -897,14 +1016,19 @@ body.dock-dragging-y * {
 
 .console-count {
     margin-left: auto;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 11px;
 }
 
+/* The log region is a recessed list surface. */
 .console-log {
     flex: 1;
     min-height: 0;
     overflow: auto;
+    padding: 3px 6px;
+    background: var(--ue-recessed);
+    border: 1px solid var(--ue-input-outline);
+    border-radius: 4px;
     font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
     font-size: 11.5px;
     line-height: 1.45;
@@ -918,7 +1042,7 @@ body.dock-dragging-y * {
 }
 
 .log-time {
-    color: #9a9a9a;
+    color: var(--ue-accent-gray);
     flex: none;
 }
 
@@ -927,17 +1051,17 @@ body.dock-dragging-y * {
 }
 
 .log-info {
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
 }
 
 .log-warning,
 .log-warning .log-time {
-    color: var(--imgui-warning);
+    color: var(--ue-warning);
 }
 
 .log-error,
 .log-error .log-time {
-    color: var(--imgui-error);
+    color: var(--ue-error);
 }
 
 /* ---- content browser ---- */
@@ -963,12 +1087,12 @@ body.dock-dragging-y * {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
     font-size: 12px;
 }
 
 .cb-count {
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
     font-size: 11px;
     flex: none;
 }
@@ -981,7 +1105,10 @@ body.dock-dragging-y * {
     align-content: flex-start;
     gap: 2px;
     overflow: auto;
-    padding-bottom: 6px;
+    padding: 3px;
+    background: var(--ue-recessed);
+    border: 1px solid var(--ue-input-outline);
+    border-radius: 4px;
 }
 
 .cb-item {
@@ -992,27 +1119,29 @@ body.dock-dragging-y * {
     width: 78px;
     padding: 6px 3px;
     border: 1px solid transparent;
-    border-radius: var(--imgui-radius);
+    border-radius: 4px;
     background: transparent;
-    color: var(--imgui-text);
+    color: var(--ue-foreground);
     font: inherit;
     cursor: default;
     user-select: none;
 }
 
 .cb-item:hover {
-    background: rgba(66, 158, 249, 0.18);
+    background: var(--ue-select-hover);
 }
 
+/* Selected tiles: the engine outlines tiles with the selection blue over SelectParent. */
 .cb-item.selected {
-    border-color: var(--imgui-accent);
-    background: rgba(66, 158, 249, 0.26);
+    border-color: var(--ue-primary);
+    background: var(--ue-select-parent);
+    color: var(--ue-foreground-hover);
 }
 
 .cb-glyph {
     width: 24px;
     height: 24px;
-    color: #d9d9d9;
+    color: var(--ue-foreground);
     flex: none;
 }
 
@@ -1032,8 +1161,8 @@ body.dock-dragging-y * {
     align-items: center;
     gap: 6px;
     padding: 3px 6px;
-    border-bottom: 1px solid var(--imgui-border);
-    background: var(--imgui-window);
+    border-bottom: 1px solid var(--ue-recessed);
+    background: var(--ue-panel);
 }
 
 .viewport-toolbar .imgui-button {
@@ -1050,7 +1179,7 @@ body.dock-dragging-y * {
     position: relative;
     width: 100%;
     height: 100%;
-    background: #101113;
+    background: var(--ue-black);
     overflow: hidden;
 }
 
@@ -1071,8 +1200,8 @@ body.dock-dragging-y * {
     text-align: center;
     white-space: pre-line;
     line-height: 1.5;
-    color: var(--text-muted);
-    background: rgba(9, 10, 12, 0.85);
+    color: var(--ue-foreground);
+    background: rgba(0, 0, 0, 0.85);
 }
 
 /* ---- status strip ---- */
@@ -1082,9 +1211,9 @@ body.dock-dragging-y * {
     align-items: center;
     gap: 10px;
     padding: 2px 10px;
-    background: var(--imgui-menubar);
-    border-top: 1px solid var(--imgui-border);
-    color: var(--imgui-text);
+    background: var(--ue-header);
+    border-top: 1px solid var(--ue-window-border);
+    color: var(--ue-foreground);
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     user-select: none;
@@ -1093,7 +1222,7 @@ body.dock-dragging-y * {
 }
 
 .statusbar-muted {
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
 }
 
 .statusbar-spacer {
@@ -1103,14 +1232,14 @@ body.dock-dragging-y * {
 .statusbar-sep {
     width: 1px;
     height: 11px;
-    background: var(--imgui-separator);
+    background: var(--ue-dropdown-outline);
 }
 
 .statusbar-renderer {
     max-width: 32%;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--imgui-text-disabled);
+    color: var(--ue-accent-gray);
 }
 
 .status-pill {
@@ -1129,30 +1258,30 @@ body.dock-dragging-y * {
 }
 
 .status-ok {
-    color: var(--ok);
+    color: var(--ue-success);
 }
 
 .status-pending {
-    color: var(--warn);
+    color: var(--ue-warning);
 }
 
 .status-bad {
-    color: var(--bad);
+    color: var(--ue-error);
 }
 
 /* ---- starting / failure states ---- */
 
 .editor-starting {
     margin: 32px;
-    color: var(--text-muted);
+    color: var(--ue-accent-gray);
 }
 
 .editor-error {
     margin: 24px;
     padding: 18px 20px;
-    border: 1px solid var(--bad);
-    border-radius: var(--imgui-radius);
-    background: rgba(248, 81, 73, 0.08);
+    border: 1px solid var(--ue-error);
+    border-radius: 4px;
+    background: rgba(239, 53, 53, 0.08);
     overflow: auto;
 }
 
@@ -1167,7 +1296,7 @@ body.dock-dragging-y * {
 }
 
 .editor-error-hint {
-    color: var(--text-muted);
+    color: var(--ue-accent-gray);
 }
 
 .editor-error h3 {
@@ -1175,7 +1304,7 @@ body.dock-dragging-y * {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--text-muted);
+    color: var(--ue-accent-gray);
     font-weight: 600;
 }
 
@@ -1187,7 +1316,7 @@ body.dock-dragging-y * {
 }
 
 .editor-error-confirm {
-    color: var(--ok);
+    color: var(--ue-success);
 }
 
 .editor-error-detail,
@@ -1196,10 +1325,10 @@ body.dock-dragging-y * {
     overflow: auto;
     margin: 8px 0 0;
     padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--imgui-radius);
-    background: #121314;
-    color: var(--text);
+    border: 1px solid var(--ue-input-outline);
+    border-radius: 4px;
+    background: var(--ue-input);
+    color: var(--ue-foreground);
     font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
     font-size: 11.5px;
     line-height: 1.45;
@@ -1209,32 +1338,35 @@ body.dock-dragging-y * {
 
 .editor-error code {
     font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-    color: var(--text);
+    color: var(--ue-foreground-hover);
 }
 
-/* ---- ImGui-like scrollbars ---- */
+/* ---- scrollbars (FScrollBarStyle: unpainted track, Hover/Hover2 rounded thumbs) ---- */
 
 ::-webkit-scrollbar {
-    width: 11px;
-    height: 11px;
+    width: 12px;
+    height: 12px;
 }
 
 ::-webkit-scrollbar-track {
-    background: #0a0b0b;
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--imgui-scrollbar);
-    border: 2px solid #0a0b0b;
-    border-radius: 0;
+    background: var(--ue-hover);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-    background: #6a6a6a;
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+    background: var(--ue-hover-2);
+    background-clip: content-box;
 }
 
 ::-webkit-scrollbar-corner {
-    background: #0a0b0b;
+    background: transparent;
 }
 
 #blazor-error-ui {
@@ -1244,15 +1376,15 @@ body.dock-dragging-y * {
     left: 0;
     right: 0;
     padding: 10px 14px;
-    background: #2b1d1d;
-    border-top: 1px solid var(--bad);
-    color: var(--text);
+    background: var(--ue-notifications);
+    border-top: 1px solid var(--ue-error);
+    color: var(--ue-foreground-hover);
     z-index: 1000;
 }
 
 #blazor-error-ui .reload,
 #blazor-error-ui .dismiss {
-    color: var(--accent);
+    color: var(--ue-accent-blue);
     margin-left: 8px;
     cursor: pointer;
 }
