@@ -561,7 +561,7 @@ body {
    Editor — the ImGui editor's chrome and dock layout, in the UE5 palette:
 
      menubar
-     transport toolbar (play / pause / stop / restart)
+     transport toolbar (play-pause / stop / restart)
      +----------------+-------------------------------+----------------+
      | Hierarchy (20%)| Viewport (72%)                | Inspector (24%)|
      |                +-------------------------------+                |
@@ -772,11 +772,12 @@ body {
     color: var(--theme-foreground-hover);
 }
 
-/* A disabled toolbar button stays unpainted and keeps the normal foreground color. */
+/* A disabled toolbar button stays unpainted and its glyph dims to the muted grey the menus use for a
+   disabled item, so "nothing to do" reads at a glance now that the transport does something. */
 .transport-button button:disabled {
     border-color: transparent;
     background: transparent;
-    color: var(--theme-foreground);
+    color: var(--theme-accent-gray);
     cursor: default;
 }
 
