@@ -44,6 +44,8 @@ public class Ue5PaletteTests
         Ue5Colors.Error.Hex.Should().Be("#ef3535");
         Ue5Colors.Success.Hex.Should().Be("#1fe44b");
         Ue5Colors.Selection.Hex.Should().Be("#18a0fb");
+        // SelectionColor_Pressed is stored linear (0.701, 0.225, 0.003); sRGB-encoded that is #DA820A.
+        Ue5Colors.SelectionPressed.Hex.Should().Be("#da820a");
         // The engine paints a hovered tab with Panel at 80% over Background: 0.8 * 0x24 + 0.2 * 0x15 = 0x21.
         Ue5Colors.TabHover.Hex.Should().Be("#212121");
     }
@@ -108,6 +110,7 @@ public class Ue5PaletteTests
             ["--ue-error"] = Ue5Colors.Error,
             ["--ue-success"] = Ue5Colors.Success,
             ["--ue-selection"] = Ue5Colors.Selection,
+            ["--ue-selection-pressed"] = Ue5Colors.SelectionPressed,
             ["--ue-tab-hover"] = Ue5Colors.TabHover
         };
 

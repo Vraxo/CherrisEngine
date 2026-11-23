@@ -217,6 +217,14 @@ public static class Ue5Colors
     public static readonly Ue5Color Selection = Ue5Color.FromRgb(0x18A0FB);
 
     /// <summary>
+    /// The pressed counterpart of <see cref="Selection"/>: <c>StarshipCoreStyle.cpp</c> initialises
+    /// <c>SelectionColor_Pressed_LinearRef</c> with the *linear* triple (0.701, 0.225, 0.003) rather than an
+    /// sRGB hex, so this is that value sRGB-encoded (#DA820A). The engine's toolbar buttons paint it while
+    /// pressed.
+    /// </summary>
+    public static readonly Ue5Color SelectionPressed = Ue5Color.FromRgb(0xDA820A);
+
+    /// <summary>
     /// A hovered dock tab: <c>Panel.CopyWithNewOpacity(0.8)</c> over the tab well (<see cref="Background"/>),
     /// blended in sRGB as Slate does — <c>0.8 * 0x24 + 0.2 * 0x15 = 0x21</c>.
     /// </summary>

@@ -1,7 +1,6 @@
-# The UE5 editor look, exactly
+# The UE5 editor look
 
-Both editors are themed with Unreal Engine 5's own color values rather than with colors picked to look
-similar:
+Both editors are themed with Unreal Engine 5's own values rather than with ones picked to look similar:
 
 | Front end | Reads the palette from |
 | :--- | :--- |
@@ -11,6 +10,25 @@ similar:
 `tests/CherrisEditorWeb.Tests/Ue5PaletteTests.cs` parses the stylesheet and fails if any `--ue-*` value
 drifts from `Ue5Colors`, so the two cannot quietly diverge.
 
+## How exact is this?
+
+Three tiers, kept apart on purpose because they are not equally trustworthy:
+
+1. **Copied verbatim.** Every palette entry (see [The palette](#the-palette)), the font family, the text
+   sizes (`RegularTextSize`/`SmallTextSize`, `FStyleFonts`) and the numeric constants the engine shares from
+   `Styling/CoreStyle.h` — `ButtonMargins`, `PressedButtonMargins`, `ToggleButtonMargins`, `InputFocusRadius`,
+   `InputFocusThickness`, `Icon8x8`/`16x16`/`32x32`/`64x64`. These can be checked against the source line.
+2. **Derived from a source line.** Values the engine computes rather than writes down: the 13px body text
+   (10pt at 96 DPI), the hovered-tab composite (`Panel` at 80%), the pressed-toolbar blue
+   (`SelectionColor_Pressed`, stored linear, `#DA820A` on screen). Each says how it was derived.
+3. **Our approximation.** Layout the engine does not express as data — how much space a menu bar leaves
+   between titles, the height of our own panels' toolbars, the size of our content-browser tiles, the details
+   category header's lower rule. These follow the engine's *structure* (16px icons, 1px borders, 4px radii,
+   13px text, `Recessed` list surfaces) but the numbers are ours, and this document says so where they appear.
+
+The palette test proves the two front ends agree with each other; it cannot prove agreement with UE5. That is
+what the source references in this document are for.
+
 ## Where the numbers come from
 
 - `Engine/Source/Runtime/SlateCore/Private/Styling/StyleColors.cpp` —
@@ -18,6 +36,11 @@ drifts from `Ue5Colors`, so the two cannot quietly diverge.
   `SetDefaultColor(EStyleColor::X, COLOR("#RRGGBBAA"))`.
 - `StarshipCoreStyle.cpp` (same directory) — the widget styles that consume those colors, plus the two
   colors the style owns: `SelectionColor` (`COLOR("18A0FBFF")`) and the hovered-tab composite.
+- `Styling/CoreStyle.h` (SlateCore, public) — the shared numeric constants the styles use: `ButtonMargins`
+  `(12, 1.5, 12, 1.5)`, `PressedButtonMargins` `(12, 2.5, 12, 0.5)`, `ToggleButtonMargins` `(16, 2)`,
+  `InputFocusRadius` 4, `InputFocusThickness` 1, `Icon8x8`…`Icon64x64`.
+- `Styling/SlateTypes.h` — the `FDockTabStyle` / `FToolBarStyle` / `FEditableTextBoxStyle` members the values
+  above are assigned to.
 - `SDockTab.cpp` — the active tab indicator is a vertical-aligned (`VAlign_Bottom`) gradient of
   `Docking.Tab.ActiveTabIndicatorColor`.
 
@@ -105,9 +128,9 @@ by design. Those are the only places where a value is not literally one palette 
 
 - `FrameBgHovered` / `FrameBgActive` use `InputOutline` / `Primary` as *fills*, because the engine signals
   hover and focus by repainting the outline of an input whose fill stays `Input`.
-- `HeaderHovered` is the engine's generic `Hover` (`#575757`) rather than `SelectHover`, because ImGui paints
-  the hover straight onto the window background; in Blazor, where the list sits on `Recessed`, the exact
-  `SelectHover` (`#242424`) is used instead.
+- `HeaderHovered` is `SelectHover` (`#242424`), the engine's table-row hover, which is visible because child
+  regions are `Recessed`. ImGui paints that hover flat onto the row instead of compositing it over the row
+  brush the way `FTableRowStyle` does.
 - `DockingPreview`, `SeparatorHovered`, `ResizeGripHovered`, `TextSelectedBg`, `DragDropTarget` and the two
   dim backgrounds keep ImGui's default alphas with palette RGB, since they are overlays.
 - `TabActive` / `TabUnfocused*` / `NavHighlight` do not exist in the ImGui.NET build the editor references,
@@ -119,18 +142,28 @@ UE5 rounds inputs, buttons, scrollbar thumbs and tab corners by 4px and draws 1p
 are square. The ImGui style now matches (`FrameRounding`/`GrabRounding`/`ScrollbarRounding`/`TabRounding` = 4,
 `ScrollbarSize` = 8, 1px borders), and the stylesheet uses the same radii.
 
-The sizes the stylesheet reproduces come from the same sources as the colors:
+The sizes the stylesheet reproduces, with the line each one comes from:
 
 | Widget (Slate) | Source | Blazor |
 | --- | --- | --- |
-| Menu bar padding `FMargin(12, 4)` | `WindowMenuBar.MenuBar` | `.menubar-button` (`4px 12px`) |
-| Menu block padding `FMargin(12, 1, 5, 1)` | `Menu.Block` | `.menu-item` (`3px 12px`) |
-| Menu separator padding `FMargin(12, 6, 12, 6)` | `Menu.Separator` | `.menu-separator` (`6px 12px`) |
-| Editable text / button padding `8, 3` | `EditableText`, `Button` | inputs and `.imgui-button` (13px text + `3px/4px` padding = the engine's 22px row) |
-| Tab padding `FMargin(4, 3, 10, 4)`, 26px strip | `DockTabStyle` | `.panel-tab`, `.panel-tabstrip` |
-| Tree rows, square corners, 10pt text | `TreeView` / `FTableRowStyle` | `.tree-row` (`3px 4px`, `border-radius: 0`) |
-| Details category rows with a lower 1px `Recessed` rule | `DetailsView.CategoryTop` | `.inspector-section-header` |
-| Status strip 8pt | `Small` text style | `.statusbar` (11px) |
+| Menu bar padding `FMargin(12, 4)` | `WindowMenuBar.MenuBar.Padding` | `.menubar` (`4px 12px`) |
+| Menu bar button padding `FMargin(0, 2)` | `Menu.Button` → `MenuBarButton` | `.menubar-button` (`2px` vertical; the 8px horizontal is ours — the engine leaves the gap between titles to `SMenuBar`, not to a margin) |
+| Menu block padding `FMargin(12, 1, 5, 1)` | `Menu.Block.Padding` | `.menu-item` (`1px 5px 1px 12px`) |
+| Menu separator padding `FMargin(12, 6, 12, 6)` | `Menu.Separator.Padding` | `.menu-separator` (`6px 12px`) |
+| Button label padding `FMargin(12, 1.5, 12, 1.5)` | `ButtonMargins` | `.imgui-button` (`2px 12px`) |
+| Pressed label shift `FMargin(12, 2.5, 12, 0.5)` | `PressedButtonMargins` | `.imgui-button:active` (`3px 12px 1px`) |
+| Editable text padding `FMargin(8, 3, 8, 4)` | `NormalEditableTextBox` | `.imgui-input` (`3px 8px 4px`); ImGui's `FramePadding` is `8, 3` |
+| Tab padding `FMargin(4, 3, 10, 4)` | `Docking.Tab` (`MinorTabStyle`) | `.panel-tab` (`3px 10px 4px`) |
+| Tab text 10pt | `SetTabTextStyle(NormalText)` | `.panel-tab` (13px) |
+| Toolbar background padding `FMargin(0, 4, 0, 4)`, button padding `FMargin(2, 0)`, icon `Icon16x16` | `FToolBarStyle` | `.editor-toolbar-strip` (`4px 0`), `.transport` (`4px` gaps), 16px SVGs |
+| Toolbar button padding `FMargin(2, 2)` | `ToolBar.Button` | `.transport-button button` |
+| 16px icons | `Icon16x16` (`CoreStyle.h`) | toolbar and search icons |
+| 1px focus rectangle, 4px radius | `InputFocusRadius` / `InputFocusThickness` | `--ue-primary` outlines, `border-radius: 4px` |
+| 8pt small text | `SmallTextSize` / `Small` text style | `.statusbar`, `.cb-count`, `.menu-shortcut` (11px) |
+
+What is deliberately ours, since the engine does not state it as data: the 26px tab strip height, the 22px
+toolbar button, the details category header's lower rule and 4px padding, content-browser tile cells (16px
+icon grid, 84px cell) and the panel-body padding.
 
 ## Typography
 
@@ -157,13 +190,22 @@ disclosure arrows as inline SVG chevrons instead of text.
 
 ## Where else the look is reproduced
 
-- **Flat toolbar buttons.** The engine's transport and viewport-toolbar buttons are `SimpleButton`s: no fill
-  until hover, `Dropdown` on hover, `Header` while pressed, `AccentGray` text when disabled. The transport
-  buttons and the viewport's Options button follow that instead of the filled `FButtonStyle`.
-- **Search boxes** carry the magnifier `SSearchBox` draws inside the text box (`.search-field`).
+- **Toolbar buttons are `ToolBar.Button`, not the filled `Button`.** Unpainted normally; hovered and pressed
+  with the style's `SelectionColor` (`#18A0FB`) and `SelectionColor_Pressed` (`#DA820A`), 16px icons,
+  `FMargin(2, 2)` padding. The transport buttons follow that.
+- **Flat buttons are `SimpleButton`.** Unpainted, `Dropdown` on hover *and* while pressed, `Foreground` when
+  disabled. The viewport's Options button follows that. (The engine's `SimpleButton` has no separate pressed
+  fill, unlike `Button`, whose pressed fill is `Header`.)
+- **Search boxes** carry the magnifier `SSearchBox` draws inside the text box (`.search-field`, 16px glyph
+  inside the 8px text padding).
 - **Focus** is a 1px `Primary` rectangle drawn *inside* the widget (`.imgui-input:focus-visible` and friends),
-  as `FocusRectangle` does, rather than the browser's default ring.
-- **Content browser** tiles are 84px cells with a 28px glyph, and folders use the engine's `AccentFolder`
-  tint, as the folder icon in the content browser does.
+  as the `FocusRectangle` brush does, rather than the browser's default ring. Inputs additionally follow
+  `NormalEditableTextBox`: `Input` fill with an `InputOutline` border, `Hover` while hovered, `Primary` while
+  focused with white text, `Header` fill when read-only.
+- **Tree rows** are `FTableRowStyle`: `Recessed` surface, `SelectHover` hover, `Select` when selected with
+  `ForegroundHover` text — and `SelectInactive` is what the engine uses when the table does not have focus,
+  which we do not reproduce because the webview does not tell us which dock holds focus.
+- **Content browser** folders take the `AccentFolder` tint. Tile and glyph sizes are our approximation of the
+  engine's tile view, not a source value.
 - **Cursors** are the arrow, not a hand: Slate does not change the pointer over buttons.
 
