@@ -104,8 +104,15 @@ The one thing that cannot move off the main thread is **context creation**. `Eng
 stack holds the entry point — on every platform, not just macOS. So `EditorHostService.Start` runs on the
 main thread and calls `HeadlessBackend.CreateGraphicsContext(...)` there; the render thread only calls
 `MakeCurrent()`. A GL context is portable between threads and nothing is ever presented from the hidden
-window, so the split is safe. Once the context exists, `GLFWProvider.CheckForMainThread` is cleared —
-its guard only tracks the creating thread and would otherwise reject the render thread's `MakeCurrent`.
+window, so the split is safe. Two details make it work:
+
+- `CreateGraphicsContext` **releases** the context before returning. `NativeWindow`'s constructor makes the
+  context current on the creating thread, and a context can only be current on one thread at a time, so
+  leaving it bound makes the render thread's `MakeCurrent` fail with
+  `WGL: Failed to make context current: The requested resource is in use` (`ERROR_BUSY`). The render thread
+  rebinds it, and unbinds it again when the render loop ends so the host can destroy the hidden window.
+- Once the context exists, `GLFWProvider.CheckForMainThread` is cleared — its guard only tracks the creating
+  thread and would otherwise reject the render thread's `MakeCurrent`.
 
 ### Why pixels still travel over a socket
 
@@ -193,6 +200,7 @@ Blazor UI grows a project browser; the hierarchy panel then shows real project c
 | :--- | :--- |
 | Panel says the graphics context could not be created; detail mentions `GLFW`, `WGL`, `GLX` or `EGL` | No OpenGL 3.3 driver, a remote session without GPU acceleration, or no X/Wayland display on Linux. |
 | Detail mentions `GLFW can only be called from the main thread` | The hidden window was created off the main thread — see the threading section; `EditorHostService.Start` must run on the thread that called `Main`. |
+| Detail mentions `WGL: Failed to make context current: The requested resource is in use` | The context is still current on the thread that created it. `HeadlessBackend.CreateGraphicsContext` releases it; a host that creates its own context must do the same before handing it to another thread. |
 | Window stays blank, no failure panel, log says the host is listening | The frame socket never connected: check `_framework/blazor.webview.js` and `js/viewport.js` loaded (the log records the WebSocket URL), and that the webview supports WebGL2. |
 | No window at all | Missing WebView2 runtime (Windows) or WebKitGTK 4.1 (Linux). |
 | `EditorResources MISSING` in diagnostics | The build did not copy `EditorResources/`; build from the repository root so the `Content Include` in `CherrisEditorPhotino.csproj` runs. |

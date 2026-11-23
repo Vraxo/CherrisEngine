@@ -325,6 +325,10 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         }
         finally
         {
+            // The context is current on this thread, which is about to end. Unbind it so the host can
+            // destroy the hidden window from the thread that created it.
+            backend.ReleaseGraphicsContext();
+
             Interlocked.Exchange(ref _activeConnection, null);
             _shutdown.Set();
         }
