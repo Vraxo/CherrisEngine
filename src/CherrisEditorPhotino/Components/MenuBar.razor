@@ -24,6 +24,10 @@
                 <button type="button" class="menu-item" role="menuitem" @onclick="OpenLauncher">
                     <span>Open Project…</span>
                 </button>
+                <button type="button" class="menu-item" role="menuitem" disabled="@(!CanMakeScene)"
+                        title="@NewSceneTitle" @onclick="OpenNewSceneDialog">
+                    <span>New Scene…</span>
+                </button>
                 <div class="menu-separator"></div>
                 <button type="button" class="menu-item" role="menuitem" disabled
                         title="Saving is driven by the ImGui editor">
@@ -131,12 +135,75 @@
     {
         <div class="menu-scrim" @onclick="CloseMenus"></div>
     }
+
+    @if (_newSceneOpen)
+    {
+        <div class="dialog-scrim" @onclick="CloseNewScene"></div>
+
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="new-scene-title">
+            <h2 class="dialog-title" id="new-scene-title">New Scene</h2>
+
+            <p class="dialog-text">
+                A new scene starts with a camera and a sun, so it opens with something to look through and something
+                to light it.
+            </p>
+
+            <label class="dialog-label" for="new-scene-name">Scene name</label>
+            <input id="new-scene-name" class="dialog-input" @ref="_nameInput" spellcheck="false"
+                   @bind="_newSceneName" @bind:event="oninput" @onkeydown="OnNameKeyDown" />
+
+            <p class="dialog-hint">@NewScenePath</p>
+
+            @if (_newSceneError is string newSceneError)
+            {
+                <p class="dialog-error" role="alert">@newSceneError</p>
+            }
+
+            <div class="dialog-actions">
+                <button type="button" class="editor-button primary" @onclick="CreateScene">Create</button>
+                <button type="button" class="editor-button" @onclick="CloseNewScene">Cancel</button>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
     private string? _openMenu;
+    private bool _newSceneOpen;
+    private string _newSceneName = SceneTemplate.DefaultName;
+    private string? _newSceneError;
+    private bool _focusName;
+    private ElementReference _nameInput;
 
     private string SessionTitle => Host.SessionName ?? "Cherris Editor";
+
+    /// <summary>
+    /// A scene is a file in a project and is opened by the running session, so both have to be there before the
+    /// menu item can do anything.
+    /// </summary>
+    private bool CanMakeScene => Host.HasProject && Host.State == EditorSessionState.Running;
+
+    private string NewSceneTitle => CanMakeScene
+        ? "Create a scene file in this project and open it"
+        : Host.HasProject
+            ? "The render session has to be running before it can open a new scene"
+            : "Open a project first: a scene is a file inside one";
+
+    /// <summary>The file the name turns into, said before anything is written.</summary>
+    private string NewScenePath
+    {
+        get
+        {
+            if (Host.ProjectRoot is not string root)
+            {
+                return string.Empty;
+            }
+
+            return SceneTemplate.TryNormalizeName(_newSceneName, out string fileName, out _)
+                ? $"Saves to {Path.Combine(root, fileName)}"
+                : "Type a name to see the file it becomes.";
+        }
+    }
 
     private bool IsOpen(string menu) => _openMenu == menu;
 
@@ -172,6 +239,92 @@
         {
             Host.CloseSession();
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusName)
+        {
+            return;
+        }
+
+        _focusName = false;
+
+        try
+        {
+            // The field only exists once the dialog has rendered, so focus is taken here rather than where the
+            // dialog was opened. The keyboard is a nicety: a webview that will not take focus still types fine.
+            await _nameInput.FocusAsync();
+        }
+        catch (Exception exception) when (exception is JSDisconnectedException or InvalidOperationException)
+        {
+            // No interop to focus with (the window is closing, or the element has gone); nothing to recover.
+        }
+    }
+
+    private void OpenNewSceneDialog()
+    {
+        CloseMenus();
+
+        _newSceneError = null;
+        _newSceneName = SuggestSceneName();
+        _newSceneOpen = true;
+        _focusName = true;
+    }
+
+    private void CloseNewScene()
+    {
+        _newSceneOpen = false;
+        _newSceneError = null;
+    }
+
+    /// <summary>Creates the scene and opens it, or shows why not — the dialog stays open until it works.</summary>
+    private void CreateScene()
+    {
+        _newSceneError = null;
+
+        if (!Host.TryCreateScene(_newSceneName, out string? error))
+        {
+            _newSceneError = error;
+            return;
+        }
+
+        _newSceneOpen = false;
+    }
+
+    private void OnNameKeyDown(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "Enter":
+                CreateScene();
+                break;
+
+            case "Escape":
+                CloseNewScene();
+                break;
+        }
+    }
+
+    /// <summary>The first name that is not taken, so the dialog opens on something that will work.</summary>
+    private string SuggestSceneName()
+    {
+        if (Host.ProjectRoot is not string root)
+        {
+            return SceneTemplate.DefaultName;
+        }
+
+        for (int index = 1; index < 1000; index++)
+        {
+            string candidate = index == 1 ? SceneTemplate.DefaultName : SceneTemplate.DefaultName + index;
+
+            if (!File.Exists(Path.Combine(root, candidate + SceneTemplate.Extension)))
+            {
+                return candidate;
+            }
+        }
+
+        return SceneTemplate.DefaultName;
     }
 
     private string UndoTitle => Host.UndoLabel is { } label ? "Undo " + label : "Nothing to undo";

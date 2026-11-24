@@ -89,6 +89,7 @@ public sealed class EditorHostService : IDisposable
     // inspector from feeding it too.
     private string? _liveKey;
     private IEditorCommand? _liveCommand;
+    private bool _showGrid = true;
     private string _sessionName = EditorSceneRequest.Demo.DisplayName;
     private string? _logFilePath;
     private bool _disposed;
@@ -188,6 +189,20 @@ public sealed class EditorHostService : IDisposable
     public SceneSnapshot? LatestScene => _session?.Host.LatestScene;
 
     /// <summary>
+    /// Whether the viewport draws the editor's grid. The render loop reads it from the session's host, so a new
+    /// session is told where the toggle stood rather than starting over.
+    /// </summary>
+    public bool ShowGrid
+    {
+        get => _showGrid;
+        set
+        {
+            _showGrid = value;
+            _session?.Host.ShowGrid = value;
+        }
+    }
+
+    /// <summary>
     /// What the transport is doing: the last action asked for, which the render thread carries out a frame
     /// later. Editing whenever no session is running.
     /// </summary>
@@ -282,6 +297,83 @@ public sealed class EditorHostService : IDisposable
         WriteLog("[editor] opening the built-in demo scene");
 
         return StartSessionAsync(EditorSceneRequest.Demo, null);
+    }
+
+    /// <summary>
+    /// Asks the open session to load another scene file in place of the one it has. The session itself stays — the
+    /// viewport keeps its connection and the panels keep polling — so this is a scene change, not a restart.
+    /// </summary>
+    /// <param name="scenePath">Absolute path of a scene file, normally inside the open project.</param>
+    /// <returns>False when there is no session to ask; the reason is in <see cref="FailureMessage"/>.</returns>
+    public bool OpenScene(string scenePath)
+    {
+        WebEditorHost? host = _session?.Host;
+
+        if (host is null)
+        {
+            // Not a failure of the session: there simply is not one. The menus that offer this need a session to be
+            // enabled in the first place, so this is a race, not a state to report.
+            WriteLog("[editor] there is no session to open a scene in", LogLevel.Warning);
+            return false;
+        }
+
+        // The selection names an object in the scene that is going away, so it cannot survive the switch.
+        SelectionSink?.Invoke(null);
+
+        // Play mode belongs to the scene: the render thread stops it, and the toolbar has to say so too.
+        _playState = EditorPlayState.Editing;
+
+        if (!host.RequestSceneOpen(scenePath))
+        {
+            WriteLog("[editor] the session is shutting down, so the scene was not opened", LogLevel.Warning);
+            return false;
+        }
+
+        WriteLog($"[editor] opening '{scenePath}'");
+
+        return true;
+    }
+
+    /// <summary>
+    /// Writes a new scene into the open project and opens it. The file is written first, and everything that can go
+    /// wrong — no project, a name that is not a file name, a scene that already exists, a file that cannot be
+    /// opened — comes back as text for the dialog to show, so nothing is created silently or left half-done.
+    /// </summary>
+    /// <param name="name">What the user typed; the extension is added when it is left off.</param>
+    /// <param name="error">Why no scene was made, when this returns false.</param>
+    public bool TryCreateScene(string name, out string? error)
+    {
+        error = null;
+
+        if (_projectRoot is not { } projectRoot)
+        {
+            error = "Open a project before making a scene: a scene is a file inside one.";
+            return false;
+        }
+
+        string path;
+
+        try
+        {
+            path = SceneTemplate.Write(projectRoot, name);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
+            return false;
+        }
+
+        WriteLog($"[editor] created '{path}'");
+
+        if (!OpenScene(path))
+        {
+            // The file is on disk and says so; only opening it failed, so the dialog reports that rather than
+            // pretending the scene was never made.
+            error = $"'{Path.GetFileName(path)}' was created, but the session could not open it.";
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>True when there is an edit to take back.</summary>
@@ -641,6 +733,10 @@ public sealed class EditorHostService : IDisposable
 
         // A viewport click is picked on the render thread; this is the hand-off to the UI's selection.
         host.ObjectPicked += OnObjectPicked;
+
+        // The viewport's options belong to the UI and outlive a session, so a new host starts where the last one
+        // left off instead of drawing a grid the user turned off.
+        host.ShowGrid = _showGrid;
         ManualResetEventSlim exited = new(false);
 
         // The thread body needs the session, so the closure reads it after it has been assigned.

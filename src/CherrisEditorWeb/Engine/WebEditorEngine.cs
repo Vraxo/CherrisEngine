@@ -45,6 +45,15 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private int _playRequest = NoPlayRequest;
     private int _playState;
     private volatile string? _sceneNotice;
+    private readonly ViewportCameraController _camera = new();
+
+    private GameObject? _cameraOwner;
+
+    /// <summary>The rotation the camera was left in last frame, so a rotation from anywhere else can be noticed.</summary>
+    private Quaternion _cameraRotation;
+
+    /// <summary>Path of a scene the UI asked for, waiting for the next frame. Consumed by <see cref="ApplySceneRequest"/>.</summary>
+    private string? _pendingScenePath;
 
     /// <summary>Sentinel for "no transport action is waiting"; every <see cref="PlaybackRequest"/> is zero or more.</summary>
     private const int NoPlayRequest = -1;
@@ -77,8 +86,9 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
         OnDrawUI = _ =>
         {
-            // The transport and the edits land at the top of the frame: nothing else touches the scene while
-            // this thread runs, and the snapshot published below already includes both.
+            // Everything the UI asked for lands at the top of the frame, before the snapshot below is taken:
+            // which scene is open decides what the transport and the edits apply to, so it comes first.
+            ApplySceneRequest();
             ApplyPlaybackRequest();
             ExecuteCommands();
             CaptureAndPublish();
@@ -104,6 +114,37 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
     /// <summary>What the transport is doing; written by the render thread, read by the UI.</summary>
     public EditorPlayState PlayState => (EditorPlayState)Volatile.Read(ref _playState);
+
+    /// <summary>
+    /// Asks the render thread to open a scene file in place of the one that is open. Safe from any thread; the
+    /// switch happens at the top of the next frame, which is the only place the scene may change.
+    /// </summary>
+    /// <param name="scenePath">Absolute path of the file to open.</param>
+    /// <returns>False when the session is already shutting down and the request will be ignored.</returns>
+    public bool RequestSceneOpen(string scenePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scenePath);
+
+        if (_stopRequested)
+        {
+            return false;
+        }
+
+        Interlocked.Exchange(ref _pendingScenePath, scenePath);
+
+        return true;
+    }
+
+    /// <summary>Opens the scene the UI asked for, if one is waiting. Runs on the render thread, before the frame.</summary>
+    private void ApplySceneRequest()
+    {
+        string? path = Interlocked.Exchange(ref _pendingScenePath, null);
+
+        if (path is not null)
+        {
+            SwitchScene(path);
+        }
+    }
 
     /// <summary>Carries out the transport action the UI queued, if any.</summary>
     private void ApplyPlaybackRequest()
@@ -211,50 +252,19 @@ public sealed class WebEditorEngine : Engine, IDisposable
             fileName = _scene.DisplayName;
         }
 
+        SceneRead? read;
+
         try
         {
-            // Asset paths in the scene are relative to the project, and a packaged project keeps them in
-            // Assets.pak, so both have to be pointed at the project folder before the scene is read.
-            ProjectFiles.ProjectRoot = _scene.ProjectRoot;
-            ProjectFiles.Initialize(_scene.ProjectRoot);
+            read = ReadSceneFile(_scene.ScenePath, out string failure);
 
-            List<GameObject> objects = SceneLoader.LoadScene(_scene.ScenePath);
-
-            // An empty scene and a file that is not a scene both load as no objects, and they are not the same
-            // thing: the first is a project with nothing in it yet, the second is a broken start scene.
-            SceneFileKind kind = objects.Count == 0 ? Inspect(_scene.ScenePath) : SceneFileKind.Scene;
-
-            if (kind != SceneFileKind.Scene)
+            if (read is null)
             {
-                bool missing = kind == SceneFileKind.Missing;
+                Logger.Warning($"[web-editor] '{_scene.ScenePath}' {failure}; showing the demo scene.");
 
-                Logger.Warning(
-                    $"[web-editor] '{_scene.ScenePath}' " +
-                    (missing ? "could not be found" : "is not a scene") + "; showing the demo scene.");
-
-                return (DemoScene.Create(ResourceManager), missing
-                    ? $"{fileName} could not be found, so the demo scene is open instead."
-                    : $"{fileName} is not a scene, so the demo scene is open instead.");
+                return (DemoScene.Create(ResourceManager),
+                    $"{fileName} {failure}, so the demo scene is open instead.");
             }
-
-            Scene scene = new(_scene.ScenePath, objects);
-            bool addedCamera = EnsureCamera(scene);
-
-            if (objects.Count == 0)
-            {
-                Logger.Info(
-                    $"[web-editor] '{_scene.ScenePath}' has no objects yet; opened it empty" +
-                    (addedCamera ? " with a camera the editor added." : "."));
-
-                return (scene, $"{fileName} has no objects yet." +
-                    (addedCamera ? " The editor added a camera so the viewport can draw." : string.Empty));
-            }
-
-            Logger.Info($"[web-editor] Opened '{_scene.DisplayName}' ({objects.Count} objects).");
-
-            return (scene, addedCamera
-                ? "The scene has no camera, so the editor added one at the default view."
-                : null);
         }
         catch (Exception exception)
         {
@@ -264,6 +274,158 @@ public sealed class WebEditorEngine : Engine, IDisposable
             return (DemoScene.Create(ResourceManager),
                 $"{fileName} could not be opened, so the demo scene is showing.");
         }
+
+        SceneRead scene = read.Value;
+
+        if (scene.WasEmpty)
+        {
+            Logger.Info(
+                $"[web-editor] '{_scene.ScenePath}' has no objects yet; opened it empty" +
+                (scene.AddedCamera ? " with a camera the editor added." : "."));
+        }
+        else
+        {
+            Logger.Info($"[web-editor] Opened '{_scene.DisplayName}' ({scene.Scene.GameObjects.Count} objects).");
+        }
+
+        return (scene.Scene, NoticeFor(fileName, scene));
+    }
+
+    /// <summary>What reading a scene file produced.</summary>
+    /// <param name="Scene">The scene, with a camera added when the file had none.</param>
+    /// <param name="WasEmpty">The file parsed as a scene and described no objects at all.</param>
+    /// <param name="AddedCamera">The editor had to add a camera so the viewport can draw.</param>
+    private readonly record struct SceneRead(Scene Scene, bool WasEmpty, bool AddedCamera);
+
+    /// <summary>
+    /// Reads a scene file as it is — empty included, no fallback — and adds a camera when it has none. The file's
+    /// own contents decide everything else.
+    /// </summary>
+    /// <param name="path">Absolute path of the scene file.</param>
+    /// <param name="failure">Why the file could not be used, when this returns null.</param>
+    /// <returns>The scene, or null when the file is not there or is not a scene.</returns>
+    private SceneRead? ReadSceneFile(string path, out string failure)
+    {
+        failure = string.Empty;
+
+        if (_scene.ProjectRoot is { } projectRoot)
+        {
+            // Asset paths in the scene are relative to the project, and a packaged project keeps them in
+            // Assets.pak, so both have to be pointed at the project folder before the scene is read.
+            ProjectFiles.ProjectRoot = projectRoot;
+            ProjectFiles.Initialize(projectRoot);
+        }
+
+        List<GameObject> objects = SceneLoader.LoadScene(path);
+
+        // An empty scene and a file that is not a scene both load as no objects, and they are not the same
+        // thing: the first is a project with nothing in it yet, the second is a broken start scene.
+        SceneFileKind kind = objects.Count == 0 ? Inspect(path) : SceneFileKind.Scene;
+
+        if (kind != SceneFileKind.Scene)
+        {
+            failure = kind == SceneFileKind.Missing ? "could not be found" : "is not a scene";
+            return null;
+        }
+
+        Scene scene = new(path, objects);
+        bool addedCamera = EnsureCamera(scene);
+
+        return new SceneRead(scene, objects.Count == 0, addedCamera);
+    }
+
+    /// <summary>
+    /// What a scene needs to say for itself, or null when it opened exactly as it is on disk. The tree shows what
+    /// the session holds, so a camera the editor added is said out loud rather than left to be discovered.
+    /// </summary>
+    private static string? NoticeFor(string fileName, SceneRead read)
+    {
+        if (read.WasEmpty)
+        {
+            return $"{fileName} has no objects yet." +
+                (read.AddedCamera ? " The editor added a camera so the viewport can draw." : string.Empty);
+        }
+
+        return read.AddedCamera
+            ? "The scene has no camera, so the editor added one at the default view."
+            : null;
+    }
+
+    /// <summary>
+    /// Replaces the open scene with the one in a file, keeping the session — the viewport, the port, the panels —
+    /// as it is. The old scene is closed, play goes back to editing, and the undo stack is dropped, because its
+    /// commands name objects of the scene that has just gone.
+    /// </summary>
+    /// <remarks>
+    /// A file that cannot be used leaves the open scene alone and says why in the hierarchy. Unlike a session's
+    /// first scene, there is nothing to fall back to: the demo scene would be a second surprise on top of a
+    /// file that failed.
+    /// </remarks>
+    private void SwitchScene(string path)
+    {
+        string fileName = Path.GetFileName(path);
+
+        if (string.IsNullOrEmpty(fileName))
+        {
+            fileName = path;
+        }
+
+        // The file is read first: a switch that cannot happen must not also cost the user their play state.
+        SceneRead? read;
+
+        try
+        {
+            read = ReadSceneFile(path, out string failure);
+
+            if (read is null)
+            {
+                Logger.Warning($"[web-editor] '{path}' {failure}; keeping the open scene.");
+                _sceneNotice = $"{fileName} {failure}, so the open scene is still showing.";
+                return;
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.Error($"[web-editor] Could not open '{path}': {exception.Message}; keeping the open scene.");
+            _sceneNotice = $"{fileName} could not be opened: {exception.Message}";
+            return;
+        }
+
+        // Stop while the old scene is still the active one: the play session puts its snapshot back into the scene
+        // it captured it from, and that scene is about to go.
+        if (_play.Apply(PlaybackRequest.Stop))
+        {
+            Volatile.Write(ref _playState, (int)_play.State);
+        }
+
+        SceneRead loaded = read.Value;
+        Scene? previous = SceneManager.ActiveScene;
+
+        SceneManager.OpenScene(loaded.Scene);
+
+        try
+        {
+            // The scene is started exactly as a session starts the scene it opens, so its scripts and physics are
+            // in the same state afterwards.
+            SceneManager.Start();
+        }
+        catch (Exception exception)
+        {
+            // A script that throws on start is the script's failure, not the file's: the scene stays open and the
+            // console says what happened.
+            Logger.Error($"[web-editor] A script threw while '{fileName}' started: {exception.Message}");
+        }
+
+        if (previous is not null)
+        {
+            SceneManager.CloseScene(previous);
+        }
+
+        _commands?.History.Clear();
+        _spinTarget = null;
+        _sceneNotice = NoticeFor(fileName, loaded);
+
+        Logger.Info($"[web-editor] Opened '{fileName}' ({loaded.Scene.GameObjects.Count} objects).");
     }
 
     /// <summary>
@@ -322,11 +484,8 @@ public sealed class WebEditorEngine : Engine, IDisposable
             return false;
         }
 
-        GameObject cameraObject = new("Camera");
-        cameraObject.Transform.Position = new Vector3(0f, 2.2f, 6.5f);
-        cameraObject.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -0.2f);
-        cameraObject.AddComponent(new Camera());
-        scene.AddGameObject(cameraObject);
+        // The same camera a new scene starts with, so a repaired scene and a new one look alike.
+        scene.AddGameObject(SceneTemplate.CreateCamera());
         scene.FindMainComponents();
 
         Logger.Warning("[web-editor] The scene has no camera; added one at the default view.");
@@ -347,6 +506,7 @@ public sealed class WebEditorEngine : Engine, IDisposable
         }
 
         HandleViewportClick();
+        UpdateEditorCamera(deltaTime);
 
         base.Update(deltaTime);
 
@@ -386,6 +546,68 @@ public sealed class WebEditorEngine : Engine, IDisposable
         ObjectPicked?.Invoke(picked?.Id);
     }
 
+    /// <summary>
+    /// Flies the editor camera: right-drag to look, WASD to move, Q and E down and up, the wheel along the view.
+    /// </summary>
+    /// <remarks>
+    /// Nothing moves while the transport is playing: then the scene's own scripts own the camera, and a second
+    /// hand on it would fight them. Paused counts as editing, because nothing is advancing.
+    /// </remarks>
+    private void UpdateEditorCamera(float deltaTime)
+    {
+        if (_play.State == EditorPlayState.Playing ||
+            SceneManager.MainCamera is not { } camera ||
+            camera.GameObject is not { } owner)
+        {
+            return;
+        }
+
+        Transform transform = owner.Transform;
+
+        // The controller follows the camera rather than the other way round: a different camera — another scene, or a
+        // script that swapped one in — and a rotation something else put back (stopping play does exactly that) are
+        // both adopted before this frame's input is applied, so the next drag carries on from what is on screen.
+        if (!ReferenceEquals(_cameraOwner, owner) || transform.Rotation != _cameraRotation)
+        {
+            _cameraOwner = owner;
+            _camera.SyncFrom(camera);
+        }
+
+        bool hovered = PointerOverViewport();
+
+        _camera.Update(camera, new ViewportCameraInput(
+            Input.IsMouseButtonDown(MouseButton.Right) ? Input.MouseDelta : Vector2.Zero,
+            hovered ? MoveAxes() : Vector2.Zero,
+            hovered ? VerticalAxis() : 0f,
+            hovered ? Input.MouseWheelDelta.Y : 0f,
+            Input.IsKeyDown(Key.ShiftLeft) || Input.IsKeyDown(Key.ShiftRight)), deltaTime);
+
+        _cameraRotation = transform.Rotation;
+    }
+
+    /// <summary>True when the last pointer position the browser reported is inside the viewport.</summary>
+    private bool PointerOverViewport()
+    {
+        (int width, int height) = _sink.ViewportSize;
+        Vector2 pointer = Input.MousePosition;
+
+        return width > 0 && height > 0 &&
+            pointer.X >= 0f && pointer.Y >= 0f && pointer.X <= width && pointer.Y <= height;
+    }
+
+    /// <summary>The movement keys as local axes: D right, A left, S back, W forward.</summary>
+    private static Vector2 MoveAxes()
+    {
+        float horizontal = (Input.IsKeyDown(Key.D) ? 1f : 0f) - (Input.IsKeyDown(Key.A) ? 1f : 0f);
+        float depth = (Input.IsKeyDown(Key.S) ? 1f : 0f) - (Input.IsKeyDown(Key.W) ? 1f : 0f);
+
+        return new Vector2(horizontal, depth);
+    }
+
+    /// <summary>World up or down: E adds, Q subtracts.</summary>
+    private static float VerticalAxis() =>
+        (Input.IsKeyDown(Key.E) ? 1f : 0f) - (Input.IsKeyDown(Key.Q) ? 1f : 0f);
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -421,6 +643,10 @@ public sealed class WebEditorEngine : Engine, IDisposable
         }
 
         (int width, int height) = _sink.ViewportSize;
+
+        // The viewport's own options are the UI's to change and the renderer's to draw: the toggle is read here,
+        // before this frame is drawn, so the picture and the tick in the menu agree.
+        renderer.ShowGrid = _sink.ShowGrid;
 
         // The renderer takes its off-screen path only when a viewport size was set for the frame, and the
         // capture buffer must match the composite texture it reads from.

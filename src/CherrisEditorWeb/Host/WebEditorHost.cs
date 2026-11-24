@@ -44,6 +44,9 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     private volatile WebEditorEngine? _engine;
     private int _width;
     private int _height;
+
+    /// <summary>1 while the grid is drawn, 0 when it is not; an int so it can be read from another thread.</summary>
+    private int _showGrid = 1;
     private int _shuttingDown;
     private volatile bool _renderFailed;
     private volatile bool _startFailed;
@@ -82,6 +85,16 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     /// <inheritdoc />
     public (int Width, int Height) ViewportSize => (Volatile.Read(ref _width), Volatile.Read(ref _height));
 
+    /// <summary>
+    /// Whether the viewport draws the editor's grid; on unless the UI turns it off. Safe from any thread — the
+    /// render loop reads it once per frame and tells the renderer.
+    /// </summary>
+    public bool ShowGrid
+    {
+        get => Volatile.Read(ref _showGrid) != 0;
+        set => Volatile.Write(ref _showGrid, value ? 1 : 0);
+    }
+
     /// <summary>URL the HTTP/WebSocket listener serves, or null before <see cref="Run"/> starts it.</summary>
     public string? Url => _server?.Url;
 
@@ -114,6 +127,13 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     /// landed on empty space. Handlers must hand the id to the UI rather than touch the scene.
     /// </summary>
     public event Action<Guid?>? ObjectPicked;
+
+    /// <summary>
+    /// Asks the render thread to open another scene file in place of the one that is open. Safe from any thread;
+    /// the render loop carries it out at the top of its next frame.
+    /// </summary>
+    /// <returns>False when there is no render loop to ask, or it is already shutting down.</returns>
+    public bool RequestSceneOpen(string scenePath) => _engine?.RequestSceneOpen(scenePath) ?? false;
 
     /// <summary>
     /// Queues a transport action for the render thread. Safe from any thread; the render loop carries it out

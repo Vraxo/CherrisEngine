@@ -15,6 +15,12 @@ public interface IViewportSink
     (int Width, int Height) ViewportSize { get; }
 
     /// <summary>
+    /// Whether the viewport draws the editor's grid. Read by the render thread every frame, so a host may change
+    /// it from whichever thread the toggle lands on.
+    /// </summary>
+    bool ShowGrid { get; }
+
+    /// <summary>
     /// Publishes one rendered frame.
     /// </summary>
     /// <param name="rgba">Tightly packed RGBA8 pixels in top-down row order, valid only for the call.</param>

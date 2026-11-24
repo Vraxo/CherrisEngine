@@ -93,6 +93,11 @@ void main() {
         let status = 'connecting';
         let message = '';
 
+        // The right button is the editor camera's look button; the flag outlives the pointer capture so a drag that
+        // the browser refuses to capture still turns the camera.
+        let lookButtonDown = false;
+        let skipNextMove = false;
+
         function on(target, type, handler, options) {
             target.addEventListener(type, handler, options);
             listeners.push(() => target.removeEventListener(type, handler, options));
@@ -318,8 +323,14 @@ void main() {
             on(canvas, 'mousedown', (event) => {
                 canvas.focus();
 
-                if (event.button === 2 && !isPointerLocked() && canvas.requestPointerLock) {
-                    canvas.requestPointerLock();
+                if (event.button === 2) {
+                    // The right button is the editor camera's: holding it looks around, and the pointer is captured
+                    // so the drag does not stop at the edge of the window.
+                    lookButtonDown = true;
+
+                    if (!isPointerLocked() && canvas.requestPointerLock) {
+                        canvas.requestPointerLock();
+                    }
                 }
 
                 // The press carries where it happened: the editor picks the object under the click, and a click
@@ -332,12 +343,37 @@ void main() {
                     : { type: 'mouseButton', button: event.button, down: true });
             });
 
-            on(window, 'mouseup', (event) => send({ type: 'mouseButton', button: event.button, down: false }));
+            on(window, 'mouseup', (event) => {
+                if (event.button === 2) {
+                    lookButtonDown = false;
+
+                    // Give the pointer back as soon as the drag is over: a captured pointer is a frozen cursor,
+                    // and clicking to select needs a real one.
+                    if (isPointerLocked() && document.exitPointerLock) {
+                        document.exitPointerLock();
+                    }
+                }
+
+                send({ type: 'mouseButton', button: event.button, down: false });
+            });
 
             on(window, 'mousemove', (event) => {
+                // A captured pointer has no free position, so it only reports movement. The first movement after
+                // the capture is dropped: browsers report the jump from wherever the cursor was to the middle.
                 if (isPointerLocked()) {
+                    if (skipNextMove) {
+                        skipNextMove = false;
+                        return;
+                    }
+
                     send({ type: 'mouseMove', dx: event.movementX, dy: event.movementY });
                     return;
+                }
+
+                // A right-drag without a capture still turns the camera; the absolute position is sent as well so
+                // the editor knows where the pointer is.
+                if (lookButtonDown) {
+                    send({ type: 'mouseMove', dx: event.movementX, dy: event.movementY });
                 }
 
                 const point = viewportPoint(event);
@@ -350,7 +386,10 @@ void main() {
                 send({ type: 'wheel', x: -event.deltaX / 100, y: -event.deltaY / 100 });
             }, { passive: false });
 
-            on(document, 'pointerlockchange', () => send({ type: 'lock', locked: isPointerLocked() }));
+            on(document, 'pointerlockchange', () => {
+                skipNextMove = isPointerLocked();
+                send({ type: 'lock', locked: isPointerLocked() });
+            });
             on(window, 'blur', () => send({ type: 'blur' }));
             on(document, 'visibilitychange', () => {
                 if (document.hidden) {

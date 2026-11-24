@@ -123,6 +123,19 @@ public sealed class EditorHistory
         }
     }
 
+    /// <summary>
+    /// Drops both stacks. A scene switch does this: the commands name objects of the scene that has just closed, so
+    /// undoing one of them in another scene would do nothing at best.
+    /// </summary>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _undo.Clear();
+            _redo.Clear();
+        }
+    }
+
     /// <summary>Records a change that has just been made; a new change ends the redo branch.</summary>
     /// <param name="command">The command that made it.</param>
     public void Record(IUndoableCommand command)
