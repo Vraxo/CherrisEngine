@@ -386,16 +386,24 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>
-    /// Writes a new Lua script into the project's <c>Scripts/</c> folder.
+    /// Writes a new script into the project's <c>Scripts/</c> folder, in either language.
     /// </summary>
     /// <remarks>
-    /// The folder is not a choice: <c>LanguageScript</c> refuses a script kept anywhere else, so a browser that let
-    /// one be written into <c>Levels/</c> would be making a file the engine will never run.
+    /// <para>
+    /// The folder is not a choice: a script kept anywhere else is one the engine will never run, so a browser that
+    /// let one be written into <c>Levels/</c> would be making a dead file.
+    /// </para>
+    /// <para>
+    /// A C# file is compiled straight away. Nothing is attached here — the browser only made a file — but the Add
+    /// Component menu should offer the type it declares as soon as the dialog closes, and it only knows types the
+    /// session has compiled.
+    /// </para>
     /// </remarks>
     /// <param name="name">What the user typed; the extension is added when it is left off.</param>
+    /// <param name="kind">Lua or C#, which decides the extension and the source.</param>
     /// <param name="error">Why no script was made, when this returns null.</param>
     /// <returns>The path of the file, or null when nothing was written.</returns>
-    public string? CreateScript(string name, out string? error)
+    public string? CreateScript(string name, ScriptKind kind, out string? error)
     {
         error = null;
 
@@ -405,9 +413,14 @@ public sealed class EditorHostService : IDisposable
             return null;
         }
 
-        if (!ScriptTemplate.TryCreate(projectRoot, name, out string relativePath, out error))
+        if (!ScriptTemplate.TryCreate(projectRoot, name, kind, out string relativePath, out error))
         {
             return null;
+        }
+
+        if (kind == ScriptKind.CSharp)
+        {
+            _session?.RequestScriptReload();
         }
 
         string path = Path.Combine(projectRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -653,9 +666,21 @@ public sealed class EditorHostService : IDisposable
     public bool AddScript(Guid objectId, string scriptName) =>
         Enqueue(new AddScriptCommand(objectId, scriptName), "add script " + scriptName);
 
-    /// <summary>True when the open project already holds a script file with this name.</summary>
+    /// <summary>
+    /// Adds a C# script to an object: the file is written, the project is compiled and the component is attached, in
+    /// that order and on the render thread, because a scene may only name a type the session has compiled.
+    /// </summary>
+    /// <param name="objectId">The object to add the script to.</param>
+    /// <param name="scriptName">The name the author typed; a <c>.cs</c> extension is forgiven.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool AddCSharpScript(Guid objectId, string scriptName) =>
+        Enqueue(new AddCSharpScriptCommand(objectId, scriptName), "add C# script " + scriptName);
+
+    /// <summary>True when the open project already holds a script file with this name, in this language.</summary>
     /// <param name="scriptName">The name the author typed.</param>
-    public bool ScriptExists(string? scriptName) => ScriptTemplate.Exists(_projectRoot, scriptName);
+    /// <param name="kind">Which language's file is looked for.</param>
+    public bool ScriptExists(string? scriptName, ScriptKind kind) =>
+        ScriptTemplate.Exists(_projectRoot, scriptName, kind);
 
     /// <summary>Writes one transform row of an object.</summary>
     /// <param name="objectId">The object.</param>

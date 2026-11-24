@@ -183,6 +183,14 @@ public sealed class EditorSessionHost : IViewportSink, IViewportInputSink, IScen
     public bool RequestPlayback(PlaybackRequest request) => _engine?.RequestPlayback(request) ?? false;
 
     /// <summary>
+    /// Asks the render thread to compile the project's C# scripts again at the top of its next frame. Safe from any
+    /// thread; the UI calls it after writing a <c>.cs</c> file, so the type it declares is attachable without
+    /// reopening the project.
+    /// </summary>
+    /// <returns>False when there is no render loop to ask, or it is already shutting down.</returns>
+    public bool RequestScriptReload() => _engine?.RequestScriptReload() ?? false;
+
+    /// <summary>
     /// Queues a change for the render thread. Safe from any thread, including Blazor's dispatcher; the
     /// command runs on the next frame, before that frame is captured.
     /// </summary>

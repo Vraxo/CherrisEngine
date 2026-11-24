@@ -95,6 +95,9 @@
                Text="@DialogText"
                Label="@DialogLabel"
                DefaultName="@_dialogName"
+               Choices="@LanguageChoices"
+               Choice="@LanguageChoice"
+               ChoiceChanged="@ChooseLanguage"
                Hint="@DialogHint"
                OnCreate="@CreateItem"
                OnClose="@CloseDialog" />
@@ -120,6 +123,9 @@
     private CreateKind _dialogKind;
     private string? _dialogDirectory;
     private string _dialogName = string.Empty;
+
+    // A script is Lua or C#; the dialog asks which, and starts on Lua so the flow it always had stays one keystroke.
+    private ScriptKind _dialogScriptKind = ScriptKind.Lua;
 
     private sealed record Entry(string FullPath, string Name, bool IsDirectory);
 
@@ -435,8 +441,9 @@
     }
 
     /// <summary>
-    /// Scripts are Lua and live in <c>Scripts/</c> — <c>LanguageScript</c> refuses any other folder — so the menu
-    /// offers one from the project root and from that folder, and says why elsewhere.
+    /// Scripts live in <c>Scripts/</c> and nowhere else — the engine runs a Lua script from there and compiles a C#
+    /// one into a component — so the menu offers one from the project root and from that folder, and says why
+    /// elsewhere.
     /// </summary>
     private bool CanCreateScript =>
         _menuDirectory is string directory &&
@@ -444,7 +451,7 @@
         (IsSameFolder(directory, root) || IsSameFolder(directory, Path.Combine(root, ScriptTemplate.Folder)));
 
     private string ScriptMenuTitle => CanCreateScript
-        ? $"Write a Lua script into {ScriptTemplate.Folder}/"
+        ? $"Write a script into {ScriptTemplate.Folder}/, in Lua or C#"
         : $"Scripts live in {ScriptTemplate.Folder}/: open that folder to add one";
 
     // ---- creating ----
@@ -465,9 +472,12 @@
                 break;
 
             case CreateKind.Script:
-                // Fixed by the engine's convention rather than by where the menu was opened.
+                // Fixed by the engine's convention rather than by where the menu was opened. The language is the
+                // dialog's to change; the folder is not.
                 _dialogDirectory = root is null ? null : Path.Combine(root, ScriptTemplate.Folder);
-                _dialogName = ProjectFileName.Available(_dialogDirectory ?? string.Empty, "NewScript", ScriptTemplate.Extension);
+                _dialogScriptKind = ScriptKind.Lua;
+                _dialogName = ProjectFileName.Available(
+                    _dialogDirectory ?? string.Empty, "NewScript", ScriptTemplate.ExtensionOf(_dialogScriptKind));
                 break;
 
             default:
@@ -482,6 +492,25 @@
 
     private void CloseDialog() => _dialogKind = CreateKind.None;
 
+    /// <summary>The language row, shown only while a script dialog is open.</summary>
+    private IReadOnlyList<string>? LanguageChoices => _dialogKind == CreateKind.Script
+        ? ScriptLanguages
+        : null;
+
+    private static readonly string[] ScriptLanguages =
+        [ScriptTemplate.DisplayName(ScriptKind.Lua), ScriptTemplate.DisplayName(ScriptKind.CSharp)];
+
+    private string LanguageChoice => ScriptTemplate.DisplayName(_dialogScriptKind);
+
+    /// <summary>
+    /// Switches what Create will write. The typed name is kept: both languages share the naming rule, and switching
+    /// after typing should not cost the typing.
+    /// </summary>
+    private void ChooseLanguage(string choice) =>
+        _dialogScriptKind = String.Equals(choice, ScriptTemplate.DisplayName(ScriptKind.CSharp), StringComparison.Ordinal)
+            ? ScriptKind.CSharp
+            : ScriptKind.Lua;
+
     private string DialogTitle => _dialogKind switch
     {
         CreateKind.Scene => "New Scene",
@@ -494,9 +523,11 @@
         CreateKind.Scene =>
             "A new scene starts with a camera and a sun, so it opens with something to look through and something to " +
             "light it. It is written into this folder and opened.",
-        CreateKind.Script =>
-            $"A Lua script is written into {ScriptTemplate.Folder}/, where the engine looks for scripts, and the " +
-            "browser follows it there.",
+        CreateKind.Script => _dialogScriptKind == ScriptKind.CSharp
+            ? $"A C# script is written into {ScriptTemplate.Folder}/ and compiled into a component straight away, so " +
+                "the Add Component menu offers it as soon as this closes."
+            : $"A Lua script is written into {ScriptTemplate.Folder}/, where the engine looks for scripts, and the " +
+                "browser follows it there.",
         _ => "An empty folder, somewhere to put scenes and scripts. Nothing is written inside it."
     };
 
@@ -513,7 +544,7 @@
 
         if (_dialogKind == CreateKind.Script)
         {
-            return ScriptTemplate.FullPath(root, typed) is { } path
+            return ScriptTemplate.FullPath(root, typed, _dialogScriptKind) is { } path
                 ? $"Saves to {ProjectFileName.Describe(path, root)}"
                 : "A script name starts with a letter or underscore, then letters, digits or underscores.";
         }
@@ -538,7 +569,7 @@
         }
         else if (_dialogKind == CreateKind.Script)
         {
-            created = Host.CreateScript(name, out error);
+            created = Host.CreateScript(name, _dialogScriptKind, out error);
         }
         else if (_dialogKind == CreateKind.Folder)
         {

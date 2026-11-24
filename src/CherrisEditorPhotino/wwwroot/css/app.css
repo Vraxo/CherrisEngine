@@ -803,6 +803,14 @@ body {
     line-height: 1.45;
 }
 
+/* The choice row (Lua / C#) reuses .editor-button, with the primary fill on the one that is chosen, so a dialog
+   never grows a second button style. */
+.dialog-choices {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 2px;
+}
+
 .dialog-label {
     color: var(--theme-foreground);
     font-size: var(--theme-font-small);
