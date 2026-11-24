@@ -137,6 +137,12 @@ public static class ViewportProtocol
                     sink.LookChanged(ReadBool(root, "down"));
                     return true;
 
+                case "pageLog":
+                    // A line the page wants in the editor's log, for the input and drawing problems a webview
+                    // cannot show from the host's side.
+                    sink.PageLog(ReadString(root, "text") ?? string.Empty);
+                    return true;
+
                 case "lock":
                     sink.MouseLockChanged(ReadBool(root, "locked"));
                     return true;

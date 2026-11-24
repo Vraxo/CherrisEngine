@@ -331,6 +331,15 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     }
 
     /// <inheritdoc />
+    public void PageLog(string text)
+    {
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            Logger.Info($"[web-editor] page: {text}");
+        }
+    }
+
+    /// <inheritdoc />
     public void LookChanged(bool isDown)
     {
         Interlocked.Exchange(ref _lookDragging, isDown ? 1 : 0);

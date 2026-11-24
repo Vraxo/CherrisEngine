@@ -276,10 +276,20 @@ The capture is a courtesy and the drag never depends on it, which is what makes 
   the handler would otherwise take the press, the capture and the rest of that event with it.
 - The canvas suppresses its context menu, so the right button is a look button on the page and not a menu.
 
-`wwwroot/js/viewport.js` is loaded with a version query in `index.html`; bump it when the bridge changes. The editor
-serves `wwwroot` from its build output, so a webview that holds an old copy would otherwise keep running yesterday's
-input code — and the console shows one line per session, `A look drag reached the render thread`, when a drag
-reaches the engine at all.
+Pointer events are taken from the `window` and matched against the canvas rectangle rather than listened for on the
+canvas itself. Anything painted above the canvas would otherwise take the pointer with no trace on the host's side —
+which is how the viewport ended up with working keys and a dead mouse for a while: `.viewport-overlay` set
+`display: flex`, which outranks the user agent's `[hidden] { display: none }`, leaving an 85%-black pane permanently
+over the canvas. The overlay is now `pointer-events: none`, has an explicit `[hidden]` rule, and the bridge sets its
+`display` as well, so a message surface can never become a shield. Dialogs, menus and text fields keep their own
+pointer events (`isEditorChrome`), so a dialog over the viewport does not start a look.
+
+`wwwroot/js/viewport.js` and `wwwroot/css/app.css` are loaded with a version query in `index.html`; bump it when
+either changes. The editor serves `wwwroot` from its build output, so a webview that holds an old copy would
+otherwise keep running yesterday's input code — and the console shows one line per session, `A look drag reached the
+render thread`, when a drag reaches the engine at all, plus `page: first right press landed on …` naming the element
+the first right press hit. Between the two, "the page never sent it" and "the camera ignored it" are told apart
+without guessing.
 
 ### Making and opening scenes
 
