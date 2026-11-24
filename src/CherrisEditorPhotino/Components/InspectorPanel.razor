@@ -120,8 +120,9 @@
                 string sectionChevron = IsCollapsed(sectionKey) ? "tree-chevron" : "tree-chevron expanded";
                 string componentTitle = DisplayName(component.TypeName);
                 string toggleKey = sectionKey + ":enabled";
+                bool enabled = _pendingToggles.Value(node.Id, component.TypeName, component.Enabled);
 
-                <div class="inspector-section @(component.Enabled ? null : "is-disabled")">
+                <div class="inspector-section @(enabled ? null : "is-disabled")">
                     <div class="inspector-section-header">
                         <button type="button" class="inspector-section-fold"
                                 aria-expanded="@sectionExpanded" aria-label="@(sectionTitle + " " + componentTitle)" title="@sectionTitle"
@@ -143,10 +144,10 @@
                         <button type="button" class="inspector-section-name" title="@sectionTitle"
                                 @onclick="() => ToggleSection(sectionKey)">@componentTitle</button>
                         @* Keep the checkbox independent from the foldout, at the right edge of the header. *@
-                        <input type="checkbox" class="inspector-section-toggle" checked="@component.Enabled"
+                        <input type="checkbox" class="inspector-section-toggle" checked="@enabled"
                                disabled="@(!CanEdit)" aria-label="@(componentTitle + " enabled")"
-                               title="@(component.Enabled ? "Switch " + componentTitle + " off" : "Switch " + componentTitle + " on")"
-                               @key="@KeyFor(toggleKey)"
+                               title="@(enabled ? "Switch " + componentTitle + " off" : "Switch " + componentTitle + " on")"
+                               @key="KeyFor(toggleKey)"
                                @onchange="e => SetComponentEnabled(node, component, e.Value is true)" />
                     </div>
 
@@ -361,6 +362,8 @@
     private ElementReference _searchBox;
     private bool _focusSearch;
     private HashSet<string> _collapsed = new(StringComparer.Ordinal);
+    private readonly PendingComponentToggles _pendingToggles = new();
+    private bool _disposed;
 
     private SceneNodeSnapshot? SelectedNode
     {
@@ -667,17 +670,36 @@
     }
 
     /// <summary>
-    /// The header checkbox: off stops the component updating and drawing, without taking it off the object. One
-    /// click is one step. The checkbox is rebuilt from the snapshot, so a toggle the engine refuses — the
-    /// component is gone — goes back to what the scene holds.
+    /// The header checkbox: show the user's choice immediately, then use the first snapshot made after the
+    /// command completed. This prevents an older snapshot from briefly undoing the click on screen.
     /// </summary>
     /// <param name="node">The object that owns the component.</param>
     /// <param name="component">The component.</param>
     /// <param name="enabled">Where the checkbox went.</param>
     private void SetComponentEnabled(SceneNodeSnapshot node, ComponentSnapshot component, bool enabled)
     {
-        Host.SetComponentEnabled(node.Id, component.TypeName, enabled);
-        Touched(node.Id.ToString() + ":" + component.TypeName + ":enabled");
+        long revision = _pendingToggles.Begin(node.Id, component.TypeName, enabled);
+        if (!Host.SetComponentEnabled(node.Id, component.TypeName, enabled, frame =>
+        {
+            _ = InvokeAsync(() =>
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+                _pendingToggles.Acknowledge(node.Id, component.TypeName, revision, frame);
+                if (Store.Current is { } snapshot)
+                {
+                    _pendingToggles.Reconcile(snapshot.Frame);
+                }
+                StateHasChanged();
+            });
+        }))
+        {
+            _pendingToggles.Cancel(node.Id, component.TypeName, revision);
+            // Force the browser's changed checkbox back to the unchanged snapshot if enqueueing failed.
+            Touched(node.Id.ToString() + ":" + component.TypeName + ":enabled");
+        }
     }
 
     private void OnTransformChanged(SceneNodeSnapshot node, TransformRow row, int axis, string? text)
@@ -783,11 +805,23 @@
 
     private void OnSceneChanged()
     {
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            if (Store.Current is { } snapshot)
+            {
+                _pendingToggles.Reconcile(snapshot.Frame);
+            }
+            StateHasChanged();
+        });
     }
 
     public void Dispose()
     {
+        _disposed = true;
         Store.Changed -= OnSceneChanged;
         Selection.Changed -= OnSceneChanged;
     }
