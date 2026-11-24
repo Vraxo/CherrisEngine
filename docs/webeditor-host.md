@@ -7,7 +7,8 @@ the game view off-screen and shows it inside a native webview window. It is addi
 | Project | What it is |
 | :--- | :--- |
 | `src/CherrisEditorPhotino` | The editor window. `PhotinoX.Blazor` host, Blazor components, viewport canvas, scene panel. |
-| `src/CherrisEditorWeb` | The transport it reuses: render host, frame pipe, wire protocol, input bridge. Also runs standalone as a browser dev harness. |
+| `src/CherrisEditorSession` | The session it drives, as a library: graphics context and render thread, frame pipe, wire protocol, input bridge, scene commands, script compilation. It has no webview and no window of its own. |
+| `tools/CherrisFrameViewer` | The same session in a terminal, for iterating on the protocol or on a machine without a webview runtime. |
 | `src/Cherris/Rendering/Headless` | Off-screen rendering: hidden GL context, frame pacing, GPU readback. |
 
 See [photinox-blazor-viewport.md](photinox-blazor-viewport.md) for the rendering-side contract: why the
@@ -54,7 +55,7 @@ lives in the engine library and is unit-tested (`tests/Cherris.Tests/Projects/`)
    cannot reach the renderer.
 2. The session starts (see threading below) with an `EditorSceneRequest` naming the project and its
    `StartScenePath`.
-3. On the render thread, `WebEditorEngine.LoadContent` points `ProjectFiles` at the project root (this is
+3. On the render thread, `EditorSession.LoadContent` points `ProjectFiles` at the project root (this is
    what makes scene-relative asset paths and a packaged `Assets.pak` resolve), loads the start scene with
    the engine's `SceneLoader`, and opens it.
 4. A scene with no camera gets a default one — a brand-new project's start scene is empty, and the renderer
@@ -74,15 +75,16 @@ starts a fresh session. The engine is not re-entered: the previous project's GL 
 scene are dropped with the session, and the frame socket keeps the same port, so the viewport canvas
 reconnects on its own.
 
-The browser dev harness is still available when iterating on the protocol or on a machine without a webview
-runtime:
+`tools/CherrisFrameViewer` runs the same session with a terminal as the front end, for iterating on the
+protocol or on a machine without a webview runtime:
 
 ```bash
-dotnet run --project src/CherrisEditorWeb            # http://localhost:5178/
-dotnet run --project src/CherrisEditorWeb --no-browser --port 5179
+dotnet run --project tools/CherrisFrameViewer            # http://localhost:5178/
+dotnet run --project tools/CherrisFrameViewer -- --no-browser --port 5179
 ```
 
-It serves `src/CherrisEditorWeb/wwwroot` and has the same options plus `--listen-all` and `--help`.
+It serves its own `tools/CherrisFrameViewer/wwwroot` — a bare frame viewer, not the editor UI — and has the same
+options plus `--listen-all` and `--help`.
 
 ## The window
 
@@ -92,7 +94,8 @@ It serves `src/CherrisEditorWeb/wwwroot` and has the same options plus `--listen
 [STAThread]
 private static int Main(string[] args)
 {
-    EditorHostService editorHost = EditorHostService.Start(args);
+    // The shell owns the webview; the session it opens later owns the GL context and the render thread.
+    EditorHostService editorHost = new(Path.Combine(AppContext.BaseDirectory, "wwwroot"), ...);
 
     var appBuilder = PhotinoBlazorApp.CreateBuilder(args);
     appBuilder.RootComponents.Add<App>("app");          // <app> in wwwroot/index.html
@@ -120,9 +123,9 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | `PhotinoBlazorApp` message loop | main (`[STAThread]`) | Window, webview, Blazor renderer. Owns the UI thread. |
 | `Launcher` / `Editor` pages | main | Project picker and editor shell; they only call `EditorHostService` and read what it publishes. |
 | `HeadlessBackend` hidden window | main, before the loop starts | Creates the GLFW window/context. OpenTK only allows GLFW init on the process' main thread. |
-| `WebEditorEngine` | background ("Cherris Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
+| `EditorSession` | background ("Cherris Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
 | `EditorHostService` | main, then any | One session at a time: validates the project, prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics, recent projects and failures. |
-| `WebEditorHost` | any | One session: the graphics context, the render thread, the listener, the viewport size, the active client and input translation into `HeadlessInput`. `Start()` is for a host with a message loop on its main thread, `Run()` for one without. |
+| `EditorSessionHost` | any | One session: the graphics context, the render thread, the listener, the viewport size, the active client and input translation into `HeadlessInput`. `Start()` is for a host with a message loop on its main thread, `Run()` for one without. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
 | `FramePipe` | shared | Single-slot frame hand-off: newest frame wins, stale frames are dropped and pooled. |
@@ -147,7 +150,7 @@ and nothing there touches Blazor state or `StateHasChanged`. Cross-thread data m
 The one thing that cannot move off the main thread is **context creation**. `Engine`'s constructor calls
 `IRenderingInterface.Initialize`, and OpenTK's `GLFWProvider.EnsureInitialized` throws
 `GLFWException("GLFW can only be called from the main thread!")` for anything that is not the thread whose
-stack holds the entry point — on every platform, not just macOS. `WebEditorHost` owns that rule: `Start()`
+stack holds the entry point — on every platform, not just macOS. `EditorSessionHost` owns that rule: `Start()`
 creates the context on the thread that calls it (Blazor's dispatcher, which is the main thread) and then runs the
 loop on a background thread, while `Run()` creates it on the thread that will also run the loop (the browser
 host's main thread). The render thread only calls `MakeCurrent()`. A GL context is portable between threads and
@@ -240,7 +243,7 @@ objects' boxes rather than their meshes, so a rotated object picks as if it fill
 The click comes in as an ordinary mouse press on the existing input path; what is new is that the press carries
 the position it happened at (`mouseButton` with `x`/`y`), so a click that arrives before any move still picks
 where it landed instead of wherever the pointer was last. Picking runs on the render thread, which owns the
-scene, and the id crosses to the UI through `WebEditorHost.ObjectPicked` and `EditorHostService.SelectionSink`
+scene, and the id crosses to the UI through `EditorSessionHost.ObjectPicked` and `EditorHostService.SelectionSink`
 — that is the whole hand-off, and it is why `SceneSelection` guards its id with a lock. A press with the pointer
 captured (the position frozen at the capture point) picks nothing.
 
@@ -395,9 +398,9 @@ to the render thread while the panels render from published snapshots:
 
 | Step | Where |
 | :--- | :--- |
-| The panel queues a command — `AddComponentCommand`, `AddScriptCommand`, `SetPropertyCommand`, `SetTransformCommand`, `RenameObjectCommand`, `UndoCommand`, `RedoCommand` | `InspectorPanel.razor` / `MenuBar.razor` → `EditorHostService` → `WebEditorHost.Enqueue` |
+| The panel queues a command — `AddComponentCommand`, `AddScriptCommand`, `SetPropertyCommand`, `SetTransformCommand`, `RenameObjectCommand`, `UndoCommand`, `RedoCommand` | `InspectorPanel.razor` / `MenuBar.razor` → `EditorHostService` → `EditorSessionHost.Enqueue` |
 | A dragged number queues **the same** command again every frame, so the scene moves with the pointer while the edit stays one step | `EditorHostService.SetPropertyLive` / `SetTransformLive` |
-| The render thread drains the queue at the top of the frame, before it captures the frame | `WebEditorEngine.ExecuteCommands` → `EditorCommandDispatcher.Drain` |
+| The render thread drains the queue at the top of the frame, before it captures the frame | `EditorSession.ExecuteCommands` → `EditorCommandDispatcher.Drain` |
 | The command edits the live scene, marks it dirty and records itself on the history — a fed command records and logs on its first effective run only | `IEditorCommand.Execute(EditorCommandContext)` |
 | The console shows the result; the next snapshot carries the new values | `Logger` → `EditorHostService` log → `ConsolePanel` |
 
@@ -598,7 +601,7 @@ each one stays testable off the render thread because `Execute` takes the scene 
 
 ## Play mode
 
-The transport drives the scene for real. `EditorPlaySession` (`src/CherrisEditorWeb/Engine/EditorPlaySession.cs`)
+The transport drives the scene for real. `EditorPlaySession` (`src/CherrisEditorSession/Engine/EditorPlaySession.cs`)
 holds the same three states as the desktop editor's `PlayModeManager`, and the engine only advances the world
 while the state is `Playing`:
 
@@ -608,7 +611,7 @@ while the state is `Playing`:
 | Stop | playing or paused | writes the authored values back, then returns to `Editing` |
 | Restart | playing or paused | writes the authored values back, then plays again from them |
 
-`WebEditorEngine` sets `AutoUpdateScene = false` and calls `EditorPlaySession.Tick` itself, so physics, audio and
+`EditorSession` sets `AutoUpdateScene = false` and calls `EditorPlaySession.Tick` itself, so physics, audio and
 scripts are stepped only while playing. Everything else — camera input, the viewport, the panels, editing — keeps
 running in all three states, which is what makes pause a freeze rather than a stop. The built-in demo's cube
 spins only while playing, for the same reason: an edited scene is not a running one.
@@ -630,7 +633,7 @@ What it does not do is replace the desktop editor's reload:
 - a live edit made while playing is undone by Stop, but the undo stack is not: undoing a play-time edit afterwards
   writes back the play-time value.
 
-Transport actions cross the thread the same way edits do, as a queued value rather than a lock: `WebEditorHost`
+Transport actions cross the thread the same way edits do, as a queued value rather than a lock: `EditorSessionHost`
 writes one `PlaybackRequest` that the render loop takes at the top of the frame, before the commands and the
 snapshot. The toolbar reads `EditorHostService.PlayState` — the action last asked for, which is what the buttons
 should show while the render thread catches up — and the engine logs what it actually did (`[play] Playing.`,

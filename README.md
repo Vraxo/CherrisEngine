@@ -12,7 +12,7 @@ The solution (`Cherris.slnx`) contains four production projects under `src`:
 | [`CherrisEditor`](src/CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
 | [`CherrisRuntime`](src/CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
 | [`CherrisEditorPhotino`](src/CherrisEditorPhotino/) | Executable | Experimental PhotinoX Blazor editor: a native webview window (WebView2 / WKWebView / WebKitGTK) hosting a Blazor UI, with the engine rendering off-screen (`Cherris.Rendering.Headless`), streaming the game view into a WebGL canvas, a project launcher that opens real `project.yaml` projects, and an editor window laid out like the ImGui editor (menu bar, transport toolbar, hierarchy / viewport / inspector docks) in the exact UE5 palette, Roboto typography and engine metrics. |
-| [`CherrisEditorWeb`](src/CherrisEditorWeb/) | Executable | Transport behind the PhotinoX window: render host, frame pipe, wire protocol and input bridge, shared by both front ends and runnable on its own as a browser dev harness. |
+| [`CherrisEditorSession`](src/CherrisEditorSession/) | Library | The editor session the PhotinoX window drives: render host, frame pipe, wire protocol, input bridge, scene commands and script compilation. No webview, no window — the desktop shell and [`tools/CherrisFrameViewer`](tools/CherrisFrameViewer/) both own one. |
 
 ## 🔧 Capabilities
 
@@ -138,4 +138,4 @@ Current limitations:
 - [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
 - [UE5 Theme](docs/ue5-theme.md): The Unreal Engine 5 editor palette, typography and metrics both front ends use, with the engine source each value comes from, the widget-style mapping and the bundled Roboto fonts.
-- [Web Editor Host](docs/webeditor-host.md): The PhotinoX Blazor editor in `src/CherrisEditorPhotino`, the transport it shares with `src/CherrisEditorWeb`, its wire protocol, threading model and current limitations.
+- [Web Editor Host](docs/webeditor-host.md): The PhotinoX Blazor editor in `src/CherrisEditorPhotino`, the session in `src/CherrisEditorSession` it drives, the wire protocol, threading model and current limitations.

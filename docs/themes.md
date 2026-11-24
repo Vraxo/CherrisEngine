@@ -15,7 +15,7 @@ a theme swappable at runtime.
 Both are defined in code (`src/Cherris/UI/Themes/Ue5StarshipTheme.cs`, `UnityDarkTheme.cs`) and also shipped as
 JSON (`src/CherrisEditor/EditorResources/Themes/*.json`), so a theme can be compared, copied and retuned
 without touching the editor. A test keeps the two in step
-(`tests/CherrisEditorWeb.Tests/ThemeCatalogTests.cs`, `ShippedFiles_MatchTheBuiltInThemes`).
+(`tests/CherrisEditorSession.Tests/ThemeCatalogTests.cs`, `ShippedFiles_MatchTheBuiltInThemes`).
 
 ### How exact the Unity theme is
 

@@ -11,7 +11,7 @@ documents that theme; how themes are loaded, selected and added is on [themes.md
 The palette itself lives in `src/Cherris/UI/Ue5Colors.cs`, mapped onto the theme's roles by
 `src/Cherris/UI/Themes/Ue5StarshipTheme.cs`, and is also shipped as
 `EditorResources/Themes/ue5-starship.json`. It is the default theme, so the stylesheet's `:root` block holds
-exactly its values; `tests/CherrisEditorWeb.Tests/Ue5PaletteTests.cs` fails if they drift apart. Nothing
+exactly its values; `tests/CherrisEditorSession.Tests/Ue5PaletteTests.cs` fails if they drift apart. Nothing
 in `app.css` or in the ImGui theme names a color directly any more — both read roles, which is what lets the
 theme change at runtime.
 
@@ -176,7 +176,7 @@ The editor's text styles are `FStarshipCoreStyle::FStyleFonts`: `Normal` 10pt, `
 condensed headings at 15, 21 and 33pt, all Roboto; `MonospacedText` is `DEFAULT_FONT("Mono", 10)`, Roboto Mono.
 Slate scales points by DPI, so at 96 DPI 10pt is 13.33px and the UI uses **13px** (rounded, so glyphs stay on
 the pixel grid). `src/Cherris/UI/Ue5Typography.cs` is the shared source of those numbers and of the font file
-names; `tests/CherrisEditorWeb.Tests/Ue5TypographyTests.cs` keeps the two front ends and the stylesheet in step.
+names; `tests/CherrisEditorSession.Tests/Ue5TypographyTests.cs` keeps the two front ends and the stylesheet in step.
 
 Fonts are bundled in the repository, since neither front end may depend on a system font:
 
