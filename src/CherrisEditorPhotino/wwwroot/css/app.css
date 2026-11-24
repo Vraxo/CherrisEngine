@@ -1312,8 +1312,8 @@ span.panel-tab:hover {
 
 /* ---- inspector (details panel sections) ---- */
 
-/* Unity's inspector is one continuous list: no cards and no gaps between components. A section is a
-   darker header over its property rows, separated from the next section by a thin rule. */
+/* Unity's inspector is one continuous surface: headers and property rows share a background,
+   with thin rules separating components. */
 .inspector-section {
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     background: var(--theme-panel);
@@ -1328,15 +1328,11 @@ span.panel-tab:hover {
     min-height: 22px;
     padding: 3px 6px;
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
-    background: color-mix(in srgb, var(--theme-panel) 72%, var(--theme-recessed));
+    background: transparent;
     color: var(--theme-foreground-header);
     font-size: var(--theme-font-size);
     font-weight: var(--theme-font-weight-bold);
     user-select: none;
-}
-
-.inspector-section-header:hover {
-    background: var(--theme-header);
 }
 
 /* The chevron and icon form the fold control; the name also toggles the section. */
