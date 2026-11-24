@@ -28,6 +28,10 @@
                         title="@NewSceneTitle" @onclick="OpenNewSceneDialog">
                     <span>New Scene…</span>
                 </button>
+                <button type="button" class="menu-item" role="menuitem" disabled="@(!CanReloadScripts)"
+                        title="@ReloadScriptsTitle" @onclick="ReloadScripts">
+                    <span>Reload Scripts</span>
+                </button>
                 <div class="menu-separator"></div>
                 <button type="button" class="menu-item" role="menuitem" disabled
                         title="Saving is driven by the ImGui editor">
@@ -159,6 +163,17 @@
     /// </summary>
     private bool CanMakeScene => Host.HasProject && Host.State == EditorSessionState.Running;
 
+    /// <summary>
+    /// A reload compiles the project's <c>Scripts/</c> folder inside the running session, which is the only place the
+    /// scene and its component factories live — so the session has to be up.
+    /// </summary>
+    private bool CanReloadScripts => Host.State == EditorSessionState.Running;
+
+    private string ReloadScriptsTitle => CanReloadScripts
+        ? "Compile the project's Scripts folder again, so new and changed types are in the Add Component menu. A " +
+            "component that is already attached keeps the code it was created with until its scene is opened again."
+        : "The render session has to be running before its scripts can be compiled";
+
     private string NewSceneTitle => CanMakeScene
         ? "Create a scene file in this project and open it"
         : Host.HasProject
@@ -181,6 +196,16 @@
     private void CloseMenus()
     {
         _openMenu = null;
+    }
+
+    /// <summary>
+    /// Asks the session to compile again. What came of it is in the console, where every other compile reports too:
+    /// the count on success, and one line per error.
+    /// </summary>
+    private void ReloadScripts()
+    {
+        CloseMenus();
+        Host.ReloadScripts();
     }
 
     private void OpenLauncher()
