@@ -42,11 +42,8 @@
 
             <div class="inspector-section">
                 <div class="inspector-section-header">
-                    @* Unity reserves the toggle's slot on the Transform too, so every header's chevron lines up;
-                       the Transform itself is always on. *@
-                    <span class="inspector-section-toggle" aria-hidden="true"></span>
                     <button type="button" class="inspector-section-fold"
-                            aria-expanded="@transformExpanded" title="@transformTitle"
+                            aria-expanded="@transformExpanded" aria-label="@(transformTitle + " Transform")" title="@transformTitle"
                             @onclick="() => ToggleSection(transformKey)">
                         <span class="tree-arrow">
                             <svg class="@transformChevron" viewBox="0 0 16 16" aria-hidden="true">
@@ -62,8 +59,10 @@
                                       stroke-width="1.2" stroke-linejoin="round" />
                             </svg>
                         </span>
-                        <span class="inspector-section-title">Transform</span>
                     </button>
+                    <span class="inspector-section-toggle-placeholder" aria-hidden="true"></span>
+                    <button type="button" class="inspector-section-name" title="@transformTitle"
+                            @onclick="() => ToggleSection(transformKey)">Transform</button>
                 </div>
 
                 @* One row per Vector3, each component labelled with its axis the way the ImGui inspector
@@ -125,16 +124,8 @@
 
                 <div class="inspector-section @(component.Enabled ? null : "is-disabled")">
                     <div class="inspector-section-header">
-                        @* Unity's enable toggle. Off stops the component without taking it off the object: a
-                           renderer stops drawing, a light stops lighting, a script stops ticking. It is its own
-                           control beside the fold button, so a click on it does not also fold the section. *@
-                        <input type="checkbox" class="inspector-section-toggle" checked="@component.Enabled"
-                               disabled="@(!CanEdit)" aria-label="@(componentTitle + " enabled")"
-                               title="@(component.Enabled ? "Switch " + componentTitle + " off" : "Switch " + componentTitle + " on")"
-                               @key="@KeyFor(toggleKey)"
-                               @onchange="e => SetComponentEnabled(node, component, e.Value is true)" />
                         <button type="button" class="inspector-section-fold"
-                                aria-expanded="@sectionExpanded" title="@sectionTitle"
+                                aria-expanded="@sectionExpanded" aria-label="@(sectionTitle + " " + componentTitle)" title="@sectionTitle"
                                 @onclick="() => ToggleSection(sectionKey)">
                             <span class="tree-arrow">
                                 <svg class="@sectionChevron" viewBox="0 0 16 16" aria-hidden="true">
@@ -149,8 +140,15 @@
                                     <rect x="6" y="6" width="4" height="4" rx="0.5" fill="currentColor" opacity="0.55" />
                                 </svg>
                             </span>
-                            <span class="inspector-section-title">@componentTitle</span>
                         </button>
+                        @* Keep the checkbox independent from the foldout: toggling it must not collapse the component. *@
+                        <input type="checkbox" class="inspector-section-toggle" checked="@component.Enabled"
+                               disabled="@(!CanEdit)" aria-label="@(componentTitle + " enabled")"
+                               title="@(component.Enabled ? "Switch " + componentTitle + " off" : "Switch " + componentTitle + " on")"
+                               @key="@KeyFor(toggleKey)"
+                               @onchange="e => SetComponentEnabled(node, component, e.Value is true)" />
+                        <button type="button" class="inspector-section-name" title="@sectionTitle"
+                                @onclick="() => ToggleSection(sectionKey)">@componentTitle</button>
                     </div>
 
                     <div class="inspector-section-body @(IsCollapsed(sectionKey) ? "collapsed" : null)">
