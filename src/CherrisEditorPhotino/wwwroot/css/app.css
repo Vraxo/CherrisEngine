@@ -1954,6 +1954,11 @@ span.panel-tab:hover {
     border-radius: var(--theme-radius);
 }
 
+/* The grid is the button: a faint difference while hovering, and it lands instantly — no fade. */
+.cb-grid:hover {
+    background: var(--theme-recessed);
+}
+
 .cb-item {
     display: flex;
     flex-direction: column;
