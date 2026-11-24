@@ -166,7 +166,7 @@ internal class InspectorPanel
         _componentAdder.Draw(go);
     }
 
-    /// <summary>Draw a foldout, icon, enable checkbox and title in Unity's header order.</summary>
+    /// <summary>Draw a component header with its enable checkbox on the right.</summary>
     /// <param name="component">The component the toggle switches, or null for the Transform.</param>
     private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen, Component? component = null)
     {
@@ -183,8 +183,28 @@ internal class InspectorPanel
         ImGui.Image(displayIcon, new Vector2(iconSize, iconSize));
         ImGui.SameLine();
 
+        // Reserve the right edge for the checkbox; long names are clipped before they can overlap it.
+        float titleX = ImGui.GetCursorPosX();
+        float toggleX = Math.Max(titleX, titleX + ImGui.GetContentRegionAvail().X - frameHeight);
+        ImGui.AlignTextToFramePadding();
         if (component is not null)
         {
+            Vector2 titleStart = ImGui.GetCursorScreenPos();
+            float clipRight = Math.Max(titleStart.X, ImGui.GetWindowPos().X + toggleX - ImGui.GetStyle().ItemSpacing.X);
+            ImGui.PushClipRect(titleStart, new Vector2(clipRight, ImGui.GetWindowPos().Y + ImGui.GetWindowHeight()), true);
+        }
+        ImGui.TextUnformatted(title);
+        if (ImGui.IsItemClicked())
+        {
+            // Match the previous collapsing header: clicking its title also opens or closes it.
+            isOpen = !isOpen;
+            ImGui.GetStateStorage().SetInt(ImGui.GetID("##fold"), isOpen ? 1 : 0);
+        }
+        if (component is not null)
+        {
+            ImGui.PopClipRect();
+            ImGui.SameLine();
+            ImGui.SetCursorPosX(toggleX);
             bool enabled = component.Enabled;
             if (ImGui.Checkbox("##enabled", ref enabled))
             {
@@ -196,21 +216,6 @@ internal class InspectorPanel
                     scene.IsDirty = true;
                 }
             }
-        }
-        else
-        {
-            // The Transform is always enabled; reserve the same space for aligned component names.
-            ImGui.Dummy(new Vector2(frameHeight, frameHeight));
-        }
-
-        ImGui.SameLine();
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextUnformatted(title);
-        if (ImGui.IsItemClicked())
-        {
-            // Match the previous collapsing header: clicking its title also opens or closes it.
-            isOpen = !isOpen;
-            ImGui.GetStateStorage().SetInt(ImGui.GetID("##fold"), isOpen ? 1 : 0);
         }
 
         ImGui.EndGroup();

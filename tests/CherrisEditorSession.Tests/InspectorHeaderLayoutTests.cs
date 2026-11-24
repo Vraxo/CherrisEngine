@@ -6,7 +6,7 @@ namespace CherrisEditorSession.Tests;
 public class InspectorHeaderLayoutTests
 {
     [Fact]
-    public void ComponentHeader_PlacesEnableToggleAfterFoldoutAndBeforeName()
+    public void ComponentHeader_PlacesEnableToggleToTheRightOfTheName()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         string? path = null;
@@ -33,7 +33,9 @@ public class InspectorHeaderLayoutTests
 
         fold.Should().BeGreaterThanOrEqualTo(0);
         foldEnd.Should().BeGreaterThan(fold);
-        toggle.Should().BeGreaterThan(foldEnd, "checking a component must not activate the foldout");
-        name.Should().BeGreaterThan(toggle);
+        name.Should().BeGreaterThan(foldEnd);
+        int nameEnd = header.IndexOf("</button>", name, StringComparison.Ordinal);
+        nameEnd.Should().BeGreaterThan(name);
+        toggle.Should().BeGreaterThan(nameEnd, "the checkbox belongs to the right of the name and outside the fold controls");
     }
 }
