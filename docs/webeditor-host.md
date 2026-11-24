@@ -395,10 +395,14 @@ Euler degrees rather than as a quaternion, which is what the ImGui inspector edi
 (`Quaternion.CreateFromYawPitchRoll` on the way back).
 
 Component headers, Add Component rows and inspector foldouts use the locally bundled Font Awesome Free 7.1.0
-glyphs, so the same icon follows a component from the menu to the header. `InspectorPanel.razor` maps each
-component type to a glyph and a colour class; the colours read `--theme-accent-*` roles, so they follow
-whichever theme is applied. The foldout chevron sits in a 10px slot with a 2px gap, leaving just a 4px inset
-to its left and no extra gutter inside the arrow's own box.
+glyphs, so the same icon follows a component from the menu to the header. The Camera uses Font Awesome's
+movie/video camera in a light-blue tint. `InspectorPanel.razor` maps each component type to a glyph and a
+colour class; the colours read `--theme-accent-*` roles, so they follow whichever theme is applied. The
+foldout chevron sits in a 10px slot with a 4px inset to its left, and a 4px gap separates the chevron,
+component icon and component name without adding a gutter inside the arrow's own box.
+
+The object name is an editable field with the standard inspector textbox chrome at rest, not just a borderless
+title that reveals itself on hover.
 
 ## Editing from the web UI
 

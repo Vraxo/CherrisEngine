@@ -30,7 +30,7 @@
 
             <div class="inspector-object">
                 <i class="fa-solid fa-cube inspector-object-icon component-icon-blue" aria-hidden="true"></i>
-                <input type="text" class="inspector-name" value="@node.Name" disabled="@(!CanEdit)"
+                <input type="text" class="imgui-input inspector-name" value="@node.Name" disabled="@(!CanEdit)"
                        @key="KeyFor(nameKey)" aria-label="Object name" title="Rename this object"
                        @onchange="e => Rename(node, e.Value?.ToString())" />
             </div>
@@ -784,7 +784,8 @@
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["Transform"] = ("fa-arrows-up-down-left-right", "component-icon-blue"),
-            ["Camera"] = ("fa-camera", "component-icon-blue"),
+            // Font Awesome's movie/video camera (fa-video, also named fa-video-camera), not a still camera.
+            ["Camera"] = ("fa-video", "component-icon-light-blue"),
             ["Light"] = ("fa-lightbulb", "component-icon-yellow"),
             ["AudioSource"] = ("fa-volume-high", "component-icon-green"),
             ["AudioListener"] = ("fa-ear-listen", "component-icon-purple"),
