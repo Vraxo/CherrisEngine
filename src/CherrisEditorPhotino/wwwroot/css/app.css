@@ -1315,10 +1315,11 @@ span.panel-tab:hover {
 /* Unity's inspector is one continuous surface: headers and property rows share a background,
    with thin rules separating components. */
 .inspector-section {
-    --inspector-inset: 6px;
-    --inspector-fold-width: 16px;
+    /* The foldout is only as wide as its 10px chevron: no extra gutters around the arrow. */
+    --inspector-inset: 4px;
+    --inspector-fold-width: 10px;
     --inspector-icon-width: 12px;
-    --inspector-header-gap: 4px;
+    --inspector-header-gap: 2px;
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     background: var(--theme-panel);
 }
@@ -1365,10 +1366,12 @@ span.panel-tab:hover {
     outline-offset: 2px;
 }
 
-/* Fix the foldout width so titles and the property labels below stay aligned. */
+/* Fix the foldout width so titles and the property labels below stay aligned. The arrow itself has no
+   padding: the 10px slot is the whole 10px glyph. */
 .inspector-section-fold .tree-arrow {
     flex: 0 0 var(--inspector-fold-width);
     width: var(--inspector-fold-width);
+    padding: 0;
 }
 
 /* A component the author switched off: Unity dims its header, and leaves the properties editable. */
@@ -1383,20 +1386,22 @@ span.panel-tab:hover {
     opacity: 0.55;
 }
 
+/* Component glyphs are Font Awesome icons; the fixed slot keeps the foldout and title aligned. */
 .inspector-section-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: none;
     width: var(--inspector-icon-width);
-    height: 12px;
+    height: var(--inspector-icon-width);
     color: var(--theme-foreground-header);
-    opacity: 0.85;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
 }
 
-.inspector-section-icon svg {
-    width: 12px;
-    height: 12px;
+.inspector-section-icon::before {
+    line-height: 1;
 }
 
 .inspector-section-name {
@@ -1447,10 +1452,46 @@ span.panel-tab:hover {
 }
 
 .inspector-object-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex: none;
     width: 14px;
     height: 14px;
     color: var(--theme-foreground-header);
+    font-size: 13px;
+    line-height: 1;
+    text-align: center;
+}
+
+/* Each component family gets one of the editor's accent roles. These are roles, not fixed colours, so a
+   theme switch recolours the Font Awesome glyphs along with the rest of the editor. */
+.component-icon-blue {
+    color: var(--theme-accent-blue);
+}
+
+.component-icon-green {
+    color: var(--theme-accent-green);
+}
+
+.component-icon-orange {
+    color: var(--theme-accent-orange);
+}
+
+.component-icon-pink {
+    color: var(--theme-accent-pink);
+}
+
+.component-icon-purple {
+    color: var(--theme-accent-purple);
+}
+
+.component-icon-red {
+    color: var(--theme-accent-red);
+}
+
+.component-icon-yellow {
+    color: var(--theme-accent-yellow);
 }
 
 .inspector-name {
@@ -1683,6 +1724,30 @@ span.panel-tab:hover {
     background: var(--theme-dropdown);
     border: var(--theme-border-width) solid var(--theme-dropdown-outline);
     border-radius: var(--theme-radius);
+}
+
+/* Add Component rows lead with the same coloured Font Awesome glyph as the header they will create. */
+.add-menu .menu-item {
+    justify-content: flex-start;
+    gap: 8px;
+    padding-left: 6px;
+}
+
+.add-menu-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    font-size: 12px;
+    line-height: 1;
+    text-align: center;
+}
+
+.menu-item:disabled .add-menu-icon {
+    color: var(--theme-accent-gray);
+    opacity: 0.6;
 }
 
 /* One vector component: Unity draws the axis letter inside the field on a small tinted chip, rather than
@@ -2084,7 +2149,7 @@ span.panel-tab:hover {
     pointer-events: none;
 }
 
-/* The tree and the details categories use a thin chevron, rotated when open, like Slate's. */
+/* The hierarchy tree keeps its thin SVG chevron, rotated when open, like Slate's. */
 .tree-chevron {
     width: 10px;
     height: 10px;
@@ -2093,6 +2158,20 @@ span.panel-tab:hover {
 
 .tree-chevron.expanded {
     transform: rotate(90deg);
+}
+
+/* Inspector foldouts use a Font Awesome chevron in the tight 10px arrow slot. Collapsed points right;
+   expanded points down without adding any padding around the glyph. */
+.fold-chevron {
+    width: 1em;
+    font-size: 10px;
+    line-height: 1;
+    transform: rotate(-90deg);
+    transition: transform 90ms ease-out;
+}
+
+.fold-chevron.expanded {
+    transform: rotate(0deg);
 }
 
 /* SimpleButton: unpainted normally, Dropdown on hover *and* while pressed, Foreground when

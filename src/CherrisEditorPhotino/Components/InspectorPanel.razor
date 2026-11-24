@@ -26,15 +26,10 @@
             string transformKey = node.Id.ToString() + ":transform";
             string transformExpanded = IsCollapsed(transformKey) ? "false" : "true";
             string transformTitle = IsCollapsed(transformKey) ? "Expand" : "Collapse";
-            string transformChevron = IsCollapsed(transformKey) ? "tree-chevron" : "tree-chevron expanded";
+            string transformChevron = IsCollapsed(transformKey) ? "fold-chevron" : "fold-chevron expanded";
 
             <div class="inspector-object">
-                <svg class="inspector-object-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="M8 1.8 14 4.9v6.2L8 14.2 2 11.1V4.9z" fill="none" stroke="currentColor"
-                          stroke-width="1.2" stroke-linejoin="round" />
-                    <path d="M2 4.9 8 8l6-3.1M8 8v6.2" fill="none" stroke="currentColor"
-                          stroke-width="1.2" stroke-linejoin="round" />
-                </svg>
+                <i class="fa-solid fa-cube inspector-object-icon component-icon-blue" aria-hidden="true"></i>
                 <input type="text" class="inspector-name" value="@node.Name" disabled="@(!CanEdit)"
                        @key="KeyFor(nameKey)" aria-label="Object name" title="Rename this object"
                        @onchange="e => Rename(node, e.Value?.ToString())" />
@@ -46,19 +41,10 @@
                             aria-expanded="@transformExpanded" aria-label="@(transformTitle + " Transform")" title="@transformTitle"
                             @onclick="() => ToggleSection(transformKey)">
                         <span class="tree-arrow">
-                            <svg class="@transformChevron" viewBox="0 0 16 16" aria-hidden="true">
-                                <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.4"
-                                      stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
+                            <i class="fa-solid fa-chevron-down fa-width-auto @transformChevron" aria-hidden="true"></i>
                         </span>
-                        <span class="inspector-section-icon" aria-hidden="true">
-                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                                <path d="M8 1.8 14 4.9v6.2L8 14.2 2 11.1V4.9z" fill="none" stroke="currentColor"
-                                      stroke-width="1.2" stroke-linejoin="round" />
-                                <path d="M2 4.9 8 8l6-3.1M8 8v6.2" fill="none" stroke="currentColor"
-                                      stroke-width="1.2" stroke-linejoin="round" />
-                            </svg>
-                        </span>
+                        <i class="fa-solid fa-arrows-up-down-left-right inspector-section-icon component-icon-blue"
+                           aria-hidden="true"></i>
                     </button>
                     <button type="button" class="inspector-section-name" title="@transformTitle"
                             @onclick="() => ToggleSection(transformKey)">Transform</button>
@@ -117,8 +103,10 @@
                 string sectionKey = node.Id.ToString() + ":" + component.TypeName;
                 string sectionExpanded = IsCollapsed(sectionKey) ? "false" : "true";
                 string sectionTitle = IsCollapsed(sectionKey) ? "Expand" : "Collapse";
-                string sectionChevron = IsCollapsed(sectionKey) ? "tree-chevron" : "tree-chevron expanded";
+                string sectionChevron = IsCollapsed(sectionKey) ? "fold-chevron" : "fold-chevron expanded";
                 string componentTitle = DisplayName(component.TypeName);
+                string iconClass = IconClass(component.TypeName);
+                string iconColorClass = IconColorClass(component.TypeName);
                 string toggleKey = sectionKey + ":enabled";
                 bool enabled = _pendingToggles.Value(node.Id, component.TypeName, component.Enabled);
 
@@ -128,18 +116,10 @@
                                 aria-expanded="@sectionExpanded" aria-label="@(sectionTitle + " " + componentTitle)" title="@sectionTitle"
                                 @onclick="() => ToggleSection(sectionKey)">
                             <span class="tree-arrow">
-                                <svg class="@sectionChevron" viewBox="0 0 16 16" aria-hidden="true">
-                                    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
-                                          stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                                </svg>
+                                <i class="fa-solid fa-chevron-down fa-width-auto @sectionChevron" aria-hidden="true"></i>
                             </span>
-                            <span class="inspector-section-icon" aria-hidden="true">
-                                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                                    <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor"
-                                          stroke-width="1.2" />
-                                    <rect x="6" y="6" width="4" height="4" rx="0.5" fill="currentColor" opacity="0.55" />
-                                </svg>
-                            </span>
+                            <i class="fa-solid @iconClass inspector-section-icon @iconColorClass"
+                               aria-hidden="true"></i>
                         </button>
                         <button type="button" class="inspector-section-name" title="@sectionTitle"
                                 @onclick="() => ToggleSection(sectionKey)">@componentTitle</button>
@@ -321,6 +301,8 @@
                             {
                                 <button type="button" class="menu-item" role="menuitem"
                                         @onclick="() => AddComponent(node, entry)">
+                                    <i class="fa-solid @IconClass(entry.ComponentType) add-menu-icon @IconColorClass(entry.ComponentType)"
+                                       aria-hidden="true"></i>
                                     <span>@entry.DisplayName</span>
                                 </button>
                             }
@@ -335,6 +317,7 @@
                                     disabled="@(!CanAddScript() || scriptName is null)"
                                     title="@ScriptTitle(query, scriptName, ScriptKind.Lua)"
                                     @onclick="() => AddScript(node, ScriptKind.Lua)">
+                                <i class="fa-solid fa-scroll add-menu-icon component-icon-purple" aria-hidden="true"></i>
                                 <span>@ScriptLabel(query, scriptName, ScriptKind.Lua)</span>
                             </button>
 
@@ -342,6 +325,7 @@
                                     disabled="@(!CanAddScript() || scriptName is null)"
                                     title="@ScriptTitle(query, scriptName, ScriptKind.CSharp)"
                                     @onclick="() => AddScript(node, ScriptKind.CSharp)">
+                                <i class="fa-solid fa-code add-menu-icon component-icon-purple" aria-hidden="true"></i>
                                 <span>@ScriptLabel(query, scriptName, ScriptKind.CSharp)</span>
                             </button>
                         }
@@ -790,6 +774,59 @@
         string spaced = Regex.Replace(name, "(?<!^)([A-Z])(?=[a-z])", " $1");
         return Regex.Replace(spaced, @"\b(Of|The|And|To|In|On)\b", match => match.Value.ToLowerInvariant());
     }
+
+    /// <summary>
+    /// The Font Awesome glyph and theme colour for each component. The colours are CSS classes backed by
+    /// theme roles, so an icon still recolours when the editor changes theme; a script or an unknown
+    /// component receives a generic component glyph.
+    /// </summary>
+    private static readonly Dictionary<string, (string Glyph, string Color)> ComponentIcons =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Transform"] = ("fa-arrows-up-down-left-right", "component-icon-blue"),
+            ["Camera"] = ("fa-camera", "component-icon-blue"),
+            ["Light"] = ("fa-lightbulb", "component-icon-yellow"),
+            ["AudioSource"] = ("fa-volume-high", "component-icon-green"),
+            ["AudioListener"] = ("fa-ear-listen", "component-icon-purple"),
+            ["MeshRenderer"] = ("fa-cube", "component-icon-green"),
+            ["RigidBody"] = ("fa-weight-hanging", "component-icon-orange"),
+            ["Skybox"] = ("fa-mountain-sun", "component-icon-pink"),
+            ["Script"] = ("fa-code", "component-icon-purple"),
+            ["LanguageScript"] = ("fa-scroll", "component-icon-purple")
+        };
+
+    private static (string Glyph, string Color) IconFor(string typeName)
+    {
+        if (ComponentIcons.TryGetValue(typeName, out var icon))
+        {
+            return icon;
+        }
+
+        return typeName.Contains("Script", StringComparison.OrdinalIgnoreCase)
+            ? ("fa-code", "component-icon-purple")
+            : ("fa-puzzle-piece", "component-icon-purple");
+    }
+
+    /// <summary>Compiled C# scripts get the script glyph even though their class names are project-specific.</summary>
+    private static (string Glyph, string Color) IconFor(Type componentType)
+    {
+        if (ComponentIcons.TryGetValue(componentType.Name, out var icon))
+        {
+            return icon;
+        }
+
+        return typeof(Script).IsAssignableFrom(componentType)
+            ? ("fa-code", "component-icon-purple")
+            : ("fa-puzzle-piece", "component-icon-purple");
+    }
+
+    private static string IconClass(string typeName) => IconFor(typeName).Glyph;
+
+    private static string IconClass(Type componentType) => IconFor(componentType).Glyph;
+
+    private static string IconColorClass(string typeName) => IconFor(typeName).Color;
+
+    private static string IconColorClass(Type componentType) => IconFor(componentType).Color;
 
     /// <summary>A bound as an attribute value: empty means "none", which the drag script reads as no clamp.</summary>
     private static string RangeText(float? bound) => bound is float value ? Format(value) : string.Empty;

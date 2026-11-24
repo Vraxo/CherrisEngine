@@ -394,6 +394,12 @@ field labelled by its axis in the same red/green/blue (`TransformRows`, `.vec-ax
 Euler degrees rather than as a quaternion, which is what the ImGui inspector edits
 (`Quaternion.CreateFromYawPitchRoll` on the way back).
 
+Component headers, Add Component rows and inspector foldouts use the locally bundled Font Awesome Free 7.1.0
+glyphs, so the same icon follows a component from the menu to the header. `InspectorPanel.razor` maps each
+component type to a glyph and a colour class; the colours read `--theme-accent-*` roles, so they follow
+whichever theme is applied. The foldout chevron sits in a 10px slot with a 2px gap, leaving just a 4px inset
+to its left and no extra gutter inside the arrow's own box.
+
 ## Editing from the web UI
 
 Everything the inspector shows is editable, and every edit is a command: **Add Component**, the object's name, the

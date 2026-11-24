@@ -190,8 +190,8 @@ Fonts are bundled in the repository, since neither front end may depend on a sys
 - Both directories carry the SIL Open Font License text (`Roboto-OFL.txt`, `Roboto-LICENSE.txt`) that the
   fonts require.
 
-`RobotoMono-Regular.TTF` has no `▸`, `▾` or `→` glyphs, so the tree and the details categories draw their
-disclosure arrows as inline SVG chevrons instead of text.
+`RobotoMono-Regular.TTF` has no `▸`, `▾` or `→` glyphs, so the hierarchy tree draws its disclosure arrows as
+inline SVG chevrons and the inspector foldouts use bundled Font Awesome chevrons instead of text.
 
 ## Where else the look is reproduced
 
