@@ -1,3 +1,4 @@
+@using Cherris.Scripting
 @inject EditorHostService Host
 @inject ScenePreviewStore Previews
 @implements IDisposable
@@ -17,14 +18,15 @@
 
     <div class="imgui-separator"></div>
 
-    <div class="cb-grid">
+    <div class="cb-grid" title="Right-click to create a scene, script or folder"
+         @oncontextmenu="(MouseEventArgs args) => OpenMenuAtPointer(args)" @oncontextmenu:preventDefault="true">
         @if (Host.ProjectRoot is null)
         {
             <p class="panel-empty">No project folder is open.</p>
         }
         else if (_entries.Count == 0)
         {
-            <p class="panel-empty">This folder is empty.</p>
+            <p class="panel-empty">This folder is empty. Right-click to create something in it.</p>
         }
         else
         {
@@ -33,7 +35,9 @@
                 <button type="button" class="cb-item @(_selectedPath == entry.FullPath ? "selected" : "")"
                         title="@EntryTitle(entry)"
                         @onclick="() => Select(entry)"
-                        @ondblclick="() => Activate(entry)">
+                        @ondblclick="() => Activate(entry)"
+                        @oncontextmenu="(MouseEventArgs args) => OpenMenu(args, entry)"
+                        @oncontextmenu:preventDefault="true" @oncontextmenu:stopPropagation="true">
                     @if (Previews.Get(entry.FullPath) is SceneThumbnail preview)
                     {
                         <SceneThumbnailView Thumbnail="preview" />
@@ -49,6 +53,52 @@
     </div>
 </div>
 
+@if (_menuOpen)
+{
+    <div class="menu-scrim" @onclick="CloseMenu"></div>
+
+    @* The menu hangs at the pointer, and the style clamps it to the window so a right-click near an edge does not
+       open it off screen. *@
+    <div class="menu-popup cb-menu" role="menu" style="@MenuStyle">
+        @if (_menuTarget is Entry target)
+        {
+            <button type="button" class="menu-item" role="menuitem" @onclick="() => ActivateFromMenu(target)">
+                <span>@(target.IsDirectory ? "Open Folder" : "Open Scene")</span>
+            </button>
+
+            <div class="menu-separator"></div>
+        }
+
+        <button type="button" class="menu-item" role="menuitem" @onclick="() => BeginCreate(CreateKind.Scene)">
+            <span>New Scene…</span>
+        </button>
+
+        <button type="button" class="menu-item" role="menuitem" disabled="@(!CanCreateScript)"
+                title="@ScriptMenuTitle" @onclick="() => BeginCreate(CreateKind.Script)">
+            <span>New Script…</span>
+        </button>
+
+        <button type="button" class="menu-item" role="menuitem" @onclick="() => BeginCreate(CreateKind.Folder)">
+            <span>New Folder…</span>
+        </button>
+
+        <div class="menu-separator"></div>
+
+        <button type="button" class="menu-item" role="menuitem" @onclick="RefreshFromMenu">
+            <span>Refresh</span>
+        </button>
+    </div>
+}
+
+<NewItemDialog Visible="@(_dialogKind != CreateKind.None)"
+               Title="@DialogTitle"
+               Text="@DialogText"
+               Label="@DialogLabel"
+               DefaultName="@_dialogName"
+               Hint="@DialogHint"
+               OnCreate="@CreateItem"
+               OnClose="@CloseDialog" />
+
 @code {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
 
@@ -57,7 +107,37 @@
     private string? _selectedPath;
     private Timer? _timer;
 
+    // The context menu: open or not, where it was opened, the tile it was opened on, and the folder anything it
+    // creates goes into.
+    private bool _menuOpen;
+    private double _menuX;
+    private double _menuY;
+    private Entry? _menuTarget;
+    private string? _menuDirectory;
+
+    // The creation dialog, and what it is creating. The folder is fixed when the menu closes: it is the folder the
+    // user right-clicked, not wherever the browser has moved to by the time they finish typing.
+    private CreateKind _dialogKind;
+    private string? _dialogDirectory;
+    private string _dialogName = string.Empty;
+
     private sealed record Entry(string FullPath, string Name, bool IsDirectory);
+
+    /// <summary>What the context menu can create.</summary>
+    private enum CreateKind
+    {
+        /// <summary>No dialog is open.</summary>
+        None,
+
+        /// <summary>A scene file: a camera and a sun, opened when it is written.</summary>
+        Scene,
+
+        /// <summary>A Lua script, which always lands in <c>Scripts/</c>.</summary>
+        Script,
+
+        /// <summary>An empty folder, somewhere to put the other two.</summary>
+        Folder
+    }
 
     private string ProjectRoot => Host.ProjectRoot ?? string.Empty;
 
@@ -121,6 +201,10 @@
         {
             _entries.Clear();
             _entries.AddRange(entries);
+
+            // A menu left open over a folder that changed underneath it names files that may no longer be there.
+            _menuOpen = false;
+
             StateHasChanged();
         });
 
@@ -300,6 +384,202 @@
             builder.CloseElement();
         };
     }
+
+    // ---- context menu ----
+
+    private string MenuStyle =>
+        $"left: min({_menuX.ToString(CultureInfo.InvariantCulture)}px, calc(100vw - 232px)); " +
+        $"top: min({_menuY.ToString(CultureInfo.InvariantCulture)}px, calc(100vh - 200px))";
+
+    /// <summary>
+    /// Opens the menu where the pointer is. A tile decides the folder: a folder is created in itself, everything else
+    /// in the folder being shown, which is what right-clicking the tile of a scene means.
+    /// </summary>
+    private void OpenMenuAtPointer(MouseEventArgs args) => OpenMenu(args, null);
+
+    private void OpenMenu(MouseEventArgs args, Entry? entry)
+    {
+        _menuX = args.ClientX;
+        _menuY = args.ClientY;
+        _menuTarget = entry;
+
+        if (entry is { IsDirectory: true } folder)
+        {
+            _menuDirectory = folder.FullPath;
+        }
+        else
+        {
+            _menuDirectory = _currentDirectory ?? Host.ProjectRoot;
+        }
+
+        // With no project there is no folder to write into; the panel already says so.
+        _menuOpen = _menuDirectory is not null;
+    }
+
+    private void CloseMenu()
+    {
+        _menuOpen = false;
+        _menuTarget = null;
+    }
+
+    private void RefreshFromMenu()
+    {
+        CloseMenu();
+        Refresh();
+    }
+
+    private void ActivateFromMenu(Entry entry)
+    {
+        CloseMenu();
+        Activate(entry);
+    }
+
+    /// <summary>
+    /// Scripts are Lua and live in <c>Scripts/</c> — <c>LanguageScript</c> refuses any other folder — so the menu
+    /// offers one from the project root and from that folder, and says why elsewhere.
+    /// </summary>
+    private bool CanCreateScript =>
+        _menuDirectory is string directory &&
+        Host.ProjectRoot is string root &&
+        (IsSameFolder(directory, root) || IsSameFolder(directory, Path.Combine(root, ScriptTemplate.Folder)));
+
+    private string ScriptMenuTitle => CanCreateScript
+        ? $"Write a Lua script into {ScriptTemplate.Folder}/"
+        : $"Scripts live in {ScriptTemplate.Folder}/: open that folder to add one";
+
+    // ---- creating ----
+
+    private void BeginCreate(CreateKind kind)
+    {
+        _dialogDirectory = _menuDirectory;
+        _dialogKind = kind;
+
+        string? root = Host.ProjectRoot;
+
+        switch (kind)
+        {
+            case CreateKind.Scene:
+                _dialogName = _dialogDirectory is string sceneFolder
+                    ? ProjectFileName.Available(sceneFolder, SceneTemplate.DefaultName, SceneTemplate.Extension)
+                    : SceneTemplate.DefaultName;
+                break;
+
+            case CreateKind.Script:
+                // Fixed by the engine's convention rather than by where the menu was opened.
+                _dialogDirectory = root is null ? null : Path.Combine(root, ScriptTemplate.Folder);
+                _dialogName = ProjectFileName.Available(_dialogDirectory ?? string.Empty, "NewScript", ScriptTemplate.Extension);
+                break;
+
+            default:
+                _dialogName = _dialogDirectory is string folderFolder
+                    ? ProjectFileName.Available(folderFolder, "New Folder", string.Empty)
+                    : "New Folder";
+                break;
+        }
+
+        CloseMenu();
+    }
+
+    private void CloseDialog() => _dialogKind = CreateKind.None;
+
+    private string DialogTitle => _dialogKind switch
+    {
+        CreateKind.Scene => "New Scene",
+        CreateKind.Script => "New Script",
+        _ => "New Folder"
+    };
+
+    private string DialogText => _dialogKind switch
+    {
+        CreateKind.Scene =>
+            "A new scene starts with a camera and a sun, so it opens with something to look through and something to " +
+            "light it. It is written into this folder and opened.",
+        CreateKind.Script =>
+            $"A Lua script is written into {ScriptTemplate.Folder}/, where the engine looks for scripts, and the " +
+            "browser follows it there.",
+        _ => "An empty folder, somewhere to put scenes and scripts. Nothing is written inside it."
+    };
+
+    private string DialogLabel => _dialogKind switch
+    {
+        CreateKind.Scene => "Scene name",
+        CreateKind.Script => "Script name",
+        _ => "Folder name"
+    };
+
+    private string DialogHint(string typed)
+    {
+        string root = Host.ProjectRoot ?? string.Empty;
+
+        if (_dialogKind == CreateKind.Script)
+        {
+            return ScriptTemplate.FullPath(root, typed) is { } path
+                ? $"Saves to {ProjectFileName.Describe(path, root)}"
+                : "A script name starts with a letter or underscore, then letters, digits or underscores.";
+        }
+
+        string extension = _dialogKind == CreateKind.Scene ? SceneTemplate.Extension : string.Empty;
+        string verb = _dialogKind == CreateKind.Folder ? "Creates" : "Saves to";
+
+        return ProjectFileName.TryPreview(_dialogDirectory, typed, extension, out string preview)
+            ? $"{verb} {ProjectFileName.Describe(preview, root)}"
+            : "Type a name to see what it becomes.";
+    }
+
+    /// <summary>Creates what the dialog asked for, and shows it; an error leaves the dialog open with the reason.</summary>
+    private string? CreateItem(string name)
+    {
+        string? error = null;
+        string? created;
+
+        if (_dialogKind == CreateKind.Scene)
+        {
+            created = Host.CreateScene(name, _dialogDirectory, out error);
+        }
+        else if (_dialogKind == CreateKind.Script)
+        {
+            created = Host.CreateScript(name, out error);
+        }
+        else if (_dialogKind == CreateKind.Folder)
+        {
+            created = Host.CreateFolder(name, _dialogDirectory, out error);
+        }
+        else
+        {
+            return "Nothing to create.";
+        }
+
+        if (created is null)
+        {
+            return error ?? "Nothing was created.";
+        }
+
+        ShowCreated(created);
+
+        return null;
+    }
+
+    /// <summary>Points the browser at what was just created, so it is seen rather than merely present.</summary>
+    private void ShowCreated(string path)
+    {
+        // A script lands in Scripts/ wherever the menu was opened, so following the file is the only way it is seen.
+        // A created folder is selected in the folder that holds it, which is where the menu was opened.
+        if (Path.GetDirectoryName(path) is { } folder && !IsSameFolder(folder, _currentDirectory))
+        {
+            _currentDirectory = folder;
+        }
+
+        Refresh();
+        _selectedPath = path;
+    }
+
+    private static bool IsSameFolder(string? left, string? right) =>
+        left is not null &&
+        right is not null &&
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(left),
+            Path.TrimEndingDirectorySeparator(right),
+            StringComparison.OrdinalIgnoreCase);
 
     public void Dispose()
     {

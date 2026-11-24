@@ -22,13 +22,6 @@ namespace CherrisEditorWeb;
 /// </remarks>
 public static class SceneTemplate
 {
-    /// <summary>
-    /// Characters a scene name may not contain. The list is the same on every platform on purpose: a project is
-    /// usually committed and opened somewhere else, and a scene called <c>Level:1</c> would only reveal itself as a
-    /// problem on the machine that cannot write it.
-    /// </summary>
-    private static readonly char[] InvalidNameChars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
-
     /// <summary>The extension scenes are saved with, which is what the content browser previews.</summary>
     public const string Extension = ".yaml";
 
@@ -127,31 +120,15 @@ public static class SceneTemplate
     public static bool TryNormalizeName(string? name, out string fileName, out string error)
     {
         fileName = string.Empty;
-        error = string.Empty;
 
-        string trimmed = (name ?? string.Empty).Trim();
-
-        if (trimmed.Length == 0)
+        // The file-name rule is the project's, not the scene's: the folder the file lands in is what has to be able
+        // to hold it, on whichever platform the project is opened on.
+        if (!ProjectFileName.TryNormalize(name, out string trimmed, out error))
         {
-            error = "Give the scene a name.";
             return false;
         }
 
-        // A scene lives in the project folder, so a name may not point anywhere else, hidden or otherwise, and may
-        // not hold anything a file name cannot say on every platform the project may be opened on.
-        if (trimmed.StartsWith('.') || trimmed.IndexOfAny(InvalidNameChars) >= 0 || trimmed.Any(char.IsControl))
-        {
-            error = "A scene name cannot contain a path or any of \\ / : * ? \" < > |.";
-            return false;
-        }
-
-        if (!trimmed.EndsWith(Extension, StringComparison.OrdinalIgnoreCase) &&
-            !trimmed.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed += Extension;
-        }
-
-        fileName = trimmed;
+        fileName = ProjectFileName.WithExtension(trimmed, Extension);
 
         return true;
     }

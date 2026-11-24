@@ -212,7 +212,7 @@ chrome is deliberately the same so muscle memory carries over:
 | Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
 | `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel`; **Show Grid** is a checkable item that turns the renderer's grid on and off (see [Flying the camera](#flying-the-camera)) |
 | `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
-| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, a listing of the open project folder that never writes to it; scene tiles carry a preview and open the scene on double-click (see [Scene previews](#scene-previews)) |
+| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, a listing of the open project folder; scene tiles carry a preview and open the scene on double-click, and right-clicking creates files (see [Making things in the browser](#making-things-in-the-browser)) |
 | Theme: `ImGuiTheme.Apply(EditorTheme)` | the same `EditorTheme`, applied as `--theme-*` tokens (see [themes.md](themes.md)) |
 
 Colors come from the engine's own palette rather than an approximation of it — see
@@ -303,6 +303,31 @@ Scenes are also opened by double-clicking their tile in the content browser — 
 made. A tile the browser shows as a scene responds; the file is read by the session, not by the panel, so a double-click
 never has to wait for a preview, and a YAML that turns out not to be a scene is refused in the hierarchy instead of
 taking the viewport over with the demo scene.
+
+### Making things in the browser
+
+Right-clicking the content browser opens a menu at the pointer, and what it creates lands in the folder that was
+under it: a folder tile means inside that folder, anything else means the folder being shown, and the project root
+when neither applies. The menu is the same one everywhere — **New Scene…**, **New Script…**, **New Folder…** — plus
+**Open** on a tile and **Refresh** for a folder that changed outside the editor.
+
+All three go through one dialog (`NewItemDialog`), also used by **File > New Scene…**: a name field, the path the
+name becomes before anything is written, and the reason when a name cannot be used. The dialog stays open on a
+refusal, so a taken name costs a keystroke rather than the whole dialog, and closes itself when the file is written.
+
+Where a thing may be written is the engine's rule, not a preference:
+
+- **Scenes** go anywhere inside the project, and are opened when written.
+- **Scripts** are Lua and live in `Scripts/`, because `LanguageScript` refuses a script kept elsewhere. The menu
+  offers one from the project root and from `Scripts/` itself, and is disabled with a reason anywhere else, rather
+  than writing a file the engine would never run.
+- **Folders** go anywhere inside the project, and hold nothing of their own.
+
+The name rules are one set for all of them (`ProjectFileName`): trimmed, no path separators, and none of the
+characters Windows refuses, whatever the platform the editor is running on — a project is usually committed and
+opened somewhere else. Scenes add their extension when it is left off. After creating, the browser follows the file:
+a script created from anywhere leaves the browser in `Scripts/` with the new script selected, because that is where
+it went.
 
 ### Scene previews
 
