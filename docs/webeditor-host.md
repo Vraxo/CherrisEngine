@@ -339,6 +339,22 @@ opened somewhere else. Scenes add their extension when it is left off. After cre
 a script created from anywhere leaves the browser in `Scripts/` with the new script selected, because that is where
 it went.
 
+### What a scene without a skybox is seen against
+
+A `Skybox` is an asset reference, not a setting: the component holds a cube map loaded from a folder of six images
+(`Right`, `Left`, `Top`, `Bottom`, `Front`, `Back`, square and all the same size), so a new scene cannot bring one
+without also bringing the files it points at. `SceneTemplate` therefore still writes a camera and a sun and nothing
+else, and the sky is the renderer's job instead: the skybox pass draws the scene's cube map when it has one and a
+gradient when it does not, so the background is never just the buffer the frame was cleared to. That matters most
+for a new scene, which otherwise opens as a black void with a grid fading out in it, but it is the same code path at
+runtime — a game that never sets a skybox gets the horizon too.
+
+The gradient's three colours live beside the pass that draws them (`OpenGLSkyboxRenderer.SkyZenith`, `SkyHorizon`,
+`SkyGround`), so the look is tuned in one place, and they are linear values: the whole scene pass is composited
+through the tone map and the gamma curve afterwards, which is why the numbers are darker than the picture they
+produce. A skybox in the scene file changes none of this — a cube map that a backend cannot sample falls back to the
+gradient rather than to an unbound texture.
+
 ### Scene previews
 
 The content browser draws a scene file as a preview of the scene instead of a page icon: a top-down map of the
