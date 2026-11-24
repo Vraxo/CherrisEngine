@@ -15,7 +15,8 @@ public class InspectorResetMarkupTests
     {
         string markup = ReadInspector();
 
-        List<string> parameters = [.. markup.Split("ResetButton CanReset=\"").Skip(1)];
+        // The attribute keeps the code transition it is written with, so each value reads "@(CanEdit && ...".
+        List<string> parameters = [.. markup.Split("ResetButton CanReset=\"@").Skip(1)];
 
         parameters.Should().HaveCount(2, "a transform row and a property each have one arrow");
         parameters.Should().OnlyContain(
