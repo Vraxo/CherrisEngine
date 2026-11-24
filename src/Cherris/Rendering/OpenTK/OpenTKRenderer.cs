@@ -97,10 +97,9 @@ public class OpenTKRenderer : IRenderer, IDisposable
             aspect,
             mainCamera.NearClipPlane,
             mainCamera.FarClipPlane);
-        if (skybox?.CubeMapTexture is not null)
-        {
-            _skyboxRenderer.Render(skybox, view, projection);
-        }
+        // Drawn whether or not the scene brought a skybox: without this the background is a cleared buffer, and an
+        // empty scene reads as a black void with a grid floating in it, in the editor and at runtime alike.
+        _skyboxRenderer.Render(skybox, view, projection);
         if (!isRuntimeMode)
         {
             if (ShowGrid)

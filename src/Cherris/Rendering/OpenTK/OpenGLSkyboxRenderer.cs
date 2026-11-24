@@ -10,7 +10,20 @@ internal class OpenGLSkyboxRenderer : IDisposable
     private readonly int _viewLoc;
     private readonly int _projLoc;
     private readonly int _samplerLoc;
+    private readonly int _hasSkyboxLoc;
+    private readonly int _skyZenithLoc;
+    private readonly int _skyHorizonLoc;
+    private readonly int _skyGroundLoc;
     private readonly OpenGLMeshRendererData _cubeData;
+
+    /// <summary>The sky above the horizon when a scene has no skybox of its own.</summary>
+    public static Vector3 SkyZenith { get; } = new(0.070f, 0.090f, 0.140f);
+
+    /// <summary>The band the horizon sits in when a scene has no skybox of its own.</summary>
+    public static Vector3 SkyHorizon { get; } = new(0.200f, 0.205f, 0.220f);
+
+    /// <summary>The sky below the horizon when a scene has no skybox of its own.</summary>
+    public static Vector3 SkyGround { get; } = new(0.050f, 0.050f, 0.055f);
 
     public OpenGLSkyboxRenderer()
     {
@@ -20,12 +33,20 @@ internal class OpenGLSkyboxRenderer : IDisposable
         _viewLoc = _shader.GetUniformLocation("view");
         _projLoc = _shader.GetUniformLocation("projection");
         _samplerLoc = _shader.GetUniformLocation("skybox");
+        _hasSkyboxLoc = _shader.GetUniformLocation("uHasSkybox");
+        _skyZenithLoc = _shader.GetUniformLocation("uSkyZenith");
+        _skyHorizonLoc = _shader.GetUniformLocation("uSkyHorizon");
+        _skyGroundLoc = _shader.GetUniformLocation("uSkyGround");
 
         _cubeData = new OpenGLMeshRendererData(Mesh.CreateCube());
     }
 
+    /// <summary>
+    /// Draws the background a scene is seen against: its skybox when it has one, the engine's own gradient when it
+    /// does not, so the picture behind the scene is never just whatever the framebuffer was cleared to.
+    /// </summary>
     [Obsolete]
-    public void Render(Skybox skybox, Matrix4 view, Matrix4 projection)
+    public void Render(Skybox? skybox, Matrix4 view, Matrix4 projection)
     {
         GL.DepthFunc(DepthFunction.Lequal);
         GL.CullFace(CullFaceMode.Front);
@@ -39,11 +60,22 @@ internal class OpenGLSkyboxRenderer : IDisposable
         GL.UniformMatrix4(_viewLoc, false, ref skyboxView);
         GL.UniformMatrix4(_projLoc, false, ref projection);
 
-        if (skybox.CubeMapTexture is OpenTKTexture glSkyboxTexture)
+        // A cube map that only some backends can bind is not a sky either: the gradient is drawn unless the texture
+        // is one this renderer can actually sample.
+        ITexture? cubeMap = skybox?.CubeMapTexture;
+
+        bool hasSkybox = cubeMap is OpenTKTexture;
+
+        if (hasSkybox)
         {
-            glSkyboxTexture.Bind(TextureUnit.Texture0);
+            ((OpenTKTexture)cubeMap!).Bind(TextureUnit.Texture0);
             GL.Uniform1(_samplerLoc, 0);
         }
+
+        GL.Uniform1(_hasSkyboxLoc, hasSkybox ? 1 : 0);
+        GL.Uniform3(_skyZenithLoc, SkyZenith);
+        GL.Uniform3(_skyHorizonLoc, SkyHorizon);
+        GL.Uniform3(_skyGroundLoc, SkyGround);
 
         GL.BindVertexArray(_cubeData.VaoHandle);
         GL.DrawElements(PrimitiveType.Triangles, _cubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
