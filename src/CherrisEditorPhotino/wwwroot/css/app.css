@@ -1733,6 +1733,15 @@ span.panel-tab:hover {
     line-height: 1.5;
     color: var(--theme-foreground);
     background: rgba(0, 0, 0, 0.85);
+    /* A message surface, not a shield: whatever it says, the pointer belongs to the viewport under it. */
+    pointer-events: none;
+}
+
+/* `display: flex` above outranks the user agent's `[hidden] { display: none }`, so without this the overlay is a
+   permanent 85%-black pane over the canvas — dimming the picture and taking every mouse event with it, while the
+   keyboard keeps working because those listeners are on the window. */
+.viewport-overlay[hidden] {
+    display: none;
 }
 
 

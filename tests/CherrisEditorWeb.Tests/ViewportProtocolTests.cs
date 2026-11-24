@@ -91,6 +91,18 @@ public class ViewportProtocolTests
     }
 
     [Fact]
+    public void TryReadCommand_ReadsAPageLogLine()
+    {
+        RecordingSink sink = new();
+
+        ViewportProtocol.TryReadCommand(
+            """{"type":"pageLog","text":"first right press landed on div#viewport-canvas-overlay"}""",
+            sink).Should().BeTrue();
+
+        sink.PageLogs.Should().Equal("first right press landed on div#viewport-canvas-overlay");
+    }
+
+    [Fact]
     public void TryReadCommand_ReadsLockAndFocusLoss()
     {
         RecordingSink sink = new();
@@ -163,6 +175,8 @@ public class ViewportProtocolTests
 
         public void LookChanged(bool isDown) => Calls.Add($"look:{(isDown ? "down" : "up")}");
 
+        public void PageLog(string text) => Calls.Add($"page:{text}");
+
         public void FocusLost() => Calls.Add("blur");
     }
 
@@ -176,11 +190,12 @@ public class ViewportProtocolTests
         public List<(float X, float Y)> Wheels { get; } = [];
         public List<bool> Locks { get; } = [];
         public List<bool> Looks { get; } = [];
+        public List<string> PageLogs { get; } = [];
         public int FocusLosses { get; private set; }
 
         public int Calls =>
             Resizes.Count + Keys.Count + Buttons.Count + Moves.Count +
-            Positions.Count + Wheels.Count + Locks.Count + Looks.Count + FocusLosses;
+            Positions.Count + Wheels.Count + Locks.Count + Looks.Count + PageLogs.Count + FocusLosses;
 
         public void Resize(int width, int height) => Resizes.Add((width, height));
 
@@ -197,6 +212,8 @@ public class ViewportProtocolTests
         public void MouseLockChanged(bool locked) => Locks.Add(locked);
 
         public void LookChanged(bool isDown) => Looks.Add(isDown);
+
+        public void PageLog(string text) => PageLogs.Add(text);
 
         public void FocusLost() => FocusLosses++;
     }

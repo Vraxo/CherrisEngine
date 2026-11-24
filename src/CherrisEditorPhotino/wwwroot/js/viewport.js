@@ -118,6 +118,10 @@ void main() {
 
             overlay.textContent = message;
             overlay.hidden = message.length === 0;
+
+            // Belt and braces: the `hidden` attribute loses to any author `display`, and an overlay that stays on
+            // screen is a pane between the pointer and the canvas.
+            overlay.style.display = message.length === 0 ? 'none' : 'flex';
         }
 
         function compileShader(type, source) {
@@ -368,6 +372,60 @@ void main() {
             return { dx: dx, dy: dy };
         }
 
+        /** True when the pointer is inside the canvas, whoever the event was delivered to. */
+        function isOverViewport(event) {
+            const rect = canvas.getBoundingClientRect();
+
+            return rect.width > 0 &&
+                rect.height > 0 &&
+                event.clientX >= rect.left &&
+                event.clientX <= rect.right &&
+                event.clientY >= rect.top &&
+                event.clientY <= rect.bottom;
+        }
+
+        /** True for the parts of the page that own their pointer events: dialogs, menus and text fields. */
+        function isEditorChrome(target) {
+            return !!(target && target.closest &&
+                target.closest('.dialog, .menu-popup, .menubar, input, textarea, select'));
+        }
+
+        /** Names an element the way a log can be read: tag#id.class. */
+        function describeTarget(target) {
+            if (!target || !target.tagName) {
+                return 'nothing';
+            }
+
+            let name = target.tagName.toLowerCase();
+
+            if (target.id) {
+                name += '#' + target.id;
+            }
+
+            if (typeof target.className === 'string' && target.className.trim().length > 0) {
+                name += '.' + target.className.trim().split(/\s+/).join('.');
+            }
+
+            return name;
+        }
+
+        let lookReported = false;
+
+        /**
+         * Says once, in the editor's log, what the first right press landed on.
+         *
+         * Input that stops at the edge of the canvas is invisible from the host's side: no drag arrives and nothing
+         * says why. One line naming the element under the pointer turns that into an answer.
+         */
+        function reportLookTarget(event) {
+            if (lookReported) {
+                return;
+            }
+
+            lookReported = true;
+            send({ type: 'pageLog', text: `first right press landed on ${describeTarget(event.target)}` });
+        }
+
         function installInput() {
             on(window, 'keydown', (event) => {
                 if (isTextEntry(event.target)) {
@@ -393,29 +451,48 @@ void main() {
                 send({ type: 'key', code: event.code, down: false });
             });
 
-            on(canvas, 'contextmenu', (event) => event.preventDefault());
+            // Pointer input is taken from the window and matched against the canvas rectangle, not listened for on
+            // the canvas itself. Anything painted above the canvas — a status overlay, a future spacer — would
+            // otherwise take the pointer with no trace on the host's side, which is exactly how the viewport ends up
+            // with working keys and a dead mouse.
+            on(window, 'mousedown', (event) => {
+                if (!isOverViewport(event) || isEditorChrome(event.target)) {
+                    return;
+                }
 
-            on(canvas, 'mousedown', (event) => {
                 canvas.focus();
+
+                if (event.button === 2) {
+                    reportLookTarget(event);
+
+                    // The right button is the editor camera's, so it must not also be the page's: no text selection
+                    // and no browser drag. The drag is announced before the capture is asked for, because the
+                    // capture is the part that can fail and the drag must not depend on it.
+                    event.preventDefault();
+
+                    if (!lookButtonDown) {
+                        beginLook(event);
+                        send({ type: 'look', down: true });
+                        requestLookCapture();
+                    }
+                }
 
                 // The press carries where it happened: the editor picks the object under the click, and a click
                 // that comes before any move must not pick wherever the pointer was last time. A captured
                 // pointer has no free position, so then the press says nothing about where it landed.
                 const point = isPointerLocked() ? null : viewportPoint(event);
 
-                if (event.button === 2) {
-                    // The right button is the editor camera's, so it must not also be the page's: no text selection
-                    // and no browser drag. The drag is announced before the capture is asked for, because the
-                    // capture is the part that can fail and the drag must not depend on it.
-                    event.preventDefault();
-                    beginLook(event);
-                    send({ type: 'look', down: true });
-                    requestLookCapture();
-                }
-
                 send(point
                     ? { type: 'mouseButton', button: event.button, down: true, x: point.x, y: point.y }
                     : { type: 'mouseButton', button: event.button, down: true });
+            });
+
+            // Suppressed wherever the pointer is over the viewport, whoever the event landed on, so a right drag
+            // ends as a drag and not with the webview's menu.
+            on(window, 'contextmenu', (event) => {
+                if (isOverViewport(event)) {
+                    event.preventDefault();
+                }
             });
 
             on(window, 'mouseup', (event) => {
@@ -465,7 +542,11 @@ void main() {
                 send({ type: 'mouse', x: point.x, y: point.y });
             });
 
-            on(canvas, 'wheel', (event) => {
+            on(window, 'wheel', (event) => {
+                if (!isOverViewport(event)) {
+                    return;
+                }
+
                 event.preventDefault();
                 send({ type: 'wheel', x: -event.deltaX / 100, y: -event.deltaY / 100 });
             }, { passive: false });

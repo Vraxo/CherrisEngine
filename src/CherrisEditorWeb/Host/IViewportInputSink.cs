@@ -41,4 +41,14 @@ public interface IViewportInputSink
 
     /// <summary>The page lost focus or was hidden; held keys and buttons must be cleared.</summary>
     void FocusLost();
+
+    /// <summary>
+    /// A line from the page for the editor's log.
+    /// </summary>
+    /// <remarks>
+    /// The page cannot report anything the host can read — a webview's console is invisible to the app — so input or
+    /// drawing problems used to be undebuggable from the outside: a click the canvas never received looked exactly
+    /// like a click the engine ignored.
+    /// </remarks>
+    void PageLog(string text);
 }
