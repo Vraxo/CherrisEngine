@@ -104,6 +104,18 @@ public class EditorCommandTests
     }
 
     [Fact]
+    public void AddComponent_TakesAScriptTheSessionCompiled()
+    {
+        Harness scene = new();
+        scene.Dispatcher.ScriptComponents = [new ComponentCatalog.Entry("Counter", typeof(CounterScript))];
+
+        string? line = scene.Run(new AddComponentCommand(scene.Target.Id, "Counter"));
+
+        line.Should().Contain("Counter");
+        scene.Target.Components.Should().Contain(component => component is CounterScript);
+    }
+
+    [Fact]
     public void AddComponent_ReportsAnUnknownComponent()
     {
         Harness scene = new();
@@ -509,6 +521,11 @@ public class EditorCommandTests
 
             return line;
         }
+    }
+
+    /// <summary>A component that only exists because a project compiled it, for the name-resolution test.</summary>
+    public sealed class CounterScript : Script
+    {
     }
 
     private sealed class RecordingCommand(string line, List<string> log) : IEditorCommand

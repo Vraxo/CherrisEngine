@@ -542,8 +542,12 @@
     }
 
     /// <summary>The catalog entries this object does not have yet: an object holds one of each type.</summary>
-    private static IReadOnlyList<ComponentCatalog.Entry> AddableTypes(SceneNodeSnapshot node) =>
-        ComponentCatalog.BuiltIn
+    /// <remarks>
+    /// The list comes from the host rather than from the catalog: a project's C# scripts are components too, and
+    /// they only exist once the session has compiled them.
+    /// </remarks>
+    private IReadOnlyList<ComponentCatalog.Entry> AddableTypes(SceneNodeSnapshot node) =>
+        Host.ComponentTypes
             .Where(entry => !node.Components.Any(component =>
                 String.Equals(component.TypeName, entry.ComponentType.Name, StringComparison.Ordinal)))
             .ToArray();

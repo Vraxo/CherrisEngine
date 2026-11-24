@@ -238,9 +238,23 @@ public sealed class EditorHostService : IDisposable
     /// <summary>Where the diagnostics log is written, or null when no file could be created.</summary>
     public string? LogFilePath => _logFilePath;
 
-    /// <summary>The components the inspector's Add Component menu offers, in menu order.</summary>
-    public IReadOnlyList<Cherris.Components.ComponentCatalog.Entry> ComponentTypes =>
-        Cherris.Components.ComponentCatalog.BuiltIn;
+    /// <summary>
+    /// The components the inspector's Add Component menu offers, in menu order: the built-in ones, then the open
+    /// project's compiled C# scripts. A script is only here once the session has compiled it, which is why this is
+    /// read from the session rather than from the catalog.
+    /// </summary>
+    public IReadOnlyList<Cherris.Components.ComponentCatalog.Entry> ComponentTypes
+    {
+        get
+        {
+            IReadOnlyList<Cherris.Components.ComponentCatalog.Entry> scripts =
+                _session?.Host.ScriptComponents ?? [];
+
+            return scripts.Count == 0
+                ? Cherris.Components.ComponentCatalog.BuiltIn
+                : [.. Cherris.Components.ComponentCatalog.BuiltIn, .. scripts];
+        }
+    }
 
     /// <summary>Recent projects, most recent first, with their state resolved for display.</summary>
     public IReadOnlyList<RecentProjectEntry> RecentProjects => _recent.Get()

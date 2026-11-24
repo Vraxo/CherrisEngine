@@ -5,10 +5,12 @@ using Cherris.Core.Logging;
 using Cherris.Projects;
 using Cherris.Rendering.Headless;
 using Cherris.Rendering.OpenTK;
+using Cherris.Scripting;
 using Cherris.Utils;
 using CherrisEditorWeb.Host;
 using OpenTK.Graphics.OpenGL4;
 using System.Numerics;
+using System.Runtime.Loader;
 
 namespace CherrisEditorWeb;
 
@@ -44,6 +46,10 @@ public sealed class WebEditorEngine : Engine, IDisposable
     private long _frameNumber;
     private int _playRequest = NoPlayRequest;
     private int _playState;
+
+    private readonly AssemblyLoadContext _scriptContext = new("WebEditorScripts", isCollectible: true);
+    private readonly List<Type> _scriptTypes = [];
+    private IReadOnlyList<ComponentCatalog.Entry> _scriptComponents = [];
     private volatile string? _sceneNotice;
     private readonly ViewportCameraController _camera = new();
 
@@ -84,6 +90,10 @@ public sealed class WebEditorEngine : Engine, IDisposable
         AutoUpdateScene = false;
         _play = new EditorPlaySession(SceneManager, Logger.Info);
 
+        // Before the first frame, because the first frame reads the scene: a factory that arrives afterwards would
+        // be missing from the components the file names.
+        LoadProjectScripts();
+
         OnDrawUI = _ =>
         {
             // Everything the UI asked for lands at the top of the frame, before the snapshot below is taken:
@@ -93,6 +103,72 @@ public sealed class WebEditorEngine : Engine, IDisposable
             ExecuteCommands();
             CaptureAndPublish();
         };
+    }
+
+    /// <summary>
+    /// The project's C# script types, compiled when the session opened: the types a scene may name, and the ones an
+    /// inspector can offer. Empty when the project has no <c>Scripts/</c> folder or nothing in it compiled.
+    /// </summary>
+    public IReadOnlyList<Type> ScriptTypes => _scriptTypes;
+
+    /// <summary>
+    /// The same types as Add Component menu entries, named the way the menu names them. Empty until a session has
+    /// compiled the project's scripts.
+    /// </summary>
+    public IReadOnlyList<ComponentCatalog.Entry> ScriptComponents => _scriptComponents;
+
+    /// <summary>
+    /// Compiles the project's C# scripts and registers them, so a scene that names one of those types gets the
+    /// component instead of a warning about an unknown one.
+    /// </summary>
+    /// <remarks>
+    /// A failure is reported, not thrown: a project whose scripts do not compile still opens, and the editor is the
+    /// only place the error can be shown. The session keeps running with whatever the scene's built-in components
+    /// are, which is what lets the mistake be fixed and the project reopened.
+    /// </remarks>
+    private void LoadProjectScripts()
+    {
+        if (_scene.ProjectRoot is not { } projectRoot)
+        {
+            return;
+        }
+
+        ScriptCompileResult result = ProjectScriptCompiler.Compile(projectRoot, _scriptContext);
+
+        if (!result.Succeeded)
+        {
+            Logger.Error($"[web-editor] {result.Errors.Count} error(s) compiling the project's C# scripts:");
+
+            foreach (string error in result.Errors)
+            {
+                Logger.Error($"  {error}");
+            }
+
+            return;
+        }
+
+        foreach (Type type in result.ScriptTypes)
+        {
+            // The name the scene file carries: the class name, exactly as the ImGui editor registers it.
+            SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
+            _scriptTypes.Add(type);
+        }
+
+        if (_scriptTypes.Count == 0)
+        {
+            return;
+        }
+
+        // The inspector's menu and the command that follows a click both need these: the menu to offer them, the
+        // command to turn the name it was quoted back into the type it creates.
+        _scriptComponents = ComponentCatalog.ForScriptTypes(_scriptTypes);
+
+        if (_commands is not null)
+        {
+            _commands.ScriptComponents = _scriptComponents;
+        }
+
+        Logger.Info($"[web-editor] Compiled {_scriptTypes.Count} C# script(s) from the project's Scripts folder.");
     }
 
     /// <summary>
