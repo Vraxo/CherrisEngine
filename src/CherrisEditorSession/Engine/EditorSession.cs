@@ -45,9 +45,10 @@ public sealed class EditorSession : Engine, IDisposable
     private volatile string? _rendererInfo;
     private long _frameNumber;
     private int _playRequest = NoPlayRequest;
+    private int _scriptReloadRequested;
     private int _playState;
 
-    private readonly AssemblyLoadContext _scriptContext = new("WebEditorScripts", isCollectible: true);
+    private AssemblyLoadContext _scriptContext = NewScriptContext();
     private readonly List<Type> _scriptTypes = [];
     private IReadOnlyList<ComponentCatalog.Entry> _scriptComponents = [];
     private volatile string? _sceneNotice;
@@ -94,12 +95,20 @@ public sealed class EditorSession : Engine, IDisposable
         // be missing from the components the file names.
         LoadProjectScripts();
 
+        if (_commands is not null)
+        {
+            // A command that writes a C# script attaches it in the same drain, which is only possible if it can ask
+            // for a compile first.
+            _commands.ReloadScripts = ReloadProjectScripts;
+        }
+
         OnDrawUI = _ =>
         {
             // Everything the UI asked for lands at the top of the frame, before the snapshot below is taken:
             // which scene is open decides what the transport and the edits apply to, so it comes first.
             ApplySceneRequest();
             ApplyPlaybackRequest();
+            ApplyScriptReload();
             ExecuteCommands();
             CaptureAndPublish();
         };
@@ -116,6 +125,61 @@ public sealed class EditorSession : Engine, IDisposable
     /// compiled the project's scripts.
     /// </summary>
     public IReadOnlyList<ComponentCatalog.Entry> ScriptComponents => _scriptComponents;
+
+    /// <summary>
+    /// Asks the render thread to compile the project's C# scripts again at the top of its next frame, and returns
+    /// false when the session is already shutting down. Safe from any thread.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes a script created from the UI attachable without reopening the project. The compile happens
+    /// on the render thread because that is the thread the scene and its factories belong to.
+    /// </remarks>
+    public bool RequestScriptReload()
+    {
+        if (_stopRequested)
+        {
+            return false;
+        }
+
+        Volatile.Write(ref _scriptReloadRequested, 1);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Compiles the project's C# scripts into a fresh load context and returns the entries they make now.
+    /// </summary>
+    /// <remarks>
+    /// The old context is not unloaded here, only dropped: a script already attached to an object still refers to
+    /// its types, and those keep working for as long as something holds them. What changes is the catalog and the
+    /// factories — from now on the scene names the new types — which is the rebuild-or-lose trade the transport
+    /// makes on purpose rather than leaving a stale type registered.
+    /// </remarks>
+    /// <returns>The Add Component entries for the types the project declares.</returns>
+    public IReadOnlyList<ComponentCatalog.Entry> ReloadProjectScripts()
+    {
+        _scriptTypes.Clear();
+        _scriptComponents = [];
+        _scriptContext = NewScriptContext();
+
+        LoadProjectScripts();
+
+        return _scriptComponents;
+    }
+
+    private static AssemblyLoadContext NewScriptContext() =>
+        new("EditorScripts", isCollectible: true);
+
+    /// <summary>Runs a reload the UI asked for, once, at the top of a frame.</summary>
+    private void ApplyScriptReload()
+    {
+        if (Interlocked.Exchange(ref _scriptReloadRequested, 0) == 0)
+        {
+            return;
+        }
+
+        ReloadProjectScripts();
+    }
 
     /// <summary>
     /// Compiles the project's C# scripts and registers them, so a scene that names one of those types gets the

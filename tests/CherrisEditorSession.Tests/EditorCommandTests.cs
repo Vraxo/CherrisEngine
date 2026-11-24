@@ -469,6 +469,78 @@ public class EditorCommandTests
     }
 
     [Fact]
+    public void AddCSharpScript_WritesCompilesAndAttachesInThatOrder()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        bool compiledAfterTheFileExisted = false;
+        int compiles = 0;
+
+        scene.Dispatcher.ReloadScripts = () =>
+        {
+            compiles++;
+            compiledAfterTheFileExisted = File.Exists(Path.Combine(project.Root, "Scripts", "CounterScript.cs"));
+
+            return ComponentCatalog.ForScriptTypes([typeof(CounterScript)]);
+        };
+
+        scene.Run(new AddCSharpScriptCommand(scene.Target.Id, "CounterScript"))
+            .Should().Contain("added Counter Script to Cube");
+
+        compiles.Should().Be(1);
+        compiledAfterTheFileExisted.Should().BeTrue("the file has to be on disk before the compile that sees it");
+
+        scene.Target.GetComponent<CounterScript>().Should().NotBeNull();
+        File.Exists(Path.Combine(project.Root, "Scripts", "CounterScript.cs")).Should().BeTrue();
+        scene.Live.IsDirty.Should().BeTrue();
+
+        // Undo takes the component off and leaves the file, the same trade the Lua command makes.
+        scene.Run(new UndoCommand()).Should().Contain("removed Counter Script");
+        scene.Target.GetComponent<CounterScript>().Should().BeNull();
+        File.Exists(Path.Combine(project.Root, "Scripts", "CounterScript.cs")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddCSharpScript_ResolvesTheClassByName_NotTheMenuLabel()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        // The menu calls CounterScript "Counter Script"; the file, the class and the scene all say CounterScript.
+        scene.Dispatcher.ReloadScripts = () => ComponentCatalog.ForScriptTypes([typeof(CounterScript)]);
+
+        scene.Run(new AddCSharpScriptCommand(scene.Target.Id, "CounterScript")).Should().Contain("added");
+        scene.Target.GetComponent<CounterScript>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddCSharpScript_SaysWhenTheClassIsNotNamedAfterTheFile()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Dispatcher.ReloadScripts = () => ComponentCatalog.ForScriptTypes([typeof(CounterScript)]);
+
+        scene.Run(new AddCSharpScriptCommand(scene.Target.Id, "Player"))
+            .Should().Contain("declares no class named 'Player'");
+
+        scene.Target.GetComponent<CounterScript>().Should().BeNull();
+        File.Exists(Path.Combine(project.Root, "Scripts", "Player.cs")).Should().BeTrue("the file is not thrown away");
+        scene.History.CanUndo.Should().BeFalse("nothing was attached");
+    }
+
+    [Fact]
+    public void AddCSharpScript_WithoutACompiler_SaysWhatItWrote()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new AddCSharpScriptCommand(scene.Target.Id, "Player"))
+            .Should().Contain("no script compiler");
+    }
+
+    [Fact]
     public void AddScript_RejectsANameThatCannotBeOne()
     {
         using TemporaryProject project = new();

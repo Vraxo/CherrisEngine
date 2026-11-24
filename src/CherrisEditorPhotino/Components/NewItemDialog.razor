@@ -10,6 +10,24 @@
 
         <p class="dialog-text">@Text</p>
 
+        @if (Choices is { Count: > 1 })
+        {
+            @* Only the dialogs that can make more than one thing show this — today a script is Lua or C#. The parent
+               owns the choice, so it can read it back when Create is pressed. *@
+            <div class="dialog-choices" role="group" aria-label="Language">
+                @foreach (string choice in Choices)
+                {
+                    string buttonClass = IsChosen(choice) ? "editor-button primary" : "editor-button";
+                    string pressed = IsChosen(choice) ? "true" : "false";
+
+                    <button type="button" class="@buttonClass" aria-pressed="@pressed"
+                            @onclick="() => Choose(choice)">
+                        @choice
+                    </button>
+                }
+            </div>
+        }
+
         <label class="dialog-label" for="@InputId">@Label</label>
         <input id="@InputId" class="dialog-input" @ref="_input" spellcheck="false"
                @bind="_name" @bind:event="oninput" @onkeydown="OnKeyDown" />
@@ -61,6 +79,20 @@
     public string DefaultName { get; set; } = string.Empty;
 
     /// <summary>
+    /// The ways to make the thing, when there is more than one — a script can be Lua or C#. Null hides the row.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<string>? Choices { get; set; }
+
+    /// <summary>Which of <see cref="Choices"/> is chosen. The parent owns it.</summary>
+    [Parameter]
+    public string? Choice { get; set; }
+
+    /// <summary>Raised with the choice the user pressed.</summary>
+    [Parameter]
+    public EventCallback<string> ChoiceChanged { get; set; }
+
+    /// <summary>
     /// The path the typed name becomes, shown before anything is written so a name that lands somewhere
     /// surprising is seen rather than discovered.
     /// </summary>
@@ -79,6 +111,10 @@
     public EventCallback OnClose { get; set; }
 
     private string TitleId => _id + "-title";
+
+    private bool IsChosen(string choice) => String.Equals(choice, Choice, StringComparison.Ordinal);
+
+    private async Task Choose(string choice) => await ChoiceChanged.InvokeAsync(choice);
 
     private string InputId => _id + "-name";
 

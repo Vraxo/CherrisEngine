@@ -276,13 +276,22 @@
                         }
                         else if (suggestScript)
                         {
-                            @* The name matched nothing, so offer to make it a script — the way Unity's
-                               Add Component menu does. *@
+                            @* The name matched nothing, so offer to make it a script — the way Unity's Add Component
+                               menu does. Both languages are offered because they are different things: a Lua file is
+                               read when the scene runs, a C# file is compiled into a component and attached here and
+                               now. Enter takes the first row, which is the Lua one. *@
                             <button type="button" class="menu-item add-script" role="menuitem"
                                     disabled="@(!CanAddScript() || scriptName is null)"
-                                    title="@ScriptTitle(query, scriptName)"
-                                    @onclick="() => AddScript(node)">
-                                <span>@ScriptLabel(query, scriptName)</span>
+                                    title="@ScriptTitle(query, scriptName, ScriptKind.Lua)"
+                                    @onclick="() => AddScript(node, ScriptKind.Lua)">
+                                <span>@ScriptLabel(query, scriptName, ScriptKind.Lua)</span>
+                            </button>
+
+                            <button type="button" class="menu-item add-script" role="menuitem"
+                                    disabled="@(!CanAddScript() || scriptName is null)"
+                                    title="@ScriptTitle(query, scriptName, ScriptKind.CSharp)"
+                                    @onclick="() => AddScript(node, ScriptKind.CSharp)">
+                                <span>@ScriptLabel(query, scriptName, ScriptKind.CSharp)</span>
                             </button>
                         }
                         else
@@ -459,13 +468,21 @@
     /// <summary>True when the typed name could become a script the render thread would write into the project.</summary>
     private bool CanAddScript() => CanEdit && Host.HasProject;
 
-    private string ScriptLabel(string query, string? scriptName) => scriptName is null
-        ? "New script: \"" + query + "\""
-        : Host.ScriptExists(scriptName)
-            ? "Script: \"" + scriptName + "\" (already in this project)"
-            : "New script: \"" + scriptName + "\"";
+    private string ScriptLabel(string query, string? scriptName, ScriptKind kind)
+    {
+        string language = ScriptTemplate.DisplayName(kind);
 
-    private string ScriptTitle(string query, string? scriptName)
+        if (scriptName is null)
+        {
+            return "New " + language + " script: \"" + query + "\"";
+        }
+
+        return Host.ScriptExists(scriptName, kind)
+            ? "Script: \"" + scriptName + "\" (already in this project)"
+            : "New " + language + " script: \"" + scriptName + "\"";
+    }
+
+    private string ScriptTitle(string query, string? scriptName, ScriptKind kind)
     {
         if (scriptName is null)
         {
@@ -478,13 +495,22 @@
             return "Open a project to create scripts: they live in the project's Scripts folder.";
         }
 
-        return Host.ScriptExists(scriptName)
-            ? "Attach the existing " + ScriptTemplate.RelativePath(scriptName) + " to this object."
-            : "Create " + ScriptTemplate.RelativePath(scriptName) + " with an empty start() and update(), " +
-                "then attach it to this object.";
+        string path = ScriptTemplate.RelativePath(scriptName, kind);
+
+        if (Host.ScriptExists(scriptName, kind))
+        {
+            return "Attach the existing " + path + " to this object.";
+        }
+
+        return kind == ScriptKind.CSharp
+            ? "Create " + path + ", compile it, and attach the component it declares to this object."
+            : "Create " + path + " with an empty start() and update(), then attach it to this object.";
     }
 
-    /// <summary>Enter takes the first match, or the script suggestion when nothing matched; Escape closes.</summary>
+    /// <summary>
+    /// Enter takes the first match, or the Lua script suggestion when nothing matched — the first row, which is what
+    /// the menu shows; Escape closes.
+    /// </summary>
     private void OnSearchKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape")
@@ -506,11 +532,11 @@
         }
         else if (CanAddScript() && ScriptTemplate.Normalize(_search) is not null)
         {
-            AddScript(node);
+            AddScript(node, ScriptKind.Lua);
         }
     }
 
-    private void AddScript(SceneNodeSnapshot node)
+    private void AddScript(SceneNodeSnapshot node, ScriptKind kind)
     {
         if (ScriptTemplate.Normalize(_search) is not { } name)
         {
@@ -518,7 +544,15 @@
         }
 
         CloseAddMenu();
-        Host.AddScript(node.Id, name);
+
+        if (kind == ScriptKind.CSharp)
+        {
+            Host.AddCSharpScript(node.Id, name);
+        }
+        else
+        {
+            Host.AddScript(node.Id, name);
+        }
     }
 
     /// <summary>Takes the focus once the box is on screen: an inline menu cannot use the autofocus attribute.</summary>

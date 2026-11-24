@@ -333,9 +333,11 @@ refusal, so a taken name costs a keystroke rather than the whole dialog, and clo
 Where a thing may be written is the engine's rule, not a preference:
 
 - **Scenes** go anywhere inside the project, and are opened when written.
-- **Scripts** are Lua and live in `Scripts/`, because `LanguageScript` refuses a script kept elsewhere. The menu
-  offers one from the project root and from `Scripts/` itself, and is disabled with a reason anywhere else, rather
-  than writing a file the engine would never run.
+- **Scripts** live in `Scripts/`, in either language — a Lua script is read by `LanguageScript`, a C# one is
+  compiled into a component — and nowhere else. The menu offers one from the project root and from `Scripts/`
+  itself, and is disabled with a reason anywhere else, rather than writing a file the engine would never run. The
+  dialog carries a **Lua / C#** row, because the two make different things: a Lua file the engine reads when the
+  scene runs, or a C# file compiled into a component that can be attached straight away.
 - **Folders** go anywhere inside the project, and hold nothing of their own.
 
 The name rules are one set for all of them (`ProjectFileName`): trimmed, no path separators, and none of the
@@ -419,21 +421,27 @@ A click anywhere else closes it too. The menu is inline rather than floating, so
 the same click-away the menubar's menus use — and is lifted over that scrim, which is what keeps the rows
 clickable while every other click in the editor only dismisses it.
 
-When the typed name matches no component — the way Unity's Add Component menu behaves — the only row becomes an
-offer to make it a script:
+When the typed name matches no component — the way Unity's Add Component menu behaves — the menu offers to make
+it a script, once per language:
 
-| State of the typed name | Row |
+| State of the typed name | Rows |
 | :--- | :--- |
-| not a usable name (`my script`, `2Player`) | `New script: "my script"`, disabled, tooltip saying which characters are allowed |
-| no project open (the built-in demo scene) | disabled, tooltip pointing at the project's `Scripts/` folder |
+| not a usable name (`my script`, `2Player`) | `New Lua script: "my script"` and `New C# script: "my script"`, both disabled, tooltip saying which characters are allowed |
+| no project open (the built-in demo scene) | both disabled, tooltip pointing at the project's `Scripts/` folder |
 | `Scripts/Player.lua` already exists | `Script: "Player" (already in this project)` — it attaches that file |
-| otherwise | `New script: "Player"` — it writes the file and attaches it |
+| `Scripts/Player.cs` already exists | the C# row says the same, and asks for a compile first |
+| otherwise | `New Lua script: "Player"` / `New C# script: "Player"` — each writes its own file and attaches it |
 
-`ScriptTemplate` owns all of that knowledge — the `Scripts/` folder, the `[A-Za-z_][A-Za-z0-9_]*` name rule, and
-the starter source — so the editor, the command and `LanguageScript` cannot drift apart on it. `AddScriptCommand`
-writes the file **once**: a name whose file exists is reused and never overwritten, because the user may have
-work in it, and undo removes the component rather than the file. The template is the two handlers the lua
-adapter calls, `start()` and `update(deltaTime)`, with nothing in them; the script runs when the scene starts.
+Two rows rather than one because the languages are not interchangeable: a Lua script becomes a `LanguageScript`
+pointing at a file, a C# script becomes a compiled component. `Enter` takes the first row, the Lua one.
+
+`ScriptTemplate` owns all of that knowledge — the `Scripts/` folder, the `[A-Za-z_][A-Za-z0-9_]*` name rule, the
+extension and the starter source of each language — so the editor, the commands and `LanguageScript` cannot drift
+apart on it. `TryCreate` writes the file **once**: a name whose file exists is reused and never overwritten,
+because the user may have work in it, and undo removes the component rather than the file. The Lua template is the
+two handlers the adapter calls, `start()` and `update(deltaTime)`, with nothing in them; the C# one is a
+`Script` subclass named after the file, importing `Cherris.Components` — the namespace `Script` actually lives in,
+which the ImGui editor's template got wrong by importing `Cherris`.
 
 ### C# scripts: compiled with the project
 
@@ -443,6 +451,24 @@ the ImGui editor and the game builder) compiles every `.cs` under `Scripts/`, in
 the non-abstract `Script` subclasses it finds are registered with the scene loader under their class names. The
 registration happens **before the first scene is read**, because a factory that arrives afterwards is missing from
 the scene that named it.
+
+It also happens when this editor makes a script, because otherwise a script created from a menu could not be
+attached until the project was reopened:
+
+| Path | What compiles |
+| :--- | :--- |
+| opening a project | everything under `Scripts/`, before the first frame |
+| the C# row in Add Component | inside the command, after the file is written and before the component is attached |
+| New Script… → C#, in the content browser | a reload is requested, so the type is in the menu by the next frame |
+
+`AddCSharpScriptCommand` is where the order matters most: it writes the file, asks the session to compile, looks for
+a compiled class named after the file — the menu calls `PlayerController` "Player Controller", but the file, the
+class and the scene all say `PlayerController` — and only then runs an ordinary `AddComponentCommand`. A file whose
+class is named something else is left on disk with an explanation in the console, rather than attached by guesswork.
+
+A reload swaps the collectible load context instead of unloading it: a component already attached keeps working
+through its old types, and what changes is what the catalog and the scene loader know from then on. That is the
+rebuild-or-lose trade, made deliberately — the alternative is a stale type staying registered forever.
 
 Those types then behave like any other component:
 
@@ -454,8 +480,9 @@ Those types then behave like any other component:
 
 A compile error does not close the project: the errors go to the console with their file and line, and the session
 carries on with the components the scene's built-in types provide, so the mistake can be fixed and the project
-reopened. The compile runs when the project opens, not on every save — editing a script and then reopening the
-project is what picks the change up today.
+reopened. What is still missing is a compile *before it matters*: there is no compile on save and none before Play,
+so changing an existing script and then reopening the project is what picks the change up today. A **Reload scripts**
+command that swaps the context on demand is the next step, and `RequestScriptReload` is the hook it would use.
 
 Writing happens on the render thread, inside the command, so the UI thread never touches the project folder. The
 one read the panel does itself is `File.Exists`, to label the row honestly.

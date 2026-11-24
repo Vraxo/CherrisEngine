@@ -4,7 +4,7 @@ public static class ScriptTemplate
 {
     public static string GetContent(string scriptName)
     {
-        return $@"using Cherris;
+        return $@"using Cherris.Components;
 using System.Numerics;
 
 public class {scriptName} : Script
