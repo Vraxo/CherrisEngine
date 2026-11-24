@@ -1,5 +1,6 @@
 using Cherris;
 using Cherris.Core;
+using Cherris.Core.Logging;
 using Cherris.Rendering.Headless;
 using System.Diagnostics;
 using System.Net.WebSockets;
@@ -47,6 +48,12 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
     /// <summary>1 while the grid is drawn, 0 when it is not; an int so it can be read from another thread.</summary>
     private int _showGrid = 1;
+
+    /// <summary>1 while the look button is held, 0 when it is not; an int so it can be read from another thread.</summary>
+    private int _lookDragging;
+
+    /// <summary>1 once a look drag has been seen, so the first one can be reported without repeating itself.</summary>
+    private int _lookReported;
     private int _shuttingDown;
     private volatile bool _renderFailed;
     private volatile bool _startFailed;
@@ -94,6 +101,9 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         get => Volatile.Read(ref _showGrid) != 0;
         set => Volatile.Write(ref _showGrid, value ? 1 : 0);
     }
+
+    /// <inheritdoc />
+    public bool LookDragging => Volatile.Read(ref _lookDragging) != 0;
 
     /// <summary>URL the HTTP/WebSocket listener serves, or null before <see cref="Run"/> starts it.</summary>
     public string? Url => _server?.Url;
@@ -314,7 +324,23 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     /// <inheritdoc />
     public void FocusLost()
     {
+        // The look flag deliberately survives this. A pointer capture can take the focus with it, and a drag that
+        // ended there would stop the camera the moment the capture succeeded; with no movement arriving, a flag
+        // left set moves nothing anyway.
         HeadlessInput.Reset();
+    }
+
+    /// <inheritdoc />
+    public void LookChanged(bool isDown)
+    {
+        Interlocked.Exchange(ref _lookDragging, isDown ? 1 : 0);
+
+        // Said once per session: a viewport that receives no drags at all and one whose drags are being dropped
+        // elsewhere look the same from the outside, and one line in the console tells them apart.
+        if (isDown && Interlocked.Exchange(ref _lookReported, 1) == 0)
+        {
+            Logger.Info("[web-editor] A look drag reached the render thread.");
+        }
     }
 
     /// <inheritdoc />

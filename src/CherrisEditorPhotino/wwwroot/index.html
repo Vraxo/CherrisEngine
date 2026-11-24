@@ -38,8 +38,9 @@
         <a class="dismiss">✕</a>
     </div>
 
-    <!-- The viewport bridge must exist before the first component mounts. -->
-    <script src="js/viewport.js"></script>
+    <!-- The viewport bridge must exist before the first component mounts. The version is bumped when it changes:
+         the editor serves this folder from the build output, and a webview will happily run yesterday's copy. -->
+    <script src="js/viewport.js?v=2"></script>
     <script src="js/dock.js"></script>
     <script src="js/numberdrag.js"></script>
     <script src="js/host.js"></script>

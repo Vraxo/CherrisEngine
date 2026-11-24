@@ -575,8 +575,13 @@ public sealed class WebEditorEngine : Engine, IDisposable
 
         bool hovered = PointerOverViewport();
 
+        // The drag is taken from the flag the browser sets rather than from the engine's button state, and the button
+        // is kept as a fallback: a client that never sends the flag still looks, and a drag whose button state was
+        // cleared under it — a capture that moves the focus does that — still turns the camera.
+        bool looking = _sink.LookDragging || Input.IsMouseButtonDown(MouseButton.Right);
+
         _camera.Update(camera, new ViewportCameraInput(
-            Input.IsMouseButtonDown(MouseButton.Right) ? Input.MouseDelta : Vector2.Zero,
+            looking ? Input.MouseDelta : Vector2.Zero,
             hovered ? MoveAxes() : Vector2.Zero,
             hovered ? VerticalAxis() : 0f,
             hovered ? Input.MouseWheelDelta.Y : 0f,

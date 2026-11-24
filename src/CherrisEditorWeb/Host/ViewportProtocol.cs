@@ -133,6 +133,10 @@ public static class ViewportProtocol
                     sink.Wheel(ReadFloat(root, "x"), ReadFloat(root, "y"));
                     return true;
 
+                case "look":
+                    sink.LookChanged(ReadBool(root, "down"));
+                    return true;
+
                 case "lock":
                     sink.MouseLockChanged(ReadBool(root, "locked"));
                     return true;
