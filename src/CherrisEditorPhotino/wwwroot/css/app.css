@@ -1249,46 +1249,162 @@ span.panel-tab:hover {
 
 /* ---- inspector (details panel sections) ---- */
 
+/* Unity's inspector is one continuous list: no cards and no gaps between components. A section is a
+   darker header over its property rows, separated from the next section by a thin rule. */
 .inspector-section {
-    margin-bottom: 6px;
-    border: var(--theme-border-width) solid var(--theme-window-border);
-    border-radius: var(--theme-radius);
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     background: var(--theme-panel);
-    overflow: hidden;
 }
 
+/* The header is a button: the whole bar folds and unfolds the section, the way a Unity foldout does. */
 .inspector-section-header {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px;
-    border-bottom: var(--theme-border-width) solid var(--theme-recessed);
-    background: var(--theme-header);
+    width: 100%;
+    min-height: 22px;
+    margin: 0;
+    padding: 3px 6px;
+    border: none;
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    border-radius: 0;
+    background: var(--theme-recessed);
+    background: color-mix(in srgb, var(--theme-panel) 72%, var(--theme-recessed));
     color: var(--theme-foreground-header);
+    font: inherit;
     font-size: var(--theme-font-size);
     font-weight: var(--theme-font-weight-bold);
+    text-align: left;
+    appearance: none;
+    box-shadow: none;
+    cursor: default;
     user-select: none;
 }
 
+.inspector-section-header:hover {
+    background: var(--theme-header);
+}
+
+.inspector-section-header:focus-visible {
+    outline: var(--theme-border-width) solid var(--theme-primary);
+    outline-offset: -1px;
+}
+
+.inspector-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    color: var(--theme-foreground-header);
+    opacity: 0.85;
+}
+
+.inspector-section-icon svg {
+    width: 12px;
+    height: 12px;
+}
+
+.inspector-section-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .inspector-section-body {
-    padding: 6px 6px 4px;
+    padding: 4px 6px 5px;
+}
+
+.inspector-section-body.collapsed {
+    display: none;
 }
 
 .inspector-muted {
     margin: 0;
+    padding: 3px 2px;
     color: var(--theme-accent-gray);
     font-size: calc(var(--theme-font-size) - 1px);
 }
 
-/* The button sits centred under the component list; the menu below it keeps the panel's width. */
+/* The object header: a bold name beside a cube icon, like Unity's object bar. The input is borderless
+   until it is hovered or focused, so it reads as a title rather than as a form field. */
+.inspector-object {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 3px 6px;
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    background: var(--theme-header);
+}
+
+.inspector-object-icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--theme-foreground-header);
+}
+
+.inspector-name {
+    flex: 1;
+    min-width: 0;
+    height: 20px;
+    padding: 1px 4px;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    font-weight: var(--theme-font-weight-bold);
+}
+
+.inspector-name:hover:not(:disabled) {
+    background: var(--theme-panel);
+}
+
+.inspector-name:focus {
+    outline: none;
+    background: var(--theme-input);
+    color: var(--theme-white);
+}
+
+.inspector-name:focus-visible {
+    outline: 1px solid var(--theme-primary);
+    outline-offset: -1px;
+}
+
+.inspector-name:disabled {
+    color: var(--theme-accent-gray);
+}
+
+/* The Add Component button spans the panel, like Unity's; it is deliberately quieter than the fields. */
 .inspector-add {
     display: flex;
     flex-direction: column;
-    padding-top: 4px;
+    padding: 6px;
 }
 
 .inspector-add > .imgui-button {
-    align-self: center;
+    align-self: stretch;
+    width: 100%;
+    background: var(--theme-panel);
+    border-color: var(--theme-input-outline);
+    color: var(--theme-foreground);
+}
+
+.inspector-add > .imgui-button:hover:not(:disabled) {
+    background: var(--theme-header);
+    color: var(--theme-foreground-hover);
+}
+
+.inspector-add > .imgui-button:disabled {
+    background: var(--theme-recessed);
+    border-color: var(--theme-input-outline);
+    color: var(--theme-accent-gray);
 }
 
 /* The search box takes the focus when the menu opens, so it reads as the menu's first row. */
@@ -1326,44 +1442,54 @@ span.panel-tab:hover {
     -webkit-user-select: none;
 }
 
-/* One editable property: name on the left, editor on the right, like the ImGui row table. */
-.prop-row {
-    display: flex;
+/* One editable property. The same grid serves the Transform's vector rows and every component's scalar
+   rows, so the label column and the value column line up down the whole inspector instead of jumping
+   between the two old 25% and 38% columns. */
+.prop-row,
+.vec-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 16px;
+    column-gap: 6px;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 1px;
 }
 
-.prop-label {
-    width: 38%;
-    flex: none;
+.prop-label,
+.vec-label {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--theme-foreground);
-    font-size: calc(var(--theme-font-size) - 1px);
+    font-size: var(--theme-font-size);
 }
 
-.prop-value {
+.prop-value,
+.vec-fields {
     display: flex;
     align-items: center;
-    gap: 4px;
-    flex: 1;
+    gap: 3px;
     min-width: 0;
 }
 
 .prop-value .imgui-input {
     flex: 1;
     min-width: 0;
-    padding: 2px 6px;
+    padding: 2px 5px;
+    line-height: 1.2;
     font-variant-numeric: tabular-nums;
-    font-size: calc(var(--theme-font-size) - 1px);
+    font-size: var(--theme-font-size);
+}
+
+/* Unity puts a checkbox at the far end of its row. */
+.prop-value-check {
+    justify-content: flex-end;
 }
 
 .prop-vec {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     flex: 1;
     min-width: 0;
 }
@@ -1376,25 +1502,27 @@ span.panel-tab:hover {
     accent-color: var(--theme-primary);
 }
 
-/* The reset slot that ends a value row, in the column the ImGui inspector keeps for its reset button.
-   Two states, and each says exactly one thing: a washed-out arrow means there is nothing to put back, and a
-   button-shaped one means there is. The arrow keeps its colour in both; only the surface behind it changes on
-   hover, so brightness is never what decides whether a click will work. The slot keeps its width either way,
-   so every row's editor ends on the same line. */
+/* The reset slot ends every value row. Unity keeps property reset out of sight until the row is hovered
+   or the value is modified, so the right column is not a repeating column of arrows. */
 .prop-reset {
-    flex: none;
     display: grid;
     place-items: center;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     padding: 0;
     border: none;
     border-radius: 3px;
     background: none;
     color: var(--theme-accent-gray);
-    opacity: 0.3;
+    opacity: 0;
     cursor: default;
-    transition: background 90ms linear;
+    appearance: none;
+    transition: background 90ms linear, opacity 90ms linear;
+}
+
+.prop-row:hover .prop-reset,
+.vec-row:hover .prop-reset {
+    opacity: 0.45;
 }
 
 .prop-reset svg {
@@ -1460,63 +1588,86 @@ span.panel-tab:hover {
     border-radius: var(--theme-radius);
 }
 
-.vec-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.vec-label {
-    width: 62px;
-    flex: none;
-    color: var(--theme-accent-gray);
-    font-size: calc(var(--theme-font-size) - 1px);
-}
-
-.vec-fields {
-    display: flex;
-    gap: 4px;
-    flex: 1;
-    min-width: 0;
-}
-
-/* One component: its axis letter, then the field. */
+/* One vector component: Unity draws the axis letter inside the field on a small tinted chip, rather than
+   in a separate column before it. The cell is the field; the input inside is borderless. */
 .vec-cell {
     display: flex;
-    align-items: center;
-    gap: 3px;
+    align-items: stretch;
     flex: 1;
     min-width: 0;
+    height: var(--theme-control-height);
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    overflow: hidden;
+}
+
+.vec-cell:hover {
+    border-color: var(--theme-hover);
+}
+
+.vec-cell:focus-within {
+    border-color: var(--theme-primary);
 }
 
 .vec-axis {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex: none;
-    width: 8px;
+    width: 15px;
     font-size: calc(var(--theme-font-size) - 2px);
     font-weight: var(--theme-font-weight-bold);
-    text-align: center;
     cursor: default;
 }
 
 .axis-x {
     color: var(--axis-x);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-x) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-x) 12%, transparent);
 }
 
 .axis-y {
     color: var(--axis-y);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-y) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-y) 12%, transparent);
 }
 
 .axis-z {
     color: var(--axis-z);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-z) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-z) 12%, transparent);
 }
 
-.imgui-input.vec-field {
+.vec-cell .imgui-input.vec-field {
     flex: 1;
     min-width: 0;
-    padding: 2px 6px;
+    height: 100%;
+    padding: 1px 5px;
+    line-height: 1.2;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     font-variant-numeric: tabular-nums;
-    font-size: calc(var(--theme-font-size) - 1px);
+    font-size: var(--theme-font-size);
+}
+
+.vec-cell .imgui-input.vec-field:hover {
+    border-color: transparent;
+}
+
+.vec-cell .imgui-input.vec-field:focus {
+    border-color: transparent;
+    color: var(--theme-white);
+}
+
+/* The object header and the section headers run edge to edge; only the rows are inset. */
+.panel-body.inspector-body {
+    padding: 0;
 }
 
 /* ---- console ---- */

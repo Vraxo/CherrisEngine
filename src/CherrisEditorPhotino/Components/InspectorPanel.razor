@@ -2,19 +2,20 @@
 @using CherrisEditorSession
 @using CherrisEditorSession.Host
 @using Cherris.Scripting
+@using System.Text.RegularExpressions
 @inject SceneStore Store
 @inject SceneSelection Selection
 @inject EditorHostService Host
 @implements IDisposable
 
-@* ImGui's Inspector: object name, Transform, then one collapsible section per component. Fields are live:
+@* Unity's Inspector: object name, Transform, then one collapsible section per component. Fields are live:
    an edit is queued for the render thread, and the next snapshot shows the result. *@
 <section class="panel">
     <header class="panel-tabstrip">
         <span class="panel-tab active">Inspector</span>
     </header>
 
-    <div class="panel-body">
+    <div class="panel-body inspector-body">
         @if (SelectedNode is not SceneNodeSnapshot node)
         {
             <p class="panel-empty">No object selected.</p>
@@ -22,28 +23,48 @@
         else
         {
             string nameKey = node.Id.ToString() + ":name";
+            string transformKey = node.Id.ToString() + ":transform";
+            string transformExpanded = IsCollapsed(transformKey) ? "false" : "true";
+            string transformTitle = IsCollapsed(transformKey) ? "Expand" : "Collapse";
+            string transformChevron = IsCollapsed(transformKey) ? "tree-chevron" : "tree-chevron expanded";
 
-            <input type="text" class="imgui-input" value="@node.Name" disabled="@(!CanEdit)"
-                   @key="KeyFor(nameKey)" aria-label="Object name" title="Rename this object"
-                   @onchange="e => Rename(node, e.Value?.ToString())" />
-
-            <div class="imgui-separator"></div>
+            <div class="inspector-object">
+                <svg class="inspector-object-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M8 1.8 14 4.9v6.2L8 14.2 2 11.1V4.9z" fill="none" stroke="currentColor"
+                          stroke-width="1.2" stroke-linejoin="round" />
+                    <path d="M2 4.9 8 8l6-3.1M8 8v6.2" fill="none" stroke="currentColor"
+                          stroke-width="1.2" stroke-linejoin="round" />
+                </svg>
+                <input type="text" class="inspector-name" value="@node.Name" disabled="@(!CanEdit)"
+                       @key="KeyFor(nameKey)" aria-label="Object name" title="Rename this object"
+                       @onchange="e => Rename(node, e.Value?.ToString())" />
+            </div>
 
             <div class="inspector-section">
-                <div class="inspector-section-header">
+                <button type="button" class="inspector-section-header"
+                        aria-expanded="@transformExpanded" title="@transformTitle"
+                        @onclick="() => ToggleSection(transformKey)">
                     <span class="tree-arrow">
-                        <svg class="tree-chevron expanded" viewBox="0 0 16 16" aria-hidden="true">
+                        <svg class="@transformChevron" viewBox="0 0 16 16" aria-hidden="true">
                             <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.4"
                                   stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                     </span>
-                    <span>Transform</span>
-                </div>
+                    <span class="inspector-section-icon" aria-hidden="true">
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M8 1.8 14 4.9v6.2L8 14.2 2 11.1V4.9z" fill="none" stroke="currentColor"
+                                  stroke-width="1.2" stroke-linejoin="round" />
+                            <path d="M2 4.9 8 8l6-3.1M8 8v6.2" fill="none" stroke="currentColor"
+                                  stroke-width="1.2" stroke-linejoin="round" />
+                        </svg>
+                    </span>
+                    <span class="inspector-section-title">Transform</span>
+                </button>
 
                 @* One row per Vector3, each component labelled with its axis the way the ImGui inspector
                    does: X red, Y green, Z blue. Rotation is shown as Euler degrees, so all three rows read
                    the same. *@
-                <div class="inspector-section-body">
+                <div class="inspector-section-body @(IsCollapsed(transformKey) ? "collapsed" : null)">
                     @foreach (TransformRow row in TransformRows.From(node))
                     {
                         <div class="vec-row">
@@ -62,7 +83,7 @@
                                     int axisIndex = axis;
 
                                     <span class="vec-cell">
-                                        <span class="@axisClass">@letter</span>
+                                        <span class="@axisClass" aria-hidden="true">@letter</span>
                                         @* Dragging scrubs at 0.1 per pixel, the speed TransformInspector's
                                            DragFloat uses, and the object follows every frame; a click without
                                            movement still types. The drag script sends an input event when a drag
@@ -90,18 +111,33 @@
 
             @foreach (ComponentSnapshot component in node.Components)
             {
+                string sectionKey = node.Id.ToString() + ":" + component.TypeName;
+                string sectionExpanded = IsCollapsed(sectionKey) ? "false" : "true";
+                string sectionTitle = IsCollapsed(sectionKey) ? "Expand" : "Collapse";
+                string sectionChevron = IsCollapsed(sectionKey) ? "tree-chevron" : "tree-chevron expanded";
+                string componentTitle = DisplayName(component.TypeName);
+
                 <div class="inspector-section">
-                    <div class="inspector-section-header">
+                    <button type="button" class="inspector-section-header"
+                            aria-expanded="@sectionExpanded" title="@sectionTitle"
+                            @onclick="() => ToggleSection(sectionKey)">
                         <span class="tree-arrow">
-                            <svg class="tree-chevron expanded" viewBox="0 0 16 16" aria-hidden="true">
+                            <svg class="@sectionChevron" viewBox="0 0 16 16" aria-hidden="true">
                                 <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
                                       stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
                             </svg>
                         </span>
-                        <span>@component.TypeName</span>
-                    </div>
+                        <span class="inspector-section-icon" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor"
+                                      stroke-width="1.2" />
+                                <rect x="6" y="6" width="4" height="4" rx="0.5" fill="currentColor" opacity="0.55" />
+                            </svg>
+                        </span>
+                        <span class="inspector-section-title">@componentTitle</span>
+                    </button>
 
-                    <div class="inspector-section-body">
+                    <div class="inspector-section-body @(IsCollapsed(sectionKey) ? "collapsed" : null)">
                         @if (component.Properties.Count == 0)
                         {
                             <p class="inspector-muted">Nothing on this component is editable yet.</p>
@@ -111,24 +147,25 @@
                             @foreach (PropertySnapshot property in component.Properties)
                             {
                                 string propertyKey = PropertyKey(node, component, property);
+                                string propertyTitle = DisplayName(property.Name);
 
                                 <div class="prop-row">
-                                    <span class="prop-label" title="@property.Name">@property.Name</span>
+                                    <span class="prop-label" title="@property.Name">@propertyTitle</span>
 
                                     @* The value column keeps its width whether or not the button is usable, so
                                        the editors line up down the component. *@
-                                    <div class="prop-value">
+                                    <div class="prop-value @(property.Kind == PropertyKind.Boolean ? "prop-value-check" : null)">
                                         @switch (property.Kind)
                                         {
                                             case PropertyKind.Boolean:
                                                 <input type="checkbox" class="imgui-check" checked="@property.IsOn"
-                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       disabled="@(!CanEdit)" aria-label="@propertyTitle"
                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
                                                 break;
 
                                             case PropertyKind.Choice:
                                                 <select class="imgui-input imgui-select" disabled="@(!CanEdit)"
-                                                        aria-label="@property.Name"
+                                                        aria-label="@propertyTitle"
                                                         @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())">
                                                     @foreach (string choice in property.Choices)
                                                     {
@@ -145,7 +182,7 @@
                                                        and once more when it is released, which is exactly a drag
                                                        and its end. *@
                                                     <input type="range" class="imgui-slider" disabled="@(!CanEdit)"
-                                                           aria-label="@property.Name"
+                                                           aria-label="@propertyTitle"
                                                            min="@Format(minimum)" max="@Format(maximum)" step="any"
                                                            value="@Format(property.Components[0])"
                                                            @oninput="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
@@ -158,7 +195,7 @@
                                                        data-min="@RangeText(property.Minimum)"
                                                        data-max="@RangeText(property.Maximum)"
                                                        @key="KeyFor(propertyKey)"
-                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       disabled="@(!CanEdit)" aria-label="@propertyTitle"
                                                        @onchange="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
                                                        @oninput="EndLiveEdit"
                                                        @onblur="() => Blurred(propertyKey)" />
@@ -173,7 +210,7 @@
                                                        data-min="@RangeText(property.Minimum)"
                                                        data-max="@RangeText(property.Maximum)"
                                                        @key="KeyFor(propertyKey)"
-                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       disabled="@(!CanEdit)" aria-label="@propertyTitle"
                                                        @onchange="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
                                                        @oninput="EndLiveEdit"
                                                        @onblur="() => Blurred(propertyKey)" />
@@ -182,7 +219,7 @@
                                             case PropertyKind.Text:
                                                 <input type="text" class="imgui-input" value="@property.Text"
                                                        @key="KeyFor(propertyKey)"
-                                                       disabled="@(!CanEdit)" aria-label="@property.Name"
+                                                       disabled="@(!CanEdit)" aria-label="@propertyTitle"
                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
                                                 break;
 
@@ -191,7 +228,7 @@
                                                 @if (property.IsColor)
                                                 {
                                                     <input type="color" class="colour-swatch" disabled="@(!CanEdit)"
-                                                           aria-label="@property.Name"
+                                                           aria-label="@propertyTitle"
                                                            value="@Hex(property.Components)"
                                                            @onchange="e => OnColourChanged(node, component, property, e.Value?.ToString())" />
                                                 }
@@ -200,7 +237,7 @@
                                                     {
                                                         string letter = TransformRow.Axes[axis];
                                                         string axisClass = "vec-axis axis-" + letter.ToLowerInvariant();
-                                                        string fieldName = property.Name + " " + letter;
+                                                        string fieldName = propertyTitle + " " + letter;
                                                         string fieldKey = propertyKey + "." + letter;
                                                         // A colour component has no floor of its own; ImGui's
                                                         // ColorEdit holds it at 0 and lets HDR go past 1.
@@ -208,7 +245,7 @@
                                                         int axisIndex = axis;
 
                                                         <span class="vec-cell">
-                                                            <span class="@axisClass">@letter</span>
+                                                            <span class="@axisClass" aria-hidden="true">@letter</span>
                                                             <input type="text" class="imgui-input vec-field drag-number"
                                                                    value="@Format(property.Components[axis])"
                                                                    data-value="@Format(property.Components[axis])"
@@ -227,7 +264,7 @@
                                     </div>
 
                                     <ResetButton CanReset="@(CanEdit && property.CanReset)"
-                                                 Default="@property.DefaultText" Label="@property.Name"
+                                                 Default="@property.DefaultText" Label="@propertyTitle"
                                                  OnReset="() => ResetProperty(node, component, property)" />
                                 </div>
                             }
@@ -310,6 +347,7 @@
     private string _search = string.Empty;
     private ElementReference _searchBox;
     private bool _focusSearch;
+    private HashSet<string> _collapsed = new(StringComparer.Ordinal);
 
     private SceneNodeSnapshot? SelectedNode
     {
@@ -359,6 +397,18 @@
         : "No render session is running";
 
     private bool IsAddMenuOpen(Guid objectId) => CanEdit && _addMenuFor == objectId;
+
+    /// <summary>True when the named section is folded shut. The key is the object and the component type.</summary>
+    private bool IsCollapsed(string key) => _collapsed.Contains(key);
+
+    /// <summary>Folds or unfolds a section, the way a Unity foldout header does.</summary>
+    private void ToggleSection(string key)
+    {
+        if (!_collapsed.Remove(key))
+        {
+            _collapsed.Add(key);
+        }
+    }
 
     private void ToggleAddMenu(Guid objectId)
     {
@@ -680,6 +730,17 @@
     }
 
     private static string Format(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Splits a PascalCase property or component name into the words Unity would show. An uppercase letter
+    /// followed by a lowercase one starts a word; an acronym such as FOV stays one word. Short connecting
+    /// words are lower-cased, so <c>FieldOfView</c> reads "Field of View" rather than "Field Of View".
+    /// </summary>
+    private static string DisplayName(string name)
+    {
+        string spaced = Regex.Replace(name, "(?<!^)([A-Z])(?=[a-z])", " $1");
+        return Regex.Replace(spaced, @"\b(Of|The|And|To|In|On)\b", match => match.Value.ToLowerInvariant());
+    }
 
     /// <summary>A bound as an attribute value: empty means "none", which the drag script reads as no clamp.</summary>
     private static string RangeText(float? bound) => bound is float value ? Format(value) : string.Empty;
