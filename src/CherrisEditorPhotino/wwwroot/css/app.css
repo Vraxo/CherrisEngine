@@ -1176,11 +1176,74 @@ span.panel-tab:hover {
     user-select: none;
 }
 
-.imgui-checkbox input {
-    width: 13px;
-    height: 13px;
+/* Unity-style checkbox: dark rounded well with a light tick, not the browser's accent-filled box.
+   The input remains native for keyboard interaction and accessibility. */
+.inspector-section-toggle,
+.imgui-check,
+.imgui-checkbox input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    display: inline-block;
+    flex: none;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
     margin: 0;
-    accent-color: var(--theme-primary);
+    border: 1px solid var(--theme-window-border);
+    border-radius: 4px;
+    background: var(--theme-recessed);
+    cursor: pointer;
+}
+
+.inspector-section-toggle:checked::after,
+.imgui-check:checked::after,
+.imgui-checkbox input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 3px;
+    width: 9px;
+    height: 6px;
+    border: solid var(--theme-foreground);
+    border-width: 0 0 2px 2px;
+    transform: rotate(-45deg);
+}
+
+.inspector-section-toggle:hover:not(:disabled),
+.imgui-check:hover:not(:disabled),
+.imgui-checkbox input[type="checkbox"]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--theme-recessed) 80%, var(--theme-foreground));
+}
+
+.inspector-section-toggle:focus-visible,
+.imgui-check:focus-visible,
+.imgui-checkbox input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+}
+
+.inspector-section-toggle:disabled,
+.imgui-check:disabled,
+.imgui-checkbox input[type="checkbox"]:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* Let the operating system draw the control in high-contrast mode. */
+@media (forced-colors: active) {
+    .inspector-section-toggle,
+    .imgui-check,
+    .imgui-checkbox input[type="checkbox"] {
+        appearance: auto;
+        -webkit-appearance: auto;
+    }
+
+    .inspector-section-toggle::after,
+    .imgui-check::after,
+    .imgui-checkbox input[type="checkbox"]::after {
+        content: none;
+    }
 }
 
 /* ---- hierarchy (STableView rows) ---- */
@@ -1274,22 +1337,6 @@ span.panel-tab:hover {
 
 .inspector-section-header:hover {
     background: var(--theme-header);
-}
-
-/* Keep the enable checkbox at the end of the component header. */
-.inspector-section-toggle {
-    display: inline-block;
-    flex: none;
-    width: 13px;
-    height: 13px;
-    margin: 0 1px 0 0;
-    accent-color: var(--theme-primary);
-    cursor: pointer;
-}
-
-.inspector-section-toggle:disabled {
-    cursor: default;
-    opacity: 0.6;
 }
 
 /* The chevron and icon form the fold control; the name also toggles the section. */
@@ -1598,14 +1645,6 @@ span.panel-tab:hover {
 .prop-reset.modified:focus-visible {
     outline: var(--theme-border-width) solid var(--theme-primary);
     outline-offset: 1px;
-}
-
-.imgui-check {
-    width: 13px;
-    height: 13px;
-    margin: 0;
-    flex: none;
-    accent-color: var(--theme-primary);
 }
 
 .colour-swatch {
