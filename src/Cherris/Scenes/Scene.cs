@@ -205,24 +205,9 @@ public class Scene : IDisposable
         {
             // A component the author switched off is no candidate: a disabled camera is not the main one, a
             // disabled light does not light, and a disabled skybox lets the engine's own background show.
-            if (MainCamera is null && gameObject.GetComponent<Camera>() is { Enabled: true } camera)
-            {
-                MainCamera = camera;
-            }
-
-            if (Skybox is null && gameObject.GetComponent<Skybox>() is { Enabled: true } skybox)
-            {
-                Skybox = skybox;
-            }
-
-            Light? light = gameObject.GetComponent<Light>();
-
-            if (light is null || !light.Enabled)
-            {
-                continue;
-            }
-
-            Lights.Add(light);
+            MainCamera ??= gameObject.GetComponents<Camera>().FirstOrDefault(camera => camera.Enabled);
+            Skybox ??= gameObject.GetComponents<Skybox>().FirstOrDefault(skybox => skybox.Enabled);
+            Lights.AddRange(gameObject.GetComponents<Light>().Where(light => light.Enabled));
         }
     }
 
