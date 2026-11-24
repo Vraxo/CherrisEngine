@@ -166,37 +166,26 @@ internal class InspectorPanel
         _componentAdder.Draw(go);
     }
 
-    /// <summary>
-    /// The component header: Unity's enable checkbox between the icon and the title, then the foldout. The
-    /// Transform has nothing to switch off, so it passes no component and the slot stays empty.
-    /// </summary>
+    /// <summary>Draw a foldout, icon, enable checkbox and title in Unity's header order.</summary>
     /// <param name="component">The component the toggle switches, or null for the Transform.</param>
     private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen, Component? component = null)
     {
-        var style = ImGui.GetStyle();
-        float iconSize = 20.0f;
+        const float iconSize = 20.0f;
         float frameHeight = ImGui.GetFrameHeight();
-        float yPadding = (frameHeight - iconSize) * 0.5f;
 
         ImGui.BeginGroup();
 
-        var startPos = ImGui.GetCursorPos();
-        ImGui.SetCursorPosY(startPos.Y + yPadding);
+        // NoTreePushOnOpen keeps the properties at their usual indentation and gives the foldout its own hit area.
+        isOpen = ImGui.TreeNodeEx("##fold", ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.NoTreePushOnOpen);
+        ImGui.SameLine();
 
         IntPtr displayIcon = icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File");
         ImGui.Image(displayIcon, new Vector2(iconSize, iconSize));
-
-        // The header starts right after the icon, and takes the rest of the row.
-        float headerX = startPos.X + iconSize + style.ItemSpacing.X;
-        float headerWidth = ImGui.GetContentRegionAvail().X - (iconSize + style.ItemSpacing.X);
+        ImGui.SameLine();
 
         if (component is not null)
         {
-            // Its own item, so a click on the toggle does not also fold the section. Off stops the component
-            // without taking it off the object (Component.Enabled), and is saved with the scene.
             bool enabled = component.Enabled;
-            ImGui.SameLine();
-
             if (ImGui.Checkbox("##enabled", ref enabled))
             {
                 component.Enabled = enabled;
@@ -207,16 +196,22 @@ internal class InspectorPanel
                     scene.IsDirty = true;
                 }
             }
-
-            // A checkbox is a square frame, so the title moves over by the frame's width.
-            headerX += frameHeight + style.ItemSpacing.X;
-            headerWidth -= frameHeight + style.ItemSpacing.X;
+        }
+        else
+        {
+            // The Transform is always enabled; reserve the same space for aligned component names.
+            ImGui.Dummy(new Vector2(frameHeight, frameHeight));
         }
 
-        ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-        ImGui.SetNextItemWidth(headerWidth);
-
-        isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted(title);
+        if (ImGui.IsItemClicked())
+        {
+            // Match the previous collapsing header: clicking its title also opens or closes it.
+            isOpen = !isOpen;
+            ImGui.GetStateStorage().SetInt(ImGui.GetID("##fold"), isOpen ? 1 : 0);
+        }
 
         ImGui.EndGroup();
         return isOpen;

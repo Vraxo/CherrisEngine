@@ -1256,8 +1256,7 @@ span.panel-tab:hover {
     background: var(--theme-panel);
 }
 
-/* The header bar: Unity's enable checkbox at the left, then a fold button that takes the rest of the row. The
-   bar highlights as a whole on hover, the way a Unity foldout does. */
+/* The header bar: foldout and icon, then the enable checkbox and component name. */
 .inspector-section-header {
     display: flex;
     align-items: center;
@@ -1277,9 +1276,9 @@ span.panel-tab:hover {
     background: var(--theme-header);
 }
 
-/* The enable toggle, before the icon: off stops the component without taking it off the object. The
-   Transform's is an empty placeholder of the same width, so every header's chevron lines up. */
-.inspector-section-toggle {
+/* The Transform has no toggle, but reserves its slot to align component names. */
+.inspector-section-toggle,
+.inspector-section-toggle-placeholder {
     display: inline-block;
     flex: none;
     width: 13px;
@@ -1294,16 +1293,16 @@ span.panel-tab:hover {
     opacity: 0.6;
 }
 
-span.inspector-section-toggle {
+.inspector-section-toggle-placeholder {
     cursor: default;
 }
 
-/* The fold button is the rest of the bar: chevron, icon and title. */
+/* The chevron and icon form the fold control; the name also toggles the section. */
 .inspector-section-fold {
     display: flex;
     align-items: center;
     gap: 4px;
-    flex: 1;
+    flex: none;
     min-width: 0;
     min-height: 16px;
     margin: 0;
@@ -1319,13 +1318,15 @@ span.inspector-section-toggle {
     cursor: default;
 }
 
-.inspector-section-fold:focus-visible {
+.inspector-section-fold:focus-visible,
+.inspector-section-name:focus-visible {
     outline: var(--theme-border-width) solid var(--theme-primary);
     outline-offset: 2px;
 }
 
 /* A component the author switched off: Unity dims its header, and leaves the properties editable. */
 .inspector-section.is-disabled .inspector-section-fold,
+.inspector-section.is-disabled .inspector-section-name,
 .inspector-section.is-disabled .inspector-section-fold .tree-arrow,
 .inspector-section.is-disabled .inspector-section-icon {
     color: var(--theme-accent-gray);
@@ -1351,9 +1352,19 @@ span.inspector-section-toggle {
     height: 12px;
 }
 
-.inspector-section-title {
+.inspector-section-name {
     flex: 1;
     min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    appearance: none;
+    box-shadow: none;
+    cursor: default;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
