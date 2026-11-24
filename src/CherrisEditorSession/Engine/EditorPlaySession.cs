@@ -39,16 +39,17 @@ public enum PlaybackRequest
 /// <remarks>
 /// <para>
 /// The desktop editor's <c>PlayModeManager</c> stops the world by reloading the scene from a YAML snapshot,
-/// which also hot-reloads compiled C# scripts. A web session has no compiler, so this takes the same idea
-/// without the reload: the authored values are captured when play starts and written back when it stops, in
-/// place. Ids survive, so the selection, the hierarchy and every panel keep working across play and stop.
+/// which also hot-reloads compiled C# scripts. A web session keeps the scene and only decides whether it advances,
+/// so this takes the same idea without the reload: the authored values are captured when play starts and written
+/// back when it stops, in place. Ids survive, so the selection, the hierarchy and every panel keep working across
+/// play and stop.
 /// </para>
 /// <para>
 /// "Authored" means everything the inspector can change: the name, the transform, parenting, which objects
 /// exist, which components are on them, and every editable property of those components. What it does not
 /// capture is script-private state: a script keeps its own fields, so a second play picks up where the first
-/// one left off rather than from a fresh instance. The desktop editor gets that from its reload; the web host
-/// cannot, because reloading would also have to recompile.
+/// one left off rather than from a fresh instance. The desktop editor gets that from its reload; a web session
+/// cannot, because its reload compiles for the next load rather than swapping code under a live component.
 /// </para>
 /// <para>
 /// Nothing here starts anything: the engine starts the scene when it loads it, exactly as a game run would.

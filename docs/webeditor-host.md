@@ -462,7 +462,8 @@ attached until the project was reopened:
 | opening a project | everything under `Scripts/`, before the first frame |
 | the C# row in Add Component | inside the command, after the file is written and before the component is attached |
 | New Script… → C#, in the content browser | a reload is requested, so the type is in the menu by the next frame |
-| **File > Reload Scripts** | a reload is requested, for a file edited outside the editor |
+| a save in another editor | `ProjectScriptWatcher` sees the folder change and requests a reload |
+| **File > Reload Scripts** | a reload is requested by hand, for the same reason |
 
 `AddCSharpScriptCommand` is where the order matters most: it writes the file, asks the session to compile, looks for
 a compiled class named after the file — the menu calls `PlayerController` "Player Controller", but the file, the
@@ -483,18 +484,30 @@ Those types then behave like any other component:
 
 A compile error does not close the project: the errors go to the console with their file and line, and the session
 carries on with the components the scene's built-in types provide, so the mistake can be fixed and the project
-reopened. What is still missing is a compile *before it matters*: there is no compile on save and none before Play,
-so **File > Reload Scripts** is what picks a change up: it asks the session for a compile at the top of its next
-frame, which is the same reload a newly created script gets, and re-registers the types without closing the project.
-The menu item is disabled unless a session is running, because the scene, its factories and the load context are the
-render thread's. Only the moment is still missing: nothing compiles on save, and nothing compiles when Play is
-pressed, so reloading is a thing you ask for rather than a thing that happens.
+reopened. A compile is triggered by a moment rather than by every keystroke: when the project opens, when a script is
+created from a menu, and when the folder changes on disk. **File > Reload Scripts** is the same thing by hand, for
+the case where the watcher is not the one that noticed. Every one of them asks the session for a compile at the top
+of its next frame, which is what keeps the scene, its factories and the load context on the thread that owns them;
+the menu item is disabled unless a session is running for the same reason.
 
-A reload changes what the *catalog and the scene loader* know, and the session says so in the console each time. It
+Saving in another editor is the usual way a script changes, so the folder is also a trigger on its own:
+`ProjectScriptWatcher` watches the project and requests the same reload. It does not compile per event — one save
+arrives as four, an editor that writes a temporary file and renames it as three more, a branch switch as hundreds.
+Events only restart a 400 ms quiet timer, and when it expires the `Scripts/**/*.cs` names and contents are hashed and
+compared with the last state. So one burst is one compile, and a burst that changed no bytes is nothing at all: a
+touch, a checkout that restores identical files, or a scene being written elsewhere in the project. A watcher that
+cannot be created (an unusual file system) is not an error: the menu item still works.
+
+A reload changes what the *catalog and the scene loader* know, and the session says so in the console each time —
+whether it was a save, the menu item, or a script just created. It
 does not reach into an object that already has the component: that object holds an instance of the old type, and
 swapping the code under a live object is not something this editor pretends to do. Opening the scene again is what
 rebuilds its components from the new types — which is also why a reload does not re-read the open scene by itself:
 doing that would throw away the undo history of a scene that merely had none of its own edits outstanding.
+
+So: the catalog follows the folder — save, wait out the quiet period, and the menu is what the next compile would
+produce — but a component that was already on an object before the save still runs the code it was created with until
+its scene is opened again.
 
 Writing happens on the render thread, inside the command, so the UI thread never touches the project folder. The
 one read the panel does itself is `File.Exists`, to label the row honestly.

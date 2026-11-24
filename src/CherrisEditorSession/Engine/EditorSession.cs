@@ -49,6 +49,7 @@ public sealed class EditorSession : Engine, IDisposable
     private int _playState;
 
     private AssemblyLoadContext _scriptContext = NewScriptContext();
+    private readonly ProjectScriptWatcher? _scriptWatcher;
     private readonly List<Type> _scriptTypes = [];
     private IReadOnlyList<ComponentCatalog.Entry> _scriptComponents = [];
     private volatile string? _sceneNotice;
@@ -100,6 +101,14 @@ public sealed class EditorSession : Engine, IDisposable
             // A command that writes a C# script attaches it in the same drain, which is only possible if it can ask
             // for a compile first.
             _commands.ReloadScripts = ReloadProjectScripts;
+        }
+
+        if (_scene.ProjectRoot is { } projectRoot)
+        {
+            // Saving a script in another window is the usual way one changes, so the folder is the trigger. What the
+            // watcher calls is a *request*: the compile still happens at the top of a frame, on the thread that owns
+            // the scene.
+            _scriptWatcher = new ProjectScriptWatcher(projectRoot, OnScriptsChangedOnDisk);
         }
 
         OnDrawUI = _ =>
@@ -182,6 +191,19 @@ public sealed class EditorSession : Engine, IDisposable
 
     private static AssemblyLoadContext NewScriptContext() =>
         new("EditorScripts", isCollectible: true);
+
+    /// <summary>
+    /// What the watcher says when the project's scripts no longer match the ones this session compiled.
+    /// </summary>
+    private void OnScriptsChangedOnDisk()
+    {
+        if (!RequestScriptReload())
+        {
+            return;
+        }
+
+        Logger.Info("[web-editor] The project's scripts changed on disk; compiling at the top of the next frame.");
+    }
 
     /// <summary>Runs a reload the UI asked for, once, at the top of a frame.</summary>
     private void ApplyScriptReload()
@@ -773,6 +795,10 @@ public sealed class EditorSession : Engine, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        // Before anything else: the watcher calls in from a worker thread, and a request that arrives after the
+        // session has torn itself down would be the one race this class cannot make harmless.
+        _scriptWatcher?.Dispose();
+
         _capture?.Dispose();
         _capture = null;
     }
