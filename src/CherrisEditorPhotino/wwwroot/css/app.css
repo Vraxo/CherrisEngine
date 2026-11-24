@@ -1950,7 +1950,6 @@ span.panel-tab:hover {
     gap: 2px;
     overflow: auto;
     padding: 3px;
-    background: var(--theme-recessed);
     border: var(--theme-border-width) solid var(--theme-input-outline);
     border-radius: var(--theme-radius);
 }
