@@ -1,6 +1,6 @@
 @* The reset slot that ends every editable row: an arrow that puts the value back to what a freshly constructed
-   component has. Two looks only — washed out and inert when the value is already there, a filled button with an
-   arrow at full strength when it is not — so what you see is what a click would do, never a shade in between.
+   component has. The icon alone is the button — out of sight while the value is at the default, at full strength
+   when it is not — and there is no background and no hover change, so it never greys out.
    The slot keeps its width either way, so the value column of every row lines up. *@
 <button type="button" class="prop-reset @(CanReset ? "modified" : null)"
         disabled="@(!CanReset)" title="@Title" aria-label="@(Label is null ? Title : Label + ": " + Title)"
