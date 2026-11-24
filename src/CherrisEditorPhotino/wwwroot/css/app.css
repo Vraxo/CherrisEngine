@@ -128,7 +128,7 @@
        before Blazor starts and without JavaScript. The editor applies whichever theme is selected at runtime
        by setting the same custom properties on the document root (wwwroot/js/theme.js), so every rule below
        reads roles, never a particular editor's numbers. Kept in sync with Cherris.UI.Ue5Colors by
-       tests/CherrisEditorWeb.Tests.Ue5PaletteTests.cs, which parses this file.
+       tests/CherrisEditorSession.Tests.Ue5PaletteTests.cs, which parses this file.
        ------------------------------------------------------------------------------------ */
 
     --theme-black: #000000;

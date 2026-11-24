@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <!-- The render host, frame pipe and wire protocol are shared with the browser host. -->
-    <ProjectReference Include="..\CherrisEditorWeb\CherrisEditorWeb.csproj" />
+    <ProjectReference Include="..\CherrisEditorSession\CherrisEditorSession.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CherrisEditorSession</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The engine the session runs, and the script compiler it shares with the ImGui editor. -->
+    <ProjectReference Include="..\Cherris\Cherris.csproj" />
+  </ItemGroup>
+
+</Project>

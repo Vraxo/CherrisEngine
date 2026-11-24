@@ -12,7 +12,8 @@
   <Project Path="src/CherrisEditor/CherrisEditor.csproj" />
   <Project Path="tests/CherrisEditor.Tests/CherrisEditor.Tests.csproj" />
   <Project Path="src/CherrisRuntime/CherrisRuntime.csproj" />
-  <Project Path="src/CherrisEditorWeb/CherrisEditorWeb.csproj" />
+  <Project Path="src/CherrisEditorSession/CherrisEditorSession.csproj" />
+  <Project Path="tools/CherrisFrameViewer/CherrisFrameViewer.csproj" />
   <Project Path="src/CherrisEditorPhotino/CherrisEditorPhotino.csproj" />
-  <Project Path="tests/CherrisEditorWeb.Tests/CherrisEditorWeb.Tests.csproj" />
+  <Project Path="tests/CherrisEditorSession.Tests/CherrisEditorSession.Tests.csproj" />
 </Solution>

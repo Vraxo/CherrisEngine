@@ -4,7 +4,8 @@ This note explains the off-screen render path in `src/Cherris/Rendering/Headless
 webview-hosted editor (or a remote viewer) has to implement to show the game view.
 
 Both halves exist: [`src/CherrisEditorPhotino`](webeditor-host.md) is the PhotinoX Blazor editor window, and
-[`src/CherrisEditorWeb`](webeditor-host.md) is the transport it reuses (also runnable as a browser harness).
+[`src/CherrisEditorSession`](webeditor-host.md) is the library it drives — the window and the webview belong to the
+shell, the graphics context, render thread and frame transport belong to the session.
 The answer to "can the viewport work in a Blazor UI?" is **yes, as a streamed image** — a webview cannot
 host a native OpenGL surface, so the viewport becomes a pixel stream instead of a control.
 
@@ -105,11 +106,11 @@ use `Key.Unknown` for anything unmapped.
 ## Host wiring example
 
 ```csharp
-public sealed class WebEditorEngine : Engine
+public sealed class EditorSession : Engine
 {
     public HeadlessBackend Backend { get; }
 
-    public WebEditorEngine(HeadlessBackend backend)
+    public EditorSession(HeadlessBackend backend)
         : base("Cherris", startWithMouseLocked: false, backend)
     {
         Backend = backend;
@@ -121,7 +122,7 @@ public sealed class WebEditorEngine : Engine
 
 // Render thread:
 var backend = new HeadlessBackend();               // creates the hidden GL context on this thread
-var engine = new WebEditorEngine(backend);
+var engine = new EditorSession(backend);
 using var capture = new SceneFrameCapture(1280, 720);
 
 engine.OnDrawUI = _ =>

@@ -2,8 +2,8 @@ using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Projects;
 using Cherris.Scripting;
-using CherrisEditorWeb;
-using CherrisEditorWeb.Host;
+using CherrisEditorSession;
+using CherrisEditorSession.Host;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -39,9 +39,9 @@ public sealed record RecentProjectEntry(string Path, string Name, bool Exists);
 /// <remarks>
 /// <para>
 /// The window's main thread belongs to the native Photino message loop and to Blazor's dispatcher, so a session
-/// is started with <see cref="WebEditorHost.Start"/>, which creates the graphics context on the thread that calls
+/// is started with <see cref="EditorSessionHost.Start"/>, which creates the graphics context on the thread that calls
 /// it — this one — and runs the engine on its own background thread. That is the opposite of the browser host,
-/// where <see cref="WebEditorHost.Run"/> may own the main thread. Which thread may do what is the host's
+/// where <see cref="EditorSessionHost.Run"/> may own the main thread. Which thread may do what is the host's
 /// business: nothing here has to know about GLFW.
 /// </para>
 /// <para>
@@ -64,7 +64,7 @@ public sealed class EditorHostService : IDisposable
     private readonly Queue<EditorLogEntry> _log = new();
     private readonly object _logLock = new();
 
-    private WebEditorHost? _session;
+    private EditorSessionHost? _session;
     private volatile EditorSessionState _state = EditorSessionState.Idle;
     private volatile string? _failure;
     private volatile string? _failureDetail;
@@ -310,7 +310,7 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when there is no session to ask; the reason is in <see cref="FailureMessage"/>.</returns>
     public bool OpenScene(string scenePath)
     {
-        WebEditorHost? host = _session;
+        EditorSessionHost? host = _session;
 
         if (host is null)
         {
@@ -552,7 +552,7 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when no session is running to apply it.</returns>
     public bool SetPropertyLive(Guid objectId, string componentTypeName, string propertyName, string text)
     {
-        WebEditorHost? host = _session;
+        EditorSessionHost? host = _session;
 
         if (host is null)
         {
@@ -590,7 +590,7 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when no session is running to apply it.</returns>
     public bool SetTransformLive(Guid objectId, TransformField transformField, float x, float y, float z)
     {
-        WebEditorHost? host = _session;
+        EditorSessionHost? host = _session;
 
         if (host is null)
         {
@@ -709,9 +709,9 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>Hands an edit to the render thread, or says why it could not.</summary>
-    private bool Enqueue(CherrisEditorWeb.Host.IEditorCommand command, string action)
+    private bool Enqueue(CherrisEditorSession.Host.IEditorCommand command, string action)
     {
-        WebEditorHost? host = _session;
+        EditorSessionHost? host = _session;
 
         if (host is null)
         {
@@ -853,7 +853,7 @@ public sealed class EditorHostService : IDisposable
         _projectRoot = projectRoot;
         _sessionName = scene.DisplayName;
 
-        WebEditorHost host = new(CreateOptions(), _webRoot, log: WriteLog, scene: scene);
+        EditorSessionHost host = new(CreateOptions(), _webRoot, log: WriteLog, scene: scene);
 
         // A viewport click is picked on the render thread; this is the hand-off to the UI's selection.
         host.ObjectPicked += OnObjectPicked;
@@ -889,7 +889,7 @@ public sealed class EditorHostService : IDisposable
 
     private void Close()
     {
-        WebEditorHost? host = _session;
+        EditorSessionHost? host = _session;
 
         if (host is null)
         {
@@ -914,7 +914,7 @@ public sealed class EditorHostService : IDisposable
     /// </summary>
     /// <param name="host">The session that ended.</param>
     /// <param name="exitCode">Its exit code.</param>
-    private void OnSessionExited(WebEditorHost host, int exitCode)
+    private void OnSessionExited(EditorSessionHost host, int exitCode)
     {
         WriteLog($"[editor] host exited with code {exitCode}");
 
@@ -937,7 +937,7 @@ public sealed class EditorHostService : IDisposable
     /// </summary>
     private bool RequestPlayback(PlaybackRequest request, EditorPlayState stateAfter)
     {
-        WebEditorHost? host = _session;
+        EditorSessionHost? host = _session;
 
         if (host is null || !host.RequestPlayback(request))
         {
@@ -959,7 +959,7 @@ public sealed class EditorHostService : IDisposable
         WriteLog($"[editor] {message}{(detail is null ? string.Empty : $" {detail}")}", LogLevel.Error);
     }
 
-    private WebEditorOptions CreateOptions() => new()
+    private EditorSessionOptions CreateOptions() => new()
     {
         Port = _port,
         Width = _width,

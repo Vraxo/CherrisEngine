@@ -2,7 +2,7 @@
 
 // Viewport bridge for the PhotinoX Blazor host.
 //
-// Mirrors the wire protocol in src/CherrisEditorWeb/Host/ViewportProtocol.cs:
+// Mirrors the wire protocol in src/CherrisEditorSession/Host/ViewportProtocol.cs:
 //   binary frame: [format u8][width i32 LE][height i32 LE][sequence i32 LE][RGBA8 pixels, top-down]
 //
 // Blazor mounts this against a canvas element and hands it the WebSocket URL of the in-process editor
