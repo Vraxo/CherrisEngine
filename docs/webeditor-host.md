@@ -122,7 +122,7 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | `HeadlessBackend` hidden window | main, before the loop starts | Creates the GLFW window/context. OpenTK only allows GLFW init on the process' main thread. |
 | `WebEditorEngine` | background ("Cherris Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
 | `EditorHostService` | main, then any | One session at a time: validates the project, prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics, recent projects and failures. |
-| `WebEditorHost` | any | Owns the listener, the desired viewport size, the active client, and input translation into `HeadlessInput`. |
+| `WebEditorHost` | any | One session: the graphics context, the render thread, the listener, the viewport size, the active client and input translation into `HeadlessInput`. `Start()` is for a host with a message loop on its main thread, `Run()` for one without. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
 | `FramePipe` | shared | Single-slot frame hand-off: newest frame wins, stale frames are dropped and pooled. |
@@ -147,12 +147,14 @@ and nothing there touches Blazor state or `StateHasChanged`. Cross-thread data m
 The one thing that cannot move off the main thread is **context creation**. `Engine`'s constructor calls
 `IRenderingInterface.Initialize`, and OpenTK's `GLFWProvider.EnsureInitialized` throws
 `GLFWException("GLFW can only be called from the main thread!")` for anything that is not the thread whose
-stack holds the entry point — on every platform, not just macOS. So `EditorHostService.Start` runs on the
-main thread and calls `HeadlessBackend.CreateGraphicsContext(...)` there; the render thread only calls
-`MakeCurrent()`. A GL context is portable between threads and nothing is ever presented from the hidden
-window, so the split is safe. Two details make it work:
+stack holds the entry point — on every platform, not just macOS. `WebEditorHost` owns that rule: `Start()`
+creates the context on the thread that calls it (Blazor's dispatcher, which is the main thread) and then runs the
+loop on a background thread, while `Run()` creates it on the thread that will also run the loop (the browser
+host's main thread). The render thread only calls `MakeCurrent()`. A GL context is portable between threads and
+nothing is ever presented from the hidden window, so the split is safe. Two details make it work:
 
-- `CreateGraphicsContext` **releases** the context before returning. `NativeWindow`'s constructor makes the
+- `CreateGraphicsContext` **releases** the context before returning — the host calls it from `Start`, and
+  the render thread rebinds it. `NativeWindow`'s constructor makes the
   context current on the creating thread, and a context can only be current on one thread at a time, so
   leaving it bound makes the render thread's `MakeCurrent` fail with
   `WGL: Failed to make context current: The requested resource is in use` (`ERROR_BUSY`). The render thread

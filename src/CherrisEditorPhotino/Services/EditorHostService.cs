@@ -1,11 +1,9 @@
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Projects;
-using Cherris.Rendering.Headless;
 using Cherris.Scripting;
 using CherrisEditorWeb;
 using CherrisEditorWeb.Host;
-using OpenTK.Windowing.Desktop;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -40,17 +38,11 @@ public sealed record RecentProjectEntry(string Path, string Name, bool Exists);
 /// </summary>
 /// <remarks>
 /// <para>
-/// The window's main thread belongs to the native Photino message loop and to Blazor's dispatcher, so each
-/// session puts the engine on its own background thread. That is the opposite arrangement from the browser
-/// host, where the engine owns the main thread.
-/// </para>
-/// <para>
-/// One step cannot live on that thread: OpenTK refuses to initialise GLFW anywhere but the process' main
-/// thread (<c>GLFWProvider.CheckForMainThread</c>), and <see cref="Cherris.Core.Engine"/>'s constructor
-/// initialises the backend. The hidden window is therefore created here, on the thread that called
-/// <see cref="OpenProjectAsync"/> — Blazor's dispatcher, which is the main thread — and the render thread
-/// only makes the context current. GL contexts are portable between threads and the hidden window is never
-/// presented.
+/// The window's main thread belongs to the native Photino message loop and to Blazor's dispatcher, so a session
+/// is started with <see cref="WebEditorHost.Start"/>, which creates the graphics context on the thread that calls
+/// it — this one — and runs the engine on its own background thread. That is the opposite of the browser host,
+/// where <see cref="WebEditorHost.Run"/> may own the main thread. Which thread may do what is the host's
+/// business: nothing here has to know about GLFW.
 /// </para>
 /// <para>
 /// Switching projects stops the session and starts a new one: the scene, the project's asset root and the
@@ -61,9 +53,6 @@ public sealed record RecentProjectEntry(string Path, string Name, bool Exists);
 public sealed class EditorHostService : IDisposable
 {
     private const int MaximumLogLines = 400;
-    private const int ContextWidth = 1920;
-    private const int ContextHeight = 1080;
-    private const int StopTimeoutSeconds = 5;
     private const int StartTimeoutSeconds = 20;
 
     private readonly string _webRoot;
@@ -75,7 +64,7 @@ public sealed class EditorHostService : IDisposable
     private readonly Queue<EditorLogEntry> _log = new();
     private readonly object _logLock = new();
 
-    private Session? _session;
+    private WebEditorHost? _session;
     private volatile EditorSessionState _state = EditorSessionState.Idle;
     private volatile string? _failure;
     private volatile string? _failureDetail;
@@ -159,14 +148,14 @@ public sealed class EditorHostService : IDisposable
     public bool HasProject => _projectRoot is not null;
 
     /// <summary>URL of the current session's host, or null while nothing is listening.</summary>
-    public string? Url => _session?.Host.Url;
+    public string? Url => _session?.Url;
 
     /// <summary>WebSocket endpoint the viewport script connects to for frames.</summary>
     public string WebSocketUrl
     {
         get
         {
-            string? url = _session?.Host.Url;
+            string? url = _session?.Url;
 
             if (url is null)
             {
@@ -186,7 +175,7 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>Most recent scene snapshot from the render thread, or null before the first frame.</summary>
-    public SceneSnapshot? LatestScene => _session?.Host.LatestScene;
+    public SceneSnapshot? LatestScene => _session?.LatestScene;
 
     /// <summary>
     /// Whether the viewport draws the editor's grid. The render loop reads it from the session's host, so a new
@@ -198,7 +187,7 @@ public sealed class EditorHostService : IDisposable
         set
         {
             _showGrid = value;
-            _session?.Host.ShowGrid = value;
+            _session?.ShowGrid = value;
         }
     }
 
@@ -224,16 +213,16 @@ public sealed class EditorHostService : IDisposable
     public string? FailureMessage => _failure;
 
     /// <summary>The exception behind <see cref="FailureMessage"/>, verbatim, or null.</summary>
-    public string? FailureDetail => _failureDetail ?? _session?.Host.FailureDetail;
+    public string? FailureDetail => _failureDetail ?? _session?.FailureDetail;
 
     /// <summary>Renderer, vendor and GL version, or null while the renderer is starting.</summary>
-    public string? RendererInfo => _session?.Host.RendererInfo;
+    public string? RendererInfo => _session?.RendererInfo;
 
     /// <summary>
     /// Something the session had to say about the scene it opened — an empty file, a camera it had to add, a
     /// file that is not a scene — or null when the scene opened exactly as it is on disk.
     /// </summary>
-    public string? SceneNotice => _session?.Host.SceneNotice;
+    public string? SceneNotice => _session?.SceneNotice;
 
     /// <summary>Where the diagnostics log is written, or null when no file could be created.</summary>
     public string? LogFilePath => _logFilePath;
@@ -248,7 +237,7 @@ public sealed class EditorHostService : IDisposable
         get
         {
             IReadOnlyList<Cherris.Components.ComponentCatalog.Entry> scripts =
-                _session?.Host.ScriptComponents ?? [];
+                _session?.ScriptComponents ?? [];
 
             return scripts.Count == 0
                 ? Cherris.Components.ComponentCatalog.BuiltIn
@@ -269,8 +258,8 @@ public sealed class EditorHostService : IDisposable
         WebRoot: _webRoot,
         WebRootExists: Directory.Exists(_webRoot),
         EditorResourcesPresent: Directory.Exists(Path.Combine(AppContext.BaseDirectory, "EditorResources")),
-        HostUrl: _session?.Host.Url,
-        RendererInfo: _session?.Host.RendererInfo,
+        HostUrl: _session?.Url,
+        RendererInfo: _session?.RendererInfo,
         Failure: FailureDetail,
         LogFilePath: _logFilePath));
 
@@ -321,7 +310,7 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when there is no session to ask; the reason is in <see cref="FailureMessage"/>.</returns>
     public bool OpenScene(string scenePath)
     {
-        WebEditorHost? host = _session?.Host;
+        WebEditorHost? host = _session;
 
         if (host is null)
         {
@@ -529,16 +518,16 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>True when there is an edit to take back.</summary>
-    public bool CanUndo => _session?.Host.History.CanUndo ?? false;
+    public bool CanUndo => _session?.History.CanUndo ?? false;
 
     /// <summary>True when there is an edit to re-apply.</summary>
-    public bool CanRedo => _session?.Host.History.CanRedo ?? false;
+    public bool CanRedo => _session?.History.CanRedo ?? false;
 
     /// <summary>What Undo would take back, for the menu's label, or null.</summary>
-    public string? UndoLabel => _session?.Host.History.UndoLabel;
+    public string? UndoLabel => _session?.History.UndoLabel;
 
     /// <summary>What Redo would re-apply, for the menu's label, or null.</summary>
-    public string? RedoLabel => _session?.Host.History.RedoLabel;
+    public string? RedoLabel => _session?.History.RedoLabel;
 
     /// <summary>
     /// Adds a component to an object in the live scene. The render thread applies it on its next frame, and
@@ -563,7 +552,7 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when no session is running to apply it.</returns>
     public bool SetPropertyLive(Guid objectId, string componentTypeName, string propertyName, string text)
     {
-        WebEditorHost? host = _session?.Host;
+        WebEditorHost? host = _session;
 
         if (host is null)
         {
@@ -601,7 +590,7 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when no session is running to apply it.</returns>
     public bool SetTransformLive(Guid objectId, TransformField transformField, float x, float y, float z)
     {
-        WebEditorHost? host = _session?.Host;
+        WebEditorHost? host = _session;
 
         if (host is null)
         {
@@ -722,7 +711,7 @@ public sealed class EditorHostService : IDisposable
     /// <summary>Hands an edit to the render thread, or says why it could not.</summary>
     private bool Enqueue(CherrisEditorWeb.Host.IEditorCommand command, string action)
     {
-        WebEditorHost? host = _session?.Host;
+        WebEditorHost? host = _session;
 
         if (host is null)
         {
@@ -864,24 +853,7 @@ public sealed class EditorHostService : IDisposable
         _projectRoot = projectRoot;
         _sessionName = scene.DisplayName;
 
-        // GLFW has to be initialised on the main thread, which is where this method's synchronous part runs
-        // (Blazor's dispatcher). The render thread takes over the context below.
-        HeadlessBackend backend = new();
-
-        try
-        {
-            backend.CreateGraphicsContext("Cherris Editor", ContextWidth, ContextHeight);
-            GLFWProvider.CheckForMainThread = false;
-            WriteLog("[editor] hidden GL context created on the main thread");
-        }
-        catch (Exception exception)
-        {
-            backend.Dispose();
-            Fail("The graphics context could not be created on this machine.", exception.ToString());
-            return false;
-        }
-
-        WebEditorHost host = new(CreateOptions(), _webRoot, backend, WriteLog, scene);
+        WebEditorHost host = new(CreateOptions(), _webRoot, log: WriteLog, scene: scene);
 
         // A viewport click is picked on the render thread; this is the hand-off to the UI's selection.
         host.ObjectPicked += OnObjectPicked;
@@ -889,29 +861,25 @@ public sealed class EditorHostService : IDisposable
         // The viewport's options belong to the UI and outlive a session, so a new host starts where the last one
         // left off instead of drawing a grid the user turned off.
         host.ShowGrid = _showGrid;
-        ManualResetEventSlim exited = new(false);
+        host.Exited += exitCode => OnSessionExited(host, exitCode);
 
-        // The thread body needs the session, so the closure reads it after it has been assigned.
-        Session? session = null;
-        Thread worker = new(() => RunHost(session!))
+        _session = host;
+
+        // The context is made here, on Blazor's dispatcher, because OpenTK only initialises GLFW on the process'
+        // main thread; the host puts the render loop on its own thread and says which step failed if one does.
+        if (!host.Start())
         {
-            IsBackground = true,
-            Name = "Cherris Engine"
-        };
+            Fail(
+                host.StartFailure == EditorStartFailure.Graphics
+                    ? "The graphics context could not be created on this machine."
+                    : $"The editor host could not listen on port {_port}.",
+                host.FailureDetail);
 
-        session = new Session(host, backend, exited);
-        _session = session;
-        worker.Start();
-
-        // Waiting off the dispatcher keeps the launcher responsive; the hand-off is already done, so the
-        // continuation does not need the main thread.
-        await Task.Run(() => host.WaitForStart(TimeSpan.FromSeconds(StartTimeoutSeconds))).ConfigureAwait(true);
-
-        if (host.StartFailed)
-        {
-            Fail($"The editor host could not listen on port {_port}.", host.FailureDetail);
             return false;
         }
+
+        // Waiting off the dispatcher keeps the launcher responsive; the listener is already up.
+        await Task.Run(() => host.WaitForStart(TimeSpan.FromSeconds(StartTimeoutSeconds))).ConfigureAwait(true);
 
         _state = EditorSessionState.Running;
         WriteLog($"[editor] session running at {host.Url}");
@@ -921,9 +889,9 @@ public sealed class EditorHostService : IDisposable
 
     private void Close()
     {
-        Session? session = _session;
+        WebEditorHost? host = _session;
 
-        if (session is null)
+        if (host is null)
         {
             return;
         }
@@ -933,47 +901,27 @@ public sealed class EditorHostService : IDisposable
         _session = null;
         _playState = EditorPlayState.Editing;
 
-        session.Host.RequestStop();
-
-        if (!session.Exited.Wait(TimeSpan.FromSeconds(StopTimeoutSeconds)))
-        {
-            WriteLog("[editor] render thread did not stop within " +
-                $"{StopTimeoutSeconds} seconds; abandoning it");
-        }
-
-        session.Host.Dispose();
-        session.Backend.Dispose();
-        session.Exited.Dispose();
+        // Stops the loop, gives it a bounded chance to finish, releases the graphics context and destroys the
+        // hidden window — in that order, which is what the host exists to get right.
+        host.Dispose();
 
         WriteLog("[editor] session closed");
     }
 
-    private void RunHost(Session session)
+    /// <summary>
+    /// What the render thread says when a session ends. A non-zero code means the loop failed, and the window
+    /// shows it the same way a failed start is shown.
+    /// </summary>
+    /// <param name="host">The session that ended.</param>
+    /// <param name="exitCode">Its exit code.</param>
+    private void OnSessionExited(WebEditorHost host, int exitCode)
     {
-        try
-        {
-            int exitCode = session.Host.Run();
+        WriteLog($"[editor] host exited with code {exitCode}");
 
-            WriteLog($"[editor] host exited with code {exitCode}");
-
-            if (exitCode != 0 && ReferenceEquals(_session, session))
-            {
-                _failure = "The renderer stopped.";
-                _state = EditorSessionState.Failed;
-            }
-        }
-        catch (Exception exception)
+        if (exitCode != 0 && ReferenceEquals(_session, host))
         {
-            WriteLog($"[editor] host failed: {exception}");
-
-            if (ReferenceEquals(_session, session))
-            {
-                Fail("The editor host threw an exception.", exception.ToString());
-            }
-        }
-        finally
-        {
-            session.Exited.Set();
+            _failure = "The renderer stopped.";
+            _state = EditorSessionState.Failed;
         }
     }
 
@@ -989,7 +937,7 @@ public sealed class EditorHostService : IDisposable
     /// </summary>
     private bool RequestPlayback(PlaybackRequest request, EditorPlayState stateAfter)
     {
-        WebEditorHost? host = _session?.Host;
+        WebEditorHost? host = _session;
 
         if (host is null || !host.RequestPlayback(request))
         {
@@ -1083,18 +1031,6 @@ public sealed class EditorHostService : IDisposable
         }
     }
 
-    /// <summary>One render session: the host, its GL context and the signal its thread sets when it ends.</summary>
-    private sealed class Session(
-        WebEditorHost host,
-        HeadlessBackend backend,
-        ManualResetEventSlim exited)
-    {
-        public WebEditorHost Host { get; } = host;
-
-        public HeadlessBackend Backend { get; } = backend;
-
-        public ManualResetEventSlim Exited { get; } = exited;
-    }
 }
 
 /// <summary>One line of the editor log the console panel renders.</summary>
