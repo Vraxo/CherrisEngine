@@ -18,6 +18,14 @@ namespace CherrisEditor;
 /// <see cref="UnityDarkTheme"/> for where those come from.
 /// </para>
 /// <para>
+/// Menus and popups follow Unity's context-menu look rather than UE5's: a near-black
+/// <see cref="ThemeRoles.Background"/> surface, a mid-grey <see cref="ThemeRoles.Header"/> hover fill,
+/// <see cref="ThemeRoles.Foreground"/> text with <see cref="ThemeRoles.AccentGray"/> for disabled items, and a
+/// <see cref="ThemeRoles.DropdownOutline"/> hairline separator. Sampled from Unity's Project-window menu
+/// (#141414 background, #3c3c3c hover, #d2d2d2 text, #727272 disabled, #373737 separator), those roles land
+/// within a few levels of the sample in both themes without changing any published palette value.
+/// </para>
+/// <para>
 /// Rounding, border width, scrollbar width and frame padding come from <see cref="EditorTheme.Metrics"/>, so a
 /// theme with 18px controls and 3px corners looks like one rather than like the engine's 22px and 4px with
 /// different paint.
@@ -41,7 +49,9 @@ public static class ImGuiTheme
 
         style.Colors[(int)ImGuiCol.WindowBg] = theme[ThemeRoles.Panel].ToVector4();
         style.Colors[(int)ImGuiCol.ChildBg] = theme[ThemeRoles.Recessed].ToVector4();
-        style.Colors[(int)ImGuiCol.PopupBg] = theme[ThemeRoles.Dropdown].ToVector4();
+        // Menus and popups sit on Background, the darkest surface, like Unity's context menus (#141414 sampled).
+        // Dropdown stays for dialogs and other raised surfaces in the Blazor editor, which reads it directly.
+        style.Colors[(int)ImGuiCol.PopupBg] = theme[ThemeRoles.Background].ToVector4();
         style.Colors[(int)ImGuiCol.Border] = theme[ThemeRoles.WindowBorder].ToVector4();
         style.Colors[(int)ImGuiCol.BorderShadow] = theme[ThemeRoles.Black].WithAlpha(0f).ToVector4();
 
@@ -71,12 +81,15 @@ public static class ImGuiTheme
         style.Colors[(int)ImGuiCol.ButtonHovered] = theme[ThemeRoles.Hover].ToVector4();
         style.Colors[(int)ImGuiCol.ButtonActive] = theme[ThemeRoles.Header].ToVector4();
 
-        // FTableRowStyle: Select fills the selected row, SelectHover the hovered one.
+        // FTableRowStyle: Select fills the selected row. The hovered and pressed fills are Header, the mid-grey
+        // Unity uses for a hovered menu item (#3c3c3c sampled; Unity's Header is exactly that), so a menu hover
+        // reads as a grey bar rather than the row-hover Panel it used to be.
         style.Colors[(int)ImGuiCol.Header] = theme[ThemeRoles.Select].ToVector4();
-        style.Colors[(int)ImGuiCol.HeaderHovered] = theme[ThemeRoles.SelectHover].ToVector4();
-        style.Colors[(int)ImGuiCol.HeaderActive] = theme[ThemeRoles.Select].ToVector4();
+        style.Colors[(int)ImGuiCol.HeaderHovered] = theme[ThemeRoles.Header].ToVector4();
+        style.Colors[(int)ImGuiCol.HeaderActive] = theme[ThemeRoles.Header].ToVector4();
 
-        style.Colors[(int)ImGuiCol.Separator] = theme[ThemeRoles.Recessed].ToVector4();
+        // A hairline that stays visible on both the dark menu surface and the lighter panel surface.
+        style.Colors[(int)ImGuiCol.Separator] = theme[ThemeRoles.DropdownOutline].ToVector4();
         // ImGui has no separate separator affordances in UE5; both borrow the drag/selection blue.
         style.Colors[(int)ImGuiCol.SeparatorHovered] = theme[ThemeRoles.Selection].WithAlpha(0.78f).ToVector4();
         style.Colors[(int)ImGuiCol.SeparatorActive] = theme[ThemeRoles.Selection].ToVector4();

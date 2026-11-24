@@ -693,15 +693,17 @@ body {
     z-index: 40;
 }
 
-/* Menu.Background + Menu.Outline */
+/* Unity-style context menu: the darkest surface (Background, #141414 sampled from Unity's Project menu) with a
+   DropdownOutline border, rather than UE5's lighter Menu.Background. Dialogs keep Dropdown so a dialog opened
+   from a menu reads as a step up from it. */
 .menu-popup {
     position: absolute;
     top: 100%;
     left: 0;
     z-index: 50;
     min-width: 210px;
-    padding: 4px 0;
-    background: var(--theme-dropdown);
+    padding: 8px 0;
+    background: var(--theme-background);
     border: var(--theme-border-width) solid var(--theme-dropdown-outline);
     border-radius: 0;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -721,15 +723,16 @@ body {
     z-index: 50;
 }
 
-/* Menu.Button: the hovered (and pressed) fill is Primary, the text ForegroundHover. */
+/* Unity-style menu item: Foreground text on the dark menu surface, a mid-grey Header bar on hover
+   (#3c3c3c sampled; Unity's Header is exactly that), and muted AccentGray when disabled. Spacious vertical
+   padding, like Unity's, instead of UE5's tight Menu.Block padding. */
 .menu-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 24px;
     width: 100%;
-    /* Menu.Block.Padding = FMargin(12, 1, 5, 1). */
-    padding: 1px 5px 1px 12px;
+    padding: 6px 16px;
     border: none;
     background: transparent;
     color: var(--theme-foreground);
@@ -740,7 +743,7 @@ body {
 }
 
 .menu-item:hover:not(:disabled) {
-    background: var(--theme-primary);
+    background: var(--theme-header);
     color: var(--theme-foreground-hover);
 }
 
@@ -754,9 +757,14 @@ body {
     color: var(--theme-white);
 }
 
+/* Shortcuts sit at the item's own size and brightness, like Unity's ("Alt+Ctrl+C" reads as part of the item);
+   on a disabled item they mute with it. */
 .menu-shortcut {
+    color: var(--theme-foreground);
+}
+
+.menu-item:disabled .menu-shortcut {
     color: var(--theme-accent-gray);
-    font-size: var(--theme-font-small);
 }
 
 /* ---- modal dialog (New Scene) ---- */
@@ -769,7 +777,7 @@ body {
     z-index: 55;
 }
 
-/* Menu.Background + Menu.Outline, so a dialog reads as the same surface as the menus it opens from. */
+/* Menu.Background + Menu.Outline: dialogs keep the lighter Dropdown surface, a step up from the dark menus. */
 .dialog {
     position: fixed;
     top: 50%;
@@ -854,11 +862,11 @@ body {
     margin-top: 6px;
 }
 
-/* Menu.Separator is White25. */
+/* A hairline visible on the dark menu surface (DropdownOutline; #373737 sampled from Unity's menu). */
 .menu-separator {
     height: 1px;
-    margin: 6px 12px;
-    background: var(--theme-white-25);
+    margin: 8px 12px;
+    background: var(--theme-dropdown-outline);
 }
 
 /* ---- transport toolbar ---- */
@@ -1148,11 +1156,11 @@ span.panel-tab:hover {
     cursor: default;
 }
 
-/* Separator is painted with Recessed. */
+/* Separator is painted with DropdownOutline, the same hairline the ImGui editor uses. */
 .imgui-separator {
     height: 1px;
     margin: 6px 0;
-    background: var(--theme-recessed);
+    background: var(--theme-dropdown-outline);
 }
 
 .imgui-checkbox {
@@ -1708,7 +1716,7 @@ span.panel-tab:hover {
     z-index: 41;
     margin-top: 4px;
     padding: 2px;
-    background: var(--theme-dropdown);
+    background: var(--theme-background);
     border: var(--theme-border-width) solid var(--theme-dropdown-outline);
     border-radius: var(--theme-radius);
 }
