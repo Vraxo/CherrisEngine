@@ -244,6 +244,11 @@
 
                 @if (IsAddMenuOpen(node.Id))
                 {
+                    @* The menu is inline — it scrolls with the panel rather than floating over it — so it carries its
+                       own click-away: any click that is not on the menu closes it, the same way the menubar's menus
+                       do. The menu is lifted over the scrim in app.css, or the scrim would cover it too. *@
+                    <div class="add-menu-scrim" @onclick="CloseAddMenu"></div>
+
                     IReadOnlyList<ComponentCatalog.Entry> matches = Matches(node);
                     string query = _search.Trim();
                     bool suggestScript = query.Length > 0 && matches.Count == 0;

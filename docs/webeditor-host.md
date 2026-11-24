@@ -406,8 +406,13 @@ hides what is already there and the command refuses a duplicate if a stale menu 
 
 `Add Component` sits centred under the component list, with the same label and in the same place as the ImGui
 inspector's button, and opens a search box with the focus already in it: an inline menu cannot use the `autofocus`
-attribute, so the panel takes the focus in `OnAfterRenderAsync` once the box is on screen. Typing filters the catalog, ignoring case and matching anywhere in the name. **Enter** takes the
-first match and **Escape** closes the menu, so the whole thing works without the mouse.
+attribute, so the panel takes the focus in `OnAfterRenderAsync` once the box is on screen. Typing filters the
+catalog, ignoring case and matching anywhere in the name. **Enter** takes the first match and **Escape** closes
+the menu, so the whole thing works without the mouse.
+
+A click anywhere else closes it too. The menu is inline rather than floating, so it carries its own scrim —
+the same click-away the menubar's menus use — and is lifted over that scrim, which is what keeps the rows
+clickable while every other click in the editor only dismisses it.
 
 When the typed name matches no component — the way Unity's Add Component menu behaves — the only row becomes an
 offer to make it a script:
