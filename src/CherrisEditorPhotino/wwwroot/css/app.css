@@ -1654,7 +1654,8 @@ span.panel-tab:hover {
 
 /* The reset slot ends every value row. The icon alone is the button — Unity keeps it out of sight until
    the value is modified, so the right column is not a repeating column of arrows. No background anywhere,
-   and hover never dims it: hover in this app makes things more prominent, so grey-out is the opposite. */
+   and hover never dims it: hover in this app makes things more prominent, so grey-out is the opposite.
+   There is no transition anywhere on the button, so it appears and disappears instantly. */
 .prop-reset {
     display: grid;
     place-items: center;
@@ -1668,7 +1669,6 @@ span.panel-tab:hover {
     opacity: 0;
     cursor: default;
     appearance: none;
-    transition: opacity 90ms linear;
 }
 
 .prop-reset svg {
@@ -1677,11 +1677,16 @@ span.panel-tab:hover {
 }
 
 /* Away from the default: the icon at full strength, brighter than the idle shade so you can see the
-   difference without a fill. Stays that way when hovered. */
+   difference without a fill. */
 .prop-reset.modified {
     color: var(--theme-foreground);
     opacity: 1;
     cursor: pointer;
+}
+
+/* The live button brightens while hovered — a slight difference, and it lands instantly, never a fade. */
+.prop-reset.modified:hover {
+    color: var(--theme-foreground-hover);
 }
 
 /* Keyboard users get a ring: the icon alone cannot say "this is focused" for them. */
