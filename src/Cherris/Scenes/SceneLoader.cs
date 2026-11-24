@@ -160,11 +160,40 @@ public class SceneLoader
         if (comp != null)
         {
             go.AddComponent(comp);
+
+            // The serializer writes the enable toggle for every component, whatever its factory reads
+            // (SceneSerializer), so it is read back here for all of them, after the factory has had its say.
+            if (properties is Dictionary<object, object> propsDict && TryReadEnabled(propsDict, out bool enabled))
+            {
+                comp.Enabled = enabled;
+            }
+
             if (comp is Script s && properties is Dictionary<object, object> pd)
             {
                 ApplyScriptProperties(s, pd);
             }
         }
+    }
+
+    /// <summary>
+    /// The enable toggle as the YAML gives it: a bool, or its name when the scalar came through as text.
+    /// </summary>
+    private static bool TryReadEnabled(Dictionary<object, object> props, out bool enabled)
+    {
+        enabled = true;
+
+        if (!props.TryGetValue("Enabled", out var value))
+        {
+            return false;
+        }
+
+        if (value is bool flag)
+        {
+            enabled = flag;
+            return true;
+        }
+
+        return value is string text && Boolean.TryParse(text, out enabled);
     }
 
     private static void ApplyScriptProperties(Script script, Dictionary<object, object> propsDict)
@@ -178,7 +207,10 @@ public class SceneLoader
             }
 
             var prop = type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
-            if (prop == null || !prop.CanWrite)
+
+            // [HideInInspector] is the engine's own state, not the scene's: Component.Enabled is read above,
+            // for every component, and Script.IsSuspended is never saved at all.
+            if (prop == null || !prop.CanWrite || prop.IsDefined(typeof(HideInInspectorAttribute), false))
             {
                 continue;
             }

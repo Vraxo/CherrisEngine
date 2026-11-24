@@ -75,7 +75,7 @@ public class PlayModeManager
             // 4. Find/Set Main Camera for Game
             var gameCamera = _sceneManager.ActiveScene.GameObjects
                 .Select(g => g.GetComponent<Camera>())
-                .FirstOrDefault(c => c is not null && c != editorCamera);
+                .FirstOrDefault(c => c is { Enabled: true } && c != editorCamera);
 
             if (gameCamera is not null)
             {
@@ -91,7 +91,7 @@ public class PlayModeManager
         }
 
         State = EditorState.Playing;
-        SetScriptsEnabledForPlayMode();
+        SetScriptsRunningForPlayMode();
 
         Logger.Info("[PlayMode] Game Started.");
     }
@@ -104,7 +104,7 @@ public class PlayModeManager
         }
 
         State = EditorState.Paused;
-        SetScriptsEnabledForPauseMode();
+        SetScriptsRunningForPauseMode();
         Logger.Info("[PlayMode] Game Paused.");
     }
 
@@ -143,30 +143,35 @@ public class PlayModeManager
         _sceneManager.OpenScene(newScene);
     }
 
-    private void SetScriptsEnabledForPlayMode()
+    /// <summary>
+    /// Lets every script but the editor's own run. Whether an individual script is enabled is the author's
+    /// decision (<see cref="Component.Enabled"/>) and is left alone; this only lifts the hold editing put on them
+    /// (<see cref="Script.IsSuspended"/>).
+    /// </summary>
+    private void SetScriptsRunningForPlayMode()
     {
         int count = 0;
         foreach (var script in _sceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            // Disable EditorController, Enable everything else
+            // Hold back the EditorController, let everything else run
             bool isEditorScript = script.GetType().Name == "EditorController";
-            script.Enabled = !isEditorScript;
+            script.IsSuspended = isEditorScript;
 
-            if (script.Enabled)
+            if (script.Enabled && !script.IsSuspended)
             {
                 count++;
             }
         }
-        Logger.Info($"[PlayMode] Enabled {count} scripts.");
+        Logger.Info($"[PlayMode] {count} scripts can run.");
     }
 
-    private void SetScriptsEnabledForPauseMode()
+    private void SetScriptsRunningForPauseMode()
     {
         foreach (var script in _sceneManager.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
             // In pause mode, we might want to enable the EditorCamera to fly around frozen time
             bool isEditorScript = script.GetType().Name == "EditorController";
-            script.Enabled = isEditorScript;
+            script.IsSuspended = !isEditorScript;
         }
     }
 }

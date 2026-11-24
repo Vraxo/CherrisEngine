@@ -151,6 +151,57 @@ public class EditorCommandTests
     }
 
     [Fact]
+    public void SetComponentEnabled_SwitchesItOff_AndUndoSwitchesItBackOn()
+    {
+        Harness scene = new();
+        Light light = scene.Target.AddComponent(new Light());
+
+        scene.Run(new SetComponentEnabledCommand(scene.Target.Id, nameof(Light), false)).Should().Contain("disabled");
+        light.Enabled.Should().BeFalse();
+        scene.Live.Lights.Should().BeEmpty("a light that is off does not light");
+        scene.Live.IsDirty.Should().BeTrue();
+
+        scene.Run(new UndoCommand()).Should().Contain("enabled");
+        light.Enabled.Should().BeTrue();
+        scene.Live.Lights.Should().Contain(light, "the renderer's list of lights follows the toggle back");
+
+        scene.Run(new RedoCommand()).Should().Contain("disabled");
+        light.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SetComponentEnabled_ToTheStateItIsIn_RecordsNothing()
+    {
+        Harness scene = new();
+        scene.Target.AddComponent(new Light());
+
+        scene.Run(new SetComponentEnabledCommand(scene.Target.Id, nameof(Light), true)).Should().BeNull();
+        scene.History.CanUndo.Should().BeFalse("a toggle that changes nothing is not a step to take back");
+    }
+
+    [Fact]
+    public void SetComponentEnabled_WithoutTheComponent_SaysSo()
+    {
+        Harness scene = new();
+
+        scene.Run(new SetComponentEnabledCommand(scene.Target.Id, nameof(Light), false))
+            .Should().Contain("could not disable Light");
+
+        scene.History.CanUndo.Should().BeFalse();
+    }
+
+    [Fact]
+    public void History_LabelsAToggle_WithWhatItDid()
+    {
+        Harness scene = new();
+        scene.Target.AddComponent(new Light());
+
+        scene.Run(new SetComponentEnabledCommand(scene.Target.Id, nameof(Light), false));
+
+        scene.History.UndoLabel.Should().Be("disable Light");
+    }
+
+    [Fact]
     public void SetProperty_WritesTheValue_AndUndoRestoresIt()
     {
         Harness scene = new();

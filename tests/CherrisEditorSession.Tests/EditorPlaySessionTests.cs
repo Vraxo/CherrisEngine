@@ -129,6 +129,29 @@ public class EditorPlaySessionTests
     }
 
     [Fact]
+    public void Stop_PutsTheComponentTogglesBack()
+    {
+        GameObject cube = new("Cube");
+        Light light = cube.AddComponent(new Light { Enabled = false });
+        Camera camera = cube.AddComponent(new Camera());
+        (SceneManager scenes, _) = OpenScene(cube);
+        EditorPlaySession play = new(scenes);
+
+        play.Play();
+
+        // What a click on the header checkbox does while the scene runs.
+        light.Enabled = true;
+        camera.Enabled = false;
+
+        play.Stop();
+
+        light.Enabled.Should().BeFalse();
+        camera.Enabled.Should().BeTrue();
+        scenes.ActiveScene!.Lights.Should().BeEmpty("the renderer's lists are refreshed with the restored toggles");
+        scenes.ActiveScene.MainCamera.Should().Be(camera);
+    }
+
+    [Fact]
     public void Stop_RemovesObjectsThatPlayCreated()
     {
         GameObject cube = new("Cube");

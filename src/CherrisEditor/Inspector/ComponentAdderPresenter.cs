@@ -98,7 +98,9 @@ public class ComponentAdderPresenter
                     _sceneManager.ActiveScene.IsDirty = true;
                     if (_menuBuilder.IsInEditMode)
                     {
-                        script.Enabled = false;
+                        // A script added while editing is enabled as far as the author is concerned; it is the
+                        // editor that holds it back until Play.
+                        script.IsSuspended = true;
                     }
                 }
 
@@ -136,7 +138,7 @@ public class ComponentAdderPresenter
 
                 if (_menuBuilder.IsInEditMode)
                 {
-                    newComponent.Enabled = false;
+                    newComponent.IsSuspended = true;
                 }
 
                 ImGui.CloseCurrentPopup();
@@ -183,7 +185,7 @@ public class ComponentAdderPresenter
 
             if (_menuBuilder.IsInEditMode)
             {
-                newComponent.Enabled = false;
+                newComponent.IsSuspended = true;
             }
         }
 

@@ -114,51 +114,63 @@ public class SceneSerializer
                 continue;
             }
 
-            // MeshRenderer requires special handling for its nested Material object.
-            if (component is MeshRenderer mr)
+            Dictionary<string, object> data = component switch
             {
-                Dictionary<string, object> meshRendererData = new() { ["Mesh"] = mr.MeshName };
-                Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
+                // MeshRenderer requires special handling for its nested Material object.
+                MeshRenderer mr => SerializeMeshRenderer(mr),
 
-                if (mr.Material.TextureTiling != Vector2.One)
-                {
-                    materialData["TextureTiling"] = mr.Material.TextureTiling;
-                }
-
-                if (mr.Material.EmissiveColor != Vector3.Zero)
-                {
-                    materialData["EmissiveColor"] = mr.Material.EmissiveColor;
-                }
-
-                if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
-                {
-                    materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
-                }
-
-                if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
-                {
-                    materialData["Shininess"] = mr.Material.Shininess;
-                }
-
-                meshRendererData["Material"] = materialData;
-                componentsData["MeshRenderer"] = meshRendererData;
-            }
-            else if (component is LanguageScript languageScript)
-            {
-                // The editor disables scripts while editing; that transient state must not
-                // disable the script in a saved scene or play-mode snapshot.
-                componentsData[nameof(LanguageScript)] = new Dictionary<string, object>
+                // Named properties rather than reflection, and only the script's own: the editor's hold on it
+                // (Script.IsSuspended) is never written, so it cannot disable the script in a saved scene or a
+                // play-mode snapshot. The author's toggle is written below, with everyone else's.
+                LanguageScript languageScript => new Dictionary<string, object>
                 {
                     [nameof(LanguageScript.Language)] = languageScript.Language,
                     [nameof(LanguageScript.SourcePath)] = languageScript.SourcePath
-                };
-            }
-            else // All other components can be serialized generically using reflection.
+                },
+
+                // All other components can be serialized generically using reflection.
+                _ => SerializeComponentProperties(component)
+            };
+
+            // The loader reads the enable toggle back for every component, whatever its factory (SceneLoader),
+            // so it is written here once for all of them. Like every other default, "on" is left out.
+            if (!component.Enabled)
             {
-                componentsData[component.GetType().Name] = SerializeComponentProperties(component);
+                data["Enabled"] = false;
             }
+
+            componentsData[component.GetType().Name] = data;
         }
         return componentsData;
+    }
+
+    private static Dictionary<string, object> SerializeMeshRenderer(MeshRenderer mr)
+    {
+        Dictionary<string, object> meshRendererData = new() { ["Mesh"] = mr.MeshName };
+        Dictionary<string, object> materialData = new() { ["Texture"] = mr.Material.TextureName };
+
+        if (mr.Material.TextureTiling != Vector2.One)
+        {
+            materialData["TextureTiling"] = mr.Material.TextureTiling;
+        }
+
+        if (mr.Material.EmissiveColor != Vector3.Zero)
+        {
+            materialData["EmissiveColor"] = mr.Material.EmissiveColor;
+        }
+
+        if (Math.Abs(mr.Material.SpecularIntensity - 0.5f) > 0.001f)
+        {
+            materialData["SpecularIntensity"] = mr.Material.SpecularIntensity;
+        }
+
+        if (Math.Abs(mr.Material.Shininess - 32.0f) > 0.001f)
+        {
+            materialData["Shininess"] = mr.Material.Shininess;
+        }
+
+        meshRendererData["Material"] = materialData;
+        return meshRendererData;
     }
 
     private static void GetHierarchy(GameObject go, List<GameObject> list)

@@ -46,7 +46,8 @@ public enum PlaybackRequest
 /// </para>
 /// <para>
 /// "Authored" means everything the inspector can change: the name, the transform, parenting, which objects
-/// exist, which components are on them, and every editable property of those components. What it does not
+/// exist, which components are on them, whether each of them is enabled, and every editable property of those
+/// components. What it does not
 /// capture is script-private state: a script keeps its own fields, so a second play picks up where the first
 /// one left off rather than from a fresh instance. The desktop editor gets that from its reload; a web session
 /// cannot, because its reload compiles for the next load rather than swapping code under a live component.
@@ -265,6 +266,8 @@ public sealed class EditorPlaySession
 
         foreach (ComponentValues state in components)
         {
+            state.Component.Enabled = state.Enabled;
+
             foreach ((string name, string text) in state.Properties)
             {
                 // A property that no longer exists is not a reason to abort the rest of the restore.
@@ -282,6 +285,7 @@ public sealed class EditorPlaySession
         {
             List<ComponentValues> components = [.. gameObject.Components.Select(component => new ComponentValues(
                 component,
+                component.Enabled,
                 [.. ComponentProperties.Read(component).Select(property => (property.Name, property.Text))]))];
 
             objects.Add(new ObjectValues(
@@ -311,5 +315,6 @@ public sealed class EditorPlaySession
 
     private sealed record ComponentValues(
         Component Component,
+        bool Enabled,
         IReadOnlyList<(string Name, string Text)> Properties);
 }

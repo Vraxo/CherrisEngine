@@ -16,6 +16,9 @@ public class Scene : IDisposable
     public Skybox? Skybox { get; private set; } = null;
     public bool IsDirty { get; set; }
 
+    // Kept from the last Start(): a script switched on later is started on the frame it is, with the same systems.
+    private PhysicsSystem? _physicsSystem;
+
     private float _debugLogTimer;
 
     public Scene(string filePath, List<GameObject> gameObjects)
@@ -65,43 +68,37 @@ public class Scene : IDisposable
         IsDirty = true;
     }
 
-    // In Scene.cs, update the Start method:
+    /// <summary>
+    /// Starts every script that is enabled: Start() runs once per script, the first time the scene is started with
+    /// it on. A script that is off is left for <see cref="Update"/>, which starts it on the frame it is switched
+    /// on — Unity's rule. A script the editor holds back (<see cref="Script.IsSuspended"/>) does start, because
+    /// this is also how a scene is started on its way into Play.
+    /// </summary>
     public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
         Logger.Info($"[Scene] Starting scene '{Name}' with {GameObjects.Count} objects.");
         FindMainComponents();
+        _physicsSystem = physicsSystem;
 
         foreach (GameObject gameObject in GameObjects)
         {
             foreach (Script script in gameObject.GetComponents<Script>())
             {
-                Logger.Info($"[Scene] Initializing script '{script.GetType().Name}' on '{gameObject.Name}'");
-
-                if (script is RigidBody rb)
+                if (!script.Enabled || script.HasStarted)
                 {
-                    try
-                    {
-                        rb.Initialize(physicsSystem);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error($"[Scene] Failed to initialize RigidBody on '{gameObject.Name}': {ex.Message}");
-                    }
+                    continue;
                 }
 
-                try
-                {
-                    script.Start();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.Start() on '{gameObject.Name}': {ex.Message}\n{ex.StackTrace}");
-                    script.Enabled = false;
-                }
+                StartScript(gameObject, script, physicsSystem);
             }
 
             foreach (AudioSource audioSource in gameObject.GetComponents<AudioSource>())
             {
+                if (!audioSource.Enabled)
+                {
+                    continue;
+                }
+
                 audioSource.Initialize(audioSystem);
                 audioSource.Start();
             }
@@ -113,6 +110,38 @@ public class Scene : IDisposable
         }
 
         CreateDefaultCamera();
+    }
+
+    /// <summary>
+    /// Runs Start() on a script, once: a rigid body gets its physics body first. A throw is logged and holds the
+    /// script back (<see cref="Script.IsSuspended"/>), so it is not thrown again every frame.
+    /// </summary>
+    private static void StartScript(GameObject gameObject, Script script, PhysicsSystem physicsSystem)
+    {
+        script.HasStarted = true;
+        Logger.Info($"[Scene] Initializing script '{script.GetType().Name}' on '{gameObject.Name}'");
+
+        if (script is RigidBody rb)
+        {
+            try
+            {
+                rb.Initialize(physicsSystem);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"[Scene] Failed to initialize RigidBody on '{gameObject.Name}': {ex.Message}");
+            }
+        }
+
+        try
+        {
+            script.Start();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Scene] Exception in {script.GetType().Name}.Start() on '{gameObject.Name}': {ex.Message}\n{ex.StackTrace}");
+            script.IsSuspended = true;
+        }
     }
 
     public void Update(float deltaTime)
@@ -130,9 +159,22 @@ public class Scene : IDisposable
         {
             foreach (Script script in gameObject.GetComponents<Script>())
             {
-                if (!script.Enabled)
+                // Switched off by the author, or held back by the editor or after a throw: either way, no tick.
+                if (!script.Enabled || script.IsSuspended)
                 {
                     continue;
+                }
+
+                // Switched on after the scene was started, or off when it was: Start() runs now, before the first
+                // tick. A scene that was never started — the desktop editor's edit mode — starts nothing here.
+                if (!script.HasStarted && _physicsSystem is { } physicsSystem)
+                {
+                    StartScript(gameObject, script, physicsSystem);
+
+                    if (script.IsSuspended)
+                    {
+                        continue;
+                    }
                 }
 
                 if (shouldLog)
@@ -147,7 +189,7 @@ public class Scene : IDisposable
                 catch (Exception ex)
                 {
                     Logger.Error($"[Scene] Exception in {script.GetType().Name}.Update() on '{gameObject.Name}': {ex.Message}");
-                    script.Enabled = false;
+                    script.IsSuspended = true;
                 }
             }
         }
@@ -161,16 +203,11 @@ public class Scene : IDisposable
 
         foreach (GameObject gameObject in GameObjects)
         {
-            MainCamera ??= gameObject.GetComponent<Camera>();
-            Skybox ??= gameObject.GetComponent<Skybox>();
-            Light? light = gameObject.GetComponent<Light>();
-
-            if (light is null)
-            {
-                continue;
-            }
-
-            Lights.Add(light);
+            // A component the author switched off is no candidate: a disabled camera is not the main one, a
+            // disabled light does not light, and a disabled skybox lets the engine's own background show.
+            MainCamera ??= gameObject.GetComponents<Camera>().FirstOrDefault(camera => camera.Enabled);
+            Skybox ??= gameObject.GetComponents<Skybox>().FirstOrDefault(skybox => skybox.Enabled);
+            Lights.AddRange(gameObject.GetComponents<Light>().Where(light => light.Enabled));
         }
     }
 

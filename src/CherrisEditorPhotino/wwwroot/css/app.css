@@ -1256,28 +1256,20 @@ span.panel-tab:hover {
     background: var(--theme-panel);
 }
 
-/* The header is a button: the whole bar folds and unfolds the section, the way a Unity foldout does. */
+/* The header bar: Unity's enable checkbox at the left, then a fold button that takes the rest of the row. The
+   bar highlights as a whole on hover, the way a Unity foldout does. */
 .inspector-section-header {
     display: flex;
     align-items: center;
     gap: 4px;
     width: 100%;
     min-height: 22px;
-    margin: 0;
     padding: 3px 6px;
-    border: none;
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
-    border-radius: 0;
-    background: var(--theme-recessed);
     background: color-mix(in srgb, var(--theme-panel) 72%, var(--theme-recessed));
     color: var(--theme-foreground-header);
-    font: inherit;
     font-size: var(--theme-font-size);
     font-weight: var(--theme-font-weight-bold);
-    text-align: left;
-    appearance: none;
-    box-shadow: none;
-    cursor: default;
     user-select: none;
 }
 
@@ -1285,9 +1277,62 @@ span.panel-tab:hover {
     background: var(--theme-header);
 }
 
-.inspector-section-header:focus-visible {
+/* The enable toggle, before the icon: off stops the component without taking it off the object. The
+   Transform's is an empty placeholder of the same width, so every header's chevron lines up. */
+.inspector-section-toggle {
+    display: inline-block;
+    flex: none;
+    width: 13px;
+    height: 13px;
+    margin: 0 1px 0 0;
+    accent-color: var(--theme-primary);
+    cursor: pointer;
+}
+
+.inspector-section-toggle:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+span.inspector-section-toggle {
+    cursor: default;
+}
+
+/* The fold button is the rest of the bar: chevron, icon and title. */
+.inspector-section-fold {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    min-height: 16px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    appearance: none;
+    box-shadow: none;
+    cursor: default;
+}
+
+.inspector-section-fold:focus-visible {
     outline: var(--theme-border-width) solid var(--theme-primary);
-    outline-offset: -1px;
+    outline-offset: 2px;
+}
+
+/* A component the author switched off: Unity dims its header, and leaves the properties editable. */
+.inspector-section.is-disabled .inspector-section-fold,
+.inspector-section.is-disabled .inspector-section-fold .tree-arrow,
+.inspector-section.is-disabled .inspector-section-icon {
+    color: var(--theme-accent-gray);
+}
+
+.inspector-section.is-disabled .inspector-section-icon {
+    opacity: 0.55;
 }
 
 .inspector-section-icon {

@@ -190,8 +190,9 @@ public class Editor : Engine
     {
         foreach (Script? script in scene.GameObjects.SelectMany(g => g.GetComponents<Script>()))
         {
-            // Only allow RigidBody in editor (for debug viz), disable everything else
-            script.Enabled = script is RigidBody;
+            // Only allow RigidBody in editor (for debug viz); hold everything else back until Play. This is
+            // the editor's doing, not the author's: Component.Enabled keeps whatever the inspector's checkbox says.
+            script.IsSuspended = script is not RigidBody;
         }
     }
 
@@ -210,7 +211,7 @@ public class Editor : Engine
         EditorController? controller = cameraObject.GetComponent<EditorController>();
         controller ??= cameraObject.AddComponent(new EditorController(this));
         controller.Start();
-        controller.Enabled = true;
+        controller.IsSuspended = false;
 
         return cameraObject.GetComponent<Camera>();
     }

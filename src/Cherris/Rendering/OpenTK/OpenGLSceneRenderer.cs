@@ -207,8 +207,8 @@ internal class OpenGLSceneRenderer : IDisposable
         {
             var mr = go.GetComponent<MeshRenderer>();
 
-            // Skip invalid meshes or skyboxes (skyboxes are handled by SkyboxRenderer)
-            if (mr?.Mesh is null || go.GetComponent<Skybox>() is not null)
+            // Skip disabled renderers, invalid meshes or skyboxes (skyboxes are handled by SkyboxRenderer)
+            if (mr?.Mesh is null || !mr.Enabled || go.GetComponent<Skybox>() is not null)
             {
                 continue;
             }

@@ -553,6 +553,25 @@ public sealed class EditorHostService : IDisposable
         Enqueue(new AddComponentCommand(objectId, componentName), "add " + componentName);
 
     /// <summary>
+    /// Switches a component on or off, as the inspector's header checkbox sends. Off stops the component — a
+    /// renderer stops drawing, a light stops lighting, a script stops ticking — without taking it off the object,
+    /// and the state is saved with the scene. One click is one undo step.
+    /// </summary>
+    /// <param name="objectId">The object that owns the component.</param>
+    /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
+    /// <param name="enabled">Where the checkbox goes.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool SetComponentEnabled(Guid objectId, string componentTypeName, bool enabled)
+    {
+        // A drag that is still running ends here, as it does before any other discrete edit.
+        EndLiveEdit();
+
+        return Enqueue(
+            new SetComponentEnabledCommand(objectId, componentTypeName, enabled),
+            $"{(enabled ? "enable" : "disable")} {componentTypeName}");
+    }
+
+    /// <summary>
     /// Writes one property of a component while the author drags it. Consecutive calls for the same property
     /// feed a single command, so the scene follows the pointer every frame while the whole drag stays one undo
     /// step. The panel calls <see cref="EndLiveEdit"/> when a drag begins, a keystroke or a menu edit arrives, so
