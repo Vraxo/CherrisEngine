@@ -40,8 +40,6 @@ public struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
         return true;
     }
 
-    public void Dispose()
-    {
-        throw new NotImplementedException();
-    }
+    // The callbacks own no resources; the simulation disposes its own allocations.
+    public void Dispose() { }
 }
