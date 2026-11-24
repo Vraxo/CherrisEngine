@@ -5,7 +5,7 @@ using Xunit;
 namespace CherrisEditorWeb.Tests;
 
 /// <summary>
-/// Covers the rules behind "New script: …" in the Add ▾ menu: which names can be script names, where a script
+/// Covers the rules behind "New script: …" in the Add Component menu: which names can be script names, where a script
 /// lives, and the file that gets written.
 /// </summary>
 public class ScriptTemplateTests

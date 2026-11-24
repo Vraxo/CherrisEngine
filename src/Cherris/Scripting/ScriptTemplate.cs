@@ -81,7 +81,7 @@ public static class ScriptTemplate
     /// <param name="name">A valid script name.</param>
     public static string Source(string name) =>
         $"""
-        -- {name}.lua — added from the Inspector's Add ▾ menu.
+        -- {name}.lua — added from the Inspector's Add Component menu.
         -- start() runs once when the scene starts, update(deltaTime) runs every frame.
 
         function start()

@@ -387,7 +387,7 @@ Euler degrees rather than as a quaternion, which is what the ImGui inspector edi
 
 ## Editing from the web UI
 
-Everything the inspector shows is editable, and every edit is a command: **Add ▾**, the object's name, the
+Everything the inspector shows is editable, and every edit is a command: **Add Component**, the object's name, the
 transform rows, and each component property. The path is a queue rather than a lock, because the scene belongs
 to the render thread while the panels render from published snapshots:
 
@@ -402,11 +402,11 @@ to the render thread while the panels render from published snapshots:
 The same rule the ImGui inspector applies holds here: an object holds at most one of each type, so the menu
 hides what is already there and the command refuses a duplicate if a stale menu asks anyway.
 
-### Add ▾: search, and scripts that do not exist yet
+### Add Component: search, and scripts that do not exist yet
 
-`Add ▾` sits centred under the component list, and opens a search box with the focus already in it — an inline
-menu cannot use the `autofocus` attribute, so the panel takes the focus in `OnAfterRenderAsync` once the box is
-on screen. Typing filters the catalog, ignoring case and matching anywhere in the name. **Enter** takes the
+`Add Component` sits centred under the component list, with the same label and in the same place as the ImGui
+inspector's button, and opens a search box with the focus already in it: an inline menu cannot use the `autofocus`
+attribute, so the panel takes the focus in `OnAfterRenderAsync` once the box is on screen. Typing filters the catalog, ignoring case and matching anywhere in the name. **Enter** takes the
 first match and **Escape** closes the menu, so the whole thing works without the mouse.
 
 When the typed name matches no component — the way Unity's Add Component menu behaves — the only row becomes an
