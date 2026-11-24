@@ -1431,9 +1431,20 @@ span.panel-tab:hover {
     background: none;
 }
 
+/* The click-away the menubar's menus get from .menu-scrim, for a menu that is inline instead of floating. */
+.add-menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
 /* The Add Component list opens inline: the panel body scrolls, so an absolutely positioned menu would be
-   clipped by its own scroll container. Menu colors, so it reads as the same menu either way. */
+   clipped by its own scroll container. Menu colors, so it reads as the same menu either way. It sits above
+   .add-menu-scrim (40) and stays under the menubar's popups (50), so the scrim can take every other click
+   without taking the rows. */
 .add-menu {
+    position: relative;
+    z-index: 41;
     margin-top: 4px;
     padding: 2px;
     background: var(--theme-dropdown);
