@@ -77,9 +77,11 @@ internal class InspectorPanel
         ImGui.PushID("TransformComponent");
         IntPtr transformIcon = _textureManager.GetTexture("Component_Transform");
 
-        if (DrawComponentHeader("Transform", transformIcon, out _))
+        if (DrawComponentHeader("Transform", transformIcon, out _, out float propertyIndent))
         {
+            if (propertyIndent > 0) ImGui.Indent(propertyIndent);
             _transformInspector.Draw(go.Transform);
+            if (propertyIndent > 0) ImGui.Unindent(propertyIndent);
         }
 
         ImGui.PopID();
@@ -106,12 +108,14 @@ internal class InspectorPanel
         string componentName = SplitPascalCase(component.GetType().Name);
         IntPtr icon = ResolveComponentIcon(component);
 
-        if (DrawComponentHeader(componentName, icon, out _, component))
+        if (DrawComponentHeader(componentName, icon, out _, out float propertyIndent, component))
         {
+            if (propertyIndent > 0) ImGui.Indent(propertyIndent);
             if (_defaultInspector.Draw(component))
             {
                 _editor.SceneManager.ActiveScene!.IsDirty = true;
             }
+            if (propertyIndent > 0) ImGui.Unindent(propertyIndent);
         }
 
         DrawComponentContextMenu(go, component);
@@ -167,11 +171,13 @@ internal class InspectorPanel
     }
 
     /// <summary>Draw a component header with its enable checkbox on the right.</summary>
+    /// <param name="propertyIndent">Indent that aligns table labels with the title.</param>
     /// <param name="component">The component the toggle switches, or null for the Transform.</param>
-    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen, Component? component = null)
+    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen, out float propertyIndent, Component? component = null)
     {
         const float iconSize = 20.0f;
         float frameHeight = ImGui.GetFrameHeight();
+        float headerX = ImGui.GetCursorPosX();
 
         ImGui.BeginGroup();
 
@@ -185,6 +191,8 @@ internal class InspectorPanel
 
         // Reserve the right edge for the checkbox; long names are clipped before they can overlap it.
         float titleX = ImGui.GetCursorPosX();
+        // Tables add cell padding before their first label; subtract it to match the title exactly.
+        propertyIndent = Math.Max(0, titleX - headerX - ImGui.GetStyle().CellPadding.X);
         float toggleX = Math.Max(titleX, titleX + ImGui.GetContentRegionAvail().X - frameHeight);
         ImGui.AlignTextToFramePadding();
         if (component is not null)

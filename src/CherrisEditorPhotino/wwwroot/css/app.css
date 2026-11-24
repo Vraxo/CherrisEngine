@@ -1315,6 +1315,10 @@ span.panel-tab:hover {
 /* Unity's inspector is one continuous surface: headers and property rows share a background,
    with thin rules separating components. */
 .inspector-section {
+    --inspector-inset: 6px;
+    --inspector-fold-width: 16px;
+    --inspector-icon-width: 12px;
+    --inspector-header-gap: 4px;
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     background: var(--theme-panel);
 }
@@ -1323,11 +1327,10 @@ span.panel-tab:hover {
 .inspector-section-header {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--inspector-header-gap);
     width: 100%;
     min-height: 22px;
-    padding: 3px 6px;
-    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    padding: 3px var(--inspector-inset);
     background: transparent;
     color: var(--theme-foreground-header);
     font-size: var(--theme-font-size);
@@ -1339,7 +1342,7 @@ span.panel-tab:hover {
 .inspector-section-fold {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--inspector-header-gap);
     flex: none;
     min-width: 0;
     min-height: 16px;
@@ -1362,6 +1365,12 @@ span.panel-tab:hover {
     outline-offset: 2px;
 }
 
+/* Fix the foldout width so titles and the property labels below stay aligned. */
+.inspector-section-fold .tree-arrow {
+    flex: 0 0 var(--inspector-fold-width);
+    width: var(--inspector-fold-width);
+}
+
 /* A component the author switched off: Unity dims its header, and leaves the properties editable. */
 .inspector-section.is-disabled .inspector-section-fold,
 .inspector-section.is-disabled .inspector-section-name,
@@ -1379,7 +1388,7 @@ span.panel-tab:hover {
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 12px;
+    width: var(--inspector-icon-width);
     height: 12px;
     color: var(--theme-foreground-header);
     opacity: 0.85;
@@ -1408,8 +1417,10 @@ span.panel-tab:hover {
     white-space: nowrap;
 }
 
+/* Start property labels at the same x-coordinate as the component title. */
 .inspector-section-body {
-    padding: 4px 6px 5px;
+    padding: 4px var(--inspector-inset) 5px
+        calc(var(--inspector-inset) + var(--inspector-fold-width) + var(--inspector-icon-width) + var(--inspector-header-gap) + var(--inspector-header-gap));
 }
 
 .inspector-section-body.collapsed {
