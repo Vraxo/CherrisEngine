@@ -560,15 +560,30 @@ public sealed class EditorHostService : IDisposable
     /// <param name="objectId">The object that owns the component.</param>
     /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
     /// <param name="enabled">Where the checkbox goes.</param>
+    /// <param name="completed">Called on the render thread with the last snapshot frame before execution completed.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetComponentEnabled(Guid objectId, string componentTypeName, bool enabled)
+    public bool SetComponentEnabled(Guid objectId, string componentTypeName, bool enabled, Action<long>? completed = null)
     {
         // A drag that is still running ends here, as it does before any other discrete edit.
         EndLiveEdit();
 
-        return Enqueue(
-            new SetComponentEnabledCommand(objectId, componentTypeName, enabled),
-            $"{(enabled ? "enable" : "disable")} {componentTypeName}");
+        EditorSessionHost? host = _session;
+        if (host is null)
+        {
+            WriteLog($"[editor] cannot {(enabled ? "enable" : "disable")} {componentTypeName}: no session is running.", LogLevel.Warning);
+            return false;
+        }
+
+        IEditorCommand command = new SetComponentEnabledCommand(objectId, componentTypeName, enabled);
+        if (completed is not null)
+        {
+            // This runs before the frame's snapshot is published. The UI can ignore older snapshots until it
+            // sees one newer than this frame, including when the command was refused or threw.
+            command = new CompletionCommand(command, () => completed(host.LatestScene?.Frame ?? -1));
+        }
+
+        host.Enqueue(command);
+        return true;
     }
 
     /// <summary>
