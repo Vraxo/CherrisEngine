@@ -298,7 +298,9 @@ without guessing.
 
 ### Making and opening scenes
 
-**File > New Scene…** writes a scene file into the open project and opens it. The file starts with a camera at the
+**File > New Scene…** writes a scene file into the open project and opens it. **File > Reload Scripts** compiles the
+project's `Scripts/` folder again in the running session, so a script edited in another window is what Play runs and a
+type it declares is in the Add Component menu; it is described with the other script work below. The file starts with a camera at the
 default view and a sun, which is everything a scene needs to draw and be lit; the camera is the same one the editor
 adds to a scene that has none, so a new scene and a repaired one look alike. The name has to be a plain file name in
 the project folder (the extension is added when it is left off), and a name that is already taken is refused rather
@@ -460,6 +462,7 @@ attached until the project was reopened:
 | opening a project | everything under `Scripts/`, before the first frame |
 | the C# row in Add Component | inside the command, after the file is written and before the component is attached |
 | New Script… → C#, in the content browser | a reload is requested, so the type is in the menu by the next frame |
+| **File > Reload Scripts** | a reload is requested, for a file edited outside the editor |
 
 `AddCSharpScriptCommand` is where the order matters most: it writes the file, asks the session to compile, looks for
 a compiled class named after the file — the menu calls `PlayerController` "Player Controller", but the file, the
@@ -481,8 +484,17 @@ Those types then behave like any other component:
 A compile error does not close the project: the errors go to the console with their file and line, and the session
 carries on with the components the scene's built-in types provide, so the mistake can be fixed and the project
 reopened. What is still missing is a compile *before it matters*: there is no compile on save and none before Play,
-so changing an existing script and then reopening the project is what picks the change up today. A **Reload scripts**
-command that swaps the context on demand is the next step, and `RequestScriptReload` is the hook it would use.
+so **File > Reload Scripts** is what picks a change up: it asks the session for a compile at the top of its next
+frame, which is the same reload a newly created script gets, and re-registers the types without closing the project.
+The menu item is disabled unless a session is running, because the scene, its factories and the load context are the
+render thread's. Only the moment is still missing: nothing compiles on save, and nothing compiles when Play is
+pressed, so reloading is a thing you ask for rather than a thing that happens.
+
+A reload changes what the *catalog and the scene loader* know, and the session says so in the console each time. It
+does not reach into an object that already has the component: that object holds an instance of the old type, and
+swapping the code under a live object is not something this editor pretends to do. Opening the scene again is what
+rebuilds its components from the new types — which is also why a reload does not re-read the open scene by itself:
+doing that would throw away the undo history of a scene that merely had none of its own edits outstanding.
 
 Writing happens on the render thread, inside the command, so the UI thread never touches the project folder. The
 one read the panel does itself is `File.Exists`, to label the row honestly.

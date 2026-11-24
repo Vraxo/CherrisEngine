@@ -682,6 +682,28 @@ public sealed class EditorHostService : IDisposable
     public bool ScriptExists(string? scriptName, ScriptKind kind) =>
         ScriptTemplate.Exists(_projectRoot, scriptName, kind);
 
+    /// <summary>
+    /// Compiles the project's <c>Scripts/</c> folder again, inside the running session, so a script edited in another
+    /// window is what Play runs and a type it just declared is in the Add Component menu.
+    /// </summary>
+    /// <remarks>
+    /// The compile is queued rather than done here: the scene, its factories and the load context belong to the
+    /// render thread. What came of it is reported the way every compile is — the count on success, one line per
+    /// error — because the console is the only place a script error can be shown.
+    /// </remarks>
+    /// <returns>False when no session is running to compile them.</returns>
+    public bool ReloadScripts()
+    {
+        if (_session?.RequestScriptReload() != true)
+        {
+            return false;
+        }
+
+        WriteLog("[editor] recompiling the project's C# scripts");
+
+        return true;
+    }
+
     /// <summary>Writes one transform row of an object.</summary>
     /// <param name="objectId">The object.</param>
     /// <param name="transformField">Position, rotation (Euler degrees) or scale.</param>

@@ -162,7 +162,20 @@ public sealed class EditorSession : Engine, IDisposable
         _scriptComponents = [];
         _scriptContext = NewScriptContext();
 
-        LoadProjectScripts();
+        bool compiled = LoadProjectScripts();
+
+        if (_scene.ProjectRoot is null)
+        {
+            return _scriptComponents;
+        }
+
+        // Said out loud, because a reload only changes what the scene loader and the menu know: an object that already
+        // has the component keeps the instance it was given, and there is no honest way to swap that code under a live
+        // object.
+        Logger.Info(compiled
+            ? "[web-editor] Scripts reloaded: the menu and the scene loader use the new types from now on. A component " +
+                "that is already attached keeps the code it was created with until its scene is opened again."
+            : "[web-editor] The scripts did not compile, so nothing new can be attached; the errors above say why.");
 
         return _scriptComponents;
     }
@@ -190,11 +203,13 @@ public sealed class EditorSession : Engine, IDisposable
     /// only place the error can be shown. The session keeps running with whatever the scene's built-in components
     /// are, which is what lets the mistake be fixed and the project reopened.
     /// </remarks>
-    private void LoadProjectScripts()
+    /// <returns>True when the project compiled — including a project with no scripts at all; false when the folder
+    /// could not be compiled or is not there.</returns>
+    private bool LoadProjectScripts()
     {
         if (_scene.ProjectRoot is not { } projectRoot)
         {
-            return;
+            return false;
         }
 
         ScriptCompileResult result = ProjectScriptCompiler.Compile(projectRoot, _scriptContext);
@@ -208,7 +223,7 @@ public sealed class EditorSession : Engine, IDisposable
                 Logger.Error($"  {error}");
             }
 
-            return;
+            return false;
         }
 
         foreach (Type type in result.ScriptTypes)
@@ -220,7 +235,7 @@ public sealed class EditorSession : Engine, IDisposable
 
         if (_scriptTypes.Count == 0)
         {
-            return;
+            return true;
         }
 
         // The inspector's menu and the command that follows a click both need these: the menu to offer them, the
@@ -233,6 +248,8 @@ public sealed class EditorSession : Engine, IDisposable
         }
 
         Logger.Info($"[web-editor] Compiled {_scriptTypes.Count} C# script(s) from the project's Scripts folder.");
+
+        return true;
     }
 
     /// <summary>
