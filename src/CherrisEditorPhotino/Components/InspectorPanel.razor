@@ -60,7 +60,6 @@
                             </svg>
                         </span>
                     </button>
-                    <span class="inspector-section-toggle-placeholder" aria-hidden="true"></span>
                     <button type="button" class="inspector-section-name" title="@transformTitle"
                             @onclick="() => ToggleSection(transformKey)">Transform</button>
                 </div>
@@ -141,14 +140,14 @@
                                 </svg>
                             </span>
                         </button>
-                        @* Keep the checkbox independent from the foldout: toggling it must not collapse the component. *@
+                        <button type="button" class="inspector-section-name" title="@sectionTitle"
+                                @onclick="() => ToggleSection(sectionKey)">@componentTitle</button>
+                        @* Keep the checkbox independent from the foldout, at the right edge of the header. *@
                         <input type="checkbox" class="inspector-section-toggle" checked="@component.Enabled"
                                disabled="@(!CanEdit)" aria-label="@(componentTitle + " enabled")"
                                title="@(component.Enabled ? "Switch " + componentTitle + " off" : "Switch " + componentTitle + " on")"
                                @key="@KeyFor(toggleKey)"
                                @onchange="e => SetComponentEnabled(node, component, e.Value is true)" />
-                        <button type="button" class="inspector-section-name" title="@sectionTitle"
-                                @onclick="() => ToggleSection(sectionKey)">@componentTitle</button>
                     </div>
 
                     <div class="inspector-section-body @(IsCollapsed(sectionKey) ? "collapsed" : null)">
