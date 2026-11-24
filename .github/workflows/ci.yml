@@ -26,7 +26,9 @@ jobs:
 
       - run: dotnet build
 
-      - run: dotnet test --no-build
+      - run: set -o pipefail; dotnet test --no-build 2>&1 | tee test-output.log
+      - if: failure()
+        run: grep -n -A 14 -E '^\s*Failed [A-Za-z]|^\s*\[FAIL\]' test-output.log | head -160 | sed 's/^/##[error]/'
 
       # The number-field drag is plain JavaScript without a browser, so node can check it directly.
       - run: node tests/js/numberdrag.test.js
