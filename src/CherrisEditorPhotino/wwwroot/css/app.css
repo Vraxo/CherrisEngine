@@ -1531,7 +1531,8 @@ span.panel-tab:hover {
     cursor: default;
 }
 
-/* The Add Component button spans the panel, like Unity's; it is deliberately quieter than the fields. */
+/* The Add Component button spans the panel, like Unity's; like every other .imgui-button it uses the
+   standard button look — the way the content browser's Back button does. */
 .inspector-add {
     display: flex;
     flex-direction: column;
@@ -1541,20 +1542,6 @@ span.panel-tab:hover {
 .inspector-add > .imgui-button {
     align-self: stretch;
     width: 100%;
-    background: var(--theme-panel);
-    border-color: var(--theme-input-outline);
-    color: var(--theme-foreground);
-}
-
-.inspector-add > .imgui-button:hover:not(:disabled) {
-    background: var(--theme-header);
-    color: var(--theme-foreground-hover);
-}
-
-.inspector-add > .imgui-button:disabled {
-    background: var(--theme-recessed);
-    border-color: var(--theme-input-outline);
-    color: var(--theme-accent-gray);
 }
 
 /* The search box takes the focus when the menu opens, so it reads as the menu's first row. */
