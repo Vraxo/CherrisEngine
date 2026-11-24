@@ -21,6 +21,12 @@ public interface IViewportSink
     bool ShowGrid { get; }
 
     /// <summary>
+    /// Whether the client is holding its look button. Read by the render thread every frame, so a host may change
+    /// it from whichever thread the browser's message lands on.
+    /// </summary>
+    bool LookDragging { get; }
+
+    /// <summary>
     /// Publishes one rendered frame.
     /// </summary>
     /// <param name="rgba">Tightly packed RGBA8 pixels in top-down row order, valid only for the call.</param>

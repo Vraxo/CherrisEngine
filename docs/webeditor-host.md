@@ -261,8 +261,25 @@ where the scene's own scripts own the camera.
 The right button captures the pointer (`requestPointerLock`) so a drag does not stop at the edge of the window,
 and releases it on mouseup: a captured pointer is a frozen cursor, and clicking to select needs a real one. The
 first movement after a capture is dropped, because browsers report the jump from wherever the cursor was to the
-middle of the canvas. Without a capture the drag still works — the browser's `movementX`/`movementY` are sent as
-`mouseMove` while the button is held — it just stops at the edge of the window.
+middle of the canvas.
+
+The capture is a courtesy and the drag never depends on it, which is what makes the look work in every webview:
+
+- The drag announces itself as its own message (`look`), sent *before* the capture is requested and before the
+  button press is reported. The camera reads that flag rather than the engine's mouse button, so a capture that
+  moves the focus, or a focus loss that clears held buttons mid-drag, cannot stop the camera while the browser is
+  still sending movement. The button state is kept only as a fallback, for a client that never sends the flag.
+- Deltas are the capture's own `movementX`/`movementY` when the pointer is locked, and the pointer's position
+  otherwise, which is the only movement a webview without a capture can report. After a capture is given back the
+  anchor is taken again, so the frozen pointer's last position is never read as one enormous flick.
+- `requestPointerLock` is wrapped: some webviews throw rather than return a rejected promise, and an exception in
+  the handler would otherwise take the press, the capture and the rest of that event with it.
+- The canvas suppresses its context menu, so the right button is a look button on the page and not a menu.
+
+`wwwroot/js/viewport.js` is loaded with a version query in `index.html`; bump it when the bridge changes. The editor
+serves `wwwroot` from its build output, so a webview that holds an old copy would otherwise keep running yesterday's
+input code — and the console shows one line per session, `A look drag reached the render thread`, when a drag
+reaches the engine at all.
 
 ### Making and opening scenes
 

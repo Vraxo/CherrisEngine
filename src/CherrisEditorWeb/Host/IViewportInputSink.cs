@@ -28,6 +28,17 @@ public interface IViewportInputSink
     /// <summary>Pointer lock was acquired or released.</summary>
     void MouseLockChanged(bool locked);
 
+    /// <summary>
+    /// A look drag started or ended, as reported by the button that drives it.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="MouseButtonChanged"/> on purpose: the camera follows this, so the drag keeps working
+    /// when the button state does not survive in the engine's own input — a pointer capture that moves the focus, or
+    /// a focus loss that clears held buttons mid-drag, would otherwise stop the camera dead while the browser is
+    /// still sending movement.
+    /// </remarks>
+    void LookChanged(bool isDown);
+
     /// <summary>The page lost focus or was hidden; held keys and buttons must be cleared.</summary>
     void FocusLost();
 }

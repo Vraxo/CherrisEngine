@@ -79,6 +79,18 @@ public class ViewportProtocolTests
     }
 
     [Fact]
+    public void TryReadCommand_ReadsLookDrags()
+    {
+        RecordingSink sink = new();
+
+        ViewportProtocol.TryReadCommand("""{"type":"look","down":true}""", sink).Should().BeTrue();
+        ViewportProtocol.TryReadCommand("""{"type":"look","down":false}""", sink).Should().BeTrue();
+
+        sink.Looks.Should().Equal(true, false);
+        sink.Buttons.Should().BeEmpty("the drag is its own message, not a button press");
+    }
+
+    [Fact]
     public void TryReadCommand_ReadsLockAndFocusLoss()
     {
         RecordingSink sink = new();
@@ -149,6 +161,8 @@ public class ViewportProtocolTests
 
         public void MouseLockChanged(bool locked) => Calls.Add($"lock:{locked}");
 
+        public void LookChanged(bool isDown) => Calls.Add($"look:{(isDown ? "down" : "up")}");
+
         public void FocusLost() => Calls.Add("blur");
     }
 
@@ -161,11 +175,12 @@ public class ViewportProtocolTests
         public List<(float X, float Y)> Positions { get; } = [];
         public List<(float X, float Y)> Wheels { get; } = [];
         public List<bool> Locks { get; } = [];
+        public List<bool> Looks { get; } = [];
         public int FocusLosses { get; private set; }
 
         public int Calls =>
             Resizes.Count + Keys.Count + Buttons.Count + Moves.Count +
-            Positions.Count + Wheels.Count + Locks.Count + FocusLosses;
+            Positions.Count + Wheels.Count + Locks.Count + Looks.Count + FocusLosses;
 
         public void Resize(int width, int height) => Resizes.Add((width, height));
 
@@ -180,6 +195,8 @@ public class ViewportProtocolTests
         public void Wheel(float x, float y) => Wheels.Add((x, y));
 
         public void MouseLockChanged(bool locked) => Locks.Add(locked);
+
+        public void LookChanged(bool isDown) => Looks.Add(isDown);
 
         public void FocusLost() => FocusLosses++;
     }
