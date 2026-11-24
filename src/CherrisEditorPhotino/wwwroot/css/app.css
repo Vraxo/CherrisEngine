@@ -530,6 +530,33 @@ body {
     text-decoration: underline;
 }
 
+/* FButtonStyle, UE5's default: Secondary fill, Input outline, ForegroundHover text — the same surface .imgui-button
+   paints, because a dialog is not a different product from the panel that opened it. `appearance: none` is the part
+   that carries the weight in a webview: without it a <button> keeps the user agent's bevel, so a dialog opened from
+   a flat menu offered Windows-95 buttons next to flat ones for want of a base rule to modify. */
+.editor-button {
+    appearance: none;
+    /* ButtonMargins = FMargin(12, 1.5, 12, 1.5), rounded to whole pixels, as the panel buttons use. */
+    padding: 2px 12px;
+    border: var(--theme-border-width) solid var(--theme-input);
+    border-radius: var(--theme-radius);
+    background: var(--theme-secondary);
+    color: var(--theme-foreground-hover);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    cursor: default;
+}
+
+.editor-button:hover:not(:disabled) {
+    background: var(--theme-hover);
+}
+
+/* PressedButtonMargins pushes the label one pixel down without changing the button's height. */
+.editor-button:active:not(:disabled) {
+    padding: 3px 12px 1px;
+    background: var(--theme-header);
+}
+
 .editor-button.subtle {
     color: var(--text-muted);
 }
@@ -552,6 +579,12 @@ body {
 
 .editor-button.primary:hover:not(:disabled) {
     border-color: var(--theme-input);
+    background: var(--theme-primary-hover);
+    color: var(--theme-foreground-hover);
+}
+
+.editor-button.primary:active:not(:disabled) {
+    padding: 3px 12px 1px;
     background: var(--theme-primary-hover);
     color: var(--theme-foreground-hover);
 }
@@ -1750,6 +1783,7 @@ span.panel-tab:hover {
 /* Slate paints a 1px Primary rectangle inside the focused widget instead of a browser ring. */
 .imgui-input:focus-visible,
 .imgui-button:focus-visible,
+.editor-button:focus-visible,
 .panel-tab:focus-visible,
 .menubar-button:focus-visible,
 .menu-item:focus-visible,
