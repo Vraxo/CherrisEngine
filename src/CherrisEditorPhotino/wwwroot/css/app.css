@@ -1315,11 +1315,12 @@ span.panel-tab:hover {
 /* Unity's inspector is one continuous surface: headers and property rows share a background,
    with thin rules separating components. */
 .inspector-section {
-    /* The foldout is only as wide as its 10px chevron: no extra gutters around the arrow. */
+    /* The foldout is only as wide as its 10px chevron: no extra gutters around the arrow. The slightly
+       wider header gap gives the component icon breathing room on both sides. */
     --inspector-inset: 4px;
     --inspector-fold-width: 10px;
     --inspector-icon-width: 12px;
-    --inspector-header-gap: 2px;
+    --inspector-header-gap: 4px;
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     background: var(--theme-panel);
 }
@@ -1439,8 +1440,8 @@ span.panel-tab:hover {
     font-size: calc(var(--theme-font-size) - 1px);
 }
 
-/* The object header: a bold name beside a cube icon, like Unity's object bar. The input is borderless
-   until it is hovered or focused, so it reads as a title rather than as a form field. */
+/* The object header: a bold name beside a cube icon, like Unity's object bar. The name uses the same
+   visible textbox chrome as the property fields, so it is obvious that it can be edited. */
 .inspector-object {
     display: flex;
     align-items: center;
@@ -1470,6 +1471,13 @@ span.panel-tab:hover {
     color: var(--theme-accent-blue);
 }
 
+/* The camera asks for a deliberately lighter blue. The first declaration is a fallback for browsers
+   without color-mix(); the second keeps the theme's blue role but tints it toward white. */
+.component-icon-light-blue {
+    color: var(--theme-accent-blue);
+    color: color-mix(in srgb, var(--theme-accent-blue) 55%, var(--theme-white));
+}
+
 .component-icon-green {
     color: var(--theme-accent-green);
 }
@@ -1496,24 +1504,28 @@ span.panel-tab:hover {
 
 .inspector-name {
     flex: 1;
+    width: auto;
     min-width: 0;
-    height: 20px;
-    padding: 1px 4px;
-    border: none;
-    border-radius: 2px;
-    background: transparent;
+    height: var(--theme-control-height);
+    padding: 2px 6px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
     color: var(--theme-foreground);
     font: inherit;
     font-size: var(--theme-font-size);
     font-weight: var(--theme-font-weight-bold);
+    cursor: text;
 }
 
 .inspector-name:hover:not(:disabled) {
-    background: var(--theme-panel);
+    border-color: var(--theme-hover);
+    background: var(--theme-input);
 }
 
 .inspector-name:focus {
     outline: none;
+    border-color: var(--theme-primary);
     background: var(--theme-input);
     color: var(--theme-white);
 }
@@ -1524,7 +1536,10 @@ span.panel-tab:hover {
 }
 
 .inspector-name:disabled {
+    border-color: var(--theme-input-outline);
+    background: var(--theme-recessed);
     color: var(--theme-accent-gray);
+    cursor: default;
 }
 
 /* The Add Component button spans the panel, like Unity's; it is deliberately quieter than the fields. */
