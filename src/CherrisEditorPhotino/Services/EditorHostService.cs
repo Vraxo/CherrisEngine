@@ -341,26 +341,32 @@ public sealed class EditorHostService : IDisposable
     /// </summary>
     /// <param name="name">What the user typed; the extension is added when it is left off.</param>
     /// <param name="error">Why no scene was made, when this returns false.</param>
-    public bool TryCreateScene(string name, out string? error)
-    {
-        error = null;
+    public bool TryCreateScene(string name, out string? error) => CreateScene(name, null, out error) is not null;
 
-        if (_projectRoot is not { } projectRoot)
+    /// <summary>
+    /// Writes a new scene into a folder of the open project and opens it.
+    /// </summary>
+    /// <param name="name">What the user typed; the extension is added when it is left off.</param>
+    /// <param name="directory">Folder to write into, or null for the project root.</param>
+    /// <param name="error">Why no scene was made, when this returns null.</param>
+    /// <returns>The path of the file, or null when nothing was written.</returns>
+    public string? CreateScene(string name, string? directory, out string? error)
+    {
+        if (!ResolveDirectory("a scene", directory, out string folder, out error))
         {
-            error = "Open a project before making a scene: a scene is a file inside one.";
-            return false;
+            return null;
         }
 
         string path;
 
         try
         {
-            path = SceneTemplate.Write(projectRoot, name);
+            path = SceneTemplate.Write(folder, name);
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
         {
             error = exception.Message;
-            return false;
+            return null;
         }
 
         WriteLog($"[editor] created '{path}'");
@@ -370,8 +376,140 @@ public sealed class EditorHostService : IDisposable
             // The file is on disk and says so; only opening it failed, so the dialog reports that rather than
             // pretending the scene was never made.
             error = $"'{Path.GetFileName(path)}' was created, but the session could not open it.";
+            return null;
+        }
+
+        return path;
+    }
+
+    /// <summary>
+    /// Writes a new Lua script into the project's <c>Scripts/</c> folder.
+    /// </summary>
+    /// <remarks>
+    /// The folder is not a choice: <c>LanguageScript</c> refuses a script kept anywhere else, so a browser that let
+    /// one be written into <c>Levels/</c> would be making a file the engine will never run.
+    /// </remarks>
+    /// <param name="name">What the user typed; the extension is added when it is left off.</param>
+    /// <param name="error">Why no script was made, when this returns null.</param>
+    /// <returns>The path of the file, or null when nothing was written.</returns>
+    public string? CreateScript(string name, out string? error)
+    {
+        error = null;
+
+        if (_projectRoot is not { } projectRoot)
+        {
+            error = "Open a project before making a script: a script is a file inside one.";
+            return null;
+        }
+
+        if (!ScriptTemplate.TryCreate(projectRoot, name, out string relativePath, out error))
+        {
+            return null;
+        }
+
+        string path = Path.Combine(projectRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+        WriteLog($"[editor] created '{path}'");
+
+        return path;
+    }
+
+    /// <summary>
+    /// Creates a folder inside the open project.
+    /// </summary>
+    /// <param name="name">What the user typed; a name, not a path.</param>
+    /// <param name="directory">Folder to create it in, or null for the project root.</param>
+    /// <param name="error">Why no folder was made, when this returns null.</param>
+    /// <returns>The path of the folder, or null when nothing was created.</returns>
+    public string? CreateFolder(string name, string? directory, out string? error)
+    {
+        if (!ProjectFileName.TryNormalize(name, out string folderName, out string nameError))
+        {
+            error = nameError;
+            return null;
+        }
+
+        if (!ResolveDirectory("a folder", directory, out string parent, out error))
+        {
+            return null;
+        }
+
+        string path = Path.Combine(parent, folderName);
+
+        if (Directory.Exists(path) || File.Exists(path))
+        {
+            error = $"There is already something called {folderName} here.";
+            return null;
+        }
+
+        try
+        {
+            // A folder holds no contents of its own, so there is nothing to write, only somewhere to put things.
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            error = $"Could not create {folderName}: {exception.Message}";
+            return null;
+        }
+
+        WriteLog($"[editor] created '{path}'");
+
+        return path;
+    }
+
+    /// <summary>
+    /// The folder an item is to be created in: the project root when none was named, and never anything outside it.
+    /// </summary>
+    /// <param name="what">What is being created, for the messages.</param>
+    /// <param name="directory">The folder asked for, or null.</param>
+    /// <param name="folder">The absolute folder to write into, when this returns true.</param>
+    /// <param name="error">Why the folder cannot be used, when this returns false.</param>
+    private bool ResolveDirectory(string what, string? directory, out string folder, out string? error)
+    {
+        folder = string.Empty;
+        error = null;
+
+        if (_projectRoot is not { } projectRoot)
+        {
+            error = $"Open a project before making {what}: everything the editor writes lives inside one.";
             return false;
         }
+
+        string root = Path.GetFullPath(projectRoot);
+
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            folder = root;
+            return true;
+        }
+
+        string candidate;
+
+        try
+        {
+            candidate = Path.GetFullPath(directory);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            error = $"'{directory}' is not a folder the editor can write to.";
+            return false;
+        }
+
+        // The browser only ever shows one project's folder, but the path arrives from a click: it is checked here
+        // rather than trusted, so a created file cannot land outside the project it belongs to.
+        string prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (!candidate.Equals(root, StringComparison.OrdinalIgnoreCase) &&
+            !candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Files can only be created inside the open project.";
+            return false;
+        }
+
+        folder = candidate;
 
         return true;
     }

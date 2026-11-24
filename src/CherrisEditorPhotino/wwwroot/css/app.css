@@ -679,6 +679,15 @@ body {
     top: calc(100% + 2px);
 }
 
+/* The content browser's menu hangs at the pointer rather than under a button. Its position comes from the click,
+   clamped by the component to the window, so nothing here has to measure the menu. */
+.cb-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+}
+
 /* Menu.Button: the hovered (and pressed) fill is Primary, the text ForegroundHover. */
 .menu-item {
     display: flex;
