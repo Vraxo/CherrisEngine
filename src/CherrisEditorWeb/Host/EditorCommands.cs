@@ -657,7 +657,7 @@ public sealed class SetTransformCommand(Guid objectId, TransformField transformF
 }
 
 /// <summary>
-/// Adds a lua script to an object — what the inspector's Add ▾ menu sends when the typed name matches no
+/// Adds a lua script to an object — what the inspector's Add Component menu sends when the typed name matches no
 /// component, the way Unity offers to make a script.
 /// </summary>
 /// <param name="ObjectId">The object to add the script to.</param>
