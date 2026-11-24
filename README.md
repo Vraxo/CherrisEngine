@@ -134,8 +134,8 @@ Current limitations:
 
 ## 📚 Documentation
 
-- [Color Consistency & Rendering Pipeline](Docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
-- [Troubleshooting Guide](Docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
-- [Webview Host (PhotinoX/Blazor)](Docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
-- [UE5 Theme](Docs/ue5-theme.md): The Unreal Engine 5 editor palette, typography and metrics both front ends use, with the engine source each value comes from, the widget-style mapping and the bundled Roboto fonts.
-- [Web Editor Host](Docs/webeditor-host.md): The PhotinoX Blazor editor in `src/CherrisEditorPhotino`, the transport it shares with `src/CherrisEditorWeb`, its wire protocol, threading model and current limitations.
+- [Color Consistency & Rendering Pipeline](docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
+- [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
+- [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
+- [UE5 Theme](docs/ue5-theme.md): The Unreal Engine 5 editor palette, typography and metrics both front ends use, with the engine source each value comes from, the widget-style mapping and the bundled Roboto fonts.
+- [Web Editor Host](docs/webeditor-host.md): The PhotinoX Blazor editor in `src/CherrisEditorPhotino`, the transport it shares with `src/CherrisEditorWeb`, its wire protocol, threading model and current limitations.
