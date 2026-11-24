@@ -1663,8 +1663,9 @@ span.panel-tab:hover {
     accent-color: var(--theme-primary);
 }
 
-/* The reset slot ends every value row. Unity keeps property reset out of sight until the row is hovered
-   or the value is modified, so the right column is not a repeating column of arrows. */
+/* The reset slot ends every value row. The icon alone is the button — Unity keeps it out of sight until
+   the value is modified, so the right column is not a repeating column of arrows. No background anywhere,
+   and hover never dims it: hover in this app makes things more prominent, so grey-out is the opposite. */
 .prop-reset {
     display: grid;
     place-items: center;
@@ -1678,12 +1679,7 @@ span.panel-tab:hover {
     opacity: 0;
     cursor: default;
     appearance: none;
-    transition: background 90ms linear, opacity 90ms linear;
-}
-
-.prop-row:hover .prop-reset,
-.vec-row:hover .prop-reset {
-    opacity: 0.45;
+    transition: opacity 90ms linear;
 }
 
 .prop-reset svg {
@@ -1691,20 +1687,15 @@ span.panel-tab:hover {
     height: 11px;
 }
 
-/* Away from the default: a button, with the fill a small menu button has and an arrow at reading strength.
-   Hovering only lightens that fill. */
+/* Away from the default: the icon at full strength, brighter than the idle shade so you can see the
+   difference without a fill. Stays that way when hovered. */
 .prop-reset.modified {
     color: var(--theme-foreground);
-    background: var(--theme-secondary);
     opacity: 1;
     cursor: pointer;
 }
 
-.prop-reset.modified:hover {
-    background: var(--theme-hover);
-}
-
-/* Keyboard users get a ring: the fill alone cannot say "this is focused" for them. */
+/* Keyboard users get a ring: the icon alone cannot say "this is focused" for them. */
 .prop-reset.modified:focus-visible {
     outline: var(--theme-border-width) solid var(--theme-primary);
     outline-offset: 1px;
