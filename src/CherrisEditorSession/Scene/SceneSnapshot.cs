@@ -6,11 +6,17 @@ using System.Numerics;
 namespace CherrisEditorSession;
 
 /// <summary>
-/// One component on an object, as the inspector shows it: its type name and its editable properties.
+/// One component on an object, as the inspector shows it: its type name, whether it is enabled, and its editable
+/// properties.
 /// </summary>
 /// <param name="TypeName">The component's type name, which an edit names to find it again.</param>
 /// <param name="Properties">The properties the inspector draws, in declaration order.</param>
-public sealed record ComponentSnapshot(string TypeName, IReadOnlyList<PropertySnapshot> Properties);
+/// <param name="Enabled">
+/// Unity's header checkbox (<see cref="Component.Enabled"/>): off stops the component without taking it off
+/// the object. It is drawn in the header rather than among the properties, so it is not a
+/// <see cref="PropertySnapshot"/>.
+/// </param>
+public sealed record ComponentSnapshot(string TypeName, IReadOnlyList<PropertySnapshot> Properties, bool Enabled = true);
 
 /// <summary>One object in a <see cref="SceneSnapshot"/>.</summary>
 /// <param name="Id">Stable object identity, for selection and diffing.</param>
@@ -79,7 +85,8 @@ public static class SceneSnapshotBuilder
                 // so a panel never reflects over a live component.
                 components.Add(new ComponentSnapshot(
                     component.GetType().Name,
-                    ComponentProperties.Read(component)));
+                    ComponentProperties.Read(component),
+                    component.Enabled));
             }
 
             nodes.Add(new SceneNodeSnapshot(

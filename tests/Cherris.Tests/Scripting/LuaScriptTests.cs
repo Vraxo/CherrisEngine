@@ -97,10 +97,16 @@ public class LuaScriptTests
     }
 
     [Fact]
-    public void LanguageScriptRoundTripsInSceneWithoutPersistingEditorDisabledState()
+    public void LanguageScriptRoundTripsItsEnabledToggle_ButNotTheEditorsHoldOnIt()
     {
         var gameObject = new GameObject("test");
-        gameObject.AddComponent(new LanguageScript { Language = "lua", SourcePath = "Scripts/move.lua", Enabled = false });
+        gameObject.AddComponent(new LanguageScript
+        {
+            Language = "lua",
+            SourcePath = "Scripts/move.lua",
+            Enabled = false,
+            IsSuspended = true
+        });
         string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
         var loader = new SceneLoader(null!);
         ComponentDeserializer.RegisterFactories(loader, null!);
@@ -112,7 +118,9 @@ public class LuaScriptTests
         script.Should().NotBeNull();
         script!.Language.Should().Be("lua");
         script.SourcePath.Should().Be("Scripts/move.lua");
-        script.Enabled.Should().BeTrue();
+        script.Enabled.Should().BeFalse("the author's toggle is part of the scene, as it is in Unity");
+        script.IsSuspended.Should().BeFalse("the editor's hold on a script is not saved with it");
+        yaml.Should().Contain("Enabled: false").And.NotContain("IsSuspended");
     }
 
     [Theory]

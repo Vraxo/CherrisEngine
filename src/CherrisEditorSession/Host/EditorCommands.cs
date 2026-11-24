@@ -417,6 +417,86 @@ public sealed class AddComponentCommand(Guid objectId, string componentName) : I
 }
 
 /// <summary>
+/// Switches a component on or off, as the inspector's header checkbox sends: Unity's enable toggle.
+/// </summary>
+/// <param name="ObjectId">The object that owns the component.</param>
+/// <param name="ComponentTypeName">The component's type name, from the snapshot.</param>
+/// <param name="Enabled">Where the checkbox goes.</param>
+/// <remarks>
+/// <para>
+/// Off stops the component without taking it off the object — a renderer stops drawing, a light stops lighting,
+/// a script stops ticking — and the state is saved with the scene (<see cref="Component.Enabled"/>).
+/// </para>
+/// <para>
+/// A checkbox is one click, so there is nothing to feed: Undo and Redo put the toggle back and forward.
+/// </para>
+/// </remarks>
+public sealed class SetComponentEnabledCommand(Guid objectId, string componentTypeName, bool enabled) : IUndoableCommand
+{
+    /// <inheritdoc />
+    public string Describe => $"{(enabled ? "enable" : "disable")} {componentTypeName}";
+
+    /// <inheritdoc />
+    public string? Execute(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (FindComponent(context.Scene) is not { } component)
+        {
+            return $"[editor] could not {Describe}: the component is gone.";
+        }
+
+        if (component.Enabled == enabled)
+        {
+            // Already where the checkbox wants it.
+            return null;
+        }
+
+        string? line = Apply(context.Scene, component, enabled);
+        context.History.Record(this);
+
+        return line;
+    }
+
+    /// <inheritdoc />
+    public string? Undo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return FindComponent(context.Scene) is { } component ? Apply(context.Scene, component, !enabled) : null;
+    }
+
+    /// <inheritdoc />
+    public string? Redo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return FindComponent(context.Scene) is { } component ? Apply(context.Scene, component, enabled) : null;
+    }
+
+    /// <summary>
+    /// Writes the toggle, then refreshes what the renderer treats as the main camera, the skybox and the lights:
+    /// a camera or light that was just switched off must stop being one, and the next in the scene takes over.
+    /// </summary>
+    private static string? Apply(Scene scene, Component component, bool value)
+    {
+        component.Enabled = value;
+        scene.FindMainComponents();
+        scene.IsDirty = true;
+
+        return $"[editor] {component.GetType().Name} on {component.GameObject?.Name ?? "nothing"} {(value ? "enabled" : "disabled")}.";
+    }
+
+    private Component? FindComponent(Scene scene)
+    {
+        GameObject? target = scene.GameObjects.FirstOrDefault(gameObject => gameObject.Id == objectId);
+
+        return target?.Components.FirstOrDefault(
+            component => String.Equals(component.GetType().Name, componentTypeName, StringComparison.Ordinal));
+    }
+}
+
+/// <summary>
 /// Writes one property of one component, as the inspector's fields send.
 /// </summary>
 /// <param name="ObjectId">The object that owns the component.</param>

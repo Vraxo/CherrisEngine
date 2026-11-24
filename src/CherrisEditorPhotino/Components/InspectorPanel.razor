@@ -41,25 +41,30 @@
             </div>
 
             <div class="inspector-section">
-                <button type="button" class="inspector-section-header"
-                        aria-expanded="@transformExpanded" title="@transformTitle"
-                        @onclick="() => ToggleSection(transformKey)">
-                    <span class="tree-arrow">
-                        <svg class="@transformChevron" viewBox="0 0 16 16" aria-hidden="true">
-                            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.4"
-                                  stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </span>
-                    <span class="inspector-section-icon" aria-hidden="true">
-                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                            <path d="M8 1.8 14 4.9v6.2L8 14.2 2 11.1V4.9z" fill="none" stroke="currentColor"
-                                  stroke-width="1.2" stroke-linejoin="round" />
-                            <path d="M2 4.9 8 8l6-3.1M8 8v6.2" fill="none" stroke="currentColor"
-                                  stroke-width="1.2" stroke-linejoin="round" />
-                        </svg>
-                    </span>
-                    <span class="inspector-section-title">Transform</span>
-                </button>
+                <div class="inspector-section-header">
+                    @* Unity reserves the toggle's slot on the Transform too, so every header's chevron lines up;
+                       the Transform itself is always on. *@
+                    <span class="inspector-section-toggle" aria-hidden="true"></span>
+                    <button type="button" class="inspector-section-fold"
+                            aria-expanded="@transformExpanded" title="@transformTitle"
+                            @onclick="() => ToggleSection(transformKey)">
+                        <span class="tree-arrow">
+                            <svg class="@transformChevron" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.4"
+                                      stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </span>
+                        <span class="inspector-section-icon" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <path d="M8 1.8 14 4.9v6.2L8 14.2 2 11.1V4.9z" fill="none" stroke="currentColor"
+                                      stroke-width="1.2" stroke-linejoin="round" />
+                                <path d="M2 4.9 8 8l6-3.1M8 8v6.2" fill="none" stroke="currentColor"
+                                      stroke-width="1.2" stroke-linejoin="round" />
+                            </svg>
+                        </span>
+                        <span class="inspector-section-title">Transform</span>
+                    </button>
+                </div>
 
                 @* One row per Vector3, each component labelled with its axis the way the ImGui inspector
                    does: X red, Y green, Z blue. Rotation is shown as Euler degrees, so all three rows read
@@ -116,26 +121,37 @@
                 string sectionTitle = IsCollapsed(sectionKey) ? "Expand" : "Collapse";
                 string sectionChevron = IsCollapsed(sectionKey) ? "tree-chevron" : "tree-chevron expanded";
                 string componentTitle = DisplayName(component.TypeName);
+                string toggleKey = sectionKey + ":enabled";
 
-                <div class="inspector-section">
-                    <button type="button" class="inspector-section-header"
-                            aria-expanded="@sectionExpanded" title="@sectionTitle"
-                            @onclick="() => ToggleSection(sectionKey)">
-                        <span class="tree-arrow">
-                            <svg class="@sectionChevron" viewBox="0 0 16 16" aria-hidden="true">
-                                <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
-                                      stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                        </span>
-                        <span class="inspector-section-icon" aria-hidden="true">
-                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                                <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor"
-                                      stroke-width="1.2" />
-                                <rect x="6" y="6" width="4" height="4" rx="0.5" fill="currentColor" opacity="0.55" />
-                            </svg>
-                        </span>
-                        <span class="inspector-section-title">@componentTitle</span>
-                    </button>
+                <div class="inspector-section @(component.Enabled ? null : "is-disabled")">
+                    <div class="inspector-section-header">
+                        @* Unity's enable toggle. Off stops the component without taking it off the object: a
+                           renderer stops drawing, a light stops lighting, a script stops ticking. It is its own
+                           control beside the fold button, so a click on it does not also fold the section. *@
+                        <input type="checkbox" class="inspector-section-toggle" checked="@component.Enabled"
+                               disabled="@(!CanEdit)" aria-label="@(componentTitle + " enabled")"
+                               title="@(component.Enabled ? "Switch " + componentTitle + " off" : "Switch " + componentTitle + " on")"
+                               @key="@KeyFor(toggleKey)"
+                               @onchange="e => SetComponentEnabled(node, component, e.Value is true)" />
+                        <button type="button" class="inspector-section-fold"
+                                aria-expanded="@sectionExpanded" title="@sectionTitle"
+                                @onclick="() => ToggleSection(sectionKey)">
+                            <span class="tree-arrow">
+                                <svg class="@sectionChevron" viewBox="0 0 16 16" aria-hidden="true">
+                                    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
+                                          stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </span>
+                            <span class="inspector-section-icon" aria-hidden="true">
+                                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                    <rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor"
+                                          stroke-width="1.2" />
+                                    <rect x="6" y="6" width="4" height="4" rx="0.5" fill="currentColor" opacity="0.55" />
+                                </svg>
+                            </span>
+                            <span class="inspector-section-title">@componentTitle</span>
+                        </button>
+                    </div>
 
                     <div class="inspector-section-body @(IsCollapsed(sectionKey) ? "collapsed" : null)">
                         @if (component.Properties.Count == 0)
@@ -651,6 +667,20 @@
 
         Host.RenameObject(node.Id, name);
         Touched(node.Id.ToString() + ":name");
+    }
+
+    /// <summary>
+    /// The header checkbox: off stops the component updating and drawing, without taking it off the object. One
+    /// click is one step. The checkbox is rebuilt from the snapshot, so a toggle the engine refuses — the
+    /// component is gone — goes back to what the scene holds.
+    /// </summary>
+    /// <param name="node">The object that owns the component.</param>
+    /// <param name="component">The component.</param>
+    /// <param name="enabled">Where the checkbox went.</param>
+    private void SetComponentEnabled(SceneNodeSnapshot node, ComponentSnapshot component, bool enabled)
+    {
+        Host.SetComponentEnabled(node.Id, component.TypeName, enabled);
+        Touched(node.Id.ToString() + ":" + component.TypeName + ":enabled");
     }
 
     private void OnTransformChanged(SceneNodeSnapshot node, TransformRow row, int axis, string? text)

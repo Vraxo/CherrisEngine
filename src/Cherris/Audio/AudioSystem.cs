@@ -57,7 +57,8 @@ public class AudioSystem : IDisposable
             return;
         }
 
-        if (scene?.MainCamera?.GameObject.GetComponent<AudioListener>() is not null)
+        // A listener the author switched off does not listen (Component.Enabled).
+        if (scene?.MainCamera?.GameObject.GetComponent<AudioListener>() is { Enabled: true })
         {
             Transform listenerTransform = scene.MainCamera.GameObject.Transform;
             Vector3 pos = listenerTransform.Position;
@@ -88,7 +89,8 @@ public class AudioSystem : IDisposable
 
     public void Play(AudioSource audioSource)
     {
-        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null)
+        // A source the author switched off never plays (Component.Enabled), not even when asked by name.
+        if (_device.Handle == IntPtr.Zero || audioSource.Clip is null || !audioSource.Enabled)
         {
             return;
         }

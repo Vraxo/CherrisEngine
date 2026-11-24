@@ -92,6 +92,21 @@ public class SceneSnapshotBuilderTests
     }
 
     [Fact]
+    public void Build_CopiesWhetherEachComponentIsEnabled()
+    {
+        GameObject cameraObject = new("Camera");
+        cameraObject.AddComponent(new Camera { Enabled = false });
+        GameObject lamp = new("Lamp");
+        lamp.AddComponent(new Light());
+        Scene scene = new(string.Empty, [cameraObject, lamp]);
+
+        SceneSnapshot snapshot = SceneSnapshotBuilder.Build(scene, 1, DateTimeOffset.UtcNow);
+
+        snapshot.Nodes[0].Components.Single().Enabled.Should().BeFalse("the header checkbox shows what the scene holds");
+        snapshot.Nodes[1].Components.Single().Enabled.Should().BeTrue();
+    }
+
+    [Fact]
     public void Build_ReflectsLaterSceneChanges_WithoutTouchingAnEarlierSnapshot()
     {
         GameObject cube = new("Cube");

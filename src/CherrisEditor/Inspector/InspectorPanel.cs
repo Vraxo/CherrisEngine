@@ -106,7 +106,7 @@ internal class InspectorPanel
         string componentName = SplitPascalCase(component.GetType().Name);
         IntPtr icon = ResolveComponentIcon(component);
 
-        if (DrawComponentHeader(componentName, icon, out _))
+        if (DrawComponentHeader(componentName, icon, out _, component))
         {
             if (_defaultInspector.Draw(component))
             {
@@ -166,7 +166,12 @@ internal class InspectorPanel
         _componentAdder.Draw(go);
     }
 
-    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen)
+    /// <summary>
+    /// The component header: Unity's enable checkbox between the icon and the title, then the foldout. The
+    /// Transform has nothing to switch off, so it passes no component and the slot stays empty.
+    /// </summary>
+    /// <param name="component">The component the toggle switches, or null for the Transform.</param>
+    private bool DrawComponentHeader(string title, IntPtr icon, out bool isOpen, Component? component = null)
     {
         var style = ImGui.GetStyle();
         float iconSize = 20.0f;
@@ -181,9 +186,35 @@ internal class InspectorPanel
         IntPtr displayIcon = icon != IntPtr.Zero ? icon : _textureManager.GetTexture("File");
         ImGui.Image(displayIcon, new Vector2(iconSize, iconSize));
 
+        // The header starts right after the icon, and takes the rest of the row.
         float headerX = startPos.X + iconSize + style.ItemSpacing.X;
+        float headerWidth = ImGui.GetContentRegionAvail().X - (iconSize + style.ItemSpacing.X);
+
+        if (component is not null)
+        {
+            // Its own item, so a click on the toggle does not also fold the section. Off stops the component
+            // without taking it off the object (Component.Enabled), and is saved with the scene.
+            bool enabled = component.Enabled;
+            ImGui.SameLine();
+
+            if (ImGui.Checkbox("##enabled", ref enabled))
+            {
+                component.Enabled = enabled;
+
+                if (_editor.SceneManager.ActiveScene is { } scene)
+                {
+                    scene.FindMainComponents();
+                    scene.IsDirty = true;
+                }
+            }
+
+            // A checkbox is a square frame, so the title moves over by the frame's width.
+            headerX += frameHeight + style.ItemSpacing.X;
+            headerWidth -= frameHeight + style.ItemSpacing.X;
+        }
+
         ImGui.SetCursorPos(new Vector2(headerX, startPos.Y));
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - (headerX - startPos.X));
+        ImGui.SetNextItemWidth(headerWidth);
 
         isOpen = ImGui.CollapsingHeader(title, ImGuiTreeNodeFlags.DefaultOpen);
 
