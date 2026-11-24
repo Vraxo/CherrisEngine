@@ -1,5 +1,6 @@
 using Cherris.Components;
 using Cherris.Core.Logging;
+using Cherris.Scripting;
 using Cherris.Serialization;
 using System.Reflection;
 using System.Runtime.Loader;
@@ -45,34 +46,29 @@ public class ScriptManager
             return true;
         }
 
-        // ScriptCompiler.Compile expects the Project Root (parent of Scripts folder)
-        Assembly? gameAssembly = ScriptCompiler.Compile(projectRoot, _gameAssemblyContext);
+        // The project root, not Scripts/: the compiler owns the Scripts/ convention.
+        ScriptCompileResult result = ProjectScriptCompiler.Compile(projectRoot, _gameAssemblyContext);
 
-        if (gameAssembly is null)
+        if (!result.Succeeded)
         {
-            Logger.Warning("[Editor] Game script compilation failed or no scripts found. No custom components will be loaded.");
-            return false;
-        }
+            Logger.Warning($"[Editor] {result.Errors.Count} error(s) compiling game scripts:");
 
-        try
-        {
-            IEnumerable<Type> scriptTypes = gameAssembly.GetTypes()
-                .Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
-
-            int count = 0;
-            foreach (Type type in scriptTypes)
+            foreach (string error in result.Errors)
             {
-                RegisterScriptComponent(type);
-                count++;
+                Logger.Error($"  {error}");
             }
-            Logger.Info($"[Editor] Loaded {count} custom components from runtime-compiled assembly.");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"[Editor] FATAL: Error processing runtime-compiled assembly. Reason: {ex.Message}");
+
+            Logger.Warning("[Editor] No custom components will be loaded.");
             return false;
         }
+
+        foreach (Type type in result.ScriptTypes)
+        {
+            RegisterScriptComponent(type);
+        }
+
+        Logger.Info($"[Editor] Loaded {result.ScriptTypes.Count} custom components from runtime-compiled assembly.");
+        return true;
     }
 
     public void RegisterScriptComponent(Type scriptType)

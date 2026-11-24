@@ -430,6 +430,28 @@ writes the file **once**: a name whose file exists is reused and never overwritt
 work in it, and undo removes the component rather than the file. The template is the two handlers the lua
 adapter calls, `start()` and `update(deltaTime)`, with nothing in them; the script runs when the scene starts.
 
+### C# scripts: compiled with the project
+
+A `.cs` file under `Scripts/` is not something the engine can read at load time — it is a type that has to be
+compiled first. That happens when the session opens the project: `ProjectScriptCompiler` (in the engine, shared with
+the ImGui editor and the game builder) compiles every `.cs` under `Scripts/`, into a collectible load context, and
+the non-abstract `Script` subclasses it finds are registered with the scene loader under their class names. The
+registration happens **before the first scene is read**, because a factory that arrives afterwards is missing from
+the scene that named it.
+
+Those types then behave like any other component:
+
+| Where | What it does |
+| :--- | :--- |
+| Add Component menu | lists them after the built-ins, named the way the ImGui inspector names them (`PlayerController` reads as `Player Controller`) |
+| a scene file | stores the class name, so a scene written by either editor opens in the other |
+| Play | runs them through the same update the built-ins get |
+
+A compile error does not close the project: the errors go to the console with their file and line, and the session
+carries on with the components the scene's built-in types provide, so the mistake can be fixed and the project
+reopened. The compile runs when the project opens, not on every save — editing a script and then reopening the
+project is what picks the change up today.
+
 Writing happens on the render thread, inside the command, so the UI thread never touches the project folder. The
 one read the panel does itself is `File.Exists`, to label the row honestly.
 

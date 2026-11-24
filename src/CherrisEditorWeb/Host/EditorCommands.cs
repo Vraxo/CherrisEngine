@@ -48,7 +48,13 @@ public interface IUndoableCommand : IEditorCommand
 /// Absolute folder of the open project, or null in the built-in demo scene. A command that writes a file —
 /// a new script — needs it; nothing else does.
 /// </param>
-public sealed class EditorCommandContext(Scene scene, EditorHistory history, string? projectRoot = null)
+/// <param name="scriptComponents">The project's compiled C# scripts, as menu entries, so a command quoted one of
+/// their names can add it.</param>
+public sealed class EditorCommandContext(
+    Scene scene,
+    EditorHistory history,
+    string? projectRoot = null,
+    IReadOnlyList<ComponentCatalog.Entry>? scriptComponents = null)
 {
     /// <summary>The active scene.</summary>
     public Scene Scene { get; } = scene ?? throw new ArgumentNullException(nameof(scene));
@@ -58,6 +64,13 @@ public sealed class EditorCommandContext(Scene scene, EditorHistory history, str
 
     /// <summary>The open project's folder, or null when there is no project to write to.</summary>
     public string? ProjectRoot { get; } = projectRoot;
+
+    /// <summary>
+    /// The open project's compiled C# scripts, as menu entries. They cannot be in
+    /// <see cref="ComponentCatalog.BuiltIn"/> — a project's scripts only exist once that project has been compiled —
+    /// but a command that adds one treats them as any other component.
+    /// </summary>
+    public IReadOnlyList<ComponentCatalog.Entry> ScriptComponents { get; } = scriptComponents ?? [];
 }
 
 /// <summary>
@@ -266,6 +279,12 @@ public sealed class EditorCommandDispatcher(string? projectRoot = null)
     /// <summary>The session's undo and redo stacks.</summary>
     public EditorHistory History { get; } = new();
 
+    /// <summary>
+    /// The project's compiled C# scripts, set when the session compiles them. The built-in catalog knows nothing
+    /// about them; a command that names one resolves it here.
+    /// </summary>
+    public IReadOnlyList<ComponentCatalog.Entry> ScriptComponents { get; set; } = [];
+
     /// <summary>Queues an edit. Safe from any thread.</summary>
     /// <param name="command">The command.</param>
     public void Enqueue(IEditorCommand command) => _queue.Enqueue(command);
@@ -277,7 +296,7 @@ public sealed class EditorCommandDispatcher(string? projectRoot = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
-        EditorCommandContext context = new(scene, History, ProjectRoot);
+        EditorCommandContext context = new(scene, History, ProjectRoot, ScriptComponents);
 
         return _queue.Drain(command => command.Execute(context), log);
     }
@@ -287,7 +306,7 @@ public sealed class EditorCommandDispatcher(string? projectRoot = null)
 /// Adds a component to an object in the live scene — what the inspector's Add Component menu sends.
 /// </summary>
 /// <param name="ObjectId">The object to add to.</param>
-/// <param name="ComponentName">One of <see cref="ComponentCatalog.BuiltIn"/>'s display names.</param>
+/// <param name="ComponentName">A display name from the menu: a built-in component's, or a compiled script's.</param>
 /// <remarks>
 /// An object holds at most one of each type, the same rule the ImGui inspector applies, so the menu never
 /// offers a duplicate and a stale menu cannot make one either. Undo removes the component again.
@@ -309,7 +328,7 @@ public sealed class AddComponentCommand(Guid objectId, string componentName) : I
             return $"[editor] could not {Describe}: that object is no longer in the scene.";
         }
 
-        if (ComponentCatalog.Find(componentName) is not { } entry)
+        if (FindComponent(context, componentName) is not { } entry)
         {
             return $"[editor] could not {Describe}: no component is named '{componentName}'.";
         }
@@ -366,6 +385,18 @@ public sealed class AddComponentCommand(Guid objectId, string componentName) : I
 
     private GameObject? FindTarget(Scene scene) =>
         scene.GameObjects.FirstOrDefault(gameObject => gameObject.Id == objectId);
+
+    /// <summary>
+    /// The entry a display name refers to: the built-in catalog first, then the project's compiled scripts.
+    /// </summary>
+    /// <remarks>
+    /// Built-ins win a name collision. A script called <c>Camera</c> is an odd thing to write, and the built-in one
+    /// is what every scene already means by that name.
+    /// </remarks>
+    private static ComponentCatalog.Entry? FindComponent(EditorCommandContext context, string componentName) =>
+        ComponentCatalog.Find(componentName) ??
+        context.ScriptComponents.FirstOrDefault(entry =>
+            String.Equals(entry.DisplayName, componentName, StringComparison.Ordinal));
 }
 
 /// <summary>

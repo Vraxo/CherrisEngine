@@ -1,5 +1,6 @@
 using Cherris.Core;
 using Cherris.Core.Logging;
+using Cherris.Scripting;
 using NativeFileDialogNET;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
@@ -172,7 +173,18 @@ public static class GameBuilder
         }
 
         Logger.Info("[GameBuilder] Compiling Game Scripts...");
-        return ScriptCompiler.CompileToFile(project.RootPath, dllPath);
+
+        if (ProjectScriptCompiler.CompileToFile(project.RootPath, dllPath, out IReadOnlyList<string> errors))
+        {
+            return true;
+        }
+
+        foreach (string error in errors)
+        {
+            Logger.Error($"[GameBuilder] {error}");
+        }
+
+        return false;
     }
 
     private static void CopyEngineResources(string outputDir)

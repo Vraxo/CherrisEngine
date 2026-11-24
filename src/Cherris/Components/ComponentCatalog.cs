@@ -32,6 +32,29 @@ public static class ComponentCatalog
         new Entry("Audio Listener", typeof(AudioListener))
     ];
 
+    /// <summary>
+    /// Menu entries for a project's C# script types, named the way the ImGui inspector names them: a class name
+    /// split into words, so <c>PlayerController</c> reads as "Player Controller".
+    /// </summary>
+    /// <remarks>
+    /// These are not in <see cref="BuiltIn"/>, because they only exist once a project's scripts have been
+    /// compiled — a catalog cannot know them ahead of time. The entries are otherwise the same thing, so a command
+    /// quoted a display name does not care which half of the menu it came from.
+    /// </remarks>
+    /// <param name="scriptTypes">Types from a compiled project; anything not a concrete script is ignored.</param>
+    public static IReadOnlyList<Entry> ForScriptTypes(IEnumerable<Type> scriptTypes)
+    {
+        ArgumentNullException.ThrowIfNull(scriptTypes);
+
+        return
+        [
+            .. scriptTypes
+                .Where(type => typeof(Script).IsAssignableFrom(type) && !type.IsAbstract)
+                .Select(type => new Entry(SplitWords(type.Name), type))
+                .OrderBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
+        ];
+    }
+
     /// <summary>Finds an entry by the name the menu shows.</summary>
     /// <param name="displayName">Name as shown, case-sensitive.</param>
     public static Entry? Find(string? displayName)
@@ -40,4 +63,8 @@ public static class ComponentCatalog
             ? null
             : BuiltIn.FirstOrDefault(entry => String.Equals(entry.DisplayName, displayName, StringComparison.Ordinal));
     }
+
+    /// <summary><c>PlayerController</c> becomes <c>Player Controller</c>.</summary>
+    private static string SplitWords(string name) =>
+        System.Text.RegularExpressions.Regex.Replace(name, "(?<!^)([A-Z])", " $1");
 }

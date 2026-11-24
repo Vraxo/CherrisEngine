@@ -1,4 +1,5 @@
 using Cherris;
+using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering.Headless;
@@ -119,6 +120,12 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
     /// <summary>Renderer and GL version strings captured once the renderer is live, or null before that.</summary>
     public string? RendererInfo => _engine?.RendererInfo;
+
+    /// <summary>
+    /// The open project's compiled C# scripts, as Add Component menu entries; empty until a session has compiled
+    /// them, and empty forever in a session with no project.
+    /// </summary>
+    public IReadOnlyList<ComponentCatalog.Entry> ScriptComponents => _engine?.ScriptComponents ?? [];
 
     /// <summary>Most recent scene snapshot published by the render thread, or null before the first one.</summary>
     public SceneSnapshot? LatestScene => Volatile.Read(ref _latestScene);
