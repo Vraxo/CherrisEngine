@@ -3,6 +3,7 @@ using Cherris.Components;
 using Cherris.Core;
 using Cherris.Core.Logging;
 using Cherris.Rendering.Headless;
+using OpenTK.Windowing.Desktop;
 using System.Diagnostics;
 using System.Net.WebSockets;
 
@@ -24,17 +25,38 @@ namespace CherrisEditorWeb.Host;
 /// One editor window is supported at a time: a newly connected client replaces the previous one.
 /// </para>
 /// </remarks>
+/// <summary>Which step of <see cref="WebEditorHost.Start"/> a session could not get past.</summary>
+public enum EditorStartFailure
+{
+    /// <summary>The session started.</summary>
+    None,
+
+    /// <summary>No graphics context: no GL 3.3 driver, or GLFW refused the thread it was asked on.</summary>
+    Graphics,
+
+    /// <summary>The listener could not take its port.</summary>
+    Listener
+}
+
 public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSnapshotSink, IDisposable
 {
     private const int MinimumViewport = 32;
     private const int MaximumViewportWidth = 2560;
     private const int MaximumViewportHeight = 1600;
+    private const int ContextWidth = 1920;
+    private const int ContextHeight = 1080;
+
+    /// <summary>How long a session gets to finish when it is asked to stop.</summary>
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
 
     private readonly WebEditorOptions _options;
     private readonly ManualResetEventSlim _shutdown = new(false);
     private readonly ManualResetEventSlim _started = new(false);
     private readonly string _webRoot;
-    private readonly HeadlessBackend? _graphicsBackend;
+    private HeadlessBackend? _graphicsBackend;
+    private bool _ownsBackend;
+    private Thread? _renderThread;
+    private readonly ManualResetEventSlim _exited = new(false);
     private readonly Action<string>? _log;
     private readonly EditorSceneRequest _scene;
 
@@ -205,9 +227,117 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
     }
 
     /// <summary>
+    /// Which step of <see cref="Start"/> a failed session stopped at.
+    /// </summary>
+    public EditorStartFailure StartFailure { get; private set; } = EditorStartFailure.None;
+
+    /// <summary>
+    /// Raised on the render thread once the loop has finished, with the code <see cref="Run"/> would have
+    /// returned. A host that started the session with <see cref="Start"/> uses this to notice a crash.
+    /// </summary>
+    public event Action<int>? Exited;
+
+    /// <summary>
     /// Runs until the process is interrupted. Returns the process exit code.
     /// </summary>
+    /// <remarks>
+    /// For a host with nothing else to do with its main thread — the browser front end. A host with a window
+    /// message loop on that thread uses <see cref="Start"/> instead.
+    /// </remarks>
     public int Run()
+    {
+        if (!StartServer())
+        {
+            return 1;
+        }
+
+        WriteLog("[web-editor] Press Ctrl+C to stop.");
+
+        if (_options.OpenBrowser && _server is not null)
+        {
+            OpenBrowser(_server.Url);
+        }
+
+        Console.CancelKeyPress += OnCancelKeyPress;
+        StartShutdownWatcher();
+
+        RenderLoop();
+
+        return _renderFailed ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Starts a session without keeping the calling thread, for a host whose main thread belongs to a UI message
+    /// loop, and returns once the listener is up or the session has failed.
+    /// </summary>
+    /// <remarks>
+    /// The graphics context is created on the calling thread — OpenTK only initialises GLFW on the process' main
+    /// thread — and the render loop runs on a background thread, which makes that context current itself. This is
+    /// the only place that knows the order those two have to happen in, so both front ends get it right.
+    /// </remarks>
+    /// <returns>True when a session is running. When it is false, <see cref="StartFailure"/> and
+    /// <see cref="FailureDetail"/> say which step could not be done.</returns>
+    public bool Start()
+    {
+        if (!CreateGraphicsBackend())
+        {
+            StartFailure = EditorStartFailure.Graphics;
+            Shutdown();
+            return false;
+        }
+
+        if (!StartServer())
+        {
+            StartFailure = EditorStartFailure.Listener;
+            Shutdown();
+            return false;
+        }
+
+        StartShutdownWatcher();
+
+        Thread render = new(RenderLoop)
+        {
+            IsBackground = true,
+            Name = "Cherris Engine"
+        };
+
+        _renderThread = render;
+        render.Start();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Waits until the render loop started by <see cref="Start"/> or <see cref="Run"/> has finished.
+    /// </summary>
+    /// <param name="timeout">How long to wait before giving up on it.</param>
+    public bool WaitForExit(TimeSpan timeout) => _exited.Wait(timeout);
+
+    /// <summary>Runs the engine, then tears the session down, whichever thread it was started on.</summary>
+    private void RenderLoop()
+    {
+        try
+        {
+            RunEngine();
+        }
+        finally
+        {
+            Shutdown();
+            _exited.Set();
+
+            try
+            {
+                Exited?.Invoke(_renderFailed ? 1 : 0);
+            }
+            catch (Exception exception)
+            {
+                WriteLog($"[web-editor] Exit handler failed: {exception.Message}");
+            }
+        }
+    }
+
+    /// <summary>Opens the listener, reporting a busy port rather than throwing.</summary>
+    private bool StartServer()
     {
         string prefix = _options.ListenOnAllInterfaces
             ? $"http://+:{_options.Port}/"
@@ -226,24 +356,22 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             Volatile.Write(ref _failureDetail, exception.ToString());
             _startFailed = true;
             _started.Set();
-            return 1;
+
+            return false;
         }
 
         _started.Set();
-
         WriteLog($"[web-editor] Serving the editor at {_server.Url}");
-        WriteLog("[web-editor] Press Ctrl+C to stop.");
 
-        if (_options.OpenBrowser)
-        {
-            OpenBrowser(_server.Url);
-        }
+        return true;
+    }
 
-        Console.CancelKeyPress += OnCancelKeyPress;
-
-        // Any thread can request shutdown (Ctrl+C, render failure); the engine loop itself runs on this
-        // thread because a GL context, and GLFW on macOS in particular, wants the process' main thread.
-        Thread shutdownWatcher = new(() =>
+    /// <summary>Shuts the loop down when any thread asks for it, whichever thread started the session.</summary>
+    private void StartShutdownWatcher()
+    {
+        // Any thread can request shutdown (Ctrl+C, a crash, the host's Dispose); the watcher hands it to the
+        // engine, whose loop stops on its next update.
+        Thread watcher = new(() =>
         {
             _shutdown.Wait();
             _engine?.RequestStop();
@@ -252,12 +380,47 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
             IsBackground = true,
             Name = "Cherris Shutdown"
         };
-        shutdownWatcher.Start();
 
-        RunEngine();
+        watcher.Start();
+    }
 
-        Shutdown();
-        return _renderFailed ? 1 : 0;
+    /// <summary>
+    /// Makes sure there is a backend with a context, creating one on the calling thread when the host has none.
+    /// </summary>
+    /// <remarks>
+    /// OpenTK only initialises GLFW on the process' main thread and <see cref="Cherris.Core.Engine"/>'s
+    /// constructor initialises the backend, so a host whose main thread belongs to a UI has to create the context
+    /// before the render thread starts. <c>CreateGraphicsContext</c> releases the context afterwards: a context can
+    /// only be current on one thread at a time, and leaving it bound here makes the render thread's own
+    /// <c>MakeCurrent</c> fail with ERROR_BUSY.
+    /// </remarks>
+    private bool CreateGraphicsBackend()
+    {
+        if (_graphicsBackend is not null)
+        {
+            return true;
+        }
+
+        HeadlessBackend backend = new();
+
+        try
+        {
+            backend.CreateGraphicsContext("Cherris Editor", ContextWidth, ContextHeight);
+            GLFWProvider.CheckForMainThread = false;
+        }
+        catch (Exception exception)
+        {
+            backend.Dispose();
+            Volatile.Write(ref _failureDetail, exception.ToString());
+            WriteLog($"[web-editor] Could not create the graphics context: {exception.Message}");
+
+            return false;
+        }
+
+        _graphicsBackend = backend;
+        _ownsBackend = true;
+
+        return true;
     }
 
     /// <inheritdoc />
@@ -368,9 +531,26 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
         }
 
         _disposed = true;
+
+        // A session that is still running gets a bounded chance to finish: the render loop releases the context on
+        // its way out, and the hidden window must not be destroyed while something is still drawing into it.
+        if (_renderThread is not null)
+        {
+            RequestStop();
+            _exited.Wait(StopTimeout);
+        }
+
         Shutdown();
+
+        if (_ownsBackend)
+        {
+            _graphicsBackend?.Dispose();
+            _graphicsBackend = null;
+        }
+
         _shutdown.Dispose();
         _started.Dispose();
+        _exited.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -411,7 +591,14 @@ public sealed class WebEditorHost : IViewportSink, IViewportInputSink, ISceneSna
 
         try
         {
-            backend = _graphicsBackend ?? new HeadlessBackend();
+            if (!CreateGraphicsBackend())
+            {
+                _renderFailed = true;
+                _shutdown.Set();
+                return;
+            }
+
+            backend = _graphicsBackend!;
             backend.TargetFrameRate = _options.TargetFrameRate;
 
             engine = new WebEditorEngine(backend, this, this, _scene, _commands);
