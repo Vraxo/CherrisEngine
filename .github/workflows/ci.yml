@@ -26,7 +26,36 @@ jobs:
 
       - run: dotnet build
 
-      - run: dotnet test --no-build
+      - run: dotnet test --no-build --logger "trx;LogFileName=tests.trx"
+
+      # A failing test says why in its own output, which is not visible from a headless session, so each failure is
+      # repeated as an annotation on the pull request.
+      - name: Report failing tests
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ElementTree
+
+          trx = {'trx': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          reported = 0
+
+          for results in glob.glob('**/TestResults/*.trx', recursive=True):
+              for result in ElementTree.parse(results).getroot().iterfind('.//trx:UnitTestResult', trx):
+                  if result.get('outcome') != 'Failed':
+                      continue
+
+                  name = result.get('testName', 'unknown test')
+                  message = result.findtext('.//trx:Message', '', trx).strip()
+                  stack = result.findtext('.//trx:StackTrace', '', trx).strip()
+                  lines = [line.strip() for line in (message, stack).splitlines() if line.strip()]
+                  detail = ' | '.join(lines)[:1500]
+
+                  print(f'::error title=Test failed: {name}::{detail}')
+                  reported += 1
+
+          print(f'{reported} failing test(s) reported.')
+          PY
 
       # The number-field drag is plain JavaScript without a browser, so node can check it directly.
       - run: node tests/js/numberdrag.test.js
