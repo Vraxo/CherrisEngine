@@ -612,6 +612,35 @@ public class EditorCommandTests
         scene.Run(new AddScriptCommand(Guid.NewGuid(), "Player")).Should().Contain("no longer in the scene");
     }
 
+    [Fact]
+    public void CreateGameObject_AddsAnEmptyObjectWithTheGivenId()
+    {
+        Harness scene = new();
+        Guid objectId = Guid.NewGuid();
+
+        string? line = scene.Run(new CreateGameObjectCommand(objectId, "GameObject"));
+
+        line.Should().Contain("created GameObject");
+        scene.Live.GameObjects.Should().ContainSingle(gameObject => gameObject.Id == objectId)
+            .Which.Name.Should().Be("GameObject");
+        scene.History.CanUndo.Should().BeTrue("creating the object is one step the author can take back");
+    }
+
+    [Fact]
+    public void CreateGameObject_TakesTheObjectBackAndPutsItBack()
+    {
+        Harness scene = new();
+        Guid objectId = Guid.NewGuid();
+        scene.Run(new CreateGameObjectCommand(objectId, "GameObject"));
+
+        scene.Run(new UndoCommand());
+        scene.Live.GameObjects.Should().NotContain(gameObject => gameObject.Id == objectId);
+
+        scene.Run(new RedoCommand());
+        scene.Live.GameObjects.Should().ContainSingle(gameObject => gameObject.Id == objectId)
+            .Which.Name.Should().Be("GameObject", "Redo puts back the object Undo took, not a copy");
+    }
+
     /// <summary>A scene, an object in it, and one dispatcher whose history the commands record into.</summary>
     private sealed class Harness
     {

@@ -223,6 +223,15 @@ chrome is deliberately the same so muscle memory carries over:
 Colors come from the engine's own palette rather than an approximation of it — see
 [UE5 Theme](ue5-theme.md) for every value, its source file, the widget styles it maps to, and the bundled Roboto/Roboto Mono fonts behind the typography.
 
+The one panel that does not follow that palette is the hierarchy, which is deliberately Unity's Hierarchy
+window instead: a create button and search over Unity's visibility and scene-picking columns, the scene's
+own name as a bold header row with its foldout, one icon per object, and zebra rows that keep striping into
+the empty space below the list. The colours are Unity's dark hierarchy sampled and remapped onto the same
+`--theme-*` roles. The controls are honest about scope: the create button really adds an empty GameObject
+(one undoable step, selected the moment it appears), and the eye appears only on rows that draw — it
+switches that object's MeshRenderer off and on. The picking column, the header kebab, the toolbar's
+multi-scene glyph and the search arrow are chrome, `aria-hidden` like Unity's would be inert.
+
 Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
 which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists
 them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.

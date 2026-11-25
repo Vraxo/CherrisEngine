@@ -3,61 +3,148 @@
 @inject SceneSelection Selection
 @implements IDisposable
 
-@* ImGui's Hierarchy: search field, separator, then the scene tree. *@
+@* Unity's hierarchy: a create button and search over the visibility/picking columns, the scene's own name as
+   a header row, and one icon per object. The rows carry the icon of the object's first component, and only
+   rows that draw get the visibility toggle, the way Unity leaves the other eye cells empty. *@
 <section class="panel">
     <header class="panel-tabstrip">
         <span class="panel-tab active">Hierarchy</span>
     </header>
 
-    <div class="panel-body">
+    <div class="panel-body nopad hier-body">
         @* The tree is the session, the tiles are the files: when they differ, this is why. *@
         @if (Host.SceneNotice is string notice)
         {
-            <p class="panel-notice" title="@notice">@notice</p>
+            <div class="hier-notice">
+                <p class="panel-notice" title="@notice">@notice</p>
+            </div>
         }
 
-        <div class="search-field">
-            <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.3" />
-                <path d="M10.3 10.3 13.5 13.5" fill="none" stroke="currentColor" stroke-width="1.3"
-                      stroke-linecap="round" />
-            </svg>
-            <input type="search" class="imgui-input" placeholder="Search..." aria-label="Search the hierarchy"
-                   @bind="_search" @bind:event="oninput" />
+        <div class="hier-toolbar">
+            @* Unity's "+" opens a create menu. The one entry is what the engine can make; the menu is the
+               shape more entries hang off. *@
+            <div class="hier-create">
+                <button type="button" class="hier-create-button" title="Create" aria-haspopup="menu"
+                        aria-expanded="@(_createMenuOpen ? "true" : "false")" @onclick="ToggleCreateMenu">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <i class="fa-solid fa-chevron-down hier-create-chevron" aria-hidden="true"></i>
+                </button>
+
+                @if (_createMenuOpen)
+                {
+                    @* The click-away the menubar's menus get, for this inline menu. *@
+                    <div class="menu-scrim" @onclick="CloseCreateMenu"></div>
+
+                    <div class="menu-popup hier-create-menu" role="menu">
+                        <button type="button" class="menu-item" role="menuitem" disabled="@(!CanEdit)"
+                                title="@CreateTitle" @onclick="CreateEmptyObject">
+                            <span>Create Empty GameObject</span>
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <div class="search-field hier-search">
+                <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.3" />
+                    <path d="M10.3 10.3 13.5 13.5" fill="none" stroke="currentColor" stroke-width="1.3"
+                          stroke-linecap="round" />
+                </svg>
+                <input type="search" class="imgui-input" placeholder="Search..." aria-label="Search the hierarchy"
+                       @bind="_search" @bind:event="oninput" />
+                @* The arrow of Unity's search-options menu. There are no search options to open yet, so it is
+                   chrome, not a control. *@
+                <svg class="search-options" viewBox="0 0 8 5" aria-hidden="true">
+                    <path d="M0.5 0.5 4 4 7.5 0.5" fill="none" stroke="currentColor" stroke-width="1.2"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </div>
+
+            @* The multi-scene glyph that ends Unity's toolbar. Showing more than one scene in the hierarchy is
+               not a Cherris feature, so the glyph stays decorative. *@
+            <span class="hier-toolbar-icon" aria-hidden="true">
+                <i class="fa-solid fa-clone"></i>
+            </span>
         </div>
 
-        <div class="imgui-separator"></div>
+        @* The column strip the rows are measured against: visibility, scene picking, Name. The toggles
+           themselves live on the rows; the strip is chrome, like Unity's header. *@
+        <div class="hier-columns" aria-hidden="true">
+            <span class="hier-col hier-col-eye"><i class="fa-solid fa-eye"></i></span>
+            <span class="hier-col hier-col-pick"><i class="fa-solid fa-hand"></i></span>
+            <span class="hier-col hier-col-name">Name</span>
+            <span class="hier-col hier-col-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+        </div>
 
-        @if (_rows.Count == 0)
+        @if (!HasScene)
         {
-            <p class="panel-empty">@(_search.Length > 0 ? "No matches." : "No scene loaded.")</p>
+            <p class="panel-empty hier-empty">No scene loaded.</p>
         }
         else
         {
-            <div class="tree" role="tree">
+            <div class="tree hier-tree" role="tree">
+                @* The scene is the root row: it names the file and folds the whole list away, the way Unity's
+                   scene header does. *@
+                <div class="tree-row tree-scene" role="treeitem" aria-selected="false"
+                     @onclick="() => Selection.Select(null)">
+                    <span class="hier-cell hier-cell-eye"></span>
+                    <span class="hier-cell hier-cell-pick"></span>
+                    <span class="hier-name">
+                        <button type="button" class="tree-arrow" tabindex="-1"
+                                title="@(_sceneExpanded ? "Collapse" : "Expand")"
+                                @onclick:stopPropagation="true" @onclick="ToggleScene">
+                            <svg class="tree-chevron @(_sceneExpanded ? "expanded" : "")" viewBox="0 0 8 8"
+                                 aria-hidden="true">
+                                <path d="M2 1 7 4 2 7 Z" fill="currentColor" />
+                            </svg>
+                        </button>
+                        <i class="fa-solid fa-cube hier-icon hier-scene-icon" aria-hidden="true"></i>
+                        <span class="tree-label hier-scene-name">@SceneName</span>
+                    </span>
+                </div>
+
                 @foreach (Row row in _rows)
                 {
                     <div class="tree-row @(Selection.SelectedId == row.Node.Id ? "selected" : "")"
                          role="treeitem" aria-selected="@AriaSelected(row.Node.Id)"
-                         style="padding-left:@(4 + (row.Depth * 14))px"
                          @onclick="() => Select(row.Node.Id)">
-                        <button type="button" class="tree-arrow @(row.HasChildren ? "" : "empty")"
-                                tabindex="-1" title="@(row.Expanded ? "Collapse" : "Expand")"
-                                @onclick:stopPropagation="true"
-                                @onclick="() => Toggle(row.Node.Id)">
-                            @if (row.HasChildren)
+                        <span class="hier-cell hier-cell-eye">
+                            @if (row.VisibilityType is string visibilityType)
                             {
-                                <svg class="tree-chevron @(row.Expanded ? "expanded" : "")" viewBox="0 0 16 16"
-                                     aria-hidden="true">
-                                    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
-                                          stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                                </svg>
+                                @* Unity's visibility toggle — but honest about what it can do: it switches the
+                                   renderer that draws this object, nothing else. *@
+                                <button type="button" class="hier-eye @(row.Hidden ? "off" : "")" tabindex="-1"
+                                        title="@(row.Hidden ? $"Show {row.Node.Name}" : $"Hide {row.Node.Name}")"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => ToggleVisible(row, visibilityType)">
+                                    <i class="fa-solid @(row.Hidden ? "fa-eye-slash" : "fa-eye")" aria-hidden="true"></i>
+                                </button>
                             }
-                        </button>
-                        <span class="tree-label">@row.Node.Name</span>
+                        </span>
+                        <span class="hier-cell hier-cell-pick"></span>
+                        <span class="hier-name" style="padding-left:@(6 + row.Depth * 18)px">
+                            <button type="button" class="tree-arrow @(row.HasChildren ? "" : "empty")" tabindex="-1"
+                                    title="@(row.Expanded ? "Collapse" : "Expand")"
+                                    @onclick:stopPropagation="true" @onclick="() => Toggle(row.Node.Id)">
+                                @if (row.HasChildren)
+                                {
+                                    <svg class="tree-chevron @(row.Expanded ? "expanded" : "")" viewBox="0 0 8 8"
+                                         aria-hidden="true">
+                                        <path d="M2 1 7 4 2 7 Z" fill="currentColor" />
+                                    </svg>
+                                }
+                            </button>
+                            <i class="fa-solid @row.Icon.Glyph hier-icon @row.Icon.Color" aria-hidden="true"></i>
+                            <span class="tree-label">@row.Node.Name</span>
+                        </span>
                     </div>
                 }
             </div>
+
+            @if (_rows.Count == 0 && IsSearching)
+            {
+                <p class="panel-empty hier-empty">No matches.</p>
+            }
         }
     </div>
 </section>
@@ -66,8 +153,39 @@
     private readonly HashSet<Guid> _collapsed = [];
     private string _search = string.Empty;
     private List<Row> _rows = [];
+    private bool _sceneExpanded = true;
+    private bool _createMenuOpen;
 
-    private sealed record Row(SceneNodeSnapshot Node, int Depth, bool HasChildren, bool Expanded);
+    /// <summary>One drawn object row: where it sits, what it shows, and what its visibility toggle drives.</summary>
+    /// <param name="Node">The object.</param>
+    /// <param name="Depth">Tree depth, one indent step each; the scene row over the rows is depth zero.</param>
+    /// <param name="HasChildren">Whether the row owns a foldout at all.</param>
+    /// <param name="Expanded">Whether its children are showing.</param>
+    /// <param name="Icon">The glyph and tint of the row's first component — the one icon Unity shows per row.</param>
+    /// <param name="VisibilityType">
+    /// The component the row's eye switches, or null when the object draws nothing. Unity only leaves the
+    /// visibility toggle on rows that can be hidden from view; Cherris can only hide what draws.
+    /// </param>
+    /// <param name="Hidden">Whether that component is currently switched off.</param>
+    private sealed record Row(
+        SceneNodeSnapshot Node,
+        int Depth,
+        bool HasChildren,
+        bool Expanded,
+        (string Glyph, string Color) Icon,
+        string? VisibilityType,
+        bool Hidden);
+
+    private bool HasScene => Store.Current is not null;
+
+    private bool CanEdit => Host.State == EditorSessionState.Running;
+
+    private string CreateTitle => CanEdit
+        ? "Add an empty object at the scene root"
+        : "No render session is running";
+
+    /// <summary>The scene row's label: the scene's own name, the way Unity titles the root row.</summary>
+    private string SceneName => Store.Current?.SceneName is { Length: > 0 } name ? name : "Untitled Scene";
 
     protected override void OnInitialized()
     {
@@ -96,9 +214,14 @@
     {
         List<Row> rows = [];
 
-        foreach (SceneTreeNode root in Store.Roots)
+        // A search keeps every branch open; a collapsed scene row folds the whole list away.
+        if (_sceneExpanded || IsSearching)
         {
-            AddNode(root, 0, rows);
+            foreach (SceneTreeNode root in Store.Roots)
+            {
+                // Depth one: the scene row over these rows is the root everything hangs under, like Unity's.
+                AddNode(root, 1, rows);
+            }
         }
 
         _rows = rows;
@@ -114,7 +237,14 @@
         bool hasChildren = node.Children.Count > 0;
         bool expanded = IsExpanded(node.Node.Id);
 
-        rows.Add(new Row(node.Node, depth, hasChildren, expanded));
+        rows.Add(new Row(
+            node.Node,
+            depth,
+            hasChildren,
+            expanded,
+            RowIcon(node.Node),
+            VisibilityType(node.Node),
+            IsHidden(node.Node)));
 
         if (!expanded || !hasChildren)
         {
@@ -127,10 +257,35 @@
         }
     }
 
+    /// <summary>Unity shows one icon per row: the face of the object's first component after the transform.</summary>
+    private static (string Glyph, string Color) RowIcon(SceneNodeSnapshot node)
+    {
+        ComponentSnapshot? first = node.Components.FirstOrDefault(
+            component => !String.Equals(component.TypeName, "Transform", StringComparison.Ordinal));
+
+        // An empty object gets the plain grey cube, the way Unity marks a bare GameObject.
+        return first is null ? ("fa-cube", "hier-icon-plain") : ComponentGlyphs.For(first.TypeName);
+    }
+
+    /// <summary>
+    /// The component the visibility toggle drives — the renderer that draws the object — or null when the
+    /// object draws nothing and Unity would leave the eye cell empty.
+    /// </summary>
+    private static string? VisibilityType(SceneNodeSnapshot node) =>
+        node.Components.FirstOrDefault(
+            component => String.Equals(component.TypeName, "MeshRenderer", StringComparison.Ordinal))?.TypeName;
+
+    /// <summary>The eye reads the state the renderer is in now, from the same snapshot the row draws.</summary>
+    private static bool IsHidden(SceneNodeSnapshot node) =>
+        node.Components.FirstOrDefault(
+            component => String.Equals(component.TypeName, "MeshRenderer", StringComparison.Ordinal)) is { Enabled: false };
+
+    private bool IsSearching => !string.IsNullOrWhiteSpace(_search);
+
     // A search keeps a node when it matches itself or has a matching descendant, like ImGui's filter.
     private bool IsVisible(SceneTreeNode node)
     {
-        if (string.IsNullOrWhiteSpace(_search))
+        if (!IsSearching)
         {
             return true;
         }
@@ -142,7 +297,7 @@
     private bool IsExpanded(Guid id)
     {
         // Matches stay expanded so a filtered tree is readable without extra clicks.
-        return !string.IsNullOrWhiteSpace(_search) || !_collapsed.Contains(id);
+        return IsSearching || !_collapsed.Contains(id);
     }
 
     private void Toggle(Guid id)
@@ -153,6 +308,34 @@
         }
 
         Rebuild();
+    }
+
+    private void ToggleScene()
+    {
+        _sceneExpanded = !_sceneExpanded;
+
+        Rebuild();
+    }
+
+    private void ToggleVisible(Row row, string visibilityType)
+    {
+        // The eye shows the state the object is in; the click asks for the other one.
+        Host.SetComponentEnabled(row.Node.Id, visibilityType, row.Hidden);
+    }
+
+    private void ToggleCreateMenu() => _createMenuOpen = !_createMenuOpen;
+
+    private void CloseCreateMenu() => _createMenuOpen = false;
+
+    private void CreateEmptyObject()
+    {
+        CloseCreateMenu();
+
+        // Unity names an empty "GameObject", and selects it the moment it appears.
+        if (Host.CreateGameObject("GameObject", out Guid objectId))
+        {
+            Selection.Select(objectId);
+        }
     }
 
     private string AriaSelected(Guid id) => Selection.SelectedId == id ? "true" : "false";

@@ -553,6 +553,22 @@ public sealed class EditorHostService : IDisposable
         Enqueue(new AddComponentCommand(objectId, componentName), "add " + componentName);
 
     /// <summary>
+    /// Adds an empty object at the scene root, as the hierarchy's create menu sends: Unity's "Create Empty".
+    /// The render thread applies it on its next frame, and the snapshot the panels read picks it up from there;
+    /// the outcome is logged to the console.
+    /// </summary>
+    /// <param name="name">The name the object is born with.</param>
+    /// <param name="objectId">
+    /// Set to the id the object is created with, so the caller can select it before the snapshot catches up.
+    /// </param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool CreateGameObject(string name, out Guid objectId)
+    {
+        objectId = Guid.NewGuid();
+        return Enqueue(new CreateGameObjectCommand(objectId, name), "create " + name);
+    }
+
+    /// <summary>
     /// Switches a component on or off, as the inspector's header checkbox sends. Off stops the component — a
     /// renderer stops drawing, a light stops lighting, a script stops ticking — without taking it off the object,
     /// and the state is saved with the scene. One click is one undo step.
