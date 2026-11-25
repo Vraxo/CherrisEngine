@@ -23,6 +23,10 @@ public class ComponentTypeMenuBuilder
     {
         Register("Camera", typeof(Camera));
         Register("Light", typeof(Light));
+        Register("Rigid Body", typeof(RigidBody));
+        Register("Box Collider", typeof(BoxCollider));
+        Register("Sphere Collider", typeof(SphereCollider));
+        Register("Capsule Collider", typeof(CapsuleCollider));
         Register("Audio Source", typeof(AudioSource));
         Register("Audio Listener", typeof(AudioListener));
     }

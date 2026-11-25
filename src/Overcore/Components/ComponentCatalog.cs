@@ -28,6 +28,10 @@ public static class ComponentCatalog
     [
         new Entry("Camera", typeof(Camera)),
         new Entry("Light", typeof(Light)),
+        new Entry("Rigid Body", typeof(RigidBody)),
+        new Entry("Box Collider", typeof(BoxCollider)),
+        new Entry("Sphere Collider", typeof(SphereCollider)),
+        new Entry("Capsule Collider", typeof(CapsuleCollider)),
         new Entry("Audio Source", typeof(AudioSource)),
         new Entry("Audio Listener", typeof(AudioListener))
     ];

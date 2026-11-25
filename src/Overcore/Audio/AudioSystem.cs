@@ -50,7 +50,7 @@ public class AudioSystem : IDisposable
         }
     }
 
-    public void Update(Scene scene)
+    public void Update(Scene? scene)
     {
         if (_device.Handle == IntPtr.Zero)
         {
