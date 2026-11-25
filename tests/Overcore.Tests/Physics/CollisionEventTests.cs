@@ -14,7 +14,7 @@ namespace Overcore.Tests.Physics;
 /// </summary>
 public class CollisionEventTests
 {
-    private const float Step = 1.0f / 60.0f;
+    private const float StepSeconds = 1.0f / 60.0f;
 
     /// <summary>Counts what a contact reports, and keeps the payload of the last one.</summary>
     private sealed class ContactProbe : Script
@@ -66,11 +66,11 @@ public class CollisionEventTests
         return scene;
     }
 
-    private static void Step(PhysicsSystem physics, int steps)
+    private static void Advance(PhysicsSystem physics, int steps)
     {
         for (int step = 0; step < steps; step++)
         {
-            physics.Update(Step);
+            physics.Update(StepSeconds);
         }
     }
 
@@ -93,7 +93,7 @@ public class CollisionEventTests
 
         _ = StartScene(physics, audio, ground, crate);
 
-        Step(physics, 5);
+        Advance(physics, 5);
 
         crateProbe.CollisionEnters.Should().BeGreaterThan(0, "the touch began");
         crateProbe.CollisionStays.Should().BeGreaterThan(0, "and lasted more than one step");
@@ -137,18 +137,18 @@ public class CollisionEventTests
         for (int step = 0; step < 3; step++)
         {
             body.Teleport(new Vector3(0.0f, 0.0f, 0.4f));
-            physics.Update(Step);
+            physics.Update(StepSeconds);
         }
 
         wallProbe.CollisionEnters.Should().Be(1);
         crateProbe.CollisionStays.Should().BeGreaterThan(0);
 
         wall.Transform.WorldPosition = new Vector3(20.0f, 0.0f, 0.0f);
-        Step(physics, 1);
+        Advance(physics, 1);
 
         wallProbe.CollisionExits.Should().Be(1);
 
-        Step(physics, 1);
+        Advance(physics, 1);
         wallProbe.CollisionExits.Should().Be(1, "an exit is reported once, not every step afterwards");
     }
 
@@ -170,7 +170,7 @@ public class CollisionEventTests
 
         _ = StartScene(physics, audio, ground, ball);
 
-        Step(physics, 120);
+        Advance(physics, 120);
 
         probe.CollisionEnters.Should().BeGreaterThan(0, "it landed");
         ball.Transform.WorldPosition.Y.Should().BeApproximately(0.5f, 0.15f, "it rests on the floor, a radius up");
@@ -193,7 +193,7 @@ public class CollisionEventTests
 
         _ = StartScene(physics, audio, volume, visitor);
 
-        Step(physics, 2);
+        Advance(physics, 2);
 
         volumeProbe.TriggerEnters.Should().Be(1);
         volumeProbe.LastTrigger.Should().BeSameAs(visitorCollider, "a trigger reports the collider that came in");
@@ -203,7 +203,7 @@ public class CollisionEventTests
         volumeProbe.CollisionEnters.Should().Be(0, "a trigger is a volume, so it solves no contacts");
 
         visitor.Transform.WorldPosition = new Vector3(20.0f, 0.0f, 0.0f);
-        Step(physics, 1);
+        Advance(physics, 1);
 
         volumeProbe.TriggerExits.Should().Be(1);
         visitorProbe.TriggerExits.Should().Be(1);
@@ -232,7 +232,7 @@ public class CollisionEventTests
 
         _ = StartScene(physics, audio, ground, volume, ball);
 
-        Step(physics, 150);
+        Advance(physics, 150);
 
         ballProbe.TriggerEnters.Should().Be(1, "the ball passed through the volume");
         ballProbe.CollisionEnters.Should().BeGreaterThan(0, "and then landed on the floor below it");
@@ -262,7 +262,7 @@ public class CollisionEventTests
 
             _ = StartScene(physics, audio, floor, ball);
 
-            Step(physics, 120);
+            Advance(physics, 120);
 
             probe.CollisionEnters.Should().Be(0, "the floor is on a layer the ball was told to pass through");
             ball.Transform.WorldPosition.Y.Should().BeLessThan(-1.0f, "so it fell through");
@@ -294,7 +294,7 @@ public class CollisionEventTests
 
         _ = StartScene(physics, audio, wall, crate);
 
-        Step(physics, 3);
+        Advance(physics, 3);
 
         listening.CollisionEnters.Should().BeGreaterThan(0, "the pair really is touching");
         switchedOff.CollisionEnters.Should().Be(0, "a script the author switched off is not called");
@@ -321,7 +321,7 @@ public class CollisionEventTests
         // Slid into place after the scene started: the world's copy of a fixed shape has to follow the transform.
         floor.Transform.WorldPosition = new Vector3(0.0f, -0.5f, 0.0f);
 
-        Step(physics, 120);
+        Advance(physics, 120);
 
         probe.CollisionEnters.Should().BeGreaterThan(0);
         ball.Transform.WorldPosition.Y.Should().BeApproximately(0.5f, 0.15f);
@@ -351,7 +351,7 @@ public class CollisionEventTests
 
         for (int step = 0; step < 180 && !rose; step++)
         {
-            physics.Update(Step);
+            physics.Update(StepSeconds);
 
             float current = ball.Transform.WorldPosition.Y;
             rose = current > previous + 0.001f;
