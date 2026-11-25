@@ -29,7 +29,10 @@ public class InspectorHeaderLayoutTests
         int fold = header.IndexOf("class=\"inspector-section-fold\"", StringComparison.Ordinal);
         int foldEnd = header.IndexOf("</button>", fold, StringComparison.Ordinal);
         int toggle = header.IndexOf("class=\"inspector-section-toggle\"", StringComparison.Ordinal);
-        int name = header.IndexOf("class=\"inspector-section-name\"", StringComparison.Ordinal);
+
+        // The name button's class attribute carries an extra mark when its value has drifted from a prefab,
+        // so the needle stops at the name itself rather than the closing quote.
+        int name = header.IndexOf("class=\"inspector-section-name", StringComparison.Ordinal);
 
         fold.Should().BeGreaterThanOrEqualTo(0);
         foldEnd.Should().BeGreaterThan(fold);

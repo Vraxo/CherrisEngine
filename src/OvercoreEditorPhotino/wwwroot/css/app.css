@@ -1819,6 +1819,96 @@ span.panel-tab {
     cursor: default;
 }
 
+/* ---- prefab overrides ----
+   An overridden value is marked the way Unity marks it: the label goes bold, in place. No color, no badge —
+   the weight is the mark. */
+.overridden {
+    font-weight: 700;
+}
+
+/* Unity's Overrides dropdown hangs off the object row. */
+.inspector-overrides {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+.inspector-overrides-menu {
+    position: absolute;
+    top: 34px;
+    right: 8px;
+    z-index: 40;
+    min-width: 320px;
+    max-width: 460px;
+    padding: 4px 0;
+    box-shadow: 0 6px 16px rgb(0 0 0 / 45%);
+}
+
+.override-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 1.2fr) minmax(60px, 1fr) auto auto;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    min-height: 22px;
+    font-size: 11px;
+}
+
+.override-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-label);
+}
+
+.override-source {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-accent-gray);
+}
+
+.override-button {
+    min-height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--theme-input-outline);
+    border-radius: 3px;
+    background: var(--theme-panel);
+    color: var(--theme-label);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.override-button:hover:not(:disabled) {
+    background: var(--theme-hover);
+}
+
+.override-button:focus-visible {
+    outline: 2px solid var(--theme-highlight-border);
+    outline-offset: -1px;
+}
+
+.override-button:disabled {
+    color: var(--theme-label-disabled);
+    cursor: default;
+}
+
+.override-row-actions {
+    grid-template-columns: auto auto;
+    justify-content: end;
+}
+
+.overrides-empty {
+    margin: 0;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--theme-label-disabled);
+}
+
 /* The Add Component button spans the panel, like Unity's; like every other .imgui-button it uses the
    standard button look — the way the content browser's Back button does. */
 .inspector-add {
@@ -2105,6 +2195,8 @@ span.panel-tab {
 /* The object header and the section headers run edge to edge; only the rows are inset. */
 .panel-body.inspector-body {
     padding: 0;
+    /* The Overrides dropdown hangs inside the panel, under the object row. */
+    position: relative;
 }
 
 /* ---- console ---- */

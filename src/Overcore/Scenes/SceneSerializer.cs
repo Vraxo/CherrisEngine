@@ -21,28 +21,72 @@ public class SceneSerializer
             .Build();
     }
 
-    /// <summary>
-    /// Writes the subtree as a prefab asset, and returns the objects it wrote, in the order it wrote them:
-    /// the object at index N carries FileId N+1 in the file, which is what stamps an instance's links.
-    /// </summary>
+    /// <summary>Writes one subtree as a prefab asset. See <see cref="SavePrefab(IEnumerable{GameObject}, string)"/>.</summary>
     /// <param name="rootGo">The subtree's root.</param>
     /// <param name="filePath">Where the asset is written.</param>
-    /// <returns>The written objects, root first, in the file's order.</returns>
-    public List<GameObject> SavePrefab(GameObject rootGo, string filePath)
+    /// <returns>The written objects, root first.</returns>
+    public List<GameObject> SavePrefab(GameObject rootGo, string filePath) =>
+        SavePrefab([rootGo], filePath);
+
+    /// <summary>
+    /// Writes objects as a prefab asset and stamps every one of them with its link to it. File ids are
+    /// stable: an object already linked to this asset keeps its id for ever, and only objects new to the
+    /// asset are numbered — so applying an override never renumbers the asset out from under an instance.
+    /// </summary>
+    /// <param name="roots">The subtrees to write; a prefab usually has exactly one.</param>
+    /// <param name="filePath">Where the asset is written.</param>
+    /// <returns>The written objects, roots first, in the file's order.</returns>
+    public List<GameObject> SavePrefab(IEnumerable<GameObject> roots, string filePath)
     {
         List<GameObject> hierarchy = [];
-        GetHierarchy(rootGo, hierarchy);
 
-        List<Dictionary<string, object>> gameObjectsData = [];
-        int fileId = 1;
+        foreach (GameObject rootGo in roots)
+        {
+            GetHierarchy(rootGo, hierarchy);
+        }
+
+        string guid = AssetMeta.GetOrCreate(filePath);
+        Dictionary<GameObject, int> fileIds = [];
+        HashSet<int> taken = [];
+
+        // Ids the asset already gave out are kept; a second object claiming the same one is treated as new.
+        foreach (GameObject gameObject in hierarchy)
+        {
+            if (gameObject.PrefabSource is { } source
+                && source.AssetGuid == guid
+                && source.FileId > 0
+                && taken.Add(source.FileId))
+            {
+                fileIds[gameObject] = source.FileId;
+            }
+        }
+
+        int next = 1;
 
         foreach (GameObject gameObject in hierarchy)
         {
+            if (!fileIds.ContainsKey(gameObject))
+            {
+                while (!taken.Add(next))
+                {
+                    next++;
+                }
+
+                fileIds[gameObject] = next;
+            }
+        }
+
+        List<Dictionary<string, object>> gameObjectsData = [];
+
+        foreach (GameObject gameObject in hierarchy)
+        {
+            gameObject.PrefabSource = new PrefabSource(guid, fileIds[gameObject]);
+
             Dictionary<string, object> goData = new()
             {
                 ["Id"] = gameObject.Id.ToString(),
                 ["Name"] = gameObject.Name,
-                ["File"] = fileId++
+                ["File"] = fileIds[gameObject]
             };
 
             // Only save parent if it's part of the prefab hierarchy

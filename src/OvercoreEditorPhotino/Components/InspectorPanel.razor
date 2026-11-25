@@ -32,10 +32,67 @@
 
             <div class="inspector-object">
                 <i class="fa-solid fa-cube inspector-object-icon component-icon-blue" aria-hidden="true"></i>
-                <input type="text" class="imgui-input inspector-name" value="@node.Name" disabled="@(!CanEdit)"
+                <input type="text"
+                       class="imgui-input inspector-name @(IsOverridden(node, PrefabPaths.Name) ? "overridden" : null)"
+                       value="@node.Name" disabled="@(!CanEdit)"
                        @key="KeyFor(nameKey)" aria-label="Object name" title="Rename this object"
                        @onchange="e => Rename(node, e.Value?.ToString())" />
+                @if (node.IsPrefabInstance)
+                {
+                    @* Unity's Overrides dropdown: what has drifted from the prefab, and where to put it. *@
+                    <button type="button" class="imgui-button inspector-overrides" aria-haspopup="menu"
+                            aria-expanded="@(_overridesFor == node.Id ? "true" : "false")"
+                            title="Values that differ from this object's prefab"
+                            @onclick="() => ToggleOverridesMenu(node)">
+                        <i class="fa-solid fa-cubes-stacked" aria-hidden="true"></i>
+                        <span>Overrides (@node.Overrides.Count)</span>
+                    </button>
+                }
             </div>
+
+            @if (_overridesFor == node.Id && node.IsPrefabInstance)
+            {
+                @* The click-away every inline menu gets. *@
+                <div class="menu-scrim" @onclick="CloseOverridesMenu"></div>
+
+                <div class="menu-popup inspector-overrides-menu" role="menu">
+                    @if (node.Overrides.Count == 0)
+                    {
+                        <p class="inspector-muted overrides-empty">Nothing differs from the prefab.</p>
+                    }
+                    else
+                    {
+                        @foreach (PrefabOverrideSnapshot entry in node.Overrides)
+                        {
+                            <div class="override-row">
+                                <span class="override-path" title="@entry.PropertyPath">@entry.PropertyPath</span>
+                                <span class="override-source" title="The prefab's value">@entry.SourceText</span>
+                                <button type="button" class="override-button" disabled="@(!CanEdit)"
+                                        title="Put this value back to the prefab's" @onclick="() => RevertOverride(node, entry)">
+                                    Revert
+                                </button>
+                                <button type="button" class="override-button" disabled="@(!CanEdit)"
+                                        title="Write this value into the prefab" @onclick="() => ApplyOverride(node, entry)">
+                                    Apply
+                                </button>
+                            </div>
+                        }
+
+                        <div class="menu-separator"></div>
+
+                        <div class="override-row override-row-actions">
+                            <button type="button" class="override-button" disabled="@(!CanEdit)"
+                                    title="Put every value back to the prefab's" @onclick="() => RevertAllOverrides(node)">
+                                Revert All
+                            </button>
+                            <button type="button" class="override-button" disabled="@(!CanEdit)"
+                                    title="Write every value into the prefab" @onclick="() => ApplyAllOverrides(node)">
+                                Apply All
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
 
             <div class="inspector-section">
                 <div class="inspector-section-header">
@@ -60,7 +117,7 @@
                     {
                         string resetKey = node.Id.ToString() + ":transform." + row.Field;
                         <div class="vec-row">
-                            <span class="vec-label">@row.Label</span>
+                            <span class="vec-label @(IsOverridden(node, PrefabPaths.Transform(row.Field)) ? "overridden" : null)">@row.Label</span>
 
                             <div class="vec-fields">
                                 @* Strings are built as locals: an attribute cannot hold a C# string literal
@@ -124,7 +181,9 @@
                             <i class="fa-solid @iconClass inspector-section-icon @iconColorClass"
                                aria-hidden="true"></i>
                         </button>
-                        <button type="button" class="inspector-section-name" title="@sectionTitle"
+                        <button type="button"
+                                class="inspector-section-name @(IsOverridden(node, PrefabPaths.Enabled(component.TypeName)) ? "overridden" : null)"
+                                title="@sectionTitle"
                                 @onclick="() => ToggleSection(sectionKey)">@componentTitle</button>
                         @* Keep the checkbox independent from the foldout, at the right edge of the header. *@
                         <input type="checkbox" class="inspector-section-toggle" checked="@enabled"
@@ -150,7 +209,8 @@
                                 string propertyTitle = DisplayName(property.Name);
 
                                 <div class="prop-row">
-                                    <span class="prop-label" title="@property.Name">@propertyTitle</span>
+                                    <span class="prop-label @(IsOverridden(node, PrefabPaths.Property(component.TypeName, property.Name)) ? "overridden" : null)"
+                                          title="@property.Name">@propertyTitle</span>
 
                                     @* The value column keeps its width whether or not the button is usable, so
                                        the editors line up down the component. *@
@@ -353,6 +413,10 @@
 
 @code {
     private Guid? _addMenuFor;
+
+    /// <summary>Which object's Overrides dropdown is open (Unity's), or null.</summary>
+    private Guid? _overridesFor;
+
     private string _search = string.Empty;
     private ElementReference _searchBox;
     private bool _focusSearch;
@@ -805,6 +869,41 @@
 
         Host.RenameObject(node.Id, name);
         Touched(node.Id.ToString() + ":name");
+    }
+
+    // ---- prefab overrides ----
+
+    /// <summary>Whether one value of this object has drifted from its prefab source.</summary>
+    private static bool IsOverridden(SceneNodeSnapshot node, string propertyPath) =>
+        node.Overrides.Any(entry => String.Equals(entry.PropertyPath, propertyPath, StringComparison.Ordinal));
+
+    private void ToggleOverridesMenu(SceneNodeSnapshot node) =>
+        _overridesFor = _overridesFor == node.Id ? null : node.Id;
+
+    private void CloseOverridesMenu() => _overridesFor = null;
+
+    private void RevertOverride(SceneNodeSnapshot node, PrefabOverrideSnapshot entry)
+    {
+        CloseOverridesMenu();
+        Host.RevertOverride(node.Id, entry.PropertyPath);
+    }
+
+    private void ApplyOverride(SceneNodeSnapshot node, PrefabOverrideSnapshot entry)
+    {
+        CloseOverridesMenu();
+        Host.ApplyOverride(node.Id, entry.PropertyPath);
+    }
+
+    private void RevertAllOverrides(SceneNodeSnapshot node)
+    {
+        CloseOverridesMenu();
+        Host.RevertAllOverrides(node.Id, node.Name);
+    }
+
+    private void ApplyAllOverrides(SceneNodeSnapshot node)
+    {
+        CloseOverridesMenu();
+        Host.ApplyAllOverrides(node.Id, node.Name);
     }
 
     /// <summary>

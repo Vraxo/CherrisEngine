@@ -638,7 +638,6 @@ public sealed class DeleteGameObjectCommand(Guid objectId, string name) : IUndoa
 /// </remarks>
 public sealed class CreatePrefabFromSelectionCommand(Guid objectId, string assetPath) : IUndoableCommand
 {
-    private string? _guid;
     private List<(GameObject GameObject, PrefabSource? Previous)>? _stamped;
 
     /// <inheritdoc />
@@ -661,18 +660,11 @@ public sealed class CreatePrefabFromSelectionCommand(Guid objectId, string asset
             Directory.CreateDirectory(directory);
         }
 
-        List<GameObject> written = new SceneSerializer().SavePrefab(root, assetPath);
-        _guid = AssetMeta.GetOrCreate(assetPath);
-
-        // The written objects become the prefab's first instance: each keeps the id it was written with.
+        // The old links are remembered before the save stamps the new ones over them.
         _stamped = [];
+        Collect(root, _stamped);
 
-        for (int i = 0; i < written.Count; i++)
-        {
-            GameObject go = written[i];
-            _stamped.Add((go, go.PrefabSource));
-            go.PrefabSource = new PrefabSource(_guid, i + 1);
-        }
+        Save(root);
 
         context.Scene.IsDirty = true;
         context.History.Record(this);
@@ -705,20 +697,31 @@ public sealed class CreatePrefabFromSelectionCommand(Guid objectId, string asset
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (_stamped is null || _guid is null)
+        if (_stamped is null || _stamped.Count == 0)
         {
             return null;
         }
 
-        // The asset is still on disk; the objects are linked to it again, at the ids they were written with.
-        for (int i = 0; i < _stamped.Count; i++)
-        {
-            _stamped[i].GameObject.PrefabSource = new PrefabSource(_guid, i + 1);
-        }
+        // The asset is rewritten and the objects relinked at the ids the save gives them — the same ids as
+        // the first time, because the save numbers objects the same way twice.
+        Save(_stamped[0].GameObject);
 
         context.Scene.IsDirty = true;
 
         return $"[editor] created prefab {Path.GetFileName(assetPath)} again.";
+    }
+
+    /// <summary>Writes the asset; the save stamps every written object with its link to it.</summary>
+    private void Save(GameObject root) => new SceneSerializer().SavePrefab(root, assetPath);
+
+    private static void Collect(GameObject go, List<(GameObject GameObject, PrefabSource? Previous)> into)
+    {
+        into.Add((go, go.PrefabSource));
+
+        foreach (Transform child in go.Transform.Children.ToList())
+        {
+            Collect(child.GameObject, into);
+        }
     }
 
     private GameObject? Find(Scene scene) =>

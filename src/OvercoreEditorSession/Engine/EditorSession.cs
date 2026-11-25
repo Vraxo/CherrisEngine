@@ -36,6 +36,9 @@ public sealed class EditorSession : Engine, IDisposable
     private readonly ISceneSnapshotSink? _snapshotSink;
     private readonly EditorSceneRequest _scene;
     private readonly EditorCommandDispatcher? _commands;
+
+    /// <summary>The prefab assets' values, kept warm for the snapshot's override diff. The render thread's alone.</summary>
+    private PrefabSourceIndex? _prefabSources;
     private readonly EditorPlaySession _play;
 
     private SceneFrameCapture? _capture;
@@ -865,7 +868,11 @@ public sealed class EditorSession : Engine, IDisposable
             return;
         }
 
+        // The prefab assets' values ride along in the snapshot, so the inspector can show what has drifted
+        // from its source without ever reading a file on the UI thread.
+        _prefabSources ??= new PrefabSourceIndex(SceneLoader.LoadPrefab, _scene.ProjectRoot);
+
         _snapshotSink.PublishScene(
-            SceneSnapshotBuilder.Build(SceneManager.ActiveScene, _frameNumber, DateTimeOffset.UtcNow));
+            SceneSnapshotBuilder.Build(SceneManager.ActiveScene, _frameNumber, DateTimeOffset.UtcNow, _prefabSources));
     }
 }

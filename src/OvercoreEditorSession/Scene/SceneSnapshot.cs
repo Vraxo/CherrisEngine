@@ -18,6 +18,11 @@ namespace OvercoreEditorSession;
 /// </param>
 public sealed record ComponentSnapshot(string TypeName, IReadOnlyList<PropertySnapshot> Properties, bool Enabled = true);
 
+/// <summary>One value of a prefab-linked object that has drifted from its source.</summary>
+/// <param name="PropertyPath">What drifted, named the way <see cref="PrefabPaths"/> names it.</param>
+/// <param name="SourceText">The source's value — what a Revert would write back.</param>
+public sealed record PrefabOverrideSnapshot(string PropertyPath, string SourceText);
+
 /// <summary>One object in a <see cref="SceneSnapshot"/>.</summary>
 /// <param name="Id">Stable object identity, for selection and diffing.</param>
 /// <param name="Name">Object name as shown in the hierarchy.</param>
@@ -27,6 +32,10 @@ public sealed record ComponentSnapshot(string TypeName, IReadOnlyList<PropertySn
 /// <param name="Components">The components attached to the object, with their editable properties.</param>
 /// <param name="ParentId">Parent object, or null for a root; used to rebuild the hierarchy tree.</param>
 /// <param name="IsPrefabInstance">True when the object is part of a prefab instance, so the hierarchy can mark it.</param>
+/// <param name="PrefabOverrides">
+/// Where the object has drifted from its prefab source, or null for an object that is linked to nothing or
+/// differs from nothing.
+/// </param>
 public sealed record SceneNodeSnapshot(
     Guid Id,
     string Name,
@@ -35,8 +44,12 @@ public sealed record SceneNodeSnapshot(
     Vector3 Scale,
     IReadOnlyList<ComponentSnapshot> Components,
     Guid? ParentId = null,
-    bool IsPrefabInstance = false)
+    bool IsPrefabInstance = false,
+    IReadOnlyList<PrefabOverrideSnapshot>? PrefabOverrides = null)
 {
+    /// <summary><see cref="PrefabOverrides"/> as a list the markup can walk without a null check.</summary>
+    public IReadOnlyList<PrefabOverrideSnapshot> Overrides => PrefabOverrides ?? [];
+
     /// <summary>
     /// <see cref="Rotation"/> as Euler degrees, X pitch, Y yaw, Z roll — the reading the inspector shows,
     /// because a quaternion's four components are not what an editor user types.
@@ -68,7 +81,18 @@ public static class SceneSnapshotBuilder
     /// <summary>
     /// Copies the scene's objects into an immutable snapshot. Call from the thread that owns the scene.
     /// </summary>
-    public static SceneSnapshot Build(Scene? scene, long frame, DateTimeOffset capturedAt)
+    /// <param name="scene">The live scene.</param>
+    /// <param name="frame">The engine frame the copy is taken on.</param>
+    /// <param name="capturedAt">Wall-clock time of the copy.</param>
+    /// <param name="prefabSources">
+    /// The prefab assets' values, so each linked object's drift from its source rides along in the snapshot.
+    /// Null skips the diff: nothing is marked overridden.
+    /// </param>
+    public static SceneSnapshot Build(
+        Scene? scene,
+        long frame,
+        DateTimeOffset capturedAt,
+        PrefabSourceIndex? prefabSources = null)
     {
         if (scene is null)
         {
@@ -99,7 +123,8 @@ public static class SceneSnapshotBuilder
                 gameObject.Transform.Scale,
                 components,
                 gameObject.Transform.Parent?.GameObject.Id,
-                gameObject.PrefabSource is not null));
+                gameObject.PrefabSource is not null,
+                prefabSources?.Diff(gameObject)));
         }
 
         return new SceneSnapshot(scene.Name, nodes, frame, capturedAt);
