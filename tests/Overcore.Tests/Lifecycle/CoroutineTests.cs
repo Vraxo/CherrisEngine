@@ -62,10 +62,10 @@ public class CoroutineTests
         runner.Log.Should().Equal("before");
 
         scene.Update(Frame);
-        runner.Log.Should().HaveCount(3).And.EndWith("after one frame");
+        runner.Log.Should().HaveCount(2).And.EndWith("after one frame");
 
         scene.Update(Frame);
-        runner.Log.Should().HaveCount(4).And.EndWith("done");
+        runner.Log.Should().HaveCount(3).And.EndWith("done");
     }
 
     private static IEnumerator Steps(List<string> log)

@@ -314,9 +314,10 @@ public class ScriptLifecycleTests
 
         looker.Transform.Forward.Should().Be(new Vector3(0.0f, 0.0f, 1.0f));
 
+        // A quarter turn about +Y takes +Z to +X, so an object facing +Z turns to face +X.
         looker.Transform.Rotate(new Vector3(0.0f, 90.0f, 0.0f));
 
-        looker.Transform.Forward.X.Should().BeApproximately(-1.0f, 0.001f);
+        looker.Transform.Forward.X.Should().BeApproximately(1.0f, 0.001f);
     }
 
     [Fact]
