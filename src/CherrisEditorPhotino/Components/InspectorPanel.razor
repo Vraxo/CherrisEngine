@@ -56,6 +56,7 @@
                 <div class="inspector-section-body @(IsCollapsed(transformKey) ? "collapsed" : null)">
                     @foreach (TransformRow row in TransformRows.From(node))
                     {
+                        string resetKey = node.Id.ToString() + ":transform." + row.Field;
                         <div class="vec-row">
                             <span class="vec-label">@row.Label</span>
 
@@ -66,9 +67,9 @@
                                 {
                                     string letter = TransformRow.Axes[axis];
                                     string axisClass = "vec-axis axis-" + letter.ToLowerInvariant();
-                                    string text = Format(row.Components[axis]);
+                                    string text = DisplayTransformText(resetKey, row, axis);
                                     string fieldName = row.Label + " " + letter;
-                                    string fieldKey = node.Id.ToString() + ":transform." + row.Field + "." + letter;
+                                    string fieldKey = resetKey + "." + letter;
                                     int axisIndex = axis;
 
                                     <span class="vec-cell">
@@ -90,7 +91,7 @@
 
                             @* Position, rotation and scale each go back to what a new object has: zero,
                                the identity and one. *@
-                            <ResetButton CanReset="@(CanEdit && row.CanReset)" Default="@row.DefaultText"
+                            <ResetButton CanReset="@(CanEdit && ResetState(resetKey, row.CanReset))" Default="@row.DefaultText"
                                          Label="@row.Label"
                                          OnReset="() => ResetTransform(node.Id, row)" />
                         </div>
@@ -141,6 +142,9 @@
                             @foreach (PropertySnapshot property in component.Properties)
                             {
                                 string propertyKey = PropertyKey(node, component, property);
+                                // Built here: an attribute cannot hold a C# string literal of its own.
+                                string sliderKey = propertyKey + ".slider";
+                                string swatchKey = propertyKey + ".swatch";
                                 string propertyTitle = DisplayName(property.Name);
 
                                 <div class="prop-row">
@@ -152,18 +156,23 @@
                                         @switch (property.Kind)
                                         {
                                             case PropertyKind.Boolean:
-                                                <input type="checkbox" class="imgui-check" checked="@property.IsOn"
+                                                @* Keyed like the fields: a reset replaces the box, so the one the
+                                                   author clicked cannot keep showing its own tick. *@
+                                                <input type="checkbox" class="imgui-check" checked="@DisplayIsOn(propertyKey, property)"
                                                        disabled="@(!CanEdit)" aria-label="@propertyTitle"
+                                                       @key="KeyFor(propertyKey)"
                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
                                                 break;
 
                                             case PropertyKind.Choice:
+                                                @* Keyed for the same reason: the browser remembers which entry was
+                                                   picked, even when a reset picks another. *@
                                                 <select class="imgui-input imgui-select" disabled="@(!CanEdit)"
-                                                        aria-label="@propertyTitle"
+                                                        aria-label="@propertyTitle" @key="KeyFor(propertyKey)"
                                                         @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())">
                                                     @foreach (string choice in property.Choices)
                                                     {
-                                                        <option value="@choice" selected="@(choice == property.Text)">@choice</option>
+                                                        <option value="@choice" selected="@(choice == DisplayChoiceText(propertyKey, property))">@choice</option>
                                                     }
                                                 </select>
                                                 break;
@@ -176,14 +185,14 @@
                                                        and once more when it is released, which is exactly a drag
                                                        and its end. *@
                                                     <input type="range" class="imgui-slider" disabled="@(!CanEdit)"
-                                                           aria-label="@propertyTitle"
+                                                           aria-label="@propertyTitle" @key="KeyFor(sliderKey)"
                                                            min="@Format(minimum)" max="@Format(maximum)" step="any"
-                                                           value="@Format(property.Components[0])"
+                                                           value="@DisplayAxisText(propertyKey, property, 0)"
                                                            @oninput="e => OnPropertyDragged(node, component, property, e.Value?.ToString())"
                                                            @onchange="EndLiveEdit" />
                                                 }
                                                 <input type="text" class="imgui-input drag-number"
-                                                       value="@property.Text"
+                                                       value="@DisplayText(propertyKey, property)"
                                                        data-value="@property.Text"
                                                        data-speed="@Format(property.DragSpeed)"
                                                        data-min="@RangeText(property.Minimum)"
@@ -197,7 +206,7 @@
 
                                             case PropertyKind.Integer:
                                                 <input type="text" class="imgui-input drag-number"
-                                                       value="@property.Text"
+                                                       value="@DisplayText(propertyKey, property)"
                                                        data-value="@property.Text"
                                                        data-speed="@Format(property.DragSpeed)"
                                                        data-integer="true"
@@ -211,7 +220,7 @@
                                                 break;
 
                                             case PropertyKind.Text:
-                                                <input type="text" class="imgui-input" value="@property.Text"
+                                                <input type="text" class="imgui-input" value="@DisplayText(propertyKey, property)"
                                                        @key="KeyFor(propertyKey)"
                                                        disabled="@(!CanEdit)" aria-label="@propertyTitle"
                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
@@ -222,8 +231,8 @@
                                                 @if (property.IsColor)
                                                 {
                                                     <input type="color" class="colour-swatch" disabled="@(!CanEdit)"
-                                                           aria-label="@propertyTitle"
-                                                           value="@Hex(property.Components)"
+                                                           aria-label="@propertyTitle" @key="KeyFor(swatchKey)"
+                                                           value="@DisplayHex(propertyKey, property)"
                                                            @onchange="e => OnColourChanged(node, component, property, e.Value?.ToString())" />
                                                 }
                                                 <span class="prop-vec">
@@ -241,7 +250,7 @@
                                                         <span class="vec-cell">
                                                             <span class="@axisClass" aria-hidden="true">@letter</span>
                                                             <input type="text" class="imgui-input vec-field drag-number"
-                                                                   value="@Format(property.Components[axis])"
+                                                                   value="@DisplayAxisText(propertyKey, property, axis)"
                                                                    data-value="@Format(property.Components[axis])"
                                                                    data-speed="@Format(property.DragSpeed)"
                                                                    data-min="@floorBound"
@@ -257,7 +266,7 @@
                                         }
                                     </div>
 
-                                    <ResetButton CanReset="@(CanEdit && property.CanReset)"
+                                    <ResetButton CanReset="@(CanEdit && ResetState(propertyKey, property.CanReset))"
                                                  Default="@property.DefaultText" Label="@propertyTitle"
                                                  OnReset="() => ResetProperty(node, component, property)" />
                                 </div>
@@ -347,6 +356,7 @@
     private bool _focusSearch;
     private HashSet<string> _collapsed = new(StringComparer.Ordinal);
     private readonly PendingComponentToggles _pendingToggles = new();
+    private readonly PendingResetStates _pendingResets = new();
     private bool _disposed;
 
     private SceneNodeSnapshot? SelectedNode
@@ -391,6 +401,131 @@
 
     private static string PropertyKey(SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property) =>
         node.Id.ToString() + ":" + component.TypeName + "." + property.Name;
+
+    private static string TransformKey(Guid objectId, TransformRow row) =>
+        objectId.ToString() + ":transform." + row.Field;
+
+    /// <summary>The reset button's state: the user's own answer while its command is unconfirmed.</summary>
+    private bool ResetState(string key, bool snapshotCanReset) => _pendingResets.Value(key, snapshotCanReset);
+
+    /// <summary>The frame of the newest snapshot the panel has, which every edit is made against.</summary>
+    private long CurrentFrame => Store.Current?.Frame ?? -1;
+
+    /// <summary>Records an edit's button state at once, so it shows before the next snapshot is polled.</summary>
+    private long BeginReset(string key, bool canReset) => _pendingResets.Begin(key, canReset, CurrentFrame);
+
+    /// <summary>
+    /// The text a scalar field shows: the value a reset is putting back while it is unconfirmed, and the
+    /// snapshot's own text the rest of the time.
+    /// </summary>
+    private string DisplayText(string key, PropertySnapshot property) =>
+        _pendingResets.Text(key) ?? property.Text;
+
+    /// <summary>One axis of a vector field, split out of the value <see cref="DisplayText"/> reports.</summary>
+    private string DisplayAxisText(string key, PropertySnapshot property, int axis)
+    {
+        if (_pendingResets.Text(key) is { } pending)
+        {
+            // A vector's text is the components separated by ", ", the format an edit sends back.
+            string[] parts = pending.Split(", ");
+            if (axis < parts.Length)
+            {
+                return parts[axis];
+            }
+        }
+
+        return Format(property.Components[axis]);
+    }
+
+    /// <summary>
+    /// One axis of a transform row: the whole row reads the default while a reset is unconfirmed, because
+    /// <see cref="SceneNodeSnapshot"/> carries the three components and the edit writes all three.
+    /// </summary>
+    private string DisplayTransformText(string key, TransformRow row, int axis)
+    {
+        if (_pendingResets.Text(key) is not null)
+        {
+            return Format(axis switch
+            {
+                0 => row.Default.X,
+                1 => row.Default.Y,
+                _ => row.Default.Z
+            });
+        }
+
+        return Format(row.Components[axis]);
+    }
+
+    /// <summary>The text a toggle or a dropdown shows, so a reset moves it with the arrow.</summary>
+    private string DisplayChoiceText(string key, PropertySnapshot property) =>
+        _pendingResets.Text(key) ?? property.Text;
+
+    /// <summary>True when a toggle is on, reading the value a reset is putting back when there is one.</summary>
+    private bool DisplayIsOn(string key, PropertySnapshot property) =>
+        String.Equals(DisplayChoiceText(key, property), "true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A colour's swatch, from the components a reset is putting back when there is one.</summary>
+    private string DisplayHex(string key, PropertySnapshot property)
+    {
+        if (_pendingResets.Text(key) is { } pending)
+        {
+            string[] parts = pending.Split(", ");
+            float[] components = new float[3];
+            for (int axis = 0; axis < 3; axis++)
+            {
+                components[axis] = axis < parts.Length && Single.TryParse(
+                    parts[axis], NumberStyles.Float, CultureInfo.InvariantCulture, out float value)
+                    ? value
+                    : property.Components[axis];
+            }
+
+            return Hex(components);
+        }
+
+        return Hex(property.Components);
+    }
+
+    /// <summary>
+    /// True when the new text is away from the default, which is when resetting it does something. A toggle and a
+    /// dropdown are named, so only their casing may differ: a checkbox hands back <c>True</c> for <c>true</c>.
+    /// </summary>
+    private static bool CanResetText(PropertySnapshot property, string newText) =>
+        property.DefaultText is not null && !String.Equals(
+            newText,
+            property.DefaultText,
+            property.Kind is PropertyKind.Boolean or PropertyKind.Choice
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
+
+    /// <summary>True when the new transform row is away from its default, with <see cref="TransformRow"/>'s tolerance.</summary>
+    private static bool CanResetTransform(TransformRow row, Vector3 updated) =>
+        MathF.Abs(updated.X - row.Default.X) > 0.001f ||
+        MathF.Abs(updated.Y - row.Default.Y) > 0.001f ||
+        MathF.Abs(updated.Z - row.Default.Z) > 0.001f;
+
+    /// <summary>
+    /// Notes that a reset edit has run on the render thread, so snapshots from before it stop overriding the
+    /// button. Runs on the render thread; the panel is marshalled back to the renderer.
+    /// </summary>
+    private void AcknowledgeReset(string key, long revision, long frame)
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _pendingResets.Acknowledge(key, revision, frame);
+            if (Store.Current is { } snapshot)
+            {
+                _pendingResets.Reconcile(snapshot.Frame);
+            }
+
+            // The render that follows shows what the engine now holds, without the user's guess standing in
+            // front of it: the arrow and the field both come from the snapshot again.
+            StateHasChanged();
+        });
+    }
 
     private string AddTitle => CanEdit
         ? "Add a component to this object"
@@ -465,20 +600,31 @@
             return;
         }
 
-        Host.SetProperty(node.Id, component.TypeName, property.Name, text);
+        // Show the reset at once; the snapshot confirms it a few frames later.
+        string propertyKey = PropertyKey(node, component, property);
+        long revision = _pendingResets.Begin(propertyKey, canReset: false, CurrentFrame, text);
+
+        if (!Host.SetProperty(node.Id, component.TypeName, property.Name, text,
+                frame => AcknowledgeReset(propertyKey, revision, frame)))
+        {
+            _pendingResets.Cancel(propertyKey, revision);
+        }
 
         if (property.Kind is not (PropertyKind.Vector2 or PropertyKind.Vector3))
         {
-            Touched(PropertyKey(node, component, property));
+            // A number has a field and a slider, so both are replaced; the others have one element.
+            Touched(propertyKey, propertyKey + ".slider", propertyKey + ".swatch");
             return;
         }
 
-        // A vector is one key per axis, so every component has to be rebuilt, not just the first.
-        string propertyKey = PropertyKey(node, component, property);
-        string[] axes = [.. TransformRow.Axes.Take(property.Components.Count)
-            .Select(axis => propertyKey + "." + axis)];
+        // A vector is one key per axis, and a colour is also a swatch, so every part of the row is rebuilt.
+        string[] fields =
+        [
+            .. TransformRow.Axes.Take(property.Components.Count).Select(axis => propertyKey + "." + axis),
+            propertyKey + ".swatch"
+        ];
 
-        Touched(axes);
+        Touched(fields);
     }
 
     /// <summary>Puts a transform row back to zero, the identity or one: what a new object starts with.</summary>
@@ -491,10 +637,16 @@
             return;
         }
 
-        Host.SetTransform(objectId, row.Field, row.Default.X, row.Default.Y, row.Default.Z);
+        string resetKey = TransformKey(objectId, row);
+        long revision = _pendingResets.Begin(resetKey, canReset: false, CurrentFrame, row.DefaultText);
 
-        string prefix = objectId.ToString() + ":transform." + row.Field + ".";
-        string[] axes = [.. TransformRow.Axes.Select(axis => prefix + axis)];
+        if (!Host.SetTransform(objectId, row.Field, row.Default.X, row.Default.Y, row.Default.Z,
+                frame => AcknowledgeReset(resetKey, revision, frame)))
+        {
+            _pendingResets.Cancel(resetKey, revision);
+        }
+
+        string[] axes = [.. TransformRow.Axes.Select(axis => resetKey + "." + axis)];
 
         Touched(axes);
     }
@@ -701,23 +853,48 @@
             _ => new Vector3(updated.X, updated.Y, value)
         };
 
+        // Show the reset button at once; the snapshot confirms it a few frames later.
+        string resetKey = TransformKey(node.Id, row);
+        long revision = BeginReset(resetKey, CanResetTransform(row, updated));
+
         // Live: the row moves with the pointer, and the whole drag is one undo step.
-        Host.SetTransformLive(node.Id, row.Field, updated.X, updated.Y, updated.Z);
+        if (!Host.SetTransformLive(node.Id, row.Field, updated.X, updated.Y, updated.Z,
+                frame => AcknowledgeReset(resetKey, revision, frame)))
+        {
+            _pendingResets.Cancel(resetKey, revision);
+        }
     }
 
     /// <summary>A checkbox or a dropdown: one value, one step.</summary>
     private void OnPropertyChanged(
         SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, string? text)
     {
-        Host.SetProperty(node.Id, component.TypeName, property.Name, text ?? string.Empty);
-        Touched(PropertyKey(node, component, property));
+        string newText = text ?? string.Empty;
+        string propertyKey = PropertyKey(node, component, property);
+        long revision = BeginReset(propertyKey, CanResetText(property, newText));
+
+        if (!Host.SetProperty(node.Id, component.TypeName, property.Name, newText,
+                frame => AcknowledgeReset(propertyKey, revision, frame)))
+        {
+            _pendingResets.Cancel(propertyKey, revision);
+        }
+
+        Touched(propertyKey);
     }
 
     /// <summary>A number the pointer is moving: applied every frame, recorded once.</summary>
     private void OnPropertyDragged(
         SceneNodeSnapshot node, ComponentSnapshot component, PropertySnapshot property, string? text)
     {
-        Host.SetPropertyLive(node.Id, component.TypeName, property.Name, text ?? string.Empty);
+        string newText = text ?? string.Empty;
+        string propertyKey = PropertyKey(node, component, property);
+        long revision = BeginReset(propertyKey, CanResetText(property, newText));
+
+        if (!Host.SetPropertyLive(node.Id, component.TypeName, property.Name, newText,
+                frame => AcknowledgeReset(propertyKey, revision, frame)))
+        {
+            _pendingResets.Cancel(propertyKey, revision);
+        }
     }
 
     /// <summary>One axis of a vector: the other components come from the snapshot, so the row stays whole.</summary>
@@ -731,8 +908,16 @@
 
         string[] parts = property.Components.Select(Format).ToArray();
         parts[axis] = Format(value);
+        string newText = String.Join(", ", parts);
 
-        Host.SetPropertyLive(node.Id, component.TypeName, property.Name, String.Join(", ", parts));
+        string propertyKey = PropertyKey(node, component, property);
+        long revision = BeginReset(propertyKey, CanResetText(property, newText));
+
+        if (!Host.SetPropertyLive(node.Id, component.TypeName, property.Name, newText,
+                frame => AcknowledgeReset(propertyKey, revision, frame)))
+        {
+            _pendingResets.Cancel(propertyKey, revision);
+        }
     }
 
     /// <summary>A colour picker hands back #rrggbb; the property holds normalized components.</summary>
@@ -751,7 +936,14 @@
             Format(Convert.ToInt32(hex.Substring(5, 2), 16) / 255f)
         });
 
-        Host.SetProperty(node.Id, component.TypeName, property.Name, text);
+        string propertyKey = PropertyKey(node, component, property);
+        long revision = BeginReset(propertyKey, CanResetText(property, text));
+
+        if (!Host.SetProperty(node.Id, component.TypeName, property.Name, text,
+                frame => AcknowledgeReset(propertyKey, revision, frame)))
+        {
+            _pendingResets.Cancel(propertyKey, revision);
+        }
     }
 
     private static string Hex(IReadOnlyList<float> components)
@@ -852,6 +1044,7 @@
             if (Store.Current is { } snapshot)
             {
                 _pendingToggles.Reconcile(snapshot.Frame);
+                _pendingResets.Reconcile(snapshot.Frame);
             }
             StateHasChanged();
         });

@@ -574,13 +574,10 @@ public sealed class EditorHostService : IDisposable
             return false;
         }
 
-        IEditorCommand command = new SetComponentEnabledCommand(objectId, componentTypeName, enabled);
-        if (completed is not null)
-        {
-            // This runs before the frame's snapshot is published. The UI can ignore older snapshots until it
-            // sees one newer than this frame, including when the command was refused or threw.
-            command = new CompletionCommand(command, () => completed(host.LatestScene?.Frame ?? -1));
-        }
+        // This runs before the frame's snapshot is published. The UI can ignore older snapshots until it
+        // sees one newer than this frame, including when the command was refused or threw.
+        IEditorCommand command = WrapForCompletion(
+            new SetComponentEnabledCommand(objectId, componentTypeName, enabled), host, completed);
 
         host.Enqueue(command);
         return true;
@@ -596,8 +593,9 @@ public sealed class EditorHostService : IDisposable
     /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
     /// <param name="propertyName">The property's name.</param>
     /// <param name="text">The value the pointer is on, in the inspector's text format.</param>
+    /// <param name="completed">Called on the render thread with the last snapshot frame before execution completed.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetPropertyLive(Guid objectId, string componentTypeName, string propertyName, string text)
+    public bool SetPropertyLive(Guid objectId, string componentTypeName, string propertyName, string text, Action<long>? completed = null)
     {
         EditorSessionHost? host = _session;
 
@@ -612,7 +610,7 @@ public sealed class EditorHostService : IDisposable
         if (_liveCommand is SetPropertyCommand live && String.Equals(_liveKey, key, StringComparison.Ordinal))
         {
             live.Text = text;
-            host.Enqueue(live);
+            host.Enqueue(WrapForCompletion(live, host, completed));
             return true;
         }
 
@@ -620,7 +618,7 @@ public sealed class EditorHostService : IDisposable
 
         _liveKey = key;
         _liveCommand = command;
-        host.Enqueue(command);
+        host.Enqueue(WrapForCompletion(command, host, completed));
 
         return true;
     }
@@ -634,8 +632,9 @@ public sealed class EditorHostService : IDisposable
     /// <param name="x">The row's first component, which is the one the pointer is usually on.</param>
     /// <param name="y">The row's second component.</param>
     /// <param name="z">The row's third component.</param>
+    /// <param name="completed">Called on the render thread with the last snapshot frame before execution completed.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetTransformLive(Guid objectId, TransformField transformField, float x, float y, float z)
+    public bool SetTransformLive(Guid objectId, TransformField transformField, float x, float y, float z, Action<long>? completed = null)
     {
         EditorSessionHost? host = _session;
 
@@ -651,7 +650,7 @@ public sealed class EditorHostService : IDisposable
         if (_liveCommand is SetTransformCommand live && String.Equals(_liveKey, key, StringComparison.Ordinal))
         {
             live.Value = value;
-            host.Enqueue(live);
+            host.Enqueue(WrapForCompletion(live, host, completed));
             return true;
         }
 
@@ -659,7 +658,7 @@ public sealed class EditorHostService : IDisposable
 
         _liveKey = key;
         _liveCommand = command;
-        host.Enqueue(command);
+        host.Enqueue(WrapForCompletion(command, host, completed));
 
         return true;
     }
@@ -679,15 +678,17 @@ public sealed class EditorHostService : IDisposable
     /// <param name="componentTypeName">The component's type name, as the snapshot reports it.</param>
     /// <param name="propertyName">The property's name.</param>
     /// <param name="text">The new value, in the inspector's text format.</param>
+    /// <param name="completed">Called on the render thread with the last snapshot frame before execution completed.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetProperty(Guid objectId, string componentTypeName, string propertyName, string text)
+    public bool SetProperty(Guid objectId, string componentTypeName, string propertyName, string text, Action<long>? completed = null)
     {
         // A field that is no longer being dragged starts its own step.
         EndLiveEdit();
 
         return Enqueue(
             new SetPropertyCommand(objectId, componentTypeName, propertyName, text),
-            $"set {componentTypeName}.{propertyName}");
+            $"set {componentTypeName}.{propertyName}",
+            completed);
     }
 
     /// <summary>
@@ -744,14 +745,16 @@ public sealed class EditorHostService : IDisposable
     /// <param name="x">X component.</param>
     /// <param name="y">Y component.</param>
     /// <param name="z">Z component.</param>
+    /// <param name="completed">Called on the render thread with the last snapshot frame before execution completed.</param>
     /// <returns>False when no session is running to apply it.</returns>
-    public bool SetTransform(Guid objectId, TransformField transformField, float x, float y, float z)
+    public bool SetTransform(Guid objectId, TransformField transformField, float x, float y, float z, Action<long>? completed = null)
     {
         EndLiveEdit();
 
         return Enqueue(
             new SetTransformCommand(objectId, transformField, new System.Numerics.Vector3(x, y, z)),
-            "move the object");
+            "move the object",
+            completed);
     }
 
     /// <summary>Renames an object.</summary>
@@ -790,7 +793,7 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>Hands an edit to the render thread, or says why it could not.</summary>
-    private bool Enqueue(CherrisEditorSession.Host.IEditorCommand command, string action)
+    private bool Enqueue(CherrisEditorSession.Host.IEditorCommand command, string action, Action<long>? completed = null)
     {
         EditorSessionHost? host = _session;
 
@@ -800,8 +803,20 @@ public sealed class EditorHostService : IDisposable
             return false;
         }
 
-        host.Enqueue(command);
+        host.Enqueue(WrapForCompletion(command, host, completed));
         return true;
+    }
+
+    /// <summary>
+    /// Wraps a command so the caller learns the last snapshot frame before it ran, letting the UI ignore older
+    /// snapshots until a newer one confirms the edit. Without a callback the command goes as it is.
+    /// </summary>
+    private static CherrisEditorSession.Host.IEditorCommand WrapForCompletion(
+        CherrisEditorSession.Host.IEditorCommand command, EditorSessionHost host, Action<long>? completed)
+    {
+        return completed is null
+            ? command
+            : new CompletionCommand(command, () => completed(host.LatestScene?.Frame ?? -1));
     }
 
     /// <summary>Stops the session and drops the project reference, leaving the launcher in charge.</summary>
