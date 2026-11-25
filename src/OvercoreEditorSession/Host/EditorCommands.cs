@@ -478,6 +478,141 @@ public sealed class CreateGameObjectCommand(Guid objectId, string name) : IUndoa
 }
 
 /// <summary>
+/// Takes an object and everything under it out of the scene, as the hierarchy's context menu sends:
+/// Unity's "Delete".
+/// </summary>
+/// <param name="ObjectId">The object to take out.</param>
+/// <param name="Name">Its name, so the step can be named before it runs.</param>
+/// <remarks>
+/// The subtree leaves together and comes back together. Nothing is disposed on the way out — the same
+/// objects return on Undo, renderers intact — and Undo puts every object back at its old index, with the
+/// root under its old parent at its old place among the siblings.
+/// </remarks>
+public sealed class DeleteGameObjectCommand(Guid objectId, string name) : IUndoableCommand
+{
+    /// <param name="GameObject">The object taken out.</param>
+    /// <param name="IndexInScene">Where it sat in the scene's flat list, so Undo can put it back.</param>
+    /// <param name="Parent">The parent the root was under; null for the rest of the subtree.</param>
+    /// <param name="SiblingIndex">Where the root sat among its parent's children.</param>
+    private sealed record Removed(GameObject GameObject, int IndexInScene, Transform? Parent, int SiblingIndex);
+
+    private List<Removed>? _removed;
+
+    /// <inheritdoc />
+    public string Describe => $"delete {name}";
+
+    /// <inheritdoc />
+    public string? Execute(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return Remove(context);
+    }
+
+    /// <inheritdoc />
+    public string? Undo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_removed is null)
+        {
+            return null;
+        }
+
+        foreach (Removed removed in _removed.OrderBy(removed => removed.IndexInScene))
+        {
+            GameObject go = removed.GameObject;
+
+            if (removed.IndexInScene >= 0 && removed.IndexInScene <= context.Scene.GameObjects.Count)
+            {
+                context.Scene.GameObjects.Insert(removed.IndexInScene, go);
+            }
+            else
+            {
+                context.Scene.GameObjects.Add(go);
+            }
+        }
+
+        // The root goes back under its old parent; the Parent setter appends, so the child list is walked
+        // back to where the root sat.
+        foreach (Removed removed in _removed)
+        {
+            if (removed.Parent is not null && removed.SiblingIndex >= 0)
+            {
+                removed.GameObject.Transform.Parent = removed.Parent;
+                removed.Parent.Children.RemoveAt(removed.Parent.Children.Count - 1);
+                removed.Parent.Children.Insert(
+                    Math.Min(removed.SiblingIndex, removed.Parent.Children.Count),
+                    removed.GameObject.Transform);
+            }
+        }
+
+        // A restored camera or light may be the main one again.
+        context.Scene.FindMainComponents();
+        context.Scene.IsDirty = true;
+
+        return $"[editor] restored {name}.";
+    }
+
+    /// <inheritdoc />
+    public string? Redo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return Remove(context);
+    }
+
+    /// <summary>The subtree leaves: remembered, unlinked from its parent, and taken out of the scene's lists.</summary>
+    private string? Remove(EditorCommandContext context)
+    {
+        if (context.Scene.GameObjects.FirstOrDefault(gameObject => gameObject.Id == objectId) is not { } target)
+        {
+            return $"[editor] could not {Describe}: the object is gone.";
+        }
+
+        List<GameObject> subtree = [];
+        Collect(target, subtree);
+
+        Transform? parent = target.Transform.Parent;
+        int siblingIndex = parent is null ? -1 : parent.Children.IndexOf(target.Transform);
+
+        // Every index is read before anything is removed, so Undo knows where things sat.
+        _removed = subtree
+            .Select(go => new Removed(
+                go,
+                context.Scene.GameObjects.IndexOf(go),
+                go == target ? parent : null,
+                go == target ? siblingIndex : -1))
+            .ToList();
+
+        foreach (Removed removed in _removed)
+        {
+            context.Scene.GameObjects.Remove(removed.GameObject);
+        }
+
+        target.Transform.Parent = null;
+
+        // The lights the subtree carried are gone with it, and a deleted camera or light may have been the
+        // main one; the next in the scene takes over.
+        context.Scene.FindMainComponents();
+        context.Scene.IsDirty = true;
+        context.History.Record(this);
+
+        return $"[editor] deleted {name}.";
+    }
+
+    private static void Collect(GameObject go, List<GameObject> into)
+    {
+        into.Add(go);
+
+        foreach (Transform child in go.Transform.Children.ToList())
+        {
+            Collect(child.GameObject, into);
+        }
+    }
+}
+
+/// <summary>
 /// Switches a component on or off, as the inspector's header checkbox sends: Unity's enable toggle.
 /// </summary>
 /// <param name="ObjectId">The object that owns the component.</param>

@@ -569,6 +569,17 @@ public sealed class EditorHostService : IDisposable
     }
 
     /// <summary>
+    /// Takes an object and everything under it out of the scene, as the hierarchy's context menu sends:
+    /// Unity's "Delete". The subtree comes back whole on Undo. The render thread applies it on its next
+    /// frame, and the outcome is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The object to take out.</param>
+    /// <param name="name">Its name, so the step can be named.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool DeleteGameObject(Guid objectId, string name) =>
+        Enqueue(new DeleteGameObjectCommand(objectId, name), "delete " + name);
+
+    /// <summary>
     /// Switches a component on or off, as the inspector's header checkbox sends. Off stops the component — a
     /// renderer stops drawing, a light stops lighting, a script stops ticking — without taking it off the object,
     /// and the state is saved with the scene. One click is one undo step.

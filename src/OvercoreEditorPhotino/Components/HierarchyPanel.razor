@@ -84,11 +84,16 @@
         }
         else
         {
-            <div class="tree hier-tree" role="tree">
+            @* Right-click anywhere in the list for the menu Unity gives: create here, or act on the row under
+               the pointer. *@
+            <div class="tree hier-tree" role="tree"
+                 @oncontextmenu="(MouseEventArgs args) => OpenTreeMenu(args)" @oncontextmenu:preventDefault="true">
                 @* The scene is the root row: it names the file and folds the whole list away, the way Unity's
                    scene header does. *@
                 <div class="tree-row tree-scene" role="treeitem" aria-selected="false"
-                     @onclick="() => Selection.Select(null)">
+                     @onclick="() => Selection.Select(null)"
+                     @oncontextmenu="(MouseEventArgs args) => OpenTreeMenu(args)" @oncontextmenu:preventDefault="true"
+                     @oncontextmenu:stopPropagation="true">
                     <span class="hier-cell hier-cell-eye"></span>
                     <span class="hier-cell hier-cell-pick"></span>
                     <span class="hier-name">
@@ -109,7 +114,9 @@
                 {
                     <div class="tree-row @(Selection.SelectedId == row.Node.Id ? "selected" : "")"
                          role="treeitem" aria-selected="@AriaSelected(row.Node.Id)"
-                         @onclick="() => Select(row.Node.Id)">
+                         @onclick="() => Select(row.Node.Id)"
+                         @oncontextmenu="(MouseEventArgs args) => OpenRowMenu(args, row)"
+                         @oncontextmenu:preventDefault="true" @oncontextmenu:stopPropagation="true">
                         <span class="hier-cell hier-cell-eye">
                             @if (row.VisibilityType is string visibilityType)
                             {
@@ -137,7 +144,18 @@
                                 }
                             </button>
                             <i class="fa-solid @row.Icon.Glyph hier-icon @row.Icon.Color" aria-hidden="true"></i>
-                            <span class="tree-label">@row.Node.Name</span>
+                            @if (_renamingId == row.Node.Id)
+                            {
+                                @* The context menu's Rename turns the label into a field: Enter or clicking away
+                                   gives the object its new name, Escape backs out. *@
+                                <input class="imgui-input hier-rename" @ref="_renameInput" @bind="_renameText"
+                                       @bind:event="oninput" @onkeydown="(KeyboardEventArgs args) => OnRenameKey(args)"
+                                       @onblur="CommitRename" @onclick:stopPropagation="true" />
+                            }
+                            else
+                            {
+                                <span class="tree-label">@row.Node.Name</span>
+                            }
                         </span>
                     </div>
                 }
@@ -148,6 +166,34 @@
                 <p class="panel-empty hier-empty">No matches.</p>
             }
         }
+
+        @if (_menuOpen)
+        {
+            @* The click-away every inline menu gets; the menu hangs at the pointer, clamped to the window so a
+               right-click near an edge does not open it off screen. *@
+            <div class="menu-scrim" @onclick="CloseMenu"></div>
+
+            <div class="menu-popup cb-menu" role="menu" style="@MenuStyle">
+                <button type="button" class="menu-item" role="menuitem" disabled="@(!CanEdit)" title="@CreateTitle"
+                        @onclick="CreateFromMenu">
+                    <span>Create Empty GameObject</span>
+                </button>
+
+                @if (_menuRow is Row row)
+                {
+                    <div class="menu-separator"></div>
+                    <button type="button" class="menu-item" role="menuitem" disabled="@(!CanEdit)"
+                            title="@(RowActionTitle("Give this object a new name"))" @onclick="() => BeginRename(row)">
+                        <span>Rename</span>
+                    </button>
+                    <button type="button" class="menu-item" role="menuitem" disabled="@(!CanEdit)"
+                            title="@(RowActionTitle("Take this object and everything under it out of the scene"))"
+                            @onclick="() => DeleteFromMenu(row)">
+                        <span>Delete</span>
+                    </button>
+                }
+            </div>
+        }
     </div>
 </section>
 
@@ -157,6 +203,19 @@
     private List<Row> _rows = [];
     private bool _sceneExpanded = true;
     private bool _createMenuOpen;
+
+    // The context menu: open or not, where it was opened, and the row it was opened on (null over the scene
+    // row or empty space, where only creating is offered).
+    private bool _menuOpen;
+    private double _menuX;
+    private double _menuY;
+    private Row? _menuRow;
+
+    // The inline rename the menu opens: which row, what the field says, and whether it should take focus.
+    private Guid? _renamingId;
+    private string _renameText = string.Empty;
+    private bool _focusRename;
+    private ElementReference _renameInput;
 
     /// <summary>One drawn object row: where it sits, what it shows, and what its visibility toggle drives.</summary>
     /// <param name="Node">The object.</param>
@@ -337,6 +396,141 @@
         if (Host.CreateGameObject("GameObject", out Guid objectId))
         {
             Selection.Select(objectId);
+        }
+    }
+
+    // ---- context menu ----
+
+    /// <summary>The menu hangs at the pointer, clamped to the window so it never opens off screen.</summary>
+    private string MenuStyle =>
+        $"left: min({_menuX.ToString(CultureInfo.InvariantCulture)}px, calc(100vw - 220px)); " +
+        $"top: min({_menuY.ToString(CultureInfo.InvariantCulture)}px, calc(100vh - 160px))";
+
+    private void OpenRowMenu(MouseEventArgs args, Row row)
+    {
+        _menuX = args.ClientX;
+        _menuY = args.ClientY;
+        _menuRow = row;
+        _menuOpen = true;
+
+        // Unity selects on right-click too, so the menu's items act on a highlighted row.
+        Selection.Select(row.Node.Id);
+    }
+
+    private void OpenTreeMenu(MouseEventArgs args)
+    {
+        _menuX = args.ClientX;
+        _menuY = args.ClientY;
+        _menuRow = null;
+        _menuOpen = true;
+    }
+
+    private void CloseMenu() => _menuOpen = false;
+
+    private void CreateFromMenu()
+    {
+        CloseMenu();
+        CreateEmptyObject();
+    }
+
+    private string RowActionTitle(string action) => CanEdit ? action : "No render session is running";
+
+    private void BeginRename(Row row)
+    {
+        CloseMenu();
+        _renamingId = row.Node.Id;
+        _renameText = row.Node.Name;
+        _focusRename = true;
+    }
+
+    private void DeleteFromMenu(Row row)
+    {
+        CloseMenu();
+
+        // The row and its subtree leave together, so a selection anywhere inside would point at nothing.
+        if (IsInSubtree(Selection.SelectedId, row))
+        {
+            Selection.Select(null);
+        }
+
+        Host.DeleteGameObject(row.Node.Id, row.Node.Name);
+    }
+
+    /// <summary>Whether the selection sits on or under the row: the row and its subtree leave together.</summary>
+    private bool IsInSubtree(Guid? selectedId, Row root)
+    {
+        if (selectedId is not Guid id)
+        {
+            return false;
+        }
+
+        if (id == root.Node.Id)
+        {
+            return true;
+        }
+
+        // Rows of the subtree run right after the root, one level deeper each.
+        for (int i = _rows.IndexOf(root) + 1; i < _rows.Count && _rows[i].Depth > root.Depth; i++)
+        {
+            if (_rows[i].Node.Id == id)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // ---- inline rename ----
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusRename)
+        {
+            return;
+        }
+
+        _focusRename = false;
+
+        try
+        {
+            // The field exists only once the row has rendered, so it takes focus here. A webview that will
+            // not take focus is nothing to recover from: the keyboard still works.
+            await _renameInput.FocusAsync();
+        }
+        catch (Exception exception) when (exception is JSDisconnectedException or InvalidOperationException)
+        {
+            // No interop to focus with: the window is closing, or the element is gone.
+        }
+    }
+
+    private void OnRenameKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            CommitRename();
+        }
+        else if (args.Key == "Escape")
+        {
+            // Escape backs out without renaming; the blur that follows finds nothing to commit.
+            _renamingId = null;
+        }
+    }
+
+    private void CommitRename()
+    {
+        if (_renamingId is not Guid id)
+        {
+            return;
+        }
+
+        string text = _renameText.Trim();
+        _renamingId = null;
+
+        // An empty field keeps the old name; the rename command takes everything else, trimming included.
+        if (text.Length > 0)
+        {
+            Host.RenameObject(id, text);
         }
     }
 
