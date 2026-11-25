@@ -242,7 +242,7 @@ internal class OpenGLSceneRenderer : IDisposable
 
         // Draw call
         GL.BindVertexArray(data.VaoHandle);
-        GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedShort, 0);
+        GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedInt, 0);
         GL.BindVertexArray(0);
 
         CheckGLError($"Draw '{go.Name}'");

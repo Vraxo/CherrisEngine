@@ -25,42 +25,30 @@ public class ResourceManager : IResourceManager
         _textures.Add("White", CreateWhiteTexture("White"));
     }
 
+    /// <summary>
+    /// A mesh by the name a scene uses: a built-in (<c>"Cube"</c>), or a model's mesh by its qualified key
+    /// (<c>"Assets/Models/Hero.gltf#Head"</c>) or a bare name an import owns.
+    /// </summary>
+    /// <remarks>
+    /// A model is imported once through <see cref="ModelAssets"/>, which keeps the whole file — hierarchy, skeletons
+    /// and clips — and not just the meshes. This method is the mesh half of that import, so a scene saved before the
+    /// importer existed still loads by the same keys it wrote.
+    /// </remarks>
     public Mesh? GetMesh(string name)
     {
-        if (_meshes.TryGetValue(name, out var mesh))
+        if (_meshes.TryGetValue(name, out Mesh? mesh))
         {
             return mesh;
         }
 
-        string[] parts = name.Split('#');
-        string filePathPart = parts[0];
+        Mesh? imported = ModelAssets.FindMesh(name);
 
-        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
-            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        if (imported is not null)
         {
-            var loadedMeshes = ModelLoader.LoadMeshesFromFile(filePathPart);
-            if (!loadedMeshes.Any())
-            {
-                return null;
-            }
-
-            foreach (var (meshName, loadedMesh) in loadedMeshes)
-            {
-                _meshes[$"{filePathPart}#{meshName}"] = loadedMesh;
-            }
-
-            if (_meshes.TryGetValue(name, out var finalMesh))
-            {
-                return finalMesh;
-            }
-
-            if (parts.Length == 1)
-            {
-                return loadedMeshes.Values.First();
-            }
+            _meshes[name] = imported;
         }
 
-        return null;
+        return imported;
     }
 
     public ITexture GetTexture(string name)

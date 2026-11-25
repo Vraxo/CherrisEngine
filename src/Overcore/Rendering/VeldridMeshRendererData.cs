@@ -18,7 +18,7 @@ public class VeldridMeshRendererData : IDisposable
         ResourceFactory factory = gd.ResourceFactory;
         VertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * meshRenderer.Mesh.Vertices.Length), BufferUsage.VertexBuffer));
         gd.UpdateBuffer(VertexBuffer, 0, meshRenderer.Mesh.Vertices);
-        IndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * meshRenderer.Mesh.Indices.Length), BufferUsage.IndexBuffer));
+        IndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(uint) * meshRenderer.Mesh.Indices.Length), BufferUsage.IndexBuffer));
         gd.UpdateBuffer(IndexBuffer, 0, meshRenderer.Mesh.Indices);
         IndexCount = (uint)meshRenderer.Mesh.Indices.Length;
         TextureResourceSet = factory.CreateResourceSet(new ResourceSetDescription(textureLayout, texture.VeldridTextureView, sampler));

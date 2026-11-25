@@ -24,11 +24,15 @@ internal class OpenGLMeshRendererData : IDisposable
 
         EboHandle = GL.GenBuffer();
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, EboHandle);
-        GL.BufferData(BufferTarget.ElementArrayBuffer, (IntPtr)(sizeof(ushort) * mesh.Indices.Length), mesh.Indices, BufferUsageHint.StaticDraw);
+        // 32-bit indices: a skinned character passes 65,535 vertices and a ushort index wraps there.
+        GL.BufferData(BufferTarget.ElementArrayBuffer, (IntPtr)(sizeof(uint) * mesh.Indices.Length), mesh.Indices, BufferUsageHint.StaticDraw);
 
         const int posBytes = 3 * 4;
         const int normalBytes = 3 * 4;
         const int colorBytes = 4 * 4;
+        const int texCoordBytes = 2 * 4;
+        const int boneIndicesBytes = 4 * 4;
+        const int boneWeightsBytes = 4 * 4;
 
         // Position (location = 0)
         GL.EnableVertexAttribArray(0);
@@ -45,6 +49,18 @@ internal class OpenGLMeshRendererData : IDisposable
         // TexCoord (location = 3)
         GL.EnableVertexAttribArray(3);
         GL.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes, posBytes + normalBytes + colorBytes);
+
+        // Bone indices and weights (locations 4 and 5). The scene shader does not declare them, so they cost the
+        // static pipeline nothing, and the skinning shader reads them where they are.
+        GL.EnableVertexAttribArray(4);
+        GL.VertexAttribPointer(
+            4, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes,
+            posBytes + normalBytes + colorBytes + texCoordBytes);
+
+        GL.EnableVertexAttribArray(5);
+        GL.VertexAttribPointer(
+            5, 4, VertexAttribPointerType.Float, false, (int)Vertex.SizeInBytes,
+            posBytes + normalBytes + colorBytes + texCoordBytes + boneIndicesBytes);
 
         GL.BindVertexArray(0);
     }

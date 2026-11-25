@@ -1,9 +1,10 @@
 # Animation & Skinning
 
-> **Status: specification.** Nothing described here is implemented yet. This document is the contract the
-> implementation follows — the semantics, the file formats and the API shape — so that the code and its tests have
-> one ground truth to agree on, the way [`prefabs.md`](prefabs.md) and [`physics.md`](physics.md) do for the layers
-> that already exist.
+> **Status: increment 1 of 4 is implemented.** The importer, the skeleton data model, clip data and the 32-bit index
+> path exist; sampling, the `Animator` and GPU skinning do not. §8 says exactly which is which, and the rest of this
+> document is the contract the remaining increments follow — the semantics, the file formats and the API shape — so
+> that the code and its tests have one ground truth to agree on, the way [`prefabs.md`](prefabs.md) and
+> [`physics.md`](physics.md) do for the layers that already exist.
 
 Overcore draws static geometry and nothing else: `ModelLoader` reads `POSITION`, `NORMAL` and `TEXCOORD_0` out of a
 glTF primitive and throws the node graph away, `Vertex` has no room for bone weights, and a scene frame has no step
@@ -31,7 +32,7 @@ skeleton is nothing but a subtree of transforms.
 | glTF | Overcore |
 | :--- | :--- |
 | node graph | `GameObject` hierarchy, one per node, local TRS on the `Transform` |
-| `Mesh` + `Primitive` | one `Mesh`, vertices welded across primitives, indices widened to `uint` |
+| `Mesh` + `Primitive` | one `Mesh` per glTF mesh: primitives appended into one vertex buffer, indices widened to `uint`, winding reversed to the engine's clockwise front faces |
 | `NORMAL`, `TEXCOORD_0`, `COLOR_0` | already read; `COLOR_0` is read now instead of a fixed white |
 | `JOINTS_0`, `WEIGHTS_0` | `Mesh.Bones` / `Mesh.Weights`, four per vertex (§3) |
 | `Skin` + `inverseBindMatrices` | `Skeleton` — the bone transforms and their bind-pose inverses (§3) |
@@ -135,12 +136,14 @@ public sealed class Skeleton
 The bind pose is the pose the mesh was modelled in. A vertex placed with bone `j` at weight `w` moves by
 
 ```
-jointMatrix[j] = inverse(rendererWorld) * boneWorld[j] * inverseBindMatrix[j]
-vertexWorld    = rendererWorld * Σ w[j] * jointMatrix[j] * vertexLocal
+jointMatrix[j] = inverseBindMatrix[j] * boneWorld[j] * inverse(rendererWorld)
+vertexLocal    = Σ w[j] * (vertexLocal * jointMatrix[j])
 ```
 
-which is the glTF formulation, and the reason a mesh drawn at its bind pose is pixel-identical to the unskinned mesh:
-every `jointMatrix` is the identity when the pose equals the bind pose. **That identity is the single most valuable
+Written in the row-vector order this engine's `Matrix4x4` and `Transform` already use (`local * parent`), which is the
+same transform as the glTF specification's column-vector form with the multiplication order reversed. The reason a mesh
+drawn at its bind pose is pixel-identical to the unskinned mesh follows from it: every `jointMatrix` is the identity
+when the pose equals the bind pose. **That identity is the single most valuable
 test in this layer** — it catches a transposed matrix, a wrong multiplication order and a wrong bind inverse at once.
 
 Bone matrices are rebuilt from the pose on the CPU once per frame and only for bones whose world transform actually
@@ -287,7 +290,8 @@ Two hooks join animation to scripting, both through machinery that exists:
 ## 6. Files and identity
 
 Assets follow the prefab conventions already in the tree: YAML inside, a `.meta` sidecar with a guid, links that quote
-the guid (`Scenes/PrefabSource.cs`, `Utils/AssetMeta.cs`).
+the guid (`Scenes/PrefabSource.cs`, `Utils/AssetMeta.cs`). **None of these files are written yet** — the shapes below
+are the contract for the increment that reads and writes them, and clips currently live in memory instead.
 
 | Asset | Extension | Contents |
 | :--- | :--- | :--- |
@@ -353,19 +357,47 @@ public class Player : Script
 `SetFloat`/`SetBool`/`SetInt` with a `dampTime` moves the parameter toward the target at that rate instead of jumping,
 which is how a locomotion blend stops snapping — the same call Unity's `Animator` offers.
 
-## 8. Order of work
+## 8. What exists, and what does not
 
-Four increments, each one shippable and each one testable on its own:
+The layer is being built in four increments. This is the state of each, and the files are named in §11.
 
-1. **Import** — node graph to `GameObject`s, `uint` indices, `JOINTS_0`/`WEIGHTS_0` on the vertex, `Skeleton`, clips
-   written as `.anim`. Ends with a model whose hierarchy and bind pose match the file, verified headlessly.
-2. **Sampling** — `AnimationClip.Sample`, `AnimationPose`, blending, wrap modes, events. Pure math, fully unit-tested.
-3. **Animator** — parameters, states, transitions, layers, 1D blend, `Scene.AdvanceAnimation`. Also pure, also tested.
-4. **Skinning on the GPU** — the second vertex layout, the bone texture, `skin.vert`/`skin.frag`. The only part that
-   needs a context, and the only part CI cannot check.
+### Landed: increment 1 — import
 
-Until step 4 lands, steps 1–3 are still visible: an Animator in the editor moves real transforms, so a skeleton made of
-cubes animates in the viewport and its bones are inspectable, pickable and testable.
+- `ModelImporter` reads a `.gltf`/`.glb` into **objects**: one `GameObject` per glTF node, parented to match the node
+  graph, local TRS taken from the file. The old `ModelLoader`, which flattened a file into a name → mesh dictionary,
+  is gone.
+- `Vertex` carries four bone indices and four weights, read from `JOINTS_0`/`WEIGHTS_0`, normalized on import, with a
+  zero-weight vertex pinned to bone 0 instead of collapsing to the origin.
+- `Mesh.Indices` is `uint[]`, and the OpenGL, Veldrid and skybox paths draw 32-bit indices. A model past 65,535
+  vertices no longer wraps its index array.
+- `Skeleton` holds the bones and their inverse bind matrices, and computes the joint matrix palette. A mesh drawn at
+  its bind pose produces the identity for every joint — pinned by test.
+- `AnimationClip` and `AnimationCurve` hold the curves an importer reads out of a file's channels, addressed by node
+  path, with cubic tangents preserved and quaternion keys made continuous so a component-wise blend cannot spin the
+  long way round.
+- `SkinnedMesh` links a mesh to its skeleton, and `ModelAssets` caches an import once per file so a resource manager
+  can still resolve a mesh by the name a scene wrote.
+
+Two limits of that work are worth stating plainly. **Nothing deforms a vertex yet**: a skinned mesh draws at its bind
+pose, which is what the importer left its bones in, so a rigged character imports and animates nothing. And the
+**importer does not write `.anim`/`.controller` files** — clips live in memory, keyed by file and name, because
+serializing an object reference is its own piece of work (§6).
+
+### Next: increment 2 — sampling
+
+`AnimationClip.Sample` into an `AnimationPose`, weight blending, the wrap arithmetic applied per frame, and event
+dispatch. `AnimationCurve.Evaluate` and `AnimationClip.WrapTime` already exist and are tested, so this increment is the
+part that walks a clip's curves, maps their bone paths onto transforms, and turns the result into a pose that a
+renderer or a transform hierarchy can consume.
+
+### Then: increment 3 — the `Animator`
+
+Parameters, states, transitions, layers, 1D blend, and the frame step in `Scene`. Nothing of it exists yet.
+
+### Then: increment 4 — GPU skinning
+
+The skinning vertex shader and the bone-matrix texture. This is the only increment that needs a graphics context, and
+therefore the only one CI cannot check.
 
 ## 9. Honest gaps — what this is not
 
@@ -380,7 +412,13 @@ cubes animates in the viewport and its bones are inspectable, pickable and testa
   code on entry or exit; a script hears about transitions only by polling.
 - **No animation curves on arbitrary properties.** Only `localPosition`, `localRotation` and `localScale`. Unity animates
   any serialized field; we animate transforms.
-- **No morph targets / blend shapes.** glTF's `targets` and `WEIGHTS_*` are ignored.
+- **No morph targets / blend shapes.** glTF's `targets` and `WEIGHTS_*` are ignored, and the importer records a
+  warning for a clip that tries to animate them rather than skipping the channel silently.
+- **Clips are in memory only.** An import produces them, `ModelAssets` holds them by file and name, and nothing writes
+  them to `.anim` yet (§6).
+- **A material's base colour has nowhere to go without a texture.** The engine's albedo is vertex colour × texture, so a
+  file's base colour is carried in the emissive slot when no texture names one. That is a compromise the lighting model
+  will outgrow.
 - **Hashes are ours, not Unity's** (§4.1).
 - **Packed assets** (`Assets.pak`) can carry `.anim`/`.controller`, but a model imported from a pack gets no sibling
   files written — clips for a packed model must be packed alongside it, authored separately.
@@ -388,36 +426,48 @@ cubes animates in the viewport and its bones are inspectable, pickable and testa
 
 ## 10. What the tests pin
 
-Everything except the shader is a deterministic function, so the tests are exact rather than approximate:
+Everything except the shader is a deterministic function, so the tests are exact rather than approximate. Pinned
+today (`✔`) and what the remaining increments add (`…`):
 
 | Test | Pins |
 | :--- | :--- |
-| Pose at bind pose → every joint matrix is identity | matrix order, bind inverse direction (§3.1) |
-| Sample at a key's exact time returns that key's value | key bracketing, off-by-one at the ends |
-| Sample mid-segment matches a hand-computed lerp/slerp | interpolation form |
-| A quaternion curve with a sign flip takes the short way round | shortest-path slerp (§2.1) |
-| `Loop` at `t = Length + ε` equals `t = ε`; `PingPong` reverses | wrap math (§2.3) |
-| `Sample(w = 0)` and `Sample(w = 1)` are no-op and overwrite | blend identity (§2.2) |
-| Two transitions from one state take the first whose conditions all pass | transition ordering (§4.2) |
-| A consumed trigger is false on the next evaluation | trigger semantics (§4.1) |
-| A frame spanning three event times fires all three, in order | event dispatch (§2.4) |
-| Re-import keeps a clip's guid | asset identity (§6) |
+| ✔ Pose at bind pose → every joint matrix is identity | matrix order, bind inverse direction (§3.1) |
+| ✔ The joint palette cancels a renderer that is not at the origin | the renderer term is not baked into the pose |
+| ✔ Node graph survives import, mesh node keeps its parent and local TRS | the whole point of §1 |
+| ✔ Winding is reversed on import | the engine's clockwise front faces (§1) |
+| ✔ Four weights normalize to one; a zero-weight vertex pins to bone 0 | §3.2 |
+| ✔ Curve keys stay sorted when a file lists them out of order | key bracketing (§2.1) |
+| ✔ A repeated key time does not divide by zero | the degenerate segment (§2.1) |
+| ✔ `Loop` folds past the end, including negative time; `PingPong` reverses | wrap math (§2.3) |
+| ✔ A clip's curves address the node path the hierarchy registered | §2 binding |
+| … Sample at a key's exact time returns that key's value | key bracketing, off-by-one at the ends |
+| … Sample mid-segment matches a hand-computed lerp/slerp | interpolation form |
+| … A quaternion curve with a sign flip takes the short way round | shortest-path slerp (§2.1) |
+| … `Sample(w = 0)` and `Sample(w = 1)` are no-op and overwrite | blend identity (§2.2) |
+| … Two transitions from one state take the first whose conditions all pass | transition ordering (§4.2) |
+| … A consumed trigger is false on the next evaluation | trigger semantics (§4.1) |
+| … A frame spanning three event times fires all three, in order | event dispatch (§2.4) |
+| … Re-import keeps a clip's guid | asset identity (§6) |
 
-## 11. Where the code will live
+## 11. Where the code lives
+
+`✔` means it exists; `…` means it is the next increments' work.
 
 | Piece | File |
 | :--- | :--- |
-| Node graph → objects, meshes, skins | `src/Overcore/Rendering/ModelImporter.cs` (replaces `ModelLoader`) |
-| `Vertex` with bone data | `src/Overcore/Rendering/Vertex.cs` |
-| `Skeleton` | `src/Overcore/Animation/Skeleton.cs` |
-| `AnimationClip`, `AnimationCurve`, `AnimationEvent` | `src/Overcore/Animation/AnimationClip.cs` |
-| `AnimationPose`, blending, bone matrices | `src/Overcore/Animation/AnimationPose.cs` |
-| `Animator`, parameters, state machine | `src/Overcore/Animation/Animator.cs` |
-| Controller asset (YAML) | `src/Overcore/Animation/AnimatorController.cs` |
-| `SkinnedMeshRenderer` | `src/Overcore/Rendering/SkinnedMeshRenderer.cs` |
-| GL vertex layout + bone texture | `src/Overcore/Rendering/OpenTK/OpenGLSkinnedMeshData.cs` |
-| Skinning shaders | `src/OvercoreEditor/EditorResources/Shaders/skin.vert`, `skin.frag` |
-| The frame step | `src/Overcore/Scenes/Scene.cs` (`AdvanceAnimation`) |
-| Reading/writing `.anim`, `.controller` | `src/Overcore/Scenes/SceneSerializer.cs`, `SceneLoader.cs` |
-| Component menu entries | `src/Overcore/Components/ComponentCatalog.cs` |
-| Inspector scrubber, state list | `src/OvercoreEditorSession/Scene/`, `src/OvercoreEditorPhotino/Components/` |
+| ✔ Node graph → objects, meshes, skins, clips | `src/Overcore/Rendering/ModelImporter.cs` |
+| ✔ The import cache, keyed by file | `src/Overcore/Rendering/ModelAssets.cs` |
+| ✔ `Vertex` with bone data | `src/Overcore/Rendering/Vertex.cs` |
+| ✔ `Mesh` with 32-bit indices | `src/Overcore/Rendering/Mesh.cs` |
+| ✔ `Skeleton`, bind inverses, joint palette | `src/Overcore/Animation/Skeleton.cs` |
+| ✔ `AnimationClip`, `AnimationCurve`, `AnimationEvent` | `src/Overcore/Animation/AnimationClip.cs`, `AnimationCurve.cs` |
+| ✔ `SkinnedMesh` — the mesh-to-bones link | `src/Overcore/Components/SkinnedMesh.cs` |
+| ✔ 32-bit index buffers and the six-attribute vertex layout | `OpenGLMeshRendererData.cs`, `VeldridMeshRendererData.cs`, `VeldridRenderer.cs` |
+| ✔ Mesh lookup through the import cache | `src/Overcore/Rendering/ResourceManager.cs`, `ResourceManagerBase.cs` |
+| … `AnimationPose`, blending, pose → transforms | `src/Overcore/Animation/AnimationPose.cs` |
+| … `Animator`, parameters, state machine | `src/Overcore/Animation/Animator.cs` |
+| … Controller asset (YAML) | `src/Overcore/Animation/AnimatorController.cs` |
+| … GL bone texture + skinning shaders | `src/Overcore/Rendering/OpenTK/OpenGLSkinnedMeshData.cs`, `EditorResources/Shaders/skin.*` |
+| … The frame step | `src/Overcore/Scenes/Scene.cs` (`AdvanceAnimation`) |
+| … Reading/writing `.anim`, `.controller` | `src/Overcore/Scenes/SceneSerializer.cs`, `SceneLoader.cs` |
+| … Inspector scrubber, state list | `src/OvercoreEditorSession/Scene/`, `src/OvercoreEditorPhotino/Components/` |

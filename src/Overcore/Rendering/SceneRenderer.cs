@@ -133,7 +133,7 @@ public class SceneRenderer : IDisposable
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
             commandList.SetVertexBuffer(0, backendData.VertexBuffer);
-            commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt16);
+            commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt32);
             commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
             commandList.SetGraphicsResourceSet(1, backendData.TextureResourceSet);
             commandList.SetGraphicsResourceSet(2, backendData.MaterialResourceSet);
@@ -157,7 +157,7 @@ public class SceneRenderer : IDisposable
 
         commandList.SetPipeline(_outlinePipeline);
         commandList.SetVertexBuffer(0, backendData.VertexBuffer);
-        commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt16);
+        commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt32);
         commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
         commandList.DrawIndexed(backendData.IndexCount, 1, 0, 0, 0);
     }
