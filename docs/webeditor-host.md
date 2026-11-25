@@ -212,7 +212,7 @@ chrome is deliberately the same so muscle memory carries over:
 
 | ImGui (`src/OvercoreEditor`) | PhotinoX editor |
 | :--- | :--- |
-| `MenuBar` — File / Edit / Window | `Components/MenuBar.razor` — File (New Project…, Open Project…, Exit), Edit, Window (Reset Layout) |
+| `MenuBar` — File / Edit / Window | `Components/MenuBar.razor` — File (New Project…, Open Project…, New Scene…, Reload Scripts, Save, Build Game…, Exit), Edit (Undo / Redo), Window (Reset Layout), Theme (the theme picker), sharing the top chrome's rhythm with the transport strip |
 | `ToolBar` — three centred transport buttons | `Components/ToolBar.razor` — Play/Pause, Stop, Restart, live (see [Play mode](#play-mode)) |
 | Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
 | `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel`; **Show Grid** is a checkable item that turns the renderer's grid on and off (see [Flying the camera](#flying-the-camera)) |

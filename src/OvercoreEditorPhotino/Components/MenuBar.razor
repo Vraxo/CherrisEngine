@@ -5,13 +5,14 @@
 @inject IJSRuntime JS
 
 @* ImGui's main menu bar: File / Edit / Window / Theme, drawn as flat text on the window background. *@
-<div class="menubar">
+<div class="menubar" role="menubar">
     <button type="button" class="menubar-brand" title="Back to the project launcher" @onclick="OpenLauncher">
         Overcore Editor
     </button>
 
     <div class="menubar-item">
-        <button type="button" class="menubar-button @(IsOpen("file") ? "open" : "")" @onclick='() => Toggle("file")'>
+        <button type="button" class="menubar-button @(IsOpen("file") ? "open" : "")" aria-haspopup="menu"
+                aria-expanded="@(IsOpen("file") ? "true" : "false")" @onclick='() => Toggle("file")'>
             File
         </button>
 
@@ -57,7 +58,8 @@
     </div>
 
     <div class="menubar-item">
-        <button type="button" class="menubar-button @(IsOpen("edit") ? "open" : "")" @onclick='() => Toggle("edit")'>
+        <button type="button" class="menubar-button @(IsOpen("edit") ? "open" : "")" aria-haspopup="menu"
+                aria-expanded="@(IsOpen("edit") ? "true" : "false")" @onclick='() => Toggle("edit")'>
             Edit
         </button>
 
@@ -79,7 +81,8 @@
     </div>
 
     <div class="menubar-item">
-        <button type="button" class="menubar-button @(IsOpen("window") ? "open" : "")" @onclick='() => Toggle("window")'>
+        <button type="button" class="menubar-button @(IsOpen("window") ? "open" : "")" aria-haspopup="menu"
+                aria-expanded="@(IsOpen("window") ? "true" : "false")" @onclick='() => Toggle("window")'>
             Window
         </button>
 
@@ -94,7 +97,8 @@
     </div>
 
     <div class="menubar-item">
-        <button type="button" class="menubar-button @(IsOpen("theme") ? "open" : "")" @onclick='() => Toggle("theme")'>
+        <button type="button" class="menubar-button @(IsOpen("theme") ? "open" : "")" aria-haspopup="menu"
+                aria-expanded="@(IsOpen("theme") ? "true" : "false")" @onclick='() => Toggle("theme")'>
             Theme
         </button>
 
@@ -139,16 +143,17 @@
     {
         <div class="menu-scrim" @onclick="CloseMenus"></div>
     }
-
-    <NewItemDialog Visible="@_newSceneOpen"
-                   Title="New Scene"
-                   Text="A new scene starts with a camera and a sun, so it opens with something to look through and something to light it."
-                   Label="Scene name"
-                   DefaultName="@_newSceneName"
-                   Hint="@ScenePathHint"
-                   OnCreate="@CreateScene"
-                   OnClose="@CloseNewScene" />
 </div>
+
+@* The New Scene dialog belongs to the page, not to the menu bar it is opened from. *@
+<NewItemDialog Visible="@_newSceneOpen"
+               Title="New Scene"
+               Text="A new scene starts with a camera and a sun, so it opens with something to look through and something to light it."
+               Label="Scene name"
+               DefaultName="@_newSceneName"
+               Hint="@ScenePathHint"
+               OnCreate="@CreateScene"
+               OnClose="@CloseNewScene" />
 
 @code {
     private string? _openMenu;
