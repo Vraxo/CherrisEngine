@@ -1941,6 +1941,8 @@ span.panel-tab:hover {
     flex: none;
 }
 
+/* The tiles sit on the panel itself. An inset list box here would only draw a second frame inside the panel's
+   own, which is the noise the console's log region earns and the browser's grid does not. */
 .cb-grid {
     flex: 1;
     min-height: 0;
@@ -1949,9 +1951,6 @@ span.panel-tab:hover {
     align-content: flex-start;
     gap: 2px;
     overflow: auto;
-    padding: 3px;
-    border: var(--theme-border-width) solid var(--theme-input-outline);
-    border-radius: var(--theme-radius);
 }
 
 .cb-item {
