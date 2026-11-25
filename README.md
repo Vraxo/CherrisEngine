@@ -21,6 +21,7 @@ The solution (`Overcore.slnx`) contains four production projects under `src`:
 - **Audio**: 3D positional audio via OpenAL (`AudioListener` and `AudioSource`) supporting 8/16-bit mono and stereo `.wav` files.
 - **Scripting**: Dynamic C# script compilation via Roslyn (`Microsoft.CodeAnalysis.CSharp`), plus inspector attributes (`[Range]`, `[ColorUsage]`, `[DragDropTarget]`, `[HideInInspector]`).
 - **Assets & Serialization**: Human-readable `.yaml` scenes and `.prefab` hierarchies, `.gltf`/`.glb` models (`SharpGLTF`), `.png`/`.jpg`/`.bmp`/`.tga` textures (`StbImageSharp`), and optional `CHPK` asset bundling (`Assets.pak`).
+- **Animation**: not implemented. Meshes import as static geometry, so there are no clips, no skeletons and no `Animator` yet; [Animation & Skinning](docs/animation.md) is the specification for that layer.
 
 ## 🚀 Quick Start
 
@@ -160,6 +161,7 @@ Current limitations:
 ## 📚 Documentation
 
 - [Physics & Runtime Lifecycle](docs/physics.md): Colliders and rigid bodies, contact and trigger callbacks, physics queries and layers, the script lifecycle, `Time`, coroutines and `Invoke`, `Instantiate`/`Destroy`, and changing scenes with `SceneManager`.
+- [Animation & Skinning](docs/animation.md): **Specification, not yet implemented.** The contract for the animation stack still to be built: glTF node graphs imported as hierarchies, `AnimationClip` curves and events, the `Animator` state machine, skeletons and GPU skinning, and the gaps that stay out of scope.
 - [Color Consistency & Rendering Pipeline](docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Overcore/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
