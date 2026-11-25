@@ -6,7 +6,7 @@ The physics layer is BepuPhysics v2 behind a Unity-shaped API. A `Collider` is a
 class, and drive themselves with `Update`, `FixedUpdate`, `LateUpdate`, coroutines and `Invoke`.
 
 Everything below runs headless: no window, no shader and no asset pipeline is involved, which is what makes the
-physics and lifecycle tests in `tests/Overcore.Tests/Physics` and `tests/Overcore.Tests/Lifecycle` cheap to run.
+physics and lifecycle tests in `tests/Overcore.Tests/World` and `tests/Overcore.Tests/Lifecycle` cheap to run.
 
 ## 1. Colliders
 

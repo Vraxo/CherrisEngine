@@ -5,7 +5,9 @@ using Overcore.Core.Physics;
 using System.Numerics;
 using Xunit;
 
-namespace Overcore.Tests.Physics;
+// The namespace is deliberately not 'Overcore.Tests.Physics': that would make the simple name `Physics` mean the
+// namespace rather than the engine's static query class, and every `Physics.Raycast` here would fail to resolve.
+namespace Overcore.Tests.World;
 
 /// <summary>
 /// The callbacks a contact produces: <c>OnCollisionEnter</c>, <c>Stay</c> and <c>Exit</c> for a surface, and the

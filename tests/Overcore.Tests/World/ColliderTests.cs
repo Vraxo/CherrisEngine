@@ -6,7 +6,9 @@ using Overcore.Serialization;
 using System.Numerics;
 using Xunit;
 
-namespace Overcore.Tests.Physics;
+// The namespace is deliberately not 'Overcore.Tests.Physics': that would make the simple name `Physics` mean the
+// namespace rather than the engine's static query class, and every `Physics.Raycast` here would fail to resolve.
+namespace Overcore.Tests.World;
 
 /// <summary>
 /// The collider layer: a shape that is a component of its own, registered with the world when the scene starts,
