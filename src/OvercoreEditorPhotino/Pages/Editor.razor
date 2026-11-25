@@ -67,11 +67,11 @@
                         <header class="panel-tabstrip">
                             <button type="button" class="panel-tab @(_bottomTab == "content" ? "active" : "")"
                                     @onclick='() => _bottomTab = "content"'>
-                                Content Browser
+                                <i class="fa-solid fa-folder panel-tab-icon" aria-hidden="true"></i>Content Browser
                             </button>
                             <button type="button" class="panel-tab @(_bottomTab == "console" ? "active" : "")"
                                     @onclick='() => _bottomTab = "console"'>
-                                Console
+                                <i class="fa-solid fa-terminal panel-tab-icon" aria-hidden="true"></i>Console
                             </button>
                         </header>
 
