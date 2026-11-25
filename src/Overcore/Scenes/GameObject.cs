@@ -8,6 +8,13 @@ public class GameObject
     public string Name { get; set; }
     public Guid Id { get; }
     public Transform Transform { get; }
+
+    /// <summary>
+    /// The object's home in a prefab asset, or null when it is not part of one. An instantiated object keeps
+    /// the link on every object of the instance, so the editor can tell a prefab's objects from loose ones.
+    /// </summary>
+    public PrefabSource? PrefabSource { get; set; }
+
     private readonly List<Component> _components = new List<Component>();
 
     public IEnumerable<Component> Components => _components;

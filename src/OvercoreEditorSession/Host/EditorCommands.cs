@@ -1,6 +1,8 @@
 using Overcore.Components;
 using Overcore.Core;
 using Overcore.Scripting;
+using Overcore.Serialization;
+using Overcore.Utils;
 using System.Collections.Concurrent;
 using System.Numerics;
 
@@ -58,7 +60,8 @@ public sealed class EditorCommandContext(
     EditorHistory history,
     string? projectRoot = null,
     IReadOnlyList<ComponentCatalog.Entry>? scriptComponents = null,
-    Func<IReadOnlyList<ComponentCatalog.Entry>?>? reloadScripts = null)
+    Func<IReadOnlyList<ComponentCatalog.Entry>?>? reloadScripts = null,
+    Func<string, List<GameObject>>? loadPrefabAsset = null)
 {
     /// <summary>The active scene.</summary>
     public Scene Scene { get; } = scene ?? throw new ArgumentNullException(nameof(scene));
@@ -82,6 +85,9 @@ public sealed class EditorCommandContext(
     /// registered for.
     /// </summary>
     public Func<IReadOnlyList<ComponentCatalog.Entry>?>? ReloadScripts { get; } = reloadScripts;
+
+    /// <summary>Reads a prefab asset into fresh objects, or null when this session cannot read prefabs.</summary>
+    public Func<string, List<GameObject>>? LoadPrefabAsset { get; } = loadPrefabAsset;
 }
 
 /// <summary>
@@ -302,6 +308,12 @@ public sealed class EditorCommandDispatcher(string? projectRoot = null)
     /// </summary>
     public Func<IReadOnlyList<ComponentCatalog.Entry>?>? ReloadScripts { get; set; }
 
+    /// <summary>
+    /// Reads a prefab asset into fresh objects, set by the session that owns the engine's loader. A command
+    /// that instantiates a prefab reads the asset through it, so the factory-built components come back whole.
+    /// </summary>
+    public Func<string, List<GameObject>>? LoadPrefabAsset { get; set; }
+
     /// <summary>Queues an edit. Safe from any thread.</summary>
     /// <param name="command">The command.</param>
     public void Enqueue(IEditorCommand command) => _queue.Enqueue(command);
@@ -313,7 +325,7 @@ public sealed class EditorCommandDispatcher(string? projectRoot = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
-        EditorCommandContext context = new(scene, History, ProjectRoot, ScriptComponents, ReloadScripts);
+        EditorCommandContext context = new(scene, History, ProjectRoot, ScriptComponents, ReloadScripts, LoadPrefabAsset);
 
         return _queue.Drain(command => command.Execute(context), log);
     }
@@ -599,6 +611,228 @@ public sealed class DeleteGameObjectCommand(Guid objectId, string name) : IUndoa
         context.History.Record(this);
 
         return $"[editor] deleted {name}.";
+    }
+
+    private static void Collect(GameObject go, List<GameObject> into)
+    {
+        into.Add(go);
+
+        foreach (Transform child in go.Transform.Children.ToList())
+        {
+            Collect(child.GameObject, into);
+        }
+    }
+}
+
+/// <summary>
+/// Saves an object and its children as a prefab asset and makes the saved objects the asset's first
+/// instance, as the hierarchy's context menu sends: Unity's "Create Prefab".
+/// </summary>
+/// <param name="ObjectId">The object to save; its subtree is the asset.</param>
+/// <param name="AssetPath">Where the prefab asset is written.</param>
+/// <remarks>
+/// The written objects keep the ids they were written with, so they are linked to the asset from now on.
+/// Undo takes the links back but leaves the asset on disk: the step can be redone, and the file is a
+/// project asset from the moment it is written. Creating a prefab from an already-linked object re-links it
+/// to the new asset, and Undo puts the old links back.
+/// </remarks>
+public sealed class CreatePrefabFromSelectionCommand(Guid objectId, string assetPath) : IUndoableCommand
+{
+    private string? _guid;
+    private List<(GameObject GameObject, PrefabSource? Previous)>? _stamped;
+
+    /// <inheritdoc />
+    public string Describe => $"create prefab {Path.GetFileNameWithoutExtension(assetPath)}";
+
+    /// <inheritdoc />
+    public string? Execute(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (Find(context.Scene) is not { } root)
+        {
+            return $"[editor] could not {Describe}: the object is gone.";
+        }
+
+        string? directory = Path.GetDirectoryName(assetPath);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        List<GameObject> written = new SceneSerializer().SavePrefab(root, assetPath);
+        _guid = AssetMeta.GetOrCreate(assetPath);
+
+        // The written objects become the prefab's first instance: each keeps the id it was written with.
+        _stamped = [];
+
+        for (int i = 0; i < written.Count; i++)
+        {
+            GameObject go = written[i];
+            _stamped.Add((go, go.PrefabSource));
+            go.PrefabSource = new PrefabSource(_guid, i + 1);
+        }
+
+        context.Scene.IsDirty = true;
+        context.History.Record(this);
+
+        return $"[editor] created prefab {Path.GetFileName(assetPath)}.";
+    }
+
+    /// <inheritdoc />
+    public string? Undo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_stamped is null)
+        {
+            return null;
+        }
+
+        foreach ((GameObject go, PrefabSource? previous) in _stamped)
+        {
+            go.PrefabSource = previous;
+        }
+
+        context.Scene.IsDirty = true;
+
+        return $"[editor] unlinked the prefab {Path.GetFileName(assetPath)}.";
+    }
+
+    /// <inheritdoc />
+    public string? Redo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_stamped is null || _guid is null)
+        {
+            return null;
+        }
+
+        // The asset is still on disk; the objects are linked to it again, at the ids they were written with.
+        for (int i = 0; i < _stamped.Count; i++)
+        {
+            _stamped[i].GameObject.PrefabSource = new PrefabSource(_guid, i + 1);
+        }
+
+        context.Scene.IsDirty = true;
+
+        return $"[editor] created prefab {Path.GetFileName(assetPath)} again.";
+    }
+
+    private GameObject? Find(Scene scene) =>
+        scene.GameObjects.FirstOrDefault(gameObject => gameObject.Id == objectId);
+}
+
+/// <summary>
+/// Adds a prefab to the scene as a fresh instance of the asset, as the content browser sends: Unity's
+/// "Instantiate Prefab". The instance arrives at the scene root.
+/// </summary>
+/// <param name="AssetPath">The prefab asset to instantiate.</param>
+/// <remarks>
+/// The whole subtree arrives together and leaves together on Undo, as a delete would; Undo puts it back at
+/// the same place in the scene's list. Every object carries its link to the asset.
+/// </remarks>
+public sealed class InstantiatePrefabCommand(string assetPath) : IUndoableCommand
+{
+    /// <param name="GameObject">An object the instance added.</param>
+    /// <param name="IndexInScene">Where it landed, so Redo can put it back.</param>
+    private sealed record Added(GameObject GameObject, int IndexInScene);
+
+    private List<Added>? _added;
+
+    /// <inheritdoc />
+    public string Describe => $"instantiate {Path.GetFileNameWithoutExtension(assetPath)}";
+
+    /// <inheritdoc />
+    public string? Execute(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (context.LoadPrefabAsset is not { } load)
+        {
+            return $"[editor] could not {Describe}: this session cannot read prefabs.";
+        }
+
+        List<GameObject> roots = load(assetPath);
+
+        if (roots.Count == 0)
+        {
+            return $"[editor] could not {Describe}: the prefab could not be read.";
+        }
+
+        List<GameObject> all = [];
+
+        foreach (GameObject root in roots)
+        {
+            Collect(root, all);
+        }
+
+        _added = [];
+        int index = context.Scene.GameObjects.Count;
+
+        foreach (GameObject go in all)
+        {
+            _added.Add(new Added(go, index++));
+            context.Scene.AddGameObject(go);
+        }
+
+        // The instance may bring the camera or the light the scene was waiting for.
+        context.Scene.FindMainComponents();
+        context.Scene.IsDirty = true;
+        context.History.Record(this);
+
+        return $"[editor] instantiated {Path.GetFileName(assetPath)}.";
+    }
+
+    /// <inheritdoc />
+    public string? Undo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_added is null)
+        {
+            return null;
+        }
+
+        foreach (Added added in _added)
+        {
+            context.Scene.GameObjects.Remove(added.GameObject);
+        }
+
+        context.Scene.FindMainComponents();
+        context.Scene.IsDirty = true;
+
+        return $"[editor] removed the {Path.GetFileNameWithoutExtension(assetPath)} instance.";
+    }
+
+    /// <inheritdoc />
+    public string? Redo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_added is null)
+        {
+            return null;
+        }
+
+        foreach (Added added in _added.OrderBy(added => added.IndexInScene))
+        {
+            if (added.IndexInScene >= 0 && added.IndexInScene <= context.Scene.GameObjects.Count)
+            {
+                context.Scene.GameObjects.Insert(added.IndexInScene, added.GameObject);
+            }
+            else
+            {
+                context.Scene.GameObjects.Add(added.GameObject);
+            }
+        }
+
+        context.Scene.FindMainComponents();
+        context.Scene.IsDirty = true;
+
+        return $"[editor] instantiated {Path.GetFileName(assetPath)} again.";
     }
 
     private static void Collect(GameObject go, List<GameObject> into)

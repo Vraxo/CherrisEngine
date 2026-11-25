@@ -21,19 +21,28 @@ public class SceneSerializer
             .Build();
     }
 
-    public void SavePrefab(GameObject rootGo, string filePath)
+    /// <summary>
+    /// Writes the subtree as a prefab asset, and returns the objects it wrote, in the order it wrote them:
+    /// the object at index N carries FileId N+1 in the file, which is what stamps an instance's links.
+    /// </summary>
+    /// <param name="rootGo">The subtree's root.</param>
+    /// <param name="filePath">Where the asset is written.</param>
+    /// <returns>The written objects, root first, in the file's order.</returns>
+    public List<GameObject> SavePrefab(GameObject rootGo, string filePath)
     {
         List<GameObject> hierarchy = [];
         GetHierarchy(rootGo, hierarchy);
 
         List<Dictionary<string, object>> gameObjectsData = [];
+        int fileId = 1;
 
         foreach (GameObject gameObject in hierarchy)
         {
             Dictionary<string, object> goData = new()
             {
                 ["Id"] = gameObject.Id.ToString(),
-                ["Name"] = gameObject.Name
+                ["Name"] = gameObject.Name,
+                ["File"] = fileId++
             };
 
             // Only save parent if it's part of the prefab hierarchy
@@ -54,6 +63,8 @@ public class SceneSerializer
 
         string yaml = _serializer.Serialize(root);
         File.WriteAllText(filePath, yaml);
+
+        return hierarchy;
     }
 
     public void SaveScene(IEnumerable<GameObject> gameObjects, string filePath)
@@ -77,6 +88,16 @@ public class SceneSerializer
             if (gameObject.Transform.Parent is not null)
             {
                 goData["Parent"] = gameObject.Transform.Parent.GameObject.Id.ToString();
+            }
+
+            // An object of a prefab instance says where in which asset it lives, so the link survives a save.
+            if (gameObject.PrefabSource is { } source)
+            {
+                goData["Prefab"] = new Dictionary<string, object>
+                {
+                    ["Asset"] = source.AssetGuid,
+                    ["File"] = source.FileId
+                };
             }
 
             Dictionary<string, object> componentsData = SerializeGameObjectComponents(gameObject);

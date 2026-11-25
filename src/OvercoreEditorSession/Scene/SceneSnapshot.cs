@@ -26,6 +26,7 @@ public sealed record ComponentSnapshot(string TypeName, IReadOnlyList<PropertySn
 /// <param name="Scale">Local scale.</param>
 /// <param name="Components">The components attached to the object, with their editable properties.</param>
 /// <param name="ParentId">Parent object, or null for a root; used to rebuild the hierarchy tree.</param>
+/// <param name="IsPrefabInstance">True when the object is part of a prefab instance, so the hierarchy can mark it.</param>
 public sealed record SceneNodeSnapshot(
     Guid Id,
     string Name,
@@ -33,7 +34,8 @@ public sealed record SceneNodeSnapshot(
     Quaternion Rotation,
     Vector3 Scale,
     IReadOnlyList<ComponentSnapshot> Components,
-    Guid? ParentId = null)
+    Guid? ParentId = null,
+    bool IsPrefabInstance = false)
 {
     /// <summary>
     /// <see cref="Rotation"/> as Euler degrees, X pitch, Y yaw, Z roll — the reading the inspector shows,
@@ -96,7 +98,8 @@ public static class SceneSnapshotBuilder
                 gameObject.Transform.Rotation,
                 gameObject.Transform.Scale,
                 components,
-                gameObject.Transform.Parent?.GameObject.Id));
+                gameObject.Transform.Parent?.GameObject.Id,
+                gameObject.PrefabSource is not null));
         }
 
         return new SceneSnapshot(scene.Name, nodes, frame, capturedAt);

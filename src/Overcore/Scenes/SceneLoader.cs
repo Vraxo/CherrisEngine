@@ -34,6 +34,13 @@ public class SceneLoader
         _componentFactories[typeName] = factory;
     }
 
+    /// <summary>
+    /// Reads a prefab asset and returns fresh objects for it: every object is new (two instances never share
+    /// ids), and every one keeps its link to the asset — the guid from the file's <c>.meta</c> sidecar, and
+    /// the id it carries inside the asset.
+    /// </summary>
+    /// <param name="filePath">The prefab asset's path.</param>
+    /// <returns>The instance's root objects.</returns>
     public List<GameObject> LoadPrefab(string filePath)
     {
         using var stream = ProjectFiles.Open(filePath);
@@ -42,8 +49,20 @@ public class SceneLoader
             return [];
         }
 
-        using var reader = new StreamReader(stream);
-        return DeserializeObjects(reader, true); // True = return only roots
+        Dictionary<GameObject, int> fileIds = [];
+
+        using (var reader = new StreamReader(stream))
+        {
+            List<GameObject> roots = DeserializeObjects(reader, true, fileIds);
+            string guid = AssetMeta.GetOrCreate(filePath);
+
+            foreach ((GameObject go, int fileId) in fileIds)
+            {
+                go.PrefabSource = new PrefabSource(guid, fileId);
+            }
+
+            return roots;
+        }
     }
 
     public List<GameObject> LoadScene(string filePath)
@@ -65,7 +84,15 @@ public class SceneLoader
         return DeserializeObjects(reader, false);
     }
 
-    private List<GameObject> DeserializeObjects(TextReader reader, bool returnRootsOnly)
+    /// <param name="loadAsPrefab">
+    /// True for a prefab asset: the objects are rebuilt with fresh ids (an instance is always new objects)
+    /// and their file ids are collected, so the caller can stamp the instance's links.
+    /// </param>
+    /// <param name="fileIds">Receives each object's id within the asset, when the file carries one.</param>
+    private List<GameObject> DeserializeObjects(
+        TextReader reader,
+        bool loadAsPrefab,
+        IDictionary<GameObject, int>? fileIds = null)
     {
         var sceneData = _deserializer.Deserialize<Dictionary<string, List<Dictionary<string, object>>>>(reader);
         if (sceneData is null || !sceneData.TryGetValue("GameObjects", out var gameObjectDatas))
@@ -83,9 +110,29 @@ public class SceneLoader
             string name = goData.TryGetValue("Name", out var n) ? (string)n : "GameObject";
             Guid id = goData.TryGetValue("Id", out var i) && Guid.TryParse((string)i, out Guid pid) ? pid : Guid.NewGuid();
 
-            var go = new GameObject(name, id);
+            // An instance is always fresh objects; the file's ids only key the parent map below.
+            var go = loadAsPrefab ? new GameObject(name) : new GameObject(name, id);
             objects[id] = go;
             resultList.Add(go);
+
+            if (goData.TryGetValue("Prefab", out var prefabObj) && prefabObj is Dictionary<object, object> prefab)
+            {
+                // A scene says the link outright: which asset, and which object in it.
+                string asset = prefab.TryGetValue("Asset", out var a) ? Convert.ToString(a) ?? string.Empty : string.Empty;
+                int file = prefab.TryGetValue("File", out var f)
+                    ? Convert.ToInt32(f, CultureInfo.InvariantCulture)
+                    : 0;
+
+                if (asset.Length > 0)
+                {
+                    go.PrefabSource = new PrefabSource(asset, file);
+                }
+            }
+            else if (fileIds is not null && goData.TryGetValue("File", out var fileObj))
+            {
+                // A prefab asset says only the id within itself; the asset guid is the file's own.
+                fileIds[go] = Convert.ToInt32(fileObj, CultureInfo.InvariantCulture);
+            }
 
             if (goData.TryGetValue("Parent", out var pObj) && Guid.TryParse((string)pObj, out Guid pId))
             {
@@ -118,7 +165,7 @@ public class SceneLoader
             }
         }
 
-        return returnRootsOnly ? resultList.Where(g => g.Transform.Parent == null).ToList() : resultList;
+        return loadAsPrefab ? resultList.Where(g => g.Transform.Parent == null).ToList() : resultList;
     }
 
     private void ApplyTransformProperties(Transform transform, object properties)
