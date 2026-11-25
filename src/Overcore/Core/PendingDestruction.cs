@@ -23,7 +23,7 @@ internal static class PendingDestruction
     }
 
     private static readonly List<Entry> Entries = [];
-    private static readonly MethodInfo MemberwiseClone =
+    private static readonly MethodInfo CloneMethod =
         typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     /// <summary>How many things are waiting to go, for tests and diagnostics.</summary>
@@ -106,7 +106,7 @@ internal static class PendingDestruction
     /// <returns>A new component carrying the original's settings but none of its runtime state.</returns>
     public static Component CloneComponent(Component source)
     {
-        Component copy = (Component)MemberwiseClone.Invoke(source, null)!;
+        Component copy = (Component)CloneMethod.Invoke(source, null)!;
         copy.OnInstantiated();
         return copy;
     }

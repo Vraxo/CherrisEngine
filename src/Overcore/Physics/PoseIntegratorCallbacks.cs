@@ -8,7 +8,7 @@ namespace Overcore.Core.Physics;
 /// The settings a world keeps that the integrator reads every step. It is a shared object rather than a copy so
 /// that changing gravity takes effect on the next step instead of at the next restart.
 /// </summary>
-internal sealed class SimulationState
+public sealed class SimulationState
 {
     public SimulationState(Vector3 gravity) => Gravity = gravity;
 
@@ -22,10 +22,13 @@ public struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
     private readonly float _linearDamping;
     private readonly float _angularDamping;
 
-    // FIX: These properties must return values, not throw exceptions
     public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.ConserveMomentum;
+
+    /// <summary>Off: a body that is free to move is never split into substeps, so one step is one step.</summary>
     public bool AllowSubstepsForUnconstrainedBodies => false;
-    public bool IntegrateVelocityForKinematics => false;  // Line 153 - was throwing NotImplementedException
+
+    /// <summary>Off: a kinematic body is moved by its object, so the integrator leaves it alone.</summary>
+    public bool IntegrateVelocityForKinematics => false;
 
     /// <summary>Creates the integrator that reads a world's gravity.</summary>
     /// <param name="settings">The settings the world owns, read fresh on every step.</param>

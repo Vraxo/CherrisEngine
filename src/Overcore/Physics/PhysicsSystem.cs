@@ -7,6 +7,7 @@ using Overcore.Components;
 using Overcore.Core.Logging;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using BoundingBox = Overcore.Components.BoundingBox;
 
 namespace Overcore.Core.Physics;
 
