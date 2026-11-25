@@ -18,6 +18,9 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+        sceneLoader.RegisterComponentFactory("BoxCollider", CreateAndPopulateComponent<BoxCollider>);
+        sceneLoader.RegisterComponentFactory("SphereCollider", CreateAndPopulateComponent<SphereCollider>);
+        sceneLoader.RegisterComponentFactory("CapsuleCollider", CreateAndPopulateComponent<CapsuleCollider>);
         sceneLoader.RegisterComponentFactory("LanguageScript", _ => new LanguageScript());
         sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);

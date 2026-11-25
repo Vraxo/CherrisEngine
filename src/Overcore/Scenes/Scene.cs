@@ -5,21 +5,51 @@ using System.Numerics;
 
 namespace Overcore.Core;
 
+/// <summary>
+/// A running world: the objects in it, the camera and lights it is drawn with, and the order its components are
+/// ticked in.
+/// </summary>
+/// <remarks>
+/// <para>
+/// One frame is Unity's: <see cref="Script.FixedUpdate"/> at every physics step, <see cref="Script.Update"/> once,
+/// then coroutines, then <see cref="Script.LateUpdate"/>. Objects that were destroyed during the frame go away at
+/// the end of it, so a script can destroy something it is still holding.
+/// </para>
+/// <para>
+/// Starting a scene wakes every component (<see cref="Component.Awake"/>, then <see cref="Component.OnEnable"/>)
+/// before any script's <see cref="Script.Start"/>, and a script that is switched on later starts on the frame it is
+/// switched on, before its first tick.
+/// </para>
+/// </remarks>
 public class Scene : IDisposable
 {
+    /// <summary>
+    /// The scene new objects join: the one an instantiated clone or
+    /// <see cref="GameObject.Find(string)"/> reaches for when it is not told which scene to use. The last scene
+    /// opened, or the last one built by hand.
+    /// </summary>
+    public static Scene? Active { get; internal set; }
+
     public Guid Id { get; } = Guid.NewGuid();
     public string Name { get; set; }
     public string FilePath { get; set; }
     public List<GameObject> GameObjects { get; } = [];
     public List<Light> Lights { get; } = [];
-    public Camera? MainCamera { get; set; } = null;
-    public Skybox? Skybox { get; private set; } = null;
+    public Camera? MainCamera { get; set; }
+    public Skybox? Skybox { get; private set; }
     public bool IsDirty { get; set; }
+
+    /// <summary>True once the scene has been started: its components woken and its scripts started.</summary>
+    public bool IsStarted => _physicsSystem is not null;
+
+    /// <summary>Scaled seconds the scene has been running, which is the clock coroutines and timed calls count on.</summary>
+    public float Clock => _clock;
 
     // Kept from the last Start(): a script switched on later is started on the frame it is, with the same systems.
     private PhysicsSystem? _physicsSystem;
 
     private float _debugLogTimer;
+    private float _clock;
 
     public Scene(string filePath, List<GameObject> gameObjects)
     {
@@ -30,11 +60,21 @@ public class Scene : IDisposable
             : Path.GetFileName(filePath);
 
         GameObjects.AddRange(gameObjects);
+
+        foreach (GameObject gameObject in GameObjects)
+        {
+            gameObject.scene = this;
+        }
+
+        Active = this;
         FindMainComponents();
     }
 
     public void AddGameObject(GameObject go)
     {
+        ArgumentNullException.ThrowIfNull(go);
+
+        go.scene = this;
         GameObjects.Add(go);
 
         Light? light = go.GetComponent<Light>();
@@ -42,6 +82,13 @@ public class Scene : IDisposable
         if (light is not null)
         {
             Lights.Add(light);
+        }
+
+        // An object added to a scene that is already running is woken at once, the way Unity treats a clone or a
+        // prefab dropped in at run time.
+        if (IsStarted && go.ActiveInHierarchy)
+        {
+            go.AwakeComponents();
         }
 
         IsDirty = true;
@@ -54,8 +101,16 @@ public class Scene : IDisposable
             RemoveGameObject(childTransform.GameObject);
         }
 
-        go.Transform.Parent = null;
+        // Whatever is on the object hears about it while the object is still there to be looked at.
+        go.DestroyComponents();
+
+        go.Transform.Parent = null!;
         GameObjects.Remove(go);
+
+        if (go.scene == this)
+        {
+            go.scene = null;
+        }
 
         Light? light = go.GetComponent<Light>();
         
@@ -69,19 +124,72 @@ public class Scene : IDisposable
     }
 
     /// <summary>
-    /// Starts every script that is enabled: Start() runs once per script, the first time the scene is started with
-    /// it on. A script that is off is left for <see cref="Update"/>, which starts it on the frame it is switched
-    /// on — Unity's rule. A script the editor holds back (<see cref="Script.IsSuspended"/>) does start, because
-    /// this is also how a scene is started on its way into Play.
+    /// Takes an object and its children out of the scene without destroying them, which is how an object that asked
+    /// to outlive its scene is carried into the next one.
+    /// </summary>
+    /// <param name="go">The object to detach.</param>
+    internal void DetachGameObject(GameObject go)
+    {
+        foreach (Transform child in go.Transform.Children.ToList())
+        {
+            DetachGameObject(child.GameObject);
+        }
+
+        GameObjects.Remove(go);
+
+        if (go.GetComponent<Light>() is { } light)
+        {
+            Lights.Remove(light);
+        }
+
+        if (go.scene == this)
+        {
+            go.scene = null;
+        }
+
+        IsDirty = true;
+    }
+
+    /// <summary>
+    /// Starts the scene: wakes every component — <see cref="Component.Awake"/> for each, then
+    /// <see cref="Component.OnEnable"/> — and then runs each script's <see cref="Script.Start"/> once. A script that
+    /// is switched off is left for <see cref="Update"/>, which starts it on the frame it is switched on, before its
+    /// first tick. A script the editor holds back (<see cref="Script.IsSuspended"/>) does start, because this is
+    /// also how a scene is started on its way into Play.
     /// </summary>
     public void Start(PhysicsSystem physicsSystem, AudioSystem audioSystem)
     {
         Logger.Info($"[Scene] Starting scene '{Name}' with {GameObjects.Count} objects.");
         FindMainComponents();
         _physicsSystem = physicsSystem;
+        _clock = 0.0f;
 
-        foreach (GameObject gameObject in GameObjects)
+        physicsSystem.MakeActive();
+
+        // One handler per scene start, however often the scene is started.
+        physicsSystem.FixedStep -= OnFixedStep;
+        physicsSystem.FixedStep += OnFixedStep;
+
+        // Unity's order: everything wakes, everything switches on, then scripts start.
+        for (int index = 0; index < GameObjects.Count; index++)
         {
+            GameObject gameObject = GameObjects[index];
+
+            if (gameObject.ActiveInHierarchy)
+            {
+                gameObject.AwakeComponents();
+            }
+        }
+
+        for (int index = 0; index < GameObjects.Count; index++)
+        {
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
             foreach (Script script in gameObject.GetComponents<Script>())
             {
                 if (!script.Enabled || script.HasStarted)
@@ -144,55 +252,207 @@ public class Scene : IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs one frame: <see cref="Script.Update"/> on every active script, then the coroutines and timed calls that
+    /// are due, then <see cref="Script.LateUpdate"/>, then whatever was destroyed during the frame.
+    /// </summary>
+    /// <param name="deltaTime">Seconds since the previous frame, already scaled by <c>Time.TimeScale</c>.</param>
     public void Update(float deltaTime)
     {
-        _debugLogTimer += deltaTime;
-        bool shouldLog = _debugLogTimer >= 2.0f;
+        _clock += deltaTime;
 
-        if (shouldLog)
+        _debugLogTimer += deltaTime;
+
+        if (_debugLogTimer >= 2.0f)
         {
             _debugLogTimer = 0;
             // Logger.Info($"[Scene] Heartbeat - Updating {GameObjects.Count} objects.");
         }
 
-        foreach (GameObject gameObject in GameObjects)
+        int count = GameObjects.Count;
+
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
         {
-            foreach (Script script in gameObject.GetComponents<Script>())
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
             {
-                // Switched off by the author, or held back by the editor or after a throw: either way, no tick.
-                if (!script.Enabled || script.IsSuspended)
+                continue;
+            }
+
+            foreach (Script script in gameObject.GetComponents<Script>().ToList())
+            {
+                TickUpdate(gameObject, script, deltaTime);
+            }
+        }
+
+        AdvanceCoroutines(CoroutinePhase.Update, deltaTime);
+        AdvanceLateUpdate();
+        AdvanceCoroutines(CoroutinePhase.EndOfFrame, 0.0f);
+
+        PendingDestruction.Flush(deltaTime);
+    }
+
+    private void TickUpdate(GameObject gameObject, Script script, float deltaTime)
+    {
+        if (script.IsDestroyed || !script.Enabled || script.IsSuspended)
+        {
+            return;
+        }
+
+        // Switched on after the scene was started, or off when it was: Start() runs now, before the first tick. A
+        // scene that was never started — the desktop editor's edit mode — starts nothing here.
+        if (!script.HasStarted && _physicsSystem is { } physicsSystem)
+        {
+            if (!script.IsActive)
+            {
+                script.AwakeComponent();
+            }
+
+            if (!script.IsActive)
+            {
+                return;
+            }
+
+            StartScript(gameObject, script, physicsSystem);
+
+            if (script.IsSuspended || !script.IsActive)
+            {
+                return;
+            }
+        }
+
+        try
+        {
+            script.Update(deltaTime);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Scene] Exception in {script.GetType().Name}.Update() on '{gameObject.Name}': {ex.Message}");
+            script.IsSuspended = true;
+        }
+    }
+
+    private void AdvanceCoroutines(CoroutinePhase phase, float deltaTime)
+    {
+        int count = GameObjects.Count;
+
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (Script script in gameObject.GetComponents<Script>().ToList())
+            {
+                if (script.IsDestroyed || !script.IsActive || script.IsSuspended)
                 {
                     continue;
                 }
 
-                // Switched on after the scene was started, or off when it was: Start() runs now, before the first
-                // tick. A scene that was never started — the desktop editor's edit mode — starts nothing here.
-                if (!script.HasStarted && _physicsSystem is { } physicsSystem)
+                if (phase == CoroutinePhase.Update && deltaTime > 0.0f)
                 {
-                    StartScript(gameObject, script, physicsSystem);
-
-                    if (script.IsSuspended)
-                    {
-                        continue;
-                    }
-                }
-
-                if (shouldLog)
-                {
-                    // Logger.Info($"[Scene] Updating {script.GetType().Name} on {gameObject.Name}");
+                    script.TickInvokes(deltaTime);
                 }
 
                 try
                 {
-                    script.Update(deltaTime);
+                    script.TickCoroutines(phase, _clock);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.Update() on '{gameObject.Name}': {ex.Message}");
+                    Logger.Error(
+                        $"[Scene] Exception in a {script.GetType().Name} coroutine on '{gameObject.Name}': {ex.Message}");
                     script.IsSuspended = true;
                 }
             }
         }
+    }
+
+    private void AdvanceLateUpdate()
+    {
+        int count = GameObjects.Count;
+
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (Script script in gameObject.GetComponents<Script>().ToList())
+            {
+                if (script.IsDestroyed || !script.IsActive || script.IsSuspended)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    script.LateUpdate();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.LateUpdate() on '{gameObject.Name}': {ex.Message}");
+                    script.IsSuspended = true;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs <see cref="Script.FixedUpdate"/> on every active script, and the coroutines waiting for a step. The
+    /// physics world raises this before each step it simulates.
+    /// </summary>
+    /// <param name="step">The step's length in seconds.</param>
+    private void OnFixedStep(float step)
+    {
+        int count = GameObjects.Count;
+
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (Script script in gameObject.GetComponents<Script>().ToList())
+            {
+                if (script.IsDestroyed || !script.IsActive || script.IsSuspended)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    script.FixedUpdate();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in {script.GetType().Name}.FixedUpdate() on '{gameObject.Name}': {ex.Message}");
+                    script.IsSuspended = true;
+                }
+
+                try
+                {
+                    script.TickCoroutines(CoroutinePhase.Fixed, _clock);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in a {script.GetType().Name} coroutine on '{gameObject.Name}': {ex.Message}");
+                    script.IsSuspended = true;
+                }
+            }
+        }
+
+        _ = step;
     }
 
     public void FindMainComponents()
@@ -203,8 +463,14 @@ public class Scene : IDisposable
 
         foreach (GameObject gameObject in GameObjects)
         {
-            // A component the author switched off is no candidate: a disabled camera is not the main one, a
-            // disabled light does not light, and a disabled skybox lets the engine's own background show.
+            // An object that is switched off is no candidate at all, and neither is a component the author
+            // switched off: a disabled camera is not the main one, a disabled light does not light, and a
+            // disabled skybox lets the engine's own background show.
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
             MainCamera ??= gameObject.GetComponents<Camera>().FirstOrDefault(camera => camera.Enabled);
             Skybox ??= gameObject.GetComponents<Skybox>().FirstOrDefault(skybox => skybox.Enabled);
             Lights.AddRange(gameObject.GetComponents<Light>().Where(light => light.Enabled));
@@ -218,14 +484,35 @@ public class Scene : IDisposable
         GameObject go = new("Default Camera");
         go.Transform.Position = new(0, 1, 3);
         MainCamera = go.AddComponent(new Camera());
-        GameObjects.Add(go);
+        AddGameObject(go);
     }
 
     public void Dispose()
     {
-        foreach (GameObject gameObject in GameObjects)
+        if (_physicsSystem is { } physicsSystem)
         {
+            physicsSystem.FixedStep -= OnFixedStep;
+        }
+
+        foreach (GameObject gameObject in GameObjects.ToList())
+        {
+            gameObject.DestroyComponents();
             gameObject.GetComponent<MeshRenderer>()?.Dispose();
+
+            // Everything still in the scene goes with it: the objects are destroyed, not merely forgotten.
+            gameObject.IsDestroyed = true;
+            gameObject.scene = null;
+        }
+
+        GameObjects.Clear();
+        Lights.Clear();
+        MainCamera = null;
+        Skybox = null;
+        _physicsSystem = null;
+
+        if (ReferenceEquals(Active, this))
+        {
+            Active = null;
         }
     }
 }

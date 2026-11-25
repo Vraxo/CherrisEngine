@@ -4,20 +4,39 @@ using System.Numerics;
 
 namespace Overcore.Core.Physics;
 
+/// <summary>
+/// The settings a world keeps that the integrator reads every step. It is a shared object rather than a copy so
+/// that changing gravity takes effect on the next step instead of at the next restart.
+/// </summary>
+public sealed class SimulationState
+{
+    public SimulationState(Vector3 gravity) => Gravity = gravity;
+
+    /// <summary>Gravity, in metres per second squared.</summary>
+    public Vector3 Gravity { get; set; }
+}
+
 public struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
 {
-    private Vector3 _gravity;
+    private readonly SimulationState _settings;
     private readonly float _linearDamping;
     private readonly float _angularDamping;
 
-    // FIX: These properties must return values, not throw exceptions
     public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.ConserveMomentum;
-    public bool AllowSubstepsForUnconstrainedBodies => false;
-    public bool IntegrateVelocityForKinematics => false;  // Line 153 - was throwing NotImplementedException
 
-    public PoseIntegratorCallbacks(Vector3 gravity, float linearDamping = 0.03f, float angularDamping = 0.03f)
+    /// <summary>Off: a body that is free to move is never split into substeps, so one step is one step.</summary>
+    public bool AllowSubstepsForUnconstrainedBodies => false;
+
+    /// <summary>Off: a kinematic body is moved by its object, so the integrator leaves it alone.</summary>
+    public bool IntegrateVelocityForKinematics => false;
+
+    /// <summary>Creates the integrator that reads a world's gravity.</summary>
+    /// <param name="settings">The settings the world owns, read fresh on every step.</param>
+    /// <param name="linearDamping">How quickly linear motion bleeds away, per second.</param>
+    /// <param name="angularDamping">How quickly spin bleeds away, per second.</param>
+    public PoseIntegratorCallbacks(SimulationState settings, float linearDamping = 0.03f, float angularDamping = 0.03f)
     {
-        _gravity = gravity;
+        _settings = settings;
         _linearDamping = linearDamping;
         _angularDamping = angularDamping;
     }
@@ -25,15 +44,6 @@ public struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
     public void Initialize(Simulation simulation) { }
 
     public void PrepareForIntegration(float dt) { }
-
-    public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
-    {
-        // Use actual timestep, not hardcoded 0.016f
-        velocity.Linear += _gravity * 0.016f;  // Keep this for scalar version if called with fixed timestep
-
-        // Or if dt is available in this overload, use it:
-        // velocity.Linear += _gravity * dt;
-    }
 
     public void IntegrateVelocity(
         Vector<int> bodyIndices,
@@ -45,22 +55,19 @@ public struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
         Vector<float> dt,
         ref BodyVelocityWide velocity)
     {
-        // FIX: Scale gravity by actual dt for each lane
-        Vector<float> dtWide = dt;  // Use the passed dt parameter
+        // Gravity for each lane, scaled by that lane's own timestep.
+        Vector3Wide gravity;
+        gravity.X = new Vector<float>(_settings.Gravity.X) * dt;
+        gravity.Y = new Vector<float>(_settings.Gravity.Y) * dt;
+        gravity.Z = new Vector<float>(_settings.Gravity.Z) * dt;
 
-        // Apply gravity scaled by timestep
-        Vector3Wide gravityScaled;
-        gravityScaled.X = new Vector<float>(_gravity.X) * dtWide;
-        gravityScaled.Y = new Vector<float>(_gravity.Y) * dtWide;
-        gravityScaled.Z = new Vector<float>(_gravity.Z) * dtWide;
+        velocity.Linear.X += gravity.X;
+        velocity.Linear.Y += gravity.Y;
+        velocity.Linear.Z += gravity.Z;
 
-        velocity.Linear.X += gravityScaled.X;
-        velocity.Linear.Y += gravityScaled.Y;
-        velocity.Linear.Z += gravityScaled.Z;
-
-        // Apply damping (also scaled by dt)
-        Vector<float> linearDampingFactor = Vector<float>.One - (new Vector<float>(_linearDamping) * dtWide);
-        Vector<float> angularDampingFactor = Vector<float>.One - (new Vector<float>(_angularDamping) * dtWide);
+        // Damping, also scaled by dt.
+        Vector<float> linearDampingFactor = Vector<float>.One - (new Vector<float>(_linearDamping) * dt);
+        Vector<float> angularDampingFactor = Vector<float>.One - (new Vector<float>(_angularDamping) * dt);
 
         velocity.Linear.X *= linearDampingFactor;
         velocity.Linear.Y *= linearDampingFactor;

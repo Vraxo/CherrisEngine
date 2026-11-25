@@ -82,7 +82,10 @@ public abstract class Engine
 
         // Initialize systems that depend on the backend
         SceneLoader = new(ResourceManager);
-        SceneManager = new();
+        SceneManager = new()
+        {
+            SceneLoader = SceneLoader
+        };
 
         // Game loop is created last, as it depends on the Update/Draw methods
         _gameLoop = new(_gameWindow, Update, Draw);

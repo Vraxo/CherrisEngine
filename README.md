@@ -17,7 +17,7 @@ The solution (`Overcore.slnx`) contains four production projects under `src`:
 ## 🔧 Capabilities
 
 - **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. A partial `Veldrid` backend exists in `Overcore`, though both the editor and runtime currently target `OpenTK`.
-- **Physics**: 60 Hz fixed-timestep rigid-body dynamics via `BepuPhysics` v2 with static and dynamic bodies (`Box`, `Sphere`, and `Capsule` colliders).
+- **Physics**: 60 Hz fixed-timestep rigid-body dynamics via `BepuPhysics` v2. `BoxCollider`, `SphereCollider` and `CapsuleCollider` are components of their own (a collider with no `RigidBody` is a fixed shape); `OnCollision*`/`OnTrigger*` callbacks, `Physics.Raycast`/`SphereCast`/`Overlap*` queries, layer collision matrix, friction and bounciness. See [Physics & Runtime Lifecycle](docs/physics.md).
 - **Audio**: 3D positional audio via OpenAL (`AudioListener` and `AudioSource`) supporting 8/16-bit mono and stereo `.wav` files.
 - **Scripting**: Dynamic C# script compilation via Roslyn (`Microsoft.CodeAnalysis.CSharp`), plus inspector attributes (`[Range]`, `[ColorUsage]`, `[DragDropTarget]`, `[HideInInspector]`).
 - **Assets & Serialization**: Human-readable `.yaml` scenes and `.prefab` hierarchies, `.gltf`/`.glb` models (`SharpGLTF`), `.png`/`.jpg`/`.bmp`/`.tga` textures (`StbImageSharp`), and optional `CHPK` asset bundling (`Assets.pak`).
@@ -85,6 +85,31 @@ public class Spinner : Script
 
 Public read/write properties on C# components and scripts are automatically exposed in the Inspector and serialized to scene `.yaml` files when modified from their defaults.
 
+### Lifecycle and coroutines
+
+Scripts get the full Unity-shaped lifecycle — `Awake`, `OnEnable`, `Start`, `FixedUpdate`, `Update(deltaTime)`, `LateUpdate`, `OnDisable`, `OnDestroy` — plus the collision and trigger callbacks, `GameObject.Instantiate`/`Destroy`, `Time.deltaTime`/`timeScale`/`frameCount`, and coroutines with `WaitForSeconds`, `WaitForFixedUpdate`, `WaitUntil` and `Invoke`:
+
+```csharp
+public class Alarm : Script
+{
+    public override void Start()
+    {
+        StartCoroutine(Blink());
+        Invoke(nameof(Shout), 2f);
+    }
+
+    private IEnumerator Blink()
+    {
+        yield return new WaitForSeconds(0.5f);
+        yield return new WaitUntil(() => Input.WasKeyPressed(Key.Space));
+    }
+
+    public override void OnCollisionEnter(Collision collision) => Log($"hit {collision.GameObject?.Name}");
+
+    public void Shout() => Log("two seconds have gone by");
+}
+```
+
 ### Lua scripts
 
 Overcore also supports Lua through the MoonSharp interpreter. Put a `.lua` file in your project's `Scripts/` folder, add **Language Script** from the Inspector's **Add Component** menu, and set `Language` to `lua` and `Source Path` to a project-relative path such as `Scripts/move.lua`. Save the scene and enter Play mode:
@@ -134,6 +159,7 @@ Current limitations:
 
 ## 📚 Documentation
 
+- [Physics & Runtime Lifecycle](docs/physics.md): Colliders and rigid bodies, contact and trigger callbacks, physics queries and layers, the script lifecycle, `Time`, coroutines and `Invoke`, `Instantiate`/`Destroy`, and changing scenes with `SceneManager`.
 - [Color Consistency & Rendering Pipeline](docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Overcore/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
