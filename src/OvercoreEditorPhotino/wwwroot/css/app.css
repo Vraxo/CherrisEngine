@@ -615,25 +615,32 @@ body {
     color: var(--theme-foreground);
 }
 
-/* ---- menu bar (WindowMenuBar) ---- */
+/* ---- top chrome (WindowMenuBar + transport toolbar) ---- */
 
-.menubar {
-    position: relative;
+/* The menu bar and the transport strip are one piece of chrome and share one rhythm: the theme's control
+   height rows on the window background, 4px of air, and the same near-black seam under each strip. */
+.menubar,
+.editor-toolbar-strip {
     display: flex;
     align-items: center;
-    gap: 2px;
-    /* WindowMenuBar.MenuBar.Padding = FMargin(12, 4). */
     padding: 4px 12px;
-    /* WindowMenuBar.Background is unpainted, so the window background shows through. */
     background: var(--theme-background);
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     font-size: var(--theme-font-size);
     user-select: none;
+}
+
+.menubar {
+    position: relative;
+    gap: 2px;
     z-index: 30;
 }
 
 .menubar-brand {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    height: var(--theme-control-height);
+    padding: 0 8px;
     margin-right: 6px;
     border: none;
     border-radius: var(--theme-radius);
@@ -645,9 +652,11 @@ body {
     cursor: default;
 }
 
+/* Hover and an open menu title share the grey lift — the way Unity's held title stays filled — not the
+   selection blue the UE5 style set paints a SubMenuOpen title with. */
 .menubar-brand:hover,
-.menubar-button:hover {
-    /* WindowMenuBar.Button: hovered fill is Hover, hovered text is ForegroundHover. */
+.menubar-button:hover,
+.menubar-button.open {
     background: var(--theme-hover);
     color: var(--theme-foreground-hover);
 }
@@ -657,21 +666,19 @@ body {
 }
 
 /* MenuButton normal padding is FMargin(0, 2); the horizontal 8px is the spacing SMenuBar
-   leaves between titles, which the engine does not express as padding. */
+   leaves between titles, which the engine does not express as padding. The height is the theme's, so a
+   menu title and a transport chip are the same row. */
 .menubar-button {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    height: var(--theme-control-height);
+    padding: 0 8px;
     border: none;
     border-radius: var(--theme-radius);
     background: transparent;
     color: var(--theme-foreground);
     font: inherit;
     cursor: default;
-}
-
-/* WindowMenuBar.Button.SubMenuOpen */
-.menubar-button.open {
-    background: var(--theme-primary);
-    color: var(--theme-foreground-hover);
 }
 
 .menubar-spacer {
@@ -871,15 +878,11 @@ body {
 
 /* ---- transport toolbar ---- */
 
-/* Unity's transport: three flat rounded chips centred on the same background as the rest of the chrome,
-   each with a 1px near-black outline and a light grey glyph (#141414 bar, #505050 faces, #cccccc glyphs
-   sampled from Unity's editor). Play/pause, stop and restart stay the honest controls they were. */
+/* Unity's transport: three flat rounded chips centred on the shared top-strip rhythm (#505050 faces and
+   #cccccc glyphs sampled from Unity's editor). Play/pause, stop and restart stay the honest controls
+   they were. */
 .editor-toolbar-strip {
-    display: flex;
     justify-content: center;
-    padding: 4px 0;
-    background: var(--theme-background);
-    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
 }
 
 .transport {
