@@ -387,6 +387,9 @@ public class EditorCommandTests
 
         scene.Run(new UndoCommand());
         scene.Target.Name.Should().Be("Cube");
+
+        scene.Run(new RedoCommand());
+        scene.Target.Name.Should().Be("Crate", "Redo gives back the name Undo took");
     }
 
     [Fact]
@@ -639,6 +642,63 @@ public class EditorCommandTests
         scene.Run(new RedoCommand());
         scene.Live.GameObjects.Should().ContainSingle(gameObject => gameObject.Id == objectId)
             .Which.Name.Should().Be("GameObject", "Redo puts back the object Undo took, not a copy");
+    }
+
+    [Fact]
+    public void DeleteGameObject_TakesTheSubtreeOut_AndUndoPutsItBackWhereItWas()
+    {
+        Harness scene = new();
+
+        // Parent -> [Before, Cube -> Arm -> Hand, After]: the delete must take Cube's subtree and nothing
+        // else, and Undo must put every object back at its old index, the root among its old siblings.
+        GameObject parent = new("Parent");
+        GameObject before = new("Before");
+        GameObject after = new("After");
+        GameObject arm = new("Arm");
+        GameObject hand = new("Hand");
+
+        scene.Live.AddGameObject(parent);
+        scene.Live.AddGameObject(before);
+        scene.Live.AddGameObject(after);
+        scene.Live.AddGameObject(arm);
+        scene.Live.AddGameObject(hand);
+
+        before.Transform.Parent = parent.Transform;
+        scene.Target.Transform.Parent = parent.Transform;
+        after.Transform.Parent = parent.Transform;
+        arm.Transform.Parent = scene.Target.Transform;
+        hand.Transform.Parent = arm.Transform;
+        Light light = arm.AddComponent(new Light());
+        scene.Live.FindMainComponents();
+
+        GameObject[] wasThere = [.. scene.Live.GameObjects];
+
+        scene.Run(new DeleteGameObjectCommand(scene.Target.Id, "Cube")).Should().Contain("deleted Cube");
+        scene.Live.GameObjects.Should().Equal(new[] { parent, before, after },
+            "the subtree leaves together and nothing with it");
+        scene.Live.Lights.Should().BeEmpty("the light left with its object");
+        scene.Target.Transform.Parent.Should().BeNull();
+
+        scene.Run(new UndoCommand());
+        scene.Live.GameObjects.Should().Equal(wasThere, "every object comes back at the index it left");
+        scene.Live.GameObjects.Should().ContainSingle(gameObject => gameObject.Name == "Arm")
+            .Which.Should().BeSameAs(arm, "Undo puts back the object the delete took, not a copy");
+        parent.Transform.Children.Should().Equal(before.Transform, scene.Target.Transform, after.Transform);
+        scene.Live.Lights.Should().ContainSingle().Which.Should().BeSameAs(light);
+
+        scene.Run(new RedoCommand());
+        scene.Live.GameObjects.Should().Equal(new[] { parent, before, after });
+    }
+
+    [Fact]
+    public void DeleteGameObject_ReportsAnObjectThatIsGone()
+    {
+        Harness scene = new();
+
+        scene.Run(new DeleteGameObjectCommand(Guid.NewGuid(), "Ghost"))
+            .Should().Contain("could not delete Ghost");
+
+        scene.History.CanUndo.Should().BeFalse("a delete that took nothing is not a step to take back");
     }
 
     /// <summary>A scene, an object in it, and one dispatcher whose history the commands record into.</summary>

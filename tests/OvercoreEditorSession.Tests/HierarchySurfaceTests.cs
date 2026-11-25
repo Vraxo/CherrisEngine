@@ -116,6 +116,35 @@ public class HierarchySurfaceTests
             "an empty object gets Unity's plain cube");
     }
 
+    [Fact]
+    public void TheContextMenu_DoesWhatUnitysMenuDoes()
+    {
+        string markup = ReadHierarchy();
+
+        markup.Should().Contain("@oncontextmenu=\"(MouseEventArgs args) => OpenRowMenu(args, row)\"",
+            "right-clicking a row opens the menu on it");
+        markup.Should().Contain("OpenTreeMenu(args)",
+            "right-clicking empty space or the scene row offers creating, as Unity does");
+        markup.Should().Contain("class=\"menu-popup cb-menu\"",
+            "the menu is the same inline menu the content browser gets");
+        markup.Should().Contain("<span>Create Empty GameObject</span>");
+        markup.Should().Contain("<span>Rename</span>");
+        markup.Should().Contain("<span>Delete</span>");
+        markup.Should().Contain("Host.RenameObject(",
+            "Rename turns the row's label into a field and renames for real");
+        markup.Should().Contain("Host.DeleteGameObject(",
+            "Delete is a real step: the row and its subtree leave the scene, and Undo brings them back");
+    }
+
+    [Fact]
+    public void TheRenameField_TakesTheLabelsPlace()
+    {
+        string rename = Rule("hier-rename");
+
+        rename.Should().Contain("height: calc(var(--hier-row-height) - 4px)",
+            "the field is the row's own height, not a bigger box");
+    }
+
     private static string Rule(string selector)
     {
         // Comments are stripped first: they would otherwise attach to the selector printed in front of them.

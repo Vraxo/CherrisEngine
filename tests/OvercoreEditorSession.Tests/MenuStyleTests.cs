@@ -19,11 +19,12 @@ public class MenuStyleTests
         popup.Success.Should().BeTrue();
         popup.Groups[1].Value.Should().Contain("background: var(--theme-background);");
         popup.Groups[1].Value.Should().Contain("border: var(--theme-border-width) solid var(--theme-dropdown-outline);");
+        popup.Groups[1].Value.Should().Contain("padding: 4px 0;");
 
         Match item = Regex.Match(css, @"(?m)^\.menu-item\s*\{([^}]*)\}");
         item.Success.Should().BeTrue();
         item.Groups[1].Value.Should().Contain("color: var(--theme-foreground);");
-        item.Groups[1].Value.Should().Contain("padding: 6px 16px;");
+        item.Groups[1].Value.Should().Contain("padding: 3px 12px;");
 
         Match hover = Regex.Match(css, @"(?m)^\.menu-item:hover:not\(:disabled\)\s*\{([^}]*)\}");
         hover.Success.Should().BeTrue();
@@ -37,6 +38,7 @@ public class MenuStyleTests
         Match separator = Regex.Match(css, @"(?m)^\.menu-separator\s*\{([^}]*)\}");
         separator.Success.Should().BeTrue();
         separator.Groups[1].Value.Should().Contain("background: var(--theme-dropdown-outline);");
+        separator.Groups[1].Value.Should().Contain("margin: 3px 12px;");
 
         Match shortcut = Regex.Match(css, @"(?m)^\.menu-shortcut\s*\{([^}]*)\}");
         shortcut.Success.Should().BeTrue();

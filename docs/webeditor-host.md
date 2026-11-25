@@ -228,9 +228,12 @@ window instead: a create button and search over Unity's visibility and scene-pic
 own name as a bold header row with its foldout, one icon per object, and zebra rows that keep striping into
 the empty space below the list. The colours are Unity's dark hierarchy sampled and remapped onto the same
 `--theme-*` roles. The controls are honest about scope: the create button really adds an empty GameObject
-(one undoable step, selected the moment it appears), and the eye appears only on rows that draw — it
-switches that object's MeshRenderer off and on. The picking column, the header kebab, the toolbar's
-multi-scene glyph and the search arrow are chrome, `aria-hidden` like Unity's would be inert.
+(one undoable step, selected the moment it appears), the eye appears only on rows that draw — it
+switches that object's MeshRenderer off and on, and the right-click menu is the short one Unity gives —
+Create Empty GameObject, Rename, Delete — where Rename turns the row's label into a field and Delete takes
+the row and its subtree out of the scene in one undoable step that puts everything back where it was. The
+picking column, the header kebab, the toolbar's multi-scene glyph and the search arrow are chrome,
+`aria-hidden` like Unity's would be inert.
 
 The transport chips are Unity's too, sampled the same way: flat rounded rectangles in Unity's raised button
 grey with a near-black outline and light grey glyphs, lightening under the pointer instead of turning a

@@ -709,7 +709,7 @@ body {
     left: 0;
     z-index: 50;
     min-width: 210px;
-    padding: 8px 0;
+    padding: 4px 0;
     background: var(--theme-background);
     border: var(--theme-border-width) solid var(--theme-dropdown-outline);
     border-radius: 0;
@@ -731,15 +731,15 @@ body {
 }
 
 /* Unity-style menu item: Foreground text on the dark menu surface, a mid-grey Header bar on hover
-   (#3c3c3c sampled; Unity's Header is exactly that), and muted AccentGray when disabled. Spacious vertical
-   padding, like Unity's, instead of UE5's tight Menu.Block padding. */
+   (#3c3c3c sampled; Unity's Header is exactly that), and muted AccentGray when disabled. The rows are
+   tight, the way a desktop menu packs its list — one click target per line, no wasted height. */
 .menu-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 24px;
     width: 100%;
-    padding: 6px 16px;
+    padding: 3px 12px;
     border: none;
     background: transparent;
     color: var(--theme-foreground);
@@ -872,7 +872,7 @@ body {
 /* A hairline visible on the dark menu surface (DropdownOutline; #373737 sampled from Unity's menu). */
 .menu-separator {
     height: 1px;
-    margin: 8px 12px;
+    margin: 3px 12px;
     background: var(--theme-dropdown-outline);
 }
 
@@ -1563,6 +1563,14 @@ span.panel-tab {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* The context menu's Rename turns the label into a field: the row's own height, taking the label's place
+   and the rest of the row's width. */
+.hier-rename {
+    flex: 1;
+    min-width: 0;
+    height: calc(var(--hier-row-height) - 4px);
 }
 
 .hier-empty {
