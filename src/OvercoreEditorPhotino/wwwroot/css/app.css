@@ -1015,13 +1015,14 @@ body.dock-dragging-y * {
     overflow: hidden;
 }
 
-/* The tab well is Background; tabs themselves are unpainted until hovered. */
+/* The tab well is the window background. There is deliberately no divider line under the tab text: the
+   active tab paints the panel's own surface, so tab and panel read as one piece (sampled from Unity's
+   docked window tabs: #141414 well, #333333 face = the panel below it). */
 .panel-tabstrip {
     display: flex;
     align-items: stretch;
-    min-height: 26px;
+    min-height: 28px;
     background: var(--theme-background);
-    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
     user-select: none;
 }
 
@@ -1029,10 +1030,10 @@ body.dock-dragging-y * {
     position: relative;
     display: inline-flex;
     align-items: center;
-    padding: 3px 10px 4px;
+    gap: 6px;
+    padding: 0 14px;
     border: none;
-    /* Docking.Tab.InactiveTabSeparator is Hover. */
-    border-right: var(--theme-border-width) solid var(--theme-hover);
+    border-radius: var(--theme-radius) var(--theme-radius) 0 0;
     background: transparent;
     color: var(--theme-foreground);
     font: inherit;
@@ -1040,28 +1041,28 @@ body.dock-dragging-y * {
     cursor: default;
 }
 
-/* A hovered tab is Panel at 80% opacity over the well. */
-.panel-tab:hover {
-    background: rgba(36, 36, 36, 0.8);
+/* Only the tabs that switch panels are controls; they lift to the dock-tab hover role. */
+button.panel-tab:hover {
+    background: var(--theme-tab-hover);
     color: var(--theme-foreground-hover);
 }
 
-/* The foreground/active tab brush is Panel, its text ForegroundHover. */
+/* The active tab sits on the panel's own surface, so its face flows into the panel below with no seam. */
 .panel-tab.active,
 .panel-tab.active:hover {
     background: var(--theme-panel);
     color: var(--theme-foreground-hover);
 }
 
-/* A panel with a single tab (Hierarchy, Inspector) shows a label, not a control, and no trailing separator. */
+/* A panel with a single tab (Hierarchy, Inspector) shows a label, not a control. */
 span.panel-tab {
     cursor: default;
-    border-right-color: transparent;
 }
 
-span.panel-tab:hover {
-    background: transparent;
-    color: var(--theme-foreground-hover);
+/* Tab icons are chrome — the reference's inspector dot and bulb — and read at the label's brightness. */
+.panel-tab-icon {
+    font-size: 12px;
+    line-height: 1;
 }
 
 .panel-tab-spacer {
