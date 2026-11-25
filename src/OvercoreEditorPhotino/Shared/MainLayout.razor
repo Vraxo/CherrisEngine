@@ -1,0 +1,74 @@
+@inherits LayoutComponentBase
+@inject EditorHostService Host
+@inject ThemeService Themes
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* The editor page draws its own chrome (menu bar, toolbar, dockspace) so the shell header is only for
+   the launcher; anything above the menu bar would break the ImGui layout it replicates. *@
+<div class="app-shell">
+    @if (!IsEditorRoute)
+    {
+        <header class="app-header">
+            <span class="app-title">Overcore Editor</span>
+
+            @if (Host.State is EditorSessionState.Running or EditorSessionState.Starting)
+            {
+                <span class="app-project">@Host.SessionName</span>
+            }
+
+            <span class="app-badge">PhotinoX · Blazor</span>
+        </header>
+    }
+
+    <main class="app-content">
+        @Body
+    </main>
+</div>
+
+@code {
+    private bool IsEditorRoute
+    {
+        get
+        {
+            string path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+
+            return path.EndsWith("/editor", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    // The stylesheet ships the default theme so the first frame is already styled; this swaps in whichever
+    // theme the editor has selected, for the launcher and the editor alike.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await Themes.ApplyAsync(JS);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window went away before the first render finished.
+        }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

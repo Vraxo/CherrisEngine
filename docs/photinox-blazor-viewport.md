@@ -1,10 +1,10 @@
 # Hosting the game view in a webview (PhotinoX / Blazor)
 
-This note explains the off-screen render path in `src/Cherris/Rendering/Headless/` and the contract a
+This note explains the off-screen render path in `src/Overcore/Rendering/Headless/` and the contract a
 webview-hosted editor (or a remote viewer) has to implement to show the game view.
 
-Both halves exist: [`src/CherrisEditorPhotino`](webeditor-host.md) is the PhotinoX Blazor editor window, and
-[`src/CherrisEditorSession`](webeditor-host.md) is the library it drives — the window and the webview belong to the
+Both halves exist: [`src/OvercoreEditorPhotino`](webeditor-host.md) is the PhotinoX Blazor editor window, and
+[`src/OvercoreEditorSession`](webeditor-host.md) is the library it drives — the window and the webview belong to the
 shell, the graphics context, render thread and frame transport belong to the session.
 The answer to "can the viewport work in a Blazor UI?" is **yes, as a streamed image** — a webview cannot
 host a native OpenGL surface, so the viewport becomes a pixel stream instead of a control.
@@ -16,7 +16,7 @@ Linux). The webview owns the whole window surface and sits above it in the compo
 exposes no API to parent a native `OpenTK.GameWindow` inside or below it. There is therefore no way to
 put a GL surface in a `<div>`.
 
-Cherris is already shaped for the alternative: the scene is rendered into an off-screen framebuffer and
+Overcore is already shaped for the alternative: the scene is rendered into an off-screen framebuffer and
 the editor only blits that texture into ImGui (`OpenTKRenderer` → `OpenGLPostProcessor.FinalSceneTexture`
 → `ViewportSurface.Draw`). Replacing `ImGui.Image` with a canvas upload is the same data taking a
 different route.
@@ -25,12 +25,12 @@ different route.
 
 | Type | File | Role |
 | :--- | :--- | :--- |
-| `HeadlessBackend` | `src/Cherris/Rendering/Headless/HeadlessBackend.cs` | `IRenderingInterface` with a hidden GL context, a `HeadlessGameWindow`, and an `OpenTKRenderer` that has no UI controller. |
-| `HeadlessGameWindow` | `src/Cherris/Rendering/Headless/HeadlessGameWindow.cs` | `IGameWindow` stand-in: settable size, no-op events, and frame pacing in place of vsync. |
-| `HeadlessInput` | `src/Cherris/Rendering/Headless/HeadlessInput.cs` | Thread-safe queue that applies browser input to the engine's static `Input` at frame start. |
-| `SceneFrameCapture` | `src/Cherris/Rendering/Headless/SceneFrameCapture.cs` | Double-buffered pixel-pack readback of the final scene texture into a managed RGBA8 buffer. |
+| `HeadlessBackend` | `src/Overcore/Rendering/Headless/HeadlessBackend.cs` | `IRenderingInterface` with a hidden GL context, a `HeadlessGameWindow`, and an `OpenTKRenderer` that has no UI controller. |
+| `HeadlessGameWindow` | `src/Overcore/Rendering/Headless/HeadlessGameWindow.cs` | `IGameWindow` stand-in: settable size, no-op events, and frame pacing in place of vsync. |
+| `HeadlessInput` | `src/Overcore/Rendering/Headless/HeadlessInput.cs` | Thread-safe queue that applies browser input to the engine's static `Input` at frame start. |
+| `SceneFrameCapture` | `src/Overcore/Rendering/Headless/SceneFrameCapture.cs` | Double-buffered pixel-pack readback of the final scene texture into a managed RGBA8 buffer. |
 
-Nothing in `src/CherrisEditor` or `src/CherrisRuntime` changes. `Engine` gained a protected constructor
+Nothing in `src/OvercoreEditor` or `src/OvercoreRuntime` changes. `Engine` gained a protected constructor
 that accepts an `IRenderingInterface`, so a host can pass a `HeadlessBackend`:
 
 ```csharp
@@ -40,8 +40,8 @@ protected Engine(string windowTitle, bool startWithMouseLocked, IRenderingInterf
 ## Frame contract
 
 The host owns the loop, because the webview's message loop owns the UI thread. In
-`src/CherrisEditorPhotino` the native Photino message loop runs on the `[STAThread]` main thread and the
-engine runs on a dedicated "Cherris Engine" thread. Follow this order every frame:
+`src/OvercoreEditorPhotino` the native Photino message loop runs on the `[STAThread]` main thread and the
+engine runs on a dedicated "Overcore Engine" thread. Follow this order every frame:
 
 1. `backend.SetViewportSize(width, height)` — device pixels, once per frame **before** rendering. The
    renderer only takes its off-screen path (`isRuntimeMode == false`, no blit to the window) on frames
@@ -100,7 +100,7 @@ Gameplay code that sets `Input.IsMouseLocked = true` raises `HeadlessGameWindow.
 render thread; the host marshals that to `element.requestPointerLock()` (and handles the browser's own
 unlock, e.g. Escape, by calling `HeadlessInput.SetMouseLocked(false)`).
 
-Keyboard mapping is the host's job: map `KeyboardEvent.code` (layout independent) onto `Cherris.Key` and
+Keyboard mapping is the host's job: map `KeyboardEvent.code` (layout independent) onto `Overcore.Key` and
 use `Key.Unknown` for anything unmapped.
 
 ## Host wiring example
@@ -111,7 +111,7 @@ public sealed class EditorSession : Engine
     public HeadlessBackend Backend { get; }
 
     public EditorSession(HeadlessBackend backend)
-        : base("Cherris", startWithMouseLocked: false, backend)
+        : base("Overcore", startWithMouseLocked: false, backend)
     {
         Backend = backend;
         Exposure = 0.5f;
@@ -157,7 +157,7 @@ function drawFrame(bytes, width, height) {
 
 - The host executable needs `EditorResources/` next to it, because shaders are loaded from
   `<BaseDirectory>/EditorResources/Shaders/...` (`EditorResources.Find`). `GameBuilder` already copies that
-  folder for exported builds; a webview editor project has to do the same (`Content Include="..\..\src\CherrisEditor\EditorResources\**\*"` with `CopyToOutputDirectory`).
+  folder for exported builds; a webview editor project has to do the same (`Content Include="..\..\src\OvercoreEditor\EditorResources\**\*"` with `CopyToOutputDirectory`).
 - Use `PhotinoX.Blazor` (5.5.0 at the time of writing). It targets `net8.0`/`net9.0`/`net10.0`/`net11.0`
   and brings `PhotinoX.App`, `PhotinoX`, `PhotinoX.Native` and `Microsoft.AspNetCore.Components.WebView`
   with it. The root namespace is still `Photino.Blazor`, and the host page boots with

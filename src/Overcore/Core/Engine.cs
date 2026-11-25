@@ -1,0 +1,214 @@
+﻿using Overcore.Components;
+using Overcore.Core.Logging;
+using Overcore.Rendering;
+using Overcore.Rendering.OpenTK;
+using Overcore.RenderingInterface;
+using Overcore.Serialization;
+using System.Numerics;
+using System.Reflection;
+
+namespace Overcore.Core;
+
+public abstract class Engine
+{
+    public Action<float>? OnDrawUI;
+    public float Exposure { get; set; } = 1.0f;
+
+    public readonly IResourceManager ResourceManager;
+    public readonly SceneLoader SceneLoader;
+    public readonly SceneManager SceneManager;
+    public IRenderer Renderer { get; }
+
+    protected GameObject? SelectedGameObject { get; set; }
+    protected readonly IRenderingInterface _backend;
+
+    // Default to true so runtimes work out-of-the-box. 
+    // The Editor will set this to false to manage the update loop manually.
+    protected bool AutoUpdateScene { get; set; } = true;
+
+    private readonly IGameWindow _gameWindow;
+    private readonly GameLoop _gameLoop;
+
+    private float _lastDeltaTime;
+    private float _snapshotTimer;
+    private const float SnapshotInterval = 1.0f;
+    private bool _snapshotsEnabled;
+
+    public Ray CreateRayFromMouse()
+    {
+        Camera camera = SceneManager.MainCamera;
+
+        if (camera is null)
+        {
+            return new();
+        }
+
+        float x = (2.0f * Input.MousePosition.X / _gameWindow.Width) - 1.0f;
+        float y = 1.0f - (2.0f * Input.MousePosition.Y / _gameWindow.Height);
+        Vector4 ndc = new(x, y, 1.0f, 1.0f);
+
+        _ = Matrix4x4.Invert(camera.GetProjectionMatrix(_gameWindow.Width / _gameWindow.Height), out var invProjection);
+
+        Vector4 viewRay = Vector4.Transform(ndc, invProjection);
+        viewRay.Z = -1.0f;
+        viewRay.W = 0.0f;
+
+        _ = Matrix4x4.Invert(camera.GetViewMatrix(), out var invView);
+        Vector4 worldRay = Vector4.Transform(viewRay, invView);
+
+        Vector3 rayDir = Vector3.Normalize(new(worldRay.X, worldRay.Y, worldRay.Z));
+        Vector3 rayOrigin = camera.GameObject.Transform.Position;
+
+        return new(rayOrigin, rayDir);
+    }
+
+    protected Engine(string windowTitle, bool startWithMouseLocked, GraphicsAPI api)
+        : this(windowTitle, startWithMouseLocked, CreateBackend(api))
+    {
+    }
+
+    /// <summary>
+    /// Initializes the engine with a caller-supplied rendering backend, for hosts that do not render
+    /// into a native window (see <c>Overcore.Rendering.Headless</c>).
+    /// </summary>
+    protected Engine(string windowTitle, bool startWithMouseLocked, IRenderingInterface backend)
+    {
+        _backend = backend;
+        _backend.Initialize(windowTitle, 1920, 1080, startWithMouseLocked);
+
+        _gameWindow = _backend.GameWindow;
+        ResourceManager = _backend.ResourceManager;
+        Renderer = _backend.Renderer;
+
+        // Initialize systems that depend on the backend
+        SceneLoader = new(ResourceManager);
+        SceneManager = new();
+
+        // Game loop is created last, as it depends on the Update/Draw methods
+        _gameLoop = new(_gameWindow, Update, Draw);
+
+        // Subscribe to resize event
+        _gameWindow.Resized += OnWindowResized;
+
+        ComponentDeserializer.RegisterFactories(SceneLoader, ResourceManager);
+        LoadRuntimeScripts();
+    }
+
+    protected virtual void Update(float deltaTime)
+    {
+        _lastDeltaTime = deltaTime;
+
+        _backend.UIController?.Update(deltaTime);
+        OnDrawUI?.Invoke(deltaTime);
+
+        if (Input.WasKeyPressed(Key.F12))
+        {
+            _snapshotsEnabled = !_snapshotsEnabled;
+
+            Logger.Info(
+                $"[Engine] Snapshots {(_snapshotsEnabled ? "enabled" : "disabled")}. " +
+                $"Press F12 to toggle.");
+        }
+
+        if (AutoUpdateScene)
+        {
+            SceneManager.Update(deltaTime);
+        }
+    }
+
+    protected virtual void OnStart() { }
+
+    protected abstract void LoadContent();
+
+    private static IRenderingInterface CreateBackend(GraphicsAPI api)
+    {
+        return api switch
+        {
+            GraphicsAPI.Veldrid => new VeldridBackend(),
+            GraphicsAPI.OpenTK => new OpenTKBackend(),
+            _ => throw new ArgumentOutOfRangeException(nameof(api), api, null),
+        };
+    }
+
+    private void LoadRuntimeScripts()
+    {
+        string dllPath = Path.Combine(AppContext.BaseDirectory, "GameScripts.dll");
+        if (!File.Exists(dllPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Assembly asm = Assembly.LoadFrom(dllPath);
+            var scriptTypes = asm.GetTypes().Where(t => typeof(Script).IsAssignableFrom(t) && !t.IsAbstract);
+            int count = 0;
+
+            foreach (var type in scriptTypes)
+            {
+                SceneLoader.RegisterComponentFactory(type.Name, _ => (Component)Activator.CreateInstance(type)!);
+                count++;
+            }
+
+            Logger.Info($"[Engine] Automatically loaded {count} scripts from GameScripts.dll");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Engine] Failed to load runtime scripts: {ex.Message}");
+        }
+    }
+
+    public void Run()
+    {
+        LoadContent();
+        Start();
+        OnStart();
+        _gameLoop.Run();
+        DisposeResources();
+    }
+
+    private void Start()
+    {
+        SceneManager.Start();
+    }
+
+    private void Draw()
+    {
+        if (_snapshotsEnabled)
+        {
+            _snapshotTimer += _lastDeltaTime;
+
+            if (_snapshotTimer >= SnapshotInterval)
+            {
+                _snapshotTimer -= SnapshotInterval;
+                string path = $"Snapshots/snap_{DateTime.Now:yyyyMMdd_HHmmss_fff}.bmp";
+
+                Renderer.RequestSnapshot(path);
+            }
+        }
+
+        Renderer.RenderFrame(
+            SceneManager.MainCamera,
+            SceneManager.Skybox,
+            SceneManager.GameObjects,
+            SceneManager.Lights,
+            SelectedGameObject,
+            _gameWindow.Width,
+            _gameWindow.Height,
+            Exposure);
+
+        Renderer.ProcessSnapshot();
+        _gameWindow.SwapBuffers();
+    }
+
+    private void OnWindowResized()
+    {
+        Renderer.OnWindowResized();
+    }
+
+    private void DisposeResources()
+    {
+        SceneManager.Dispose();
+        _backend.Dispose();
+    }
+}

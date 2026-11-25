@@ -1,6 +1,6 @@
-// A Cherris editor theme. Copy this file to
-//   %APPDATA%/CherrisEditor/Themes/my-theme.json      (Windows)
-//   ~/.config/CherrisEditor/Themes/my-theme.json      (Linux, macOS)
+// A Overcore editor theme. Copy this file to
+//   %APPDATA%/OvercoreEditor/Themes/my-theme.json      (Windows)
+//   ~/.config/OvercoreEditor/Themes/my-theme.json      (Linux, macOS)
 // then choose Theme > Reload Themes in either editor.
 //
 // Rules, all enforced when the file is read:

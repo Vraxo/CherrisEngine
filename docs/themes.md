@@ -12,10 +12,10 @@ a theme swappable at runtime.
 | `ue5-starship` | Unreal Engine 5 | The engine's own defaults — `StyleColors.cpp` (`USlateThemeManager::InitalizeDefaults`), `StarshipCoreStyle.cpp` and `CoreStyle.h`. See [ue5-theme.md](ue5-theme.md). This is the default. |
 | `unity-dark` | Unity (dark) | The dark column of Unity's published `--unity-colors-*` design system ([foundations.unity.com](https://www.foundations.unity.com/fundamentals/color-palette)) and its Inter type scale. |
 
-Both are defined in code (`src/Cherris/UI/Themes/Ue5StarshipTheme.cs`, `UnityDarkTheme.cs`) and also shipped as
-JSON (`src/CherrisEditor/EditorResources/Themes/*.json`), so a theme can be compared, copied and retuned
+Both are defined in code (`src/Overcore/UI/Themes/Ue5StarshipTheme.cs`, `UnityDarkTheme.cs`) and also shipped as
+JSON (`src/OvercoreEditor/EditorResources/Themes/*.json`), so a theme can be compared, copied and retuned
 without touching the editor. A test keeps the two in step
-(`tests/CherrisEditorSession.Tests/ThemeCatalogTests.cs`, `ShippedFiles_MatchTheBuiltInThemes`).
+(`tests/OvercoreEditorSession.Tests/ThemeCatalogTests.cs`, `ShippedFiles_MatchTheBuiltInThemes`).
 
 ### How exact the Unity theme is
 
@@ -45,7 +45,7 @@ other opens with:
 
 The item with a bullet is the applied theme; entries marked *file* were loaded from a JSON file rather than
 from code; the tooltip is the theme's provenance. The selection is stored in
-`%APPDATA%/CherrisEditor/theme.json` (`~/.config/CherrisEditor/theme.json` on Linux and macOS) as
+`%APPDATA%/OvercoreEditor/theme.json` (`~/.config/OvercoreEditor/theme.json` on Linux and macOS) as
 `{ "theme": "unity-dark" }`. A saved id that no longer exists falls back to the default theme.
 
 ## Adding a theme
@@ -55,7 +55,7 @@ Drop a JSON file in either folder:
 | Folder | Purpose |
 | :--- | :--- |
 | `<editor output>/EditorResources/Themes` | The themes that ship. |
-| `%APPDATA%/CherrisEditor/Themes` (`~/.config/CherrisEditor/Themes`) | Yours. Scanned after the shipped folder, so it wins. |
+| `%APPDATA%/OvercoreEditor/Themes` (`~/.config/OvercoreEditor/Themes`) | Yours. Scanned after the shipped folder, so it wins. |
 
 Then pick **Theme > Reload Themes**; no restart and no rebuild. [theme-template.json](theme-template.json) is a
 complete, valid theme (it is the UE5 one, with a placeholder id) to copy and edit.
@@ -94,8 +94,8 @@ Notes worth knowing:
 
 | Front end | Applied by | Effect |
 | :--- | :--- | :--- |
-| `src/CherrisEditor` (ImGui) | `ImGuiTheme.Apply(EditorTheme)` | Every `ImGuiCol`, frame padding and rounding, and `io.FontDefault` for the theme's face. |
-| `src/CherrisEditorPhotino` (Blazor) | `EditorTheme.ToCssVariables()` → `cherrisTheme.apply()` | CSS custom properties on `document.documentElement`. |
+| `src/OvercoreEditor` (ImGui) | `ImGuiTheme.Apply(EditorTheme)` | Every `ImGuiCol`, frame padding and rounding, and `io.FontDefault` for the theme's face. |
+| `src/OvercoreEditorPhotino` (Blazor) | `EditorTheme.ToCssVariables()` → `overcoreTheme.apply()` | CSS custom properties on `document.documentElement`. |
 
 The stylesheet's `:root` block holds the default theme's values as a fallback, so the window is styled before
 Blazor starts; `wwwroot/js/theme.js` then overrides them, and `index.html` replays the last applied set from
@@ -114,6 +114,6 @@ The variables are the 48 color roles as `--theme-<role>` (e.g. `--theme-panel`, 
 ## Adding a role
 
 Roles are the contract between the two front ends, so adding one touches, in order: `ThemeRoles` (constant and
-`All`), both themes in `src/Cherris/UI/Themes`, the mapping in `ImGuiTheme` if ImGui has an equivalent, the
+`All`), both themes in `src/Overcore/UI/Themes`, the mapping in `ImGuiTheme` if ImGui has an equivalent, the
 stylesheet default in `app.css`, and both shipped JSON files. `ThemeCatalogTests` fails until every theme fills
 the new role, which is the point — a role with no value in a theme is a bug, not a fallback.
