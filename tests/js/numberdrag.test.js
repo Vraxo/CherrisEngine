@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const source = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'src', 'CherrisEditorPhotino', 'wwwroot', 'js', 'numberdrag.js'),
+    path.join(__dirname, '..', '..', 'src', 'OvercoreEditorPhotino', 'wwwroot', 'js', 'numberdrag.js'),
     'utf8');
 
 let documentHandlers = {};
@@ -38,7 +38,7 @@ function load() {
     // eslint-disable-next-line no-eval -- the script is an IIFE that installs one global, as in the browser.
     eval(source);
 
-    return window.cherrisNumberDrag;
+    return window.overcoreNumberDrag;
 }
 
 /** An `<input class="drag-number">` with the data attributes the panel renders. */

@@ -1,0 +1,19 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+  </Folder>
+  <Project Path="src/Overcore/Overcore.csproj" />
+  <Project Path="tests/Overcore.Tests/Overcore.Tests.csproj" />
+  <Project Path="src/OvercoreEditor/OvercoreEditor.csproj" />
+  <Project Path="tests/OvercoreEditor.Tests/OvercoreEditor.Tests.csproj" />
+  <Project Path="src/OvercoreRuntime/OvercoreRuntime.csproj" />
+  <Project Path="src/OvercoreEditorSession/OvercoreEditorSession.csproj" />
+  <Project Path="tools/OvercoreFrameViewer/OvercoreFrameViewer.csproj" />
+  <Project Path="src/OvercoreEditorPhotino/OvercoreEditorPhotino.csproj" />
+  <Project Path="tests/OvercoreEditorSession.Tests/OvercoreEditorSession.Tests.csproj" />
+</Solution>

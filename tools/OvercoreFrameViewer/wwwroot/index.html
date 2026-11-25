@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Overcore Editor (web)</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <main id="stage">
+        <canvas id="viewport" tabindex="0"></canvas>
+        <div id="overlay" hidden></div>
+    </main>
+    <footer>
+        <span id="status">connecting&hellip;</span>
+        <span class="hint">
+            Right-drag captures the mouse &middot; <kbd>Esc</kbd> releases it &middot; keyboard and wheel are
+            forwarded to the engine
+        </span>
+    </footer>
+    <script src="app.js"></script>
+</body>
+</html>

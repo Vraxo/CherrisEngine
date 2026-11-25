@@ -1,15 +1,15 @@
 # Web / PhotinoX editor host
 
 The editor has a second front end next to the ImGui window: a **PhotinoX Blazor** desktop app that renders
-the game view off-screen and shows it inside a native webview window. It is additive — `src/CherrisEditor`,
-`src/CherrisRuntime` and the engine's ImGui path are untouched.
+the game view off-screen and shows it inside a native webview window. It is additive — `src/OvercoreEditor`,
+`src/OvercoreRuntime` and the engine's ImGui path are untouched.
 
 | Project | What it is |
 | :--- | :--- |
-| `src/CherrisEditorPhotino` | The editor window. `PhotinoX.Blazor` host, Blazor components, viewport canvas, scene panel. |
-| `src/CherrisEditorSession` | The session it drives, as a library: graphics context and render thread, frame pipe, wire protocol, input bridge, scene commands, script compilation. It has no webview and no window of its own. |
-| `tools/CherrisFrameViewer` | The same session in a terminal, for iterating on the protocol or on a machine without a webview runtime. |
-| `src/Cherris/Rendering/Headless` | Off-screen rendering: hidden GL context, frame pacing, GPU readback. |
+| `src/OvercoreEditorPhotino` | The editor window. `PhotinoX.Blazor` host, Blazor components, viewport canvas, scene panel. |
+| `src/OvercoreEditorSession` | The session it drives, as a library: graphics context and render thread, frame pipe, wire protocol, input bridge, scene commands, script compilation. It has no webview and no window of its own. |
+| `tools/OvercoreFrameViewer` | The same session in a terminal, for iterating on the protocol or on a machine without a webview runtime. |
+| `src/Overcore/Rendering/Headless` | Off-screen rendering: hidden GL context, frame pacing, GPU readback. |
 
 See [photinox-blazor-viewport.md](photinox-blazor-viewport.md) for the rendering-side contract: why the
 viewport is a pixel stream and not an embedded GL surface.
@@ -17,8 +17,8 @@ viewport is a pixel stream and not an embedded GL surface.
 ## Running it
 
 ```bash
-dotnet run --project src/CherrisEditorPhotino
-dotnet run --project src/CherrisEditorPhotino -- --project "D:\Games\MyGame"
+dotnet run --project src/OvercoreEditorPhotino
+dotnet run --project src/OvercoreEditorPhotino -- --project "D:\Games\MyGame"
 ```
 
 Opens a 1600x900 native window: WebView2 on Windows, WKWebView on macOS, WebKitGTK 4.1 on Linux. It starts
@@ -33,7 +33,7 @@ scene.
 
 ## Launcher and projects
 
-The launcher mirrors the ImGui editor's (`src/CherrisEditor/Projects/ProjectSelector.cs`), because a project
+The launcher mirrors the ImGui editor's (`src/OvercoreEditor/Projects/ProjectSelector.cs`), because a project
 folder is the same thing to both front ends:
 
 - **Projects** — recent projects with a search box, a ready/missing badge per entry, Open and Remove.
@@ -44,10 +44,10 @@ folder is the same thing to both front ends:
 - **Skip: demo scene** — opens the built-in scene (camera, light, floor, cube) without a project. The cube
   spins once you press Play; an edited scene does not run.
 
-History lives in `%APPDATA%\Cherris\recent_projects` and `last_project` (`~/.config/Cherris/` on Linux).
+History lives in `%APPDATA%\Overcore\recent_projects` and `last_project` (`~/.config/Overcore/` on Linux).
 The ImGui editor writes the same two files, so a project opened in one front end appears in the other's
-launcher. The model behind it — `Cherris.Projects.ProjectConfig`, `ProjectWorkspace`, `RecentProjects` —
-lives in the engine library and is unit-tested (`tests/Cherris.Tests/Projects/`).
+launcher. The model behind it — `Overcore.Projects.ProjectConfig`, `ProjectWorkspace`, `RecentProjects` —
+lives in the engine library and is unit-tested (`tests/Overcore.Tests/Projects/`).
 
 ### What opening a project does
 
@@ -75,20 +75,20 @@ starts a fresh session. The engine is not re-entered: the previous project's GL 
 scene are dropped with the session, and the frame socket keeps the same port, so the viewport canvas
 reconnects on its own.
 
-`tools/CherrisFrameViewer` runs the same session with a terminal as the front end, for iterating on the
+`tools/OvercoreFrameViewer` runs the same session with a terminal as the front end, for iterating on the
 protocol or on a machine without a webview runtime:
 
 ```bash
-dotnet run --project tools/CherrisFrameViewer            # http://localhost:5178/
-dotnet run --project tools/CherrisFrameViewer -- --no-browser --port 5179
+dotnet run --project tools/OvercoreFrameViewer            # http://localhost:5178/
+dotnet run --project tools/OvercoreFrameViewer -- --no-browser --port 5179
 ```
 
-It serves its own `tools/CherrisFrameViewer/wwwroot` — a bare frame viewer, not the editor UI — and has the same
+It serves its own `tools/OvercoreFrameViewer/wwwroot` — a bare frame viewer, not the editor UI — and has the same
 options plus `--listen-all` and `--help`.
 
 ## The window
 
-`src/CherrisEditorPhotino/Program.cs` is the whole host:
+`src/OvercoreEditorPhotino/Program.cs` is the whole host:
 
 ```csharp
 [STAThread]
@@ -102,7 +102,7 @@ private static int Main(string[] args)
     appBuilder.Services.AddSingleton(editorHost);
 
     var app = appBuilder.Build();
-    app.MainWindow.SetTitle("Cherris Editor").SetSize(1600, 900);
+    app.MainWindow.SetTitle("Overcore Editor").SetSize(1600, 900);
     app.Run();                                          // native message loop, returns on close
 
     return editorHost.FailureMessage is null ? 0 : 1;
@@ -123,7 +123,7 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | `PhotinoBlazorApp` message loop | main (`[STAThread]`) | Window, webview, Blazor renderer. Owns the UI thread. |
 | `Launcher` / `Editor` pages | main | Project picker and editor shell; they only call `EditorHostService` and read what it publishes. |
 | `HeadlessBackend` hidden window | main, before the loop starts | Creates the GLFW window/context. OpenTK only allows GLFW init on the process' main thread. |
-| `EditorSession` | background ("Cherris Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
+| `EditorSession` | background ("Overcore Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
 | `EditorHostService` | main, then any | One session at a time: validates the project, prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics, recent projects and failures. |
 | `EditorSessionHost` | any | One session: the graphics context, the render thread, the listener, the viewport size, the active client and input translation into `HeadlessInput`. `Start()` is for a host with a message loop on its main thread, `Run()` for one without. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
@@ -183,7 +183,7 @@ browser harness uses, wrapped in `mount()` / `dispose()` / `getStats()` so Blazo
 ### Diagnostics
 
 Everything the host learns goes to three places: the console, an in-memory ring buffer (the "Host log" in
-the window) and `%LOCALAPPDATA%/Cherris/editor-host.log` (`~/.local/share/Cherris/editor-host.log` on
+the window) and `%LOCALAPPDATA%/Overcore/editor-host.log` (`~/.local/share/Overcore/editor-host.log` on
 Linux; the exact path is shown in the window and in the diagnostics block).
 
 - When the renderer or the render loop fails, the window shows the exception verbatim — type, message and
@@ -210,7 +210,7 @@ renders.
 `Pages/Editor.razor` replicates the ImGui editor's dock layout rather than inventing its own one; the
 chrome is deliberately the same so muscle memory carries over:
 
-| ImGui (`src/CherrisEditor`) | PhotinoX editor |
+| ImGui (`src/OvercoreEditor`) | PhotinoX editor |
 | :--- | :--- |
 | `MenuBar` — File / Edit / Window | `Components/MenuBar.razor` — File (New Project…, Open Project…, Exit), Edit, Window (Reset Layout) |
 | `ToolBar` — three centred transport buttons | `Components/ToolBar.razor` — Play/Pause, Stop, Restart, live (see [Play mode](#play-mode)) |
@@ -237,7 +237,7 @@ grey with a near-black outline and light grey glyphs, lightening under the point
 selection colour. Play/pause, stop and restart stay the honest controls they were — the restyle changes the
 look, not what the buttons do.
 
-Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
+Layout is additive: nothing in `src/OvercoreEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
 which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists
 them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.
 Panels read mode-independent state (`SceneStore`, `SceneSelection`), so the hierarchy selection drives the
@@ -249,7 +249,7 @@ Clicking the rendered viewport selects what is under the pointer, exactly as cli
 same `SceneSelection` is written, so the inspector follows and the hierarchy highlights the row. Clicking empty
 space clears the selection.
 
-The rule is the ImGui editor's (`src/CherrisEditor/Scenes/EditorSelection.cs`): a ray from the main camera through
+The rule is the ImGui editor's (`src/OvercoreEditor/Scenes/EditorSelection.cs`): a ray from the main camera through
 the clicked pixel, tested against every object's world-space bounds, nearest hit wins (`ViewportPicker`). Two
 things are not clickable there and are not clickable here either — cameras and the skybox — and bounds are the
 objects' boxes rather than their meshes, so a rotated object picks as if it filled its axis-aligned box.
@@ -264,7 +264,7 @@ captured (the position frozen at the capture point) picks nothing.
 ### Flying the camera
 
 The viewport's camera is flown with the mouse and the keyboard, using the desktop editor's own rules
-(`ViewportCameraController`, mirroring `src/CherrisEditor/Core/EditorController.cs`):
+(`ViewportCameraController`, mirroring `src/OvercoreEditor/Core/EditorController.cs`):
 
 | Input | What it does |
 | :--- | :--- |
@@ -466,8 +466,8 @@ extension and the starter source of each language — so the editor, the command
 apart on it. `TryCreate` writes the file **once**: a name whose file exists is reused and never overwritten,
 because the user may have work in it, and undo removes the component rather than the file. The Lua template is the
 two handlers the adapter calls, `start()` and `update(deltaTime)`, with nothing in them; the C# one is a
-`Script` subclass named after the file, importing `Cherris.Components` — the namespace `Script` actually lives in,
-which the ImGui editor's template got wrong by importing `Cherris`.
+`Script` subclass named after the file, importing `Overcore.Components` — the namespace `Script` actually lives in,
+which the ImGui editor's template got wrong by importing `Overcore`.
 
 ### C# scripts: compiled with the project
 
@@ -644,7 +644,7 @@ a value that is not a number ignored rather than stored — because a near clip 
 `Matrix4.CreatePerspectiveFieldOfView`, which throws `ArgumentOutOfRangeException: depthNear cannot be negative`
 and takes the render thread with it. That crash is why the camera owns the rule instead of the inspector: the
 editor's number field, a drag, a reset, a scene file and a script all write through the same setters
-(`src/Cherris/Rendering/Camera.cs`), and `OpenTKRenderer` builds its projection from those values with the
+(`src/Overcore/Rendering/Camera.cs`), and `OpenTKRenderer` builds its projection from those values with the
 aspect floored, so no camera a scene can hold stops the render loop.
 
 When that happens the panel does not argue: the drag releases the focus, the field is rebuilt from the next
@@ -673,11 +673,11 @@ the menu items are the working path.
 `IEditorCommand` is the extension point: play mode and save can become commands without changing this path, and
 each one stays testable off the render thread because `Execute` takes the scene as an argument.
 
-`ComponentCatalog` lives with the components in `src/Cherris`, so both front ends offer the same list.
+`ComponentCatalog` lives with the components in `src/Overcore`, so both front ends offer the same list.
 
 ## Play mode
 
-The transport drives the scene for real. `EditorPlaySession` (`src/CherrisEditorSession/Engine/EditorPlaySession.cs`)
+The transport drives the scene for real. `EditorPlaySession` (`src/OvercoreEditorSession/Engine/EditorPlaySession.cs`)
 holds the same three states as the desktop editor's `PlayModeManager`, and the engine only advances the world
 while the state is `Playing`:
 

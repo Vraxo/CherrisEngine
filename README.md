@@ -1,22 +1,22 @@
-# 🍒 Cherris Engine
+# 🔥 Overcore Engine
 
-Cherris is a 3D game engine, visual scene editor, and standalone runtime written in C# on .NET 11. It pairs a GameObject-Component architecture with OpenGL 4 rendering, BepuPhysics v2 simulation, OpenAL 3D audio, YAML scene serialization, and Roslyn C# scripting.
+Overcore is a 3D game engine, visual scene editor, and standalone runtime written in C# on .NET 11. It pairs a GameObject-Component architecture with OpenGL 4 rendering, BepuPhysics v2 simulation, OpenAL 3D audio, YAML scene serialization, and Roslyn C# scripting.
 
 ## 🧱 Architecture
 
-The solution (`Cherris.slnx`) contains four production projects under `src`:
+The solution (`Overcore.slnx`) contains four production projects under `src`:
 
 | Project | Output | Purpose |
 | :--- | :--- | :--- |
-| [`Cherris`](src/Cherris/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
-| [`CherrisEditor`](src/CherrisEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
-| [`CherrisRuntime`](src/CherrisRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
-| [`CherrisEditorPhotino`](src/CherrisEditorPhotino/) | Executable | Experimental PhotinoX Blazor editor: a native webview window (WebView2 / WKWebView / WebKitGTK) hosting a Blazor UI, with the engine rendering off-screen (`Cherris.Rendering.Headless`), streaming the game view into a WebGL canvas, a project launcher that opens real `project.yaml` projects, and an editor window laid out like the ImGui editor (menu bar, transport toolbar, hierarchy / viewport / inspector docks) in the exact UE5 palette, Roboto typography and engine metrics. |
-| [`CherrisEditorSession`](src/CherrisEditorSession/) | Library | The editor session the PhotinoX window drives: render host, frame pipe, wire protocol, input bridge, scene commands and script compilation. No webview, no window — the desktop shell and [`tools/CherrisFrameViewer`](tools/CherrisFrameViewer/) both own one. |
+| [`Overcore`](src/Overcore/) | Library | Core engine: GameObject/Component model, rendering backends, physics, audio, asset loaders, `Assets.pak` virtual file system, and YAML serialization. |
+| [`OvercoreEditor`](src/OvercoreEditor/) | Executable | Dockable ImGui/ImGuizmo editor with viewport, hierarchy, inspector, content browser, console, play/pause/stop state, undo/redo, and game builder. |
+| [`OvercoreRuntime`](src/OvercoreRuntime/) | Executable | Standalone host that reads `project.yaml`, loads `GameScripts.dll`, and runs scenes from `Assets/` or `Assets.pak`. |
+| [`OvercoreEditorPhotino`](src/OvercoreEditorPhotino/) | Executable | Experimental PhotinoX Blazor editor: a native webview window (WebView2 / WKWebView / WebKitGTK) hosting a Blazor UI, with the engine rendering off-screen (`Overcore.Rendering.Headless`), streaming the game view into a WebGL canvas, a project launcher that opens real `project.yaml` projects, and an editor window laid out like the ImGui editor (menu bar, transport toolbar, hierarchy / viewport / inspector docks) in the exact UE5 palette, Roboto typography and engine metrics. |
+| [`OvercoreEditorSession`](src/OvercoreEditorSession/) | Library | The editor session the PhotinoX window drives: render host, frame pipe, wire protocol, input bridge, scene commands and script compilation. No webview, no window — the desktop shell and [`tools/OvercoreFrameViewer`](tools/OvercoreFrameViewer/) both own one. |
 
 ## 🔧 Capabilities
 
-- **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. A partial `Veldrid` backend exists in `Cherris`, though both the editor and runtime currently target `OpenTK`.
+- **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. A partial `Veldrid` backend exists in `Overcore`, though both the editor and runtime currently target `OpenTK`.
 - **Physics**: 60 Hz fixed-timestep rigid-body dynamics via `BepuPhysics` v2 with static and dynamic bodies (`Box`, `Sphere`, and `Capsule` colliders).
 - **Audio**: 3D positional audio via OpenAL (`AudioListener` and `AudioSource`) supporting 8/16-bit mono and stereo `.wav` files.
 - **Scripting**: Dynamic C# script compilation via Roslyn (`Microsoft.CodeAnalysis.CSharp`), plus inspector attributes (`[Range]`, `[ColorUsage]`, `[DragDropTarget]`, `[HideInInspector]`).
@@ -33,21 +33,21 @@ The solution (`Cherris.slnx`) contains four production projects under `src`:
 ### 🔨 Build and Run
 
 ```bash
-dotnet build Cherris.slnx
-dotnet run --project src/CherrisEditor
+dotnet build Overcore.slnx
+dotnet run --project src/OvercoreEditor
 ```
 
 Build outputs and intermediate files are centralized in the repository's `artifacts/` directory, grouped by project and configuration.
 
-Run all unit tests with `dotnet test Cherris.slnx`. Engine tests are in `tests/Cherris.Tests`, and editor tests are in `tests/CherrisEditor.Tests`. Both use xUnit and AwesomeAssertions.
+Run all unit tests with `dotnet test Overcore.slnx`. Engine tests are in `tests/Overcore.Tests`, and editor tests are in `tests/OvercoreEditor.Tests`. Both use xUnit and AwesomeAssertions.
 
 On launch, the editor reopens the last project if available, or opens the project launcher. The launcher can create projects, open a folder containing `project.yaml`, and search or remove recent projects. Creating a project never overwrites an existing folder. From an open editor, use **File > New Project in New Window...** to create another project, or **File > Open Project in New Window...** to open one; your current project and unsaved work remain in the original window.
 
 Open the launcher explicitly or pass a directory path to open a specific project directly:
 
 ```bash
-dotnet run --project src/CherrisEditor -- --launcher
-dotnet run --project src/CherrisEditor -- /path/to/MyGame
+dotnet run --project src/OvercoreEditor -- --launcher
+dotnet run --project src/OvercoreEditor -- /path/to/MyGame
 ```
 
 ## 💻 Scripting
@@ -56,9 +56,9 @@ Place C# scripts in your project's `Scripts/` folder (or create them from **Add 
 
 ```csharp
 using System.Numerics;
-using Cherris;
-using Cherris.Attributes;
-using Cherris.Components;
+using Overcore;
+using Overcore.Attributes;
+using Overcore.Components;
 
 public class Spinner : Script
 {
@@ -87,7 +87,7 @@ Public read/write properties on C# components and scripts are automatically expo
 
 ### Lua scripts
 
-Cherris also supports Lua through the MoonSharp interpreter. Put a `.lua` file in your project's `Scripts/` folder, add **Language Script** from the Inspector's **Add Component** menu, and set `Language` to `lua` and `Source Path` to a project-relative path such as `Scripts/move.lua`. Save the scene and enter Play mode:
+Overcore also supports Lua through the MoonSharp interpreter. Put a `.lua` file in your project's `Scripts/` folder, add **Language Script** from the Inspector's **Add Component** menu, and set `Language` to `lua` and `Source Path` to a project-relative path such as `Scripts/move.lua`. Save the scene and enter Play mode:
 
 ```lua
 function start()
@@ -123,7 +123,7 @@ The editor opens with the hierarchy on the left, inspector on the right, viewpor
 
 Use **File > Build Game...** in the editor to export a standalone build:
 
-1. Publishes `CherrisRuntime` in `Release` mode named after the project (`project.yaml`).
+1. Publishes `OvercoreRuntime` in `Release` mode named after the project (`project.yaml`).
 2. Compiles `Scripts/*.cs` into `GameScripts.dll`.
 3. Copies loose project assets into `Assets/`, or packs them into `Assets.pak` when **File > Pack Assets on Build** is enabled.
 
@@ -136,6 +136,6 @@ Current limitations:
 
 - [Color Consistency & Rendering Pipeline](docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
-- [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Cherris/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
+- [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Overcore/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
 - [UE5 Theme](docs/ue5-theme.md): The Unreal Engine 5 editor palette, typography and metrics both front ends use, with the engine source each value comes from, the widget-style mapping and the bundled Roboto fonts.
-- [Web Editor Host](docs/webeditor-host.md): The PhotinoX Blazor editor in `src/CherrisEditorPhotino`, the session in `src/CherrisEditorSession` it drives, the wire protocol, threading model and current limitations.
+- [Web Editor Host](docs/webeditor-host.md): The PhotinoX Blazor editor in `src/OvercoreEditorPhotino`, the session in `src/OvercoreEditorSession` it drives, the wire protocol, threading model and current limitations.

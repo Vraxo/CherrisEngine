@@ -1,0 +1,454 @@
+@page "/"
+@inject EditorHostService Host
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Overcore Editor</PageTitle>
+
+<div class="launcher">
+    <aside class="launcher-nav">
+        <div>
+            <div class="launcher-brand">OVERCORE</div>
+            <div class="launcher-caption">Project launcher</div>
+        </div>
+
+        <nav class="launcher-nav-items">
+            <button type="button"
+                    class="launcher-nav-item @(Tab == LauncherTab.Projects ? "active" : "")"
+                    @onclick="() => SetTab(LauncherTab.Projects)">
+                Projects
+            </button>
+            <button type="button"
+                    class="launcher-nav-item @(Tab == LauncherTab.NewProject ? "active" : "")"
+                    @onclick="() => SetTab(LauncherTab.NewProject)">
+                + New project
+            </button>
+        </nav>
+
+        <div class="launcher-nav-footer">
+            <span>@_recent.Count recent @(_recent.Count == 1 ? "project" : "projects")</span>
+            <span class="launcher-muted">Saved on this device</span>
+            <button type="button" class="launcher-link" @onclick="OpenDemoAsync">Skip: demo scene</button>
+        </div>
+    </aside>
+
+    <main class="launcher-main">
+        <div class="launcher-column">
+            <div class="launcher-caption">
+                Workspace / @(Tab == LauncherTab.NewProject ? "New project" : "Projects")
+            </div>
+            <h1 class="launcher-headline">
+                @(Tab == LauncherTab.NewProject ? "Make something new." : "Welcome back.")
+            </h1>
+            <p class="launcher-muted">
+                @(Tab == LauncherTab.NewProject
+                    ? "Give your next idea a folder of its own."
+                    : "Pick up where you left off, or open a project folder.")
+            </p>
+
+            @if (_error is string error)
+            {
+                <div class="launcher-error" role="alert">
+                    <strong>@(_busy ? "Working…" : "Could not complete that action")</strong>
+                    <span>@error</span>
+                </div>
+            }
+
+            @if (_busy)
+            {
+                <div class="launcher-busy">@_busyText</div>
+            }
+
+            @if (Tab == LauncherTab.Projects)
+            {
+                <section class="launcher-card">
+                    <div class="launcher-card-header">
+                        <span>Recent projects</span>
+                        <span class="launcher-muted">@_recent.Count total</span>
+                    </div>
+
+                    <input class="launcher-input"
+                           type="search"
+                           placeholder="Search projects by name or path…"
+                           @bind="_search"
+                           @bind:event="oninput" />
+
+                    @if (Matches.Count == 0)
+                    {
+                        <p class="launcher-muted">
+                            @(_recent.Count == 0
+                                ? "No projects yet — create one, or open an existing folder below."
+                                : "No matching projects. Try a different name or path.")
+                        </p>
+                    }
+                    else
+                    {
+                        <ul class="launcher-list">
+                            @foreach (RecentProjectEntry entry in Matches)
+                            {
+                                <li class="launcher-row">
+                                    <div class="launcher-row-text">
+                                        <span class="launcher-row-title">
+                                            @entry.Name
+                                            <span class="launcher-badge @(entry.Exists ? "ready" : "missing")">
+                                                @(entry.Exists ? "ready" : "missing")
+                                            </span>
+                                        </span>
+                                        <span class="launcher-row-path" title="@entry.Path">@entry.Path</span>
+                                    </div>
+                                    <div class="launcher-row-actions">
+                                        <button type="button"
+                                                class="editor-button"
+                                                disabled="@(_busy || !entry.Exists)"
+                                                @onclick="() => OpenAsync(entry.Path)">
+                                            Open
+                                        </button>
+                                        <button type="button"
+                                                class="editor-button subtle"
+                                                disabled="@_busy"
+                                                @onclick="() => Forget(entry.Path)">
+                                            Remove
+                                        </button>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </section>
+
+                <section class="launcher-card">
+                    <div class="launcher-card-header">
+                        <span>Have a project already?</span>
+                    </div>
+                    <p class="launcher-muted">Select the folder that contains <code>project.yaml</code>.</p>
+
+                    <div class="launcher-field">
+                        <input class="launcher-input"
+                               placeholder="Path to a project folder"
+                               @bind="_openPath"
+                               @bind:event="oninput" />
+                        <button type="button" class="editor-button" disabled="@_busy" @onclick="BrowseOpenAsync">
+                            Browse…
+                        </button>
+                    </div>
+
+                    <div class="launcher-actions">
+                        <button type="button"
+                                class="editor-button primary"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_openPath))"
+                                @onclick="() => OpenAsync(_openPath)">
+                            Open project
+                        </button>
+                        @if (Host.FolderPicker is null)
+                        {
+                            <span class="launcher-muted">Type a path; the folder dialog is unavailable.</span>
+                        }
+                    </div>
+                </section>
+            }
+            else
+            {
+                <section class="launcher-card">
+                    <div class="launcher-card-header">
+                        <span>Project details</span>
+                    </div>
+                    <p class="launcher-muted">
+                        A new folder is created with <code>project.yaml</code> and an empty start scene.
+                    </p>
+
+                    <label class="launcher-label" for="project-name">Project name</label>
+                    <input id="project-name" class="launcher-input" @bind="_newProjectName" @bind:event="oninput" />
+
+                    <label class="launcher-label" for="project-location">Location</label>
+                    <div class="launcher-field">
+                        <input id="project-location" class="launcher-input" @bind="_location" @bind:event="oninput" />
+                        <button type="button" class="editor-button" disabled="@_busy" @onclick="BrowseLocationAsync">
+                            Browse…
+                        </button>
+                    </div>
+
+                    <div class="launcher-caption">Project folder</div>
+                    <p class="launcher-muted launcher-path">@ProjectFolderPreview</p>
+
+                    <div class="launcher-actions">
+                        <button type="button" class="editor-button primary" disabled="@_busy" @onclick="CreateAsync">
+                            Create project
+                        </button>
+                        <button type="button" class="editor-button" disabled="@_busy" @onclick="() => SetTab(LauncherTab.Projects)">
+                            Cancel
+                        </button>
+                    </div>
+                    <p class="launcher-muted">Existing folders are never overwritten.</p>
+                </section>
+            }
+        </div>
+    </main>
+</div>
+
+@code {
+    private enum LauncherTab
+    {
+        Projects,
+        NewProject
+    }
+
+    private static readonly TimeSpan HealthInterval = TimeSpan.FromMilliseconds(500);
+
+    private LauncherTab Tab { get; set; } = LauncherTab.Projects;
+
+    // File > New Project… in the editor links here as /?tab=new.
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? TabQuery { get; set; }
+
+    private IReadOnlyList<RecentProjectEntry> _recent = [];
+    private string _search = string.Empty;
+    private string _openPath = string.Empty;
+    private string _newProjectName = "MyGame";
+    private string _location = DefaultLocation();
+    private string? _error;
+    private bool _busy;
+    private string _busyText = string.Empty;
+    private bool _recovered;
+    private Timer? _healthTimer;
+
+    private IReadOnlyList<RecentProjectEntry> Matches
+    {
+        get
+        {
+            string query = _search.Trim();
+
+            return query.Length == 0
+                ? _recent
+                : _recent.Where(entry => entry.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    entry.Path.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+    }
+
+    private string ProjectFolderPreview
+    {
+        get
+        {
+            try
+            {
+                return ProjectWorkspace.GetNewProjectPath(_location, _newProjectName);
+            }
+            catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+            {
+                return "Choose a valid name and location to preview the folder.";
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (string.Equals(TabQuery, "new", StringComparison.OrdinalIgnoreCase))
+        {
+            Tab = LauncherTab.NewProject;
+        }
+
+        RefreshRecent();
+
+        // A session can die while the launcher is showing (for example after a driver reset), and the
+        // launcher's buttons are the only way out of that state, so watch for it.
+        _healthTimer = new Timer(_ => _ = CheckRecoveryAsync(), null, HealthInterval, HealthInterval);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        string? pending = Host.PendingProject;
+
+        if (pending is not null)
+        {
+            Host.PendingProject = null;
+            await OpenAsync(pending);
+            return;
+        }
+
+        // A session survived a navigation (or was started before the router ran): show it.
+        if (Host.State == EditorSessionState.Running)
+        {
+            Nav.NavigateTo("/editor");
+        }
+    }
+
+    private async Task CheckRecoveryAsync()
+    {
+        if (Host.State != EditorSessionState.Failed || _recovered)
+        {
+            return;
+        }
+
+        await InvokeAsync(() =>
+        {
+            _recovered = true;
+            _error ??= Host.FailureMessage;
+            StateHasChanged();
+        });
+    }
+
+    private void SetTab(LauncherTab tab)
+    {
+        Tab = tab;
+        _error = null;
+    }
+
+    private void RefreshRecent()
+    {
+        _recent = Host.RecentProjects;
+    }
+
+    private void Forget(string path)
+    {
+        Host.ForgetProject(path);
+        RefreshRecent();
+    }
+
+    private async Task BrowseOpenAsync()
+    {
+        string? folder = await BrowseAsync("Open a Overcore project folder", _openPath);
+
+        if (folder is not null)
+        {
+            _openPath = folder;
+            _error = null;
+        }
+    }
+
+    private async Task BrowseLocationAsync()
+    {
+        string? folder = await BrowseAsync("Choose where the project folder goes", _location);
+
+        if (folder is not null)
+        {
+            _location = folder;
+            _error = null;
+        }
+    }
+
+    private async Task<string?> BrowseAsync(string title, string? startIn)
+    {
+        if (Host.FolderPicker is null)
+        {
+            _error = "The folder dialog is unavailable here; type the path instead.";
+            return null;
+        }
+
+        try
+        {
+            return await Host.PickFolderAsync(title, string.IsNullOrWhiteSpace(startIn) ? null : startIn);
+        }
+        catch (Exception exception)
+        {
+            _error = $"The folder dialog failed: {exception.Message}";
+            return null;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        string root;
+
+        try
+        {
+            root = ProjectWorkspace.Create(_location, _newProjectName);
+        }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+            return;
+        }
+
+        await OpenAsync(root);
+    }
+
+    private async Task OpenDemoAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _busyText = "Starting the demo scene…";
+
+        try
+        {
+            if (await Host.OpenDemoSceneAsync())
+            {
+                Nav.NavigateTo("/editor");
+                return;
+            }
+
+            _error = Host.FailureMessage ?? "The demo scene could not be started.";
+        }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenAsync(string path)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _busyText = $"Opening {ProjectWorkspace.DisplayName(path.Trim())}…";
+        StateHasChanged();
+
+        try
+        {
+            if (await Host.OpenProjectAsync(path))
+            {
+                Nav.NavigateTo("/editor");
+                return;
+            }
+
+            _error = Host.FailureMessage ?? "The project could not be opened.";
+        }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+            RefreshRecent();
+            StateHasChanged();
+        }
+    }
+
+    private static string DefaultLocation()
+    {
+        string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        return string.IsNullOrEmpty(documents) || !Directory.Exists(documents)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            : documents;
+    }
+
+    public void Dispose()
+    {
+        _healthTimer?.Dispose();
+        _healthTimer = null;
+    }
+}

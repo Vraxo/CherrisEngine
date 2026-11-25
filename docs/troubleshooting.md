@@ -1,6 +1,6 @@
 # 🛠️ Troubleshooting Guide
 
-This document serves as a reference for debugging critical or recurring issues in the Cherris engine, ensuring they are not reintroduced in future updates.
+This document serves as a reference for debugging critical or recurring issues in the Overcore engine, ensuring they are not reintroduced in future updates.
 
 ---
 

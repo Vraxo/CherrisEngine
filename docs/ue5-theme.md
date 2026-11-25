@@ -5,13 +5,13 @@ documents that theme; how themes are loaded, selected and added is on [themes.md
 
 | Front end | Gets the theme from |
 | :--- | :--- |
-| `src/CherrisEditor` (ImGui) | `Cherris.UI.Ue5StarshipTheme`, applied by `ImGuiTheme.Apply(EditorTheme)` |
-| `src/CherrisEditorPhotino` (Blazor) | the same theme object, applied as `--theme-*` custom properties |
+| `src/OvercoreEditor` (ImGui) | `Overcore.UI.Ue5StarshipTheme`, applied by `ImGuiTheme.Apply(EditorTheme)` |
+| `src/OvercoreEditorPhotino` (Blazor) | the same theme object, applied as `--theme-*` custom properties |
 
-The palette itself lives in `src/Cherris/UI/Ue5Colors.cs`, mapped onto the theme's roles by
-`src/Cherris/UI/Themes/Ue5StarshipTheme.cs`, and is also shipped as
+The palette itself lives in `src/Overcore/UI/Ue5Colors.cs`, mapped onto the theme's roles by
+`src/Overcore/UI/Themes/Ue5StarshipTheme.cs`, and is also shipped as
 `EditorResources/Themes/ue5-starship.json`. It is the default theme, so the stylesheet's `:root` block holds
-exactly its values; `tests/CherrisEditorSession.Tests/Ue5PaletteTests.cs` fails if they drift apart. Nothing
+exactly its values; `tests/OvercoreEditorSession.Tests/Ue5PaletteTests.cs` fails if they drift apart. Nothing
 in `app.css` or in the ImGui theme names a color directly any more — both read roles, which is what lets the
 theme change at runtime.
 
@@ -175,15 +175,15 @@ icon grid, 84px cell) and the panel-body padding.
 The editor's text styles are `FStarshipCoreStyle::FStyleFonts`: `Normal` 10pt, `Small` 8pt, `Large` 14pt and
 condensed headings at 15, 21 and 33pt, all Roboto; `MonospacedText` is `DEFAULT_FONT("Mono", 10)`, Roboto Mono.
 Slate scales points by DPI, so at 96 DPI 10pt is 13.33px and the UI uses **13px** (rounded, so glyphs stay on
-the pixel grid). `src/Cherris/UI/Ue5Typography.cs` is the shared source of those numbers and of the font file
-names; `tests/CherrisEditorSession.Tests/Ue5TypographyTests.cs` keeps the two front ends and the stylesheet in step.
+the pixel grid). `src/Overcore/UI/Ue5Typography.cs` is the shared source of those numbers and of the font file
+names; `tests/OvercoreEditorSession.Tests/Ue5TypographyTests.cs` keeps the two front ends and the stylesheet in step.
 
 Fonts are bundled in the repository, since neither front end may depend on a system font:
 
-- `src/CherrisEditor/EditorResources/Fonts/Roboto-Regular.TTF` — the latin + latin-ext + cyrillic + greek
+- `src/OvercoreEditor/EditorResources/Fonts/Roboto-Regular.TTF` — the latin + latin-ext + cyrillic + greek
   merge of the official Roboto subsets (587 glyphs, 89 KB). The ImGui editor loads it at 13px
   (`ImGuiFontLoader`), falling back to `RobotoMono-Regular.TTF` and then ImGui's bitmap font.
-- `src/CherrisEditorPhotino/wwwroot/fonts/roboto-{latin,latin-ext,cyrillic,greek}-400-normal.woff2`,
+- `src/OvercoreEditorPhotino/wwwroot/fonts/roboto-{latin,latin-ext,cyrillic,greek}-400-normal.woff2`,
   `roboto-latin-700-normal.woff2` and `roboto-mono-latin-400-normal.woff2` — the same families for the
   stylesheet, declared as `@font-face` rules with the unicode-ranges the upstream packages ship, so a subset
   downloads only when the UI needs it. `WebEditorServer` serves them as `font/woff2`.
