@@ -21,7 +21,7 @@ namespace Overcore.Core;
 /// is carried across rather than destroyed.
 /// </para>
 /// </remarks>
-public class SceneManager
+public class SceneManager : IDisposable
 {
     private readonly List<Scene> _openScenes = [];
     private readonly List<GameObject> _persistentObjects = [];
@@ -273,6 +273,10 @@ public class SceneManager
         ActiveScene?.Update(scaledDeltaTime);
     }
 
+    /// <summary>
+    /// Closes every open scene, drops the objects kept across changes, and disposes the world and the audio system
+    /// this manager owns.
+    /// </summary>
     public void Dispose()
     {
         foreach (var scene in _openScenes)
@@ -286,5 +290,7 @@ public class SceneManager
         PendingDestruction.Clear();
         AudioSystem.Dispose();
         PhysicsSystem.Dispose();
+
+        GC.SuppressFinalize(this);
     }
 }
