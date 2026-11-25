@@ -66,15 +66,43 @@ values but never object ids: `LoadPrefab` always builds fresh objects.
   *Instantiate in Scene*): adds a fresh instance at the scene root. One undoable step; Undo takes the whole
   subtree back out, Redo puts the same objects back.
 - The hierarchy marks a prefab's rows with a small stack-of-cubes glyph, in the theme's primary role.
+- **Overrides** (inspector, on any linked object): what has drifted from the asset, with Revert / Apply
+  per value and Revert All / Apply All for the subtree. See the next section.
+
+## Prefab overrides
+
+An override is a divergence between an instance and its source — named as a (property path, source value)
+pair, exactly what Unity's `m_Modifications` records, except ours are **computed, not recorded**. Nothing
+is stored at edit time: the render thread keeps a `PrefabSourceIndex` of what the assets hold (a `.meta`
+guid resolves to the asset, values read through the session's loader, cached until the file changes) and
+each scene snapshot carries every object's drift, found by comparing values side by side.
+
+- **Paths** are named `PrefabPaths`: `"Name"`, `"Transform.Position|Rotation|Scale"` (rotation in Euler
+  degrees), `"Enabled:<ComponentType>"`, and `"<ComponentType>.<Property>"` for one property of one
+  component — one component per type per object, the same convention the inspector and SetProperty use.
+- **Values travel as display text** (`PrefabValues`), formatted the same way on both sides — the
+  instance's inspector text versus the source's inspector text — so an override is exactly "this row in
+  the inspector reads differently than the prefab's". Comparing text means floating-point formatting can
+  hide a drift smaller than the display precision (0.###), the same limit the inspector itself has.
+- **Revert** writes the source's value back into the instance. One value, one undoable step; the undo
+  puts the instance's own value back. **Revert All** walks the subtree and takes one step in total.
+- **Apply** writes the instance's value into the asset — load, change, save — and the step remembers the
+  asset's bytes so Undo restores the file exactly. **Apply All** rewrites each touched asset once. An
+  apply moves the asset to this instance: every *other* instance now differs from the asset, and shows
+  its drift honestly the next time it is inspected.
+- **The marked rows**: an overridden row's label goes bold in place (Unity's mark), and an Overrides
+  dropdown on the object header lists each drift with its source value and the two directions.
 
 ## Honest gaps — what this is not yet
 
 Unity's prefab model is more than a link, and the rest is deliberately not here yet:
 
-- **Overrides.** Unity records every divergence between an instance and its source
-  (`m_Modifications`: property-path, value) and offers Apply/Revert. Overcore does not record divergences
-  yet; editing an instance edits only that instance, and the link is metadata rather than a live
-  relationship. This is the next slice.
+- **Live propagation.** Applying an override rewrites the asset, but other loaded instances are not
+  reloaded — they keep their own values (and now legitimately differ). Unity re-imports instances at
+  once; we reload nothing while a scene is open.
+- **Structural overrides.** An instance that gained a component or child that the source has no path for
+  cannot be reverted or applied — the diff only covers values with a source counterpart. Unity records
+  added components (`m_AddedComponents`); we simply do not track them yet.
 - **Variants and nesting.** Prefabs of prefabs, and prefabs that are overrides of other prefabs.
 - **Prefab mode.** Opening the asset for editing in isolation (Unity's double-click behaviour). Our
   double-click instantiates instead, and says so in the tile's tooltip.
@@ -86,9 +114,13 @@ Unity's prefab model is more than a link, and the rest is deliberately not here 
 | Piece | File |
 | --- | --- |
 | The link record | `src/Overcore/Scenes/PrefabSource.cs` |
-| `.meta` guids | `src/Overcore/Utils/AssetMeta.cs` |
-| Writing `File` ids and the `Prefab` block | `src/Overcore/Scenes/SceneSerializer.cs` |
+| `.meta` guids (and guid → asset) | `src/Overcore/Utils/AssetMeta.cs` |
+| Writing `File` ids and the `Prefab` block; stamping the links | `src/Overcore/Scenes/SceneSerializer.cs` |
 | Reading them, fresh instance ids | `src/Overcore/Scenes/SceneLoader.cs` |
-| The two commands (undoable) | `src/OvercoreEditorSession/Host/EditorCommands.cs` |
-| The link flag in snapshots | `src/OvercoreEditorSession/Scene/SceneSnapshot.cs` |
-| Editor wiring | `HierarchyPanel.razor` (Create Prefab), `ContentBrowserPanel.razor` (Instantiate) |
+| Naming an override's path | `src/OvercoreEditorSession/Scene/PrefabPaths.cs` |
+| Values as display text | `src/OvercoreEditorSession/Scene/PrefabValues.cs` |
+| What the assets hold, and the diff | `src/OvercoreEditorSession/Scene/PrefabSourceIndex.cs` |
+| The drift a snapshot carries | `src/OvercoreEditorSession/Scene/SceneSnapshot.cs` |
+| The four commands (undoable) | `src/OvercoreEditorSession/Host/PrefabOverrideCommands.cs` |
+| Create / Instantiate commands | `src/OvercoreEditorSession/Host/EditorCommands.cs` |
+| Editor wiring | `HierarchyPanel.razor` (Create Prefab), `ContentBrowserPanel.razor` (Instantiate), `InspectorPanel.razor` (Overrides) |

@@ -110,28 +110,29 @@ public class PrefabAssetTests
         AssetMeta.GetOrCreate(path).Should().Be(guid,
             "with no sidecar left, the path still derives the same guid");
     }
+}
 
-    /// <summary>A scratch folder that goes away with the test.</summary>
-    private sealed class TempAssets : IDisposable
+/// <summary>A scratch folder that goes away with the test. Shared by the prefab test classes.</summary>
+internal sealed class TempAssets : IDisposable
+{
+    // System.IO.Path is spelled out: the class's own Path() method would shadow the type name.
+    private readonly string _root = System.IO.Path.Combine(
+        System.IO.Path.GetTempPath(),
+        "overcore-prefab-tests-" + Guid.NewGuid().ToString("N"));
+
+    public TempAssets() => Directory.CreateDirectory(_root);
+
+    public string Path(string name) => System.IO.Path.Combine(_root, name);
+
+    public void Dispose()
     {
-        // System.IO.Path is spelled out: the class's own Path() method would shadow the type name.
-        private readonly string _root = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            "overcore-prefab-tests-" + Guid.NewGuid().ToString("N"));
-
-        public TempAssets() => Directory.CreateDirectory(_root);
-
-        public string Path(string name) => System.IO.Path.Combine(_root, name);
-        public void Dispose()
+        try
         {
-            try
-            {
-                Directory.Delete(_root, true);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                // A locked scratch file is not worth failing a test over.
-            }
+            Directory.Delete(_root, true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A locked scratch file is not worth failing a test over.
         }
     }
 }

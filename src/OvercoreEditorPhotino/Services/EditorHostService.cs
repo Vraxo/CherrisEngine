@@ -609,6 +609,46 @@ public sealed class EditorHostService : IDisposable
     public bool InstantiatePrefab(string path) =>
         Enqueue(new InstantiatePrefabCommand(path), "instantiate " + Path.GetFileNameWithoutExtension(path));
 
+    /// <summary>
+    /// Puts one drifted value of a prefab instance back to what the asset holds, as the inspector's
+    /// Overrides list sends: Unity's "Revert". One undoable step; the outcome is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The linked object.</param>
+    /// <param name="propertyPath">What to put back.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool RevertOverride(Guid objectId, string propertyPath) =>
+        Enqueue(new RevertPrefabOverrideCommand(objectId, propertyPath), "revert " + propertyPath);
+
+    /// <summary>
+    /// Puts every drifted value of an object and its subtree back to what the assets hold: Unity's
+    /// "Revert All". One undoable step; the outcome is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The object whose subtree is put back.</param>
+    /// <param name="name">Its name, so the step can be named.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool RevertAllOverrides(Guid objectId, string name) =>
+        Enqueue(new RevertAllPrefabOverridesCommand(objectId, name), "revert overrides on " + name);
+
+    /// <summary>
+    /// Writes one drifted value into the prefab asset: Unity's "Apply". The asset moves to the instance —
+    /// every other instance of it now differs. One undoable step; the outcome is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The linked object.</param>
+    /// <param name="propertyPath">What to write into the asset.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool ApplyOverride(Guid objectId, string propertyPath) =>
+        Enqueue(new ApplyPrefabOverrideCommand(objectId, propertyPath), "apply " + propertyPath);
+
+    /// <summary>
+    /// Writes every drifted value of an object and its subtree into the prefab assets: Unity's "Apply All".
+    /// One undoable step; Undo puts the asset files back byte for byte. The outcome is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The object whose subtree is applied.</param>
+    /// <param name="name">Its name, so the step can be named.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool ApplyAllOverrides(Guid objectId, string name) =>
+        Enqueue(new ApplyAllPrefabOverridesCommand(objectId, name), "apply overrides on " + name);
+
     /// <summary>A free file name in the folder: <c>Cube.prefab</c>, then <c>Cube 1.prefab</c>, and so on.</summary>
     private static string UniqueAssetPath(string projectRoot, string baseName)
     {

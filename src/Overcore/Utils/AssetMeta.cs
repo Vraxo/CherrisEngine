@@ -76,6 +76,32 @@ public static class AssetMeta
         return false;
     }
 
+    /// <summary>Finds the asset a guid names, walking an folder's sidecars.</summary>
+    /// <param name="root">The folder to search.</param>
+    /// <param name="guid">The guid to find.</param>
+    /// <returns>The asset's path, or null when nothing under the folder claims the guid.</returns>
+    public static string? FindByGuid(string root, string guid)
+    {
+        try
+        {
+            foreach (string metaPath in Directory.EnumerateFiles(root, "*" + Suffix, SearchOption.AllDirectories))
+            {
+                string assetPath = metaPath[..^Suffix.Length];
+
+                if (TryGet(assetPath, out string found) && string.Equals(found, guid, StringComparison.Ordinal))
+                {
+                    return assetPath;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // An unreadable folder simply finds nothing.
+        }
+
+        return null;
+    }
+
     private static string SidecarPath(string filePath) => filePath + Suffix;
 
     /// <summary>A guid that is the same for the same path on every run, for assets with no sidecar to read.</summary>

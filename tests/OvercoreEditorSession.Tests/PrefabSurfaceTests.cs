@@ -56,6 +56,55 @@ public class PrefabSurfaceTests
         commands.Should().Contain("PrefabSource", "the objects know what they are linked to");
     }
 
+    [Fact]
+    public void TheInspector_MarksOverriddenValuesInPlace()
+    {
+        string markup = Read("src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor");
+
+        markup.Should().Contain("PrefabPaths.Name", "the name row knows what it is called in the diff");
+        markup.Should().Contain("PrefabPaths.Transform(row.Field)", "so do the transform rows");
+        markup.Should().Contain("PrefabPaths.Enabled(component.TypeName)", "so does the component header");
+        markup.Should().Contain("PrefabPaths.Property(component.TypeName, property.Name)", "so does every property row");
+        markup.Should().Contain("\"overridden\"", "the drifted ones wear the class");
+
+        string mark = Rule("overridden");
+        mark.Should().Contain("font-weight: 700;", "Unity marks an override by bolding the label; so is this");
+    }
+
+    [Fact]
+    public void TheInspector_HasTheOverridesDropdown()
+    {
+        string markup = Read("src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor");
+
+        markup.Should().Contain("class=\"imgui-button inspector-overrides\"", "the object row carries Unity's dropdown");
+        markup.Should().Contain("node.Overrides.Count", "its count is what has drifted");
+        markup.Should().Contain("Host.RevertOverride(", "each line reverts for real");
+        markup.Should().Contain("Host.ApplyOverride(", "and applies for real");
+        markup.Should().Contain("Host.RevertAllOverrides(", "the all-up steps sit beside them");
+        markup.Should().Contain("Host.ApplyAllOverrides(");
+        markup.Should().Contain("entry.SourceText", "the list shows the prefab's own value, not a guess");
+    }
+
+    [Fact]
+    public void OverrideCommands_ExistWithHonestUndo()
+    {
+        string commands = Read("src", "OvercoreEditorSession", "Host", "PrefabOverrideCommands.cs");
+
+        commands.Should().Contain("class RevertPrefabOverrideCommand(Guid objectId, string propertyPath)");
+        commands.Should().Contain("class RevertAllPrefabOverridesCommand(Guid objectId, string name)");
+        commands.Should().Contain("class ApplyPrefabOverrideCommand(Guid objectId, string propertyPath)");
+        commands.Should().Contain("class ApplyAllPrefabOverridesCommand(Guid objectId, string name)");
+        commands.Should().Contain("File.ReadAllBytes", "an apply remembers the asset's bytes to put back");
+        commands.Should().Contain("File.WriteAllBytes", "and undo writes exactly those bytes back");
+    }
+
+    [Fact]
+    public void TheOverridesList_UsesOnlyThemeRoles()
+    {
+        Rule("override-path").Should().Contain("var(--theme-label)", "the path reads as ordinary text");
+        Rule("override-source").Should().Contain("var(--theme-accent-gray)", "the prefab's value sits quieter beside it");
+    }
+
     private static string Rule(string selector)
     {
         // Comments are stripped first: they would otherwise attach to the selector printed in front of them.
