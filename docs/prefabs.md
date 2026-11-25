@@ -69,6 +69,9 @@ values but never object ids: `LoadPrefab` always builds fresh objects.
 - **Overrides** (inspector, on any linked object): what has drifted from the asset, with Revert / Apply
   per value and Revert All / Apply All for the subtree. See the next section.
 
+At run time the same thing is `GameObject.Instantiate(object)`: a fresh clone with its own ids that keeps the
+link to the asset. It is described in [Physics & Runtime Lifecycle](physics.md#7-instantiating-destroying-and-changing-scenes).
+
 ## Prefab overrides
 
 An override is a divergence between an instance and its source — named as a (property path, source value)
