@@ -182,9 +182,10 @@ public class Transform
         forward = Vector3.Normalize(forward);
         Vector3 upAxis = up.LengthSquared() < 1.0e-12f ? Vector3.UnitY : Vector3.Normalize(up);
 
-        // The engine looks along −Z, so the basis is built with +Z pointing the other way.
+        // CreateWorld puts its forward argument on the matrix's −Z axis, and −Z is the direction this engine calls
+        // forward (Transform.Forward maps -UnitZ), so the direction goes in as it is.
         Quaternion worldRotation = Quaternion.CreateFromRotationMatrix(
-            Matrix4x4.CreateWorld(Vector3.Zero, -forward, upAxis));
+            Matrix4x4.CreateWorld(Vector3.Zero, forward, upAxis));
 
         Rotation = Parent is null
             ? worldRotation

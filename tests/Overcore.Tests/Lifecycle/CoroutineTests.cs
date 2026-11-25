@@ -59,7 +59,7 @@ public class CoroutineTests
 
         Scene scene = StartScene(physics, audio, thing);
 
-        runner.Log.Should().Equal("before", "the first yield stops here");
+        runner.Log.Should().Equal("before");
 
         scene.Update(Frame);
         runner.Log.Should().HaveCount(3).And.EndWith("after one frame");

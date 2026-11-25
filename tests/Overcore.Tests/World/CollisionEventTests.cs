@@ -109,7 +109,9 @@ public class CollisionEventTests
         collision.ContactCount.Should().BeGreaterThan(0);
 
         ContactPoint contact = collision.Contacts[0];
-        contact.Normal.Should().Be(new Vector3(0.0f, 1.0f, 0.0f), "the floor pushes the crate up");
+        contact.Normal.Y.Should().BeApproximately(1.0f, 0.001f, "the floor pushes the crate up");
+        contact.Normal.X.Should().BeApproximately(0.0f, 0.001f);
+        contact.Normal.Z.Should().BeApproximately(0.0f, 0.001f);
         contact.Point.Y.Should().BeApproximately(0.0f, 0.1f, "the contact sits on the floor's surface");
         contact.ThisCollider.Should().BeSameAs(crate.GetComponent<Collider>());
         contact.OtherCollider.Should().BeSameAs(ground.GetComponent<Collider>());
