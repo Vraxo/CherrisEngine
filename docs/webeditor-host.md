@@ -232,6 +232,11 @@ the empty space below the list. The colours are Unity's dark hierarchy sampled a
 switches that object's MeshRenderer off and on. The picking column, the header kebab, the toolbar's
 multi-scene glyph and the search arrow are chrome, `aria-hidden` like Unity's would be inert.
 
+The transport chips are Unity's too, sampled the same way: flat rounded rectangles in Unity's raised button
+grey with a near-black outline and light grey glyphs, lightening under the pointer instead of turning a
+selection colour. Play/pause, stop and restart stay the honest controls they were — the restyle changes the
+look, not what the buttons do.
+
 Layout is additive: nothing in `src/CherrisEditor` changed. Splitters are dragged by `wwwroot/js/dock.js`,
 which only writes three CSS custom properties (`--dock-left`, `--dock-right`, `--dock-bottom`), persists
 them in `localStorage` the way ImGui persists its ini layout, and is reset by **Window > Reset Layout**.
