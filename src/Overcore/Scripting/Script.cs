@@ -230,7 +230,7 @@ public abstract class Script : Component
     /// <param name="time">Seconds to wait before the first call, in scaled time.</param>
     /// <param name="repeatRate">Seconds between calls.</param>
     public void InvokeRepeating(string methodName, float time, float repeatRate) =>
-        AddInvoke(methodName, MathF.Max(time), MathF.Max(repeatRate, 1.0e-3f));
+        AddInvoke(methodName, MathF.Max(time, 0.0f), MathF.Max(repeatRate, 1.0e-3f));
 
     /// <summary>Cancels every timed call this script has queued.</summary>
     public void CancelInvoke() => _invokes.Clear();
