@@ -417,6 +417,67 @@ public sealed class AddComponentCommand(Guid objectId, string componentName) : I
 }
 
 /// <summary>
+/// Adds an empty object at the scene root, as the hierarchy's create menu sends: Unity's "Create Empty".
+/// </summary>
+/// <param name="ObjectId">The id the object is created with, so the hierarchy can select it at once.</param>
+/// <param name="Name">Its name — "GameObject", the way Unity names an empty.</param>
+/// <remarks>
+/// One click is one undo step: <see cref="Undo"/> takes the object back out and <see cref="Redo"/> puts the
+/// same object back, with whatever the author gave it in between.
+/// </remarks>
+public sealed class CreateGameObjectCommand(Guid objectId, string name) : IUndoableCommand
+{
+    private GameObject? _created;
+
+    /// <inheritdoc />
+    public string Describe => $"create {name}";
+
+    /// <inheritdoc />
+    public string? Execute(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // The first run makes the object; Redo re-adds the same one.
+        _created ??= new GameObject(name, objectId);
+
+        context.Scene.AddGameObject(_created);
+        context.History.Record(this);
+
+        return $"[editor] created {name}.";
+    }
+
+    /// <inheritdoc />
+    public string? Undo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_created is null)
+        {
+            return null;
+        }
+
+        context.Scene.RemoveGameObject(_created);
+
+        return $"[editor] removed {name}.";
+    }
+
+    /// <inheritdoc />
+    public string? Redo(EditorCommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (_created is null)
+        {
+            return null;
+        }
+
+        context.Scene.AddGameObject(_created);
+
+        return $"[editor] created {name} again.";
+    }
+}
+
+/// <summary>
 /// Switches a component on or off, as the inspector's header checkbox sends: Unity's enable toggle.
 /// </summary>
 /// <param name="ObjectId">The object that owns the component.</param>
