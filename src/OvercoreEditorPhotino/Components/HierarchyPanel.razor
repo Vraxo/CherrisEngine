@@ -156,6 +156,12 @@
                             {
                                 <span class="tree-label">@row.Node.Name</span>
                             }
+                            @if (row.Node.IsPrefabInstance)
+                            {
+                                @* The mark Unity puts on a prefab's objects: this one belongs to a prefab. *@
+                                <i class="fa-solid fa-cubes-stacked hier-prefab-mark" title="Part of a prefab"
+                                   aria-hidden="true"></i>
+                            }
                         </span>
                     </div>
                 }
@@ -182,6 +188,11 @@
                 @if (_menuRow is Row row)
                 {
                     <div class="menu-separator"></div>
+                    <button type="button" class="menu-item" role="menuitem" disabled="@(!CanEdit)"
+                            title="@(RowActionTitle("Save this object and its children as a prefab in the project folder"))"
+                            @onclick="() => CreatePrefabFromMenu(row)">
+                        <span>Create Prefab</span>
+                    </button>
                     <button type="button" class="menu-item" role="menuitem" disabled="@(!CanEdit)"
                             title="@(RowActionTitle("Give this object a new name"))" @onclick="() => BeginRename(row)">
                         <span>Rename</span>
@@ -454,6 +465,12 @@
         }
 
         Host.DeleteGameObject(row.Node.Id, row.Node.Name);
+    }
+
+    private void CreatePrefabFromMenu(Row row)
+    {
+        CloseMenu();
+        Host.CreatePrefab(row.Node.Id, row.Node.Name);
     }
 
     /// <summary>Whether the selection sits on or under the row: the row and its subtree leave together.</summary>

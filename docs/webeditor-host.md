@@ -217,7 +217,7 @@ chrome is deliberately the same so muscle memory carries over:
 | Dockspace: left `Hierarchy` 20%, middle `Viewport` 72% + bottom tabs 28%, right `Inspector` 24% | `.dockspace` CSS grid with the same proportions; `Components/HierarchyPanel.razor`, `ViewportPanel.razor`, `ContentBrowserPanel.razor` / `ConsolePanel.razor` as the two bottom tabs, `InspectorPanel.razor` |
 | `ViewportToolbar` — `Options` popup | same `Options` popup in `ViewportPanel`; **Show Grid** is a checkable item that turns the renderer's grid on and off (see [Flying the camera](#flying-the-camera)) |
 | `ConsolePanel` — Clear, Auto-scroll, coloured levels | `ConsolePanel.razor` over `EditorHostService.LogEntries` |
-| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, a listing of the open project folder; scene tiles carry a preview and open the scene on double-click, and right-clicking creates files (see [Making things in the browser](#making-things-in-the-browser)) |
+| `ContentBrowserPanel` — `<- Back`, `Path: Project/…`, icon grid | `ContentBrowserPanel.razor`, a listing of the open project folder; scene tiles carry a preview and open the scene on double-click, prefab tiles add one to the scene (see [prefabs.md](prefabs.md)), and right-clicking creates files (see [Making things in the browser](#making-things-in-the-browser)) |
 | Theme: `ImGuiTheme.Apply(EditorTheme)` | the same `EditorTheme`, applied as `--theme-*` tokens (see [themes.md](themes.md)) |
 
 Colors come from the engine's own palette rather than an approximation of it — see
@@ -230,7 +230,8 @@ the empty space below the list. The colours are Unity's dark hierarchy sampled a
 `--theme-*` roles. The controls are honest about scope: the create button really adds an empty GameObject
 (one undoable step, selected the moment it appears), the eye appears only on rows that draw — it
 switches that object's MeshRenderer off and on, and the right-click menu is the short one Unity gives —
-Create Empty GameObject, Rename, Delete — where Rename turns the row's label into a field and Delete takes
+Create Empty GameObject, Create Prefab, Rename, Delete — where Create Prefab saves the row's subtree as a
+prefab asset (see [prefabs.md](prefabs.md)), Rename turns the row's label into a field, and Delete takes
 the row and its subtree out of the scene in one undoable step that puts everything back where it was. The
 picking column, the header kebab, the toolbar's multi-scene glyph and the search arrow are chrome,
 `aria-hidden` like Unity's would be inert.

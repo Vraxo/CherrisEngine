@@ -101,6 +101,10 @@ public sealed class EditorSession : Engine, IDisposable
             // A command that writes a C# script attaches it in the same drain, which is only possible if it can ask
             // for a compile first.
             _commands.ReloadScripts = ReloadProjectScripts;
+
+            // A command that instantiates a prefab reads the asset through the engine's loader, so the
+            // factory-built components come back whole.
+            _commands.LoadPrefabAsset = SceneLoader.LoadPrefab;
         }
 
         if (_scene.ProjectRoot is { } projectRoot)

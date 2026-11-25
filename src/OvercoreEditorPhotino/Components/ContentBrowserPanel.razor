@@ -62,11 +62,25 @@
     <div class="menu-popup cb-menu" role="menu" style="@MenuStyle">
         @if (_menuTarget is Entry target)
         {
-            <button type="button" class="menu-item" role="menuitem" @onclick="() => ActivateFromMenu(target)">
-                <span>@(target.IsDirectory ? "Open Folder" : "Open Scene")</span>
-            </button>
+            @if (IsPrefab(target))
+            {
+                @* A prefab is not something to open: it is something to add to the scene. *@
+                <button type="button" class="menu-item" role="menuitem"
+                        title="Add one of this prefab to the scene" @onclick="() => InstantiateFromMenu(target)">
+                    <span>Instantiate in Scene</span>
+                </button>
 
-            <div class="menu-separator"></div>
+                <div class="menu-separator"></div>
+            }
+            else if (target.IsDirectory || IsScene(target))
+            {
+                <button type="button" class="menu-item" role="menuitem" @onclick="() => ActivateFromMenu(target)">
+                    <span>@(target.IsDirectory ? "Open Folder" : "Open Scene")</span>
+                </button>
+
+                <div class="menu-separator"></div>
+            }
+            @* A file that is neither a folder, a scene, nor a prefab has nothing honest to offer. *@
         }
 
         <button type="button" class="menu-item" role="menuitem" @onclick="() => BeginCreate(CreateKind.Scene)">
@@ -244,12 +258,20 @@
             && !entry.Name.Equals(ProjectConfig.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>A prefab asset: the tile and the menu offer adding one to the scene.</summary>
+    private static bool IsPrefab(Entry entry) =>
+        !entry.IsDirectory
+        && Path.GetExtension(entry.Name).Equals(".prefab", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The name, plus what the preview found in the file.</summary>
     private string EntryTitle(Entry entry)
     {
         if (Previews.Get(entry.FullPath) is not SceneThumbnail preview)
         {
-            return entry.Name;
+            // A prefab says what it is and what the tile does with it, since the icon alone does not.
+            return IsPrefab(entry)
+                ? $"{entry.Name} — a prefab; double-click or right-click to add one to the scene"
+                : entry.Name;
         }
 
         string contents = preview.Objects.Count switch
@@ -329,6 +351,12 @@
         {
             Host.OpenScene(entry.FullPath);
         }
+        else if (IsPrefab(entry))
+        {
+            // Unity opens a prefab for editing; Overcore has no prefab mode, so double-click does the one
+            // honest thing it can: add one to the scene.
+            Host.InstantiatePrefab(entry.FullPath);
+        }
     }
 
     private void GoBack()
@@ -358,6 +386,12 @@
         Refresh();
     }
 
+    private void InstantiateFromMenu(Entry entry)
+    {
+        CloseMenu();
+        Host.InstantiatePrefab(entry.FullPath);
+    }
+
     private static RenderFragment Glyph(Entry entry)
     {
         string extension = Path.GetExtension(entry.Name).ToLowerInvariant();
@@ -369,6 +403,7 @@
                 ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" or ".tga" =>
                     "M2 3.2h12v9.6H2zm1.2 1.2v5.2l2.6-2.6 2.2 2.2 2.4-2.9 2.4 2.6V4.4z",
                 ".yaml" or ".yml" => "M3 2.4h7l3 3v8.2H3zm1.2 3.4h6.6M4.2 8h6.6M4.2 9.8h4.4",
+                ".prefab" => "M8 1.8 13.4 4.6v6.8L8 14.2 2.6 11.4V4.6zm0 2.8v6.8m-5.4-9.6L8 7.4l5.4-2.8",
                 ".wav" or ".ogg" or ".mp3" => "M6 2.6v8.1a1.7 1.7 0 1 0 1.4 1.7V6.2l5-1.1v5.6a1.7 1.7 0 1 0 1.4 1.7V2.2z",
                 _ => "M3.2 2h6.2l3.4 3.4V14H3.2zm1.2 3.2h6.4M4.4 7.4h6.4M4.4 9.6h4.6"
             };

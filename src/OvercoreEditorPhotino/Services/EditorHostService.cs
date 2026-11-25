@@ -2,6 +2,7 @@ using Overcore.Core;
 using Overcore.Core.Logging;
 using Overcore.Projects;
 using Overcore.Scripting;
+using Overcore.Utils;
 using OvercoreEditorSession;
 using OvercoreEditorSession.Host;
 using System.Net;
@@ -578,6 +579,49 @@ public sealed class EditorHostService : IDisposable
     /// <returns>False when no session is running to apply it.</returns>
     public bool DeleteGameObject(Guid objectId, string name) =>
         Enqueue(new DeleteGameObjectCommand(objectId, name), "delete " + name);
+
+    /// <summary>
+    /// Saves an object and its children as a prefab asset in the project folder and links the saved objects
+    /// to it, as the hierarchy's context menu sends: Unity's "Create Prefab". One undoable step; the outcome
+    /// is logged to the console.
+    /// </summary>
+    /// <param name="objectId">The object to save; its subtree becomes the asset.</param>
+    /// <param name="objectName">Its name, which names the file.</param>
+    /// <returns>False when no session is running, or there is no project to write to.</returns>
+    public bool CreatePrefab(Guid objectId, string objectName)
+    {
+        if (_projectRoot is not { } projectRoot)
+        {
+            return false;
+        }
+
+        return Enqueue(
+            new CreatePrefabFromSelectionCommand(objectId, UniqueAssetPath(projectRoot, objectName)),
+            "create prefab");
+    }
+
+    /// <summary>
+    /// Adds a prefab to the scene as a fresh instance of the asset, as the content browser sends: Unity's
+    /// "Instantiate Prefab". One undoable step; the outcome is logged to the console.
+    /// </summary>
+    /// <param name="path">The prefab asset's path.</param>
+    /// <returns>False when no session is running to apply it.</returns>
+    public bool InstantiatePrefab(string path) =>
+        Enqueue(new InstantiatePrefabCommand(path), "instantiate " + Path.GetFileNameWithoutExtension(path));
+
+    /// <summary>A free file name in the folder: <c>Cube.prefab</c>, then <c>Cube 1.prefab</c>, and so on.</summary>
+    private static string UniqueAssetPath(string projectRoot, string baseName)
+    {
+        string name = string.Join("_", baseName.Split(Path.GetInvalidFileNameChars()));
+        string candidate = Path.Combine(projectRoot, name + ".prefab");
+
+        for (int i = 1; File.Exists(candidate) || File.Exists(candidate + AssetMeta.Suffix); i++)
+        {
+            candidate = Path.Combine(projectRoot, name + " " + i + ".prefab");
+        }
+
+        return candidate;
+    }
 
     /// <summary>
     /// Switches a component on or off, as the inspector's header checkbox sends. Off stops the component — a

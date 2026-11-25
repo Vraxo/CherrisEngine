@@ -1573,6 +1573,15 @@ span.panel-tab {
     height: calc(var(--hier-row-height) - 4px);
 }
 
+/* Unity marks a prefab instance's objects with its blue cube. Ours is a small stack-of-cubes mark in the
+   theme's primary role, tucked against the name and never squeezed by it. */
+.hier-prefab-mark {
+    flex-shrink: 0;
+    margin-left: 4px;
+    font-size: 10px;
+    color: var(--theme-primary);
+}
+
 .hier-empty {
     padding: 8px;
     margin: 0;

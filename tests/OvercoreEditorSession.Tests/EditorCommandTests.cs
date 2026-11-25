@@ -701,6 +701,91 @@ public class EditorCommandTests
         scene.History.CanUndo.Should().BeFalse("a delete that took nothing is not a step to take back");
     }
 
+    [Fact]
+    public void CreatePrefabFromSelection_WritesTheAsset_AndLinksTheObjects()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+        GameObject arm = new("Arm");
+        arm.Transform.Parent = scene.Target.Transform;
+        scene.Live.AddGameObject(arm);
+
+        string path = Path.Combine(project.Root, "Cube.prefab");
+        scene.Run(new CreatePrefabFromSelectionCommand(scene.Target.Id, path)).Should().Contain("created prefab Cube");
+
+        File.Exists(path).Should().BeTrue("the asset is written");
+        File.Exists(path + ".meta").Should().BeTrue("the asset gets its guid sidecar");
+        scene.Target.PrefabSource.Should().NotBeNull("the saved objects are the prefab's first instance");
+        scene.Target.PrefabSource!.FileId.Should().Be(1);
+        arm.PrefabSource!.FileId.Should().Be(2, "the subtree keeps the ids the file gave it");
+
+        scene.Run(new UndoCommand()).Should().Contain("unlinked");
+        scene.Target.PrefabSource.Should().BeNull();
+        arm.PrefabSource.Should().BeNull();
+        File.Exists(path).Should().BeTrue("the asset stays: it is a project file now");
+
+        scene.Run(new RedoCommand());
+        scene.Target.PrefabSource.Should().NotBeNull();
+        arm.PrefabSource!.FileId.Should().Be(2, "Redo links the same objects at the same ids");
+    }
+
+    [Fact]
+    public void CreatePrefabFromSelection_ReportsAnObjectThatIsGone()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        scene.Run(new CreatePrefabFromSelectionCommand(Guid.NewGuid(), Path.Combine(project.Root, "Ghost.prefab")))
+            .Should().Contain("could not create prefab");
+
+        scene.History.CanUndo.Should().BeFalse("a save that wrote nothing is not a step to take back");
+    }
+
+    [Fact]
+    public void InstantiatePrefab_AddsTheSubtree_AndUndoTakesItBack()
+    {
+        using TemporaryProject project = new();
+        Harness scene = new(project.Root);
+
+        GameObject instance = new("Rope");
+        GameObject knot = new("Knot");
+        knot.Transform.Parent = instance.Transform;
+        instance.PrefabSource = new PrefabSource("abc123", 1);
+        knot.PrefabSource = new PrefabSource("abc123", 2);
+        scene.Dispatcher.LoadPrefabAsset = _ => [instance];
+
+        scene.Run(new InstantiatePrefabCommand("Rope.prefab")).Should().Contain("instantiated Rope");
+        scene.Live.GameObjects.Should().Contain(instance, "the instance arrives at the scene root");
+        scene.Live.GameObjects.Should().Contain(knot, "the whole subtree arrives with it");
+        instance.PrefabSource.Should().NotBeNull("every object keeps its link to the asset");
+
+        scene.Run(new UndoCommand());
+        scene.Live.GameObjects.Should().NotContain(instance).And.NotContain(knot);
+
+        scene.Run(new RedoCommand());
+        scene.Live.GameObjects.Should().Contain(instance, "Redo puts the same objects back, not new ones");
+        scene.Live.GameObjects.Should().Contain(knot);
+    }
+
+    [Fact]
+    public void InstantiatePrefab_WithoutALoader_SaysSo()
+    {
+        Harness scene = new();
+
+        scene.Run(new InstantiatePrefabCommand("Rope.prefab")).Should().Contain("cannot read prefabs");
+        scene.History.CanUndo.Should().BeFalse();
+    }
+
+    [Fact]
+    public void InstantiatePrefab_AnUnreadablePrefab_SaysSo()
+    {
+        Harness scene = new();
+        scene.Dispatcher.LoadPrefabAsset = _ => [];
+
+        scene.Run(new InstantiatePrefabCommand("Dust.prefab")).Should().Contain("could not be read");
+        scene.History.CanUndo.Should().BeFalse("nothing arrived, so there is nothing to take back");
+    }
+
     /// <summary>A scene, an object in it, and one dispatcher whose history the commands record into.</summary>
     private sealed class Harness
     {
