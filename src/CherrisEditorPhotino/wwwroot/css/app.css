@@ -871,10 +871,12 @@ body {
 
 /* ---- transport toolbar ---- */
 
+/* Unity's transport: three flat rounded chips centred on the same background as the rest of the chrome,
+   each with a 1px near-black outline and a light grey glyph (#141414 bar, #505050 faces, #cccccc glyphs
+   sampled from Unity's editor). Play/pause, stop and restart stay the honest controls they were. */
 .editor-toolbar-strip {
     display: flex;
     justify-content: center;
-    /* FToolBarStyle BackgroundPadding = FMargin(0, 4, 0, 4). */
     padding: 4px 0;
     background: var(--theme-background);
     border-bottom: var(--theme-border-width) solid var(--theme-window-border);
@@ -882,47 +884,47 @@ body {
 
 .transport {
     display: flex;
-    /* FToolBarStyle ButtonPadding = FMargin(2, 0) on each side of a button. */
-    gap: 4px;
+    /* The chips sit almost shoulder to shoulder in Unity; the seam between them is their outlines. */
+    gap: 1px;
 }
 
 .transport-button {
     display: inline-flex;
 }
 
-/* The level-editor toolbar's buttons are "ToolBar.Button": unpainted normally, and hovered or
-   pressed with the style's SelectionColor (the bright selector blue), padding FMargin(2, 2). */
+/* The chip: Unity's raised button grey (#505050 sampled) — Secondary three parts to Panel one — in the
+   sampled 1.41:1 rectangle at the theme's control height, outlined in the near-black that also frames
+   the editor's fields. */
 .transport-button button {
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 62px;
-    height: 22px;
-    padding: 2px;
-    border: 1px solid transparent;
+    width: 31px;
+    height: var(--theme-control-height);
+    padding: 0;
+    border: var(--theme-border-width) solid var(--theme-window-border);
     border-radius: var(--theme-radius);
-    background: transparent;
+    background: color-mix(in srgb, var(--theme-secondary) 75%, var(--theme-panel));
     color: var(--theme-foreground);
     cursor: default;
 }
 
+/* Hover lifts the face to the theme's hover grey; pressing lifts it once more, the way Unity's flat
+   buttons lighten under the pointer instead of turning a selection colour. */
 .transport-button button:hover:not(:disabled) {
-    background: var(--theme-selection);
-    color: var(--theme-foreground-hover);
+    background: var(--theme-hover);
 }
 
-/* SelectionColor_Pressed: the style set's linear (0.701, 0.225, 0.003), i.e. #DA820A on screen. */
 .transport-button button:active:not(:disabled) {
-    background: var(--theme-selection-pressed);
-    color: var(--theme-foreground-hover);
+    background: color-mix(in srgb, var(--theme-hover) 80%, var(--theme-foreground));
 }
 
-/* A disabled toolbar button stays unpainted and its glyph dims to the muted grey the menus use for a
-   disabled item, so "nothing to do" reads at a glance now that the transport does something. */
+/* A disabled chip keeps its outline and sits at the lighter stripe grey (#323232 sampled), its glyph dimmed
+   to Foreground halfway to Panel (#858585 sampled), so "nothing to do" reads at a glance. */
 .transport-button button:disabled {
-    border-color: transparent;
-    background: transparent;
-    color: var(--theme-accent-gray);
+    background: color-mix(in srgb, var(--theme-recessed) 50%, var(--theme-panel));
+    color: color-mix(in srgb, var(--theme-foreground) 50%, var(--theme-panel));
     cursor: default;
 }
 
