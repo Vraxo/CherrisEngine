@@ -77,28 +77,28 @@ public class Animator : Component
 
     // ---------------------------------------------------------------- parameters
 
-    public void SetFloat(string name, float value) => Set(name, AnimatorParameterType.Float, value);
+    public void SetFloat(string name, float value) => Set(name, value);
 
-    public void SetFloat(int hash, float value) => Set(hash, AnimatorParameterType.Float, value);
+    public void SetFloat(int hash, float value) => Set(hash, value);
 
-    public void SetInt(string name, int value) => Set(name, AnimatorParameterType.Int, value);
+    public void SetInt(string name, int value) => Set(name, value);
 
-    public void SetInt(int hash, int value) => Set(hash, AnimatorParameterType.Int, value);
+    public void SetInt(int hash, int value) => Set(hash, value);
 
-    public void SetBool(string name, bool value) => Set(name, AnimatorParameterType.Bool, value ? 1f : 0f);
+    public void SetBool(string name, bool value) => Set(name, value ? 1f : 0f);
 
-    public void SetBool(int hash, bool value) => Set(hash, AnimatorParameterType.Bool, value ? 1f : 0f);
+    public void SetBool(int hash, bool value) => Set(hash, value ? 1f : 0f);
 
     /// <summary>
     /// Sets a trigger. A trigger is a bool a transition consumes when it fires, so setting it twice before it is read
     /// is still one trigger — which is why this stores a flag rather than counting.
     /// </summary>
-    public void SetTrigger(string name) => Set(name, AnimatorParameterType.Trigger, 1f);
+    public void SetTrigger(string name) => Set(name, 1f);
 
-    public void SetTrigger(int hash) => Set(hash, AnimatorParameterType.Trigger, 1f);
+    public void SetTrigger(int hash) => Set(hash, 1f);
 
     /// <summary>Clears a trigger by hand, for a script that wants to cancel a jump before it fires.</summary>
-    public void ResetTrigger(string name) => Set(name, AnimatorParameterType.Trigger, 0f);
+    public void ResetTrigger(string name) => Set(name, 0f);
 
     public float GetFloat(string name) => Controller?.FindParameter(name)?.FloatValue ?? 0f;
 
@@ -230,6 +230,53 @@ public class Animator : Component
         for (int index = 0; index < _machines.Count && index < controller.Layers.Count; index++)
         {
             _machines[index].FireEvents(_events, GameObject);
+        }
+    }
+
+    /// <summary>
+    /// Writes a parameter, whether it was addressed by name or by hash. A name that is not in the controller is
+    /// ignored rather than throwing — a script outliving a renamed parameter should go quiet, not take the frame down.
+    /// </summary>
+    private void Set(string name, float value)
+    {
+        AnimatorParameter? parameter = Controller?.FindParameter(name);
+
+        if (parameter is not null)
+        {
+            Write(parameter, value);
+        }
+    }
+
+    private void Set(int hash, float value)
+    {
+        AnimatorParameter? parameter = Controller?.FindParameter(hash);
+
+        if (parameter is not null)
+        {
+            Write(parameter, value);
+        }
+    }
+
+    /// <summary>
+    /// Stores a value in the field its type actually uses. A caller passing a bool as 1f is not a float parameter
+    /// being written by accident — the type on the controller decides which field the value lands in.
+    /// </summary>
+    private static void Write(AnimatorParameter parameter, float value)
+    {
+        switch (parameter.Type)
+        {
+            case AnimatorParameterType.Float:
+                parameter.FloatValue = value;
+                break;
+
+            case AnimatorParameterType.Int:
+                parameter.IntValue = (int)value;
+                break;
+
+            case AnimatorParameterType.Bool:
+            case AnimatorParameterType.Trigger:
+                parameter.BoolValue = value > 0f;
+                break;
         }
     }
 
