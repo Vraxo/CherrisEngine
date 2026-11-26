@@ -154,14 +154,20 @@ jobs:
       # needed to emit SPIR-V and not at all to say whether a shader is well-formed; without it the clone is 90 MB
       # heavier for a check that never looks at the output.
       #
-      # The build is cached on the tarball's checksum: glslang has no increment worth preserving and a stale cache
-      # is the one failure mode worse than a slow step.
+      # The build is ~70 s and the check itself is one, so the binary is cached under the glslang version: the
+      # version is in the key and nothing else is, which is what makes a stale cache impossible rather than merely
+      # unlikely. A cache miss is a slower job, never a wrong one.
+      - name: Restore cached GLSL validator
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/glslang/build/StandAlone/glslang
+          key: glslang-16.1.0-${{ runner.os }}
+
       - name: Build GLSL validator
         run: |
           set -eu
           version=16.1.0
           work="$RUNNER_TEMP/glslang"
-          stamp="$work/.built-$version"
           if [ ! -x "$work/build/StandAlone/glslang" ]; then
             rm -rf "$work"
             mkdir -p "$work"
@@ -172,7 +178,6 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=0 -DENABLE_HLSL=0 \
               -DBUILD_TESTING=0 -DENABLE_GLSLANG_BINARIES=ON > /dev/null
             cmake --build "$work/build" --target glslang-standalone -j "$(nproc)" > /dev/null
-            touch "$stamp"
           fi
           "$work/build/StandAlone/glslang" --version | head -1
           echo "GLSLANG=$work/build/StandAlone/glslang" >> "$GITHUB_ENV"
@@ -182,8 +187,9 @@ jobs:
       # `in vec3 vTexCoords`, each file legal and the program unbuildable.
       #
       # The pairs are listed here rather than derived from the C# because they are what the renderers ask for by
-      # name, and a pair added to a renderer without a line here is a pair nobody is checking. `tests` below
-      # asserts that this list and the loader's agree, so the duplication cannot drift silently.
+      # name, and a pair added to a renderer without a line here is a pair nobody is checking.
+      # `ShadowShaderTests.TheShadersTheRendererLinksAreTheShadersCiCompiles` reads this list back and asserts it
+      # matches what the renderers ask for, so the duplication cannot drift without a test going red.
       - name: Validate shaders
         run: |
           set -eu
