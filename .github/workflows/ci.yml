@@ -96,7 +96,7 @@ jobs:
 
           # The last few lines say how the build ended, which is often the most useful thing of all.
           tail = ' | '.join(line.strip() for line in lines[-8:] if line.strip())
-          print(f'::error title=Build tail::{tail[:900]}')
+          print(f'Build tail: {tail[:900]}')
           print(f'{errors} error(s) and {len(reported) - errors} warning(s) reported.')
           PY
 
