@@ -9,6 +9,10 @@ using System.Linq;
 using System.Numerics;
 using Veldrid;
 
+// SharpGLTF.Schema2 and Overcore.Core both declare a Material: the glTF one is read from a file, the engine one is
+// what a MeshRenderer holds. Naming the engine's here keeps the two from being ambiguous wherever both are in scope.
+using Material = Overcore.Core.Material;
+
 namespace Overcore.Rendering;
 
 /// <summary>One imported object: the handle a caller needs to place, and to link, what the file described.</summary>

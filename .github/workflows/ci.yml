@@ -50,10 +50,15 @@ jobs:
           with open('build.log', encoding='utf-8', errors='replace') as log:
               lines = [line.rstrip('\n') for line in log]
 
-          # MSBuild diagnostics carry a file and position; anything else that says "error" is annotated as-is.
-          located = re.compile(r'^(?P<file>.+?\(\d+,\d+\)):\s(?:error|warning)\s(?P<code>[A-Z]+\d+):\s(?P<message>.+)$')
+          # MSBuild diagnostics carry a file, a position and a level; anything else that says "error" is annotated
+          # as-is, at error level. A warning is annotated as a warning: the repository has always had a few (nullable
+          # mismatches in interop), and marking them failures would bury the errors underneath them.
+          located = re.compile(
+              r'^(?P<file>.+?\(\d+,\d+\)):\s(?P<level>error|warning)\s(?P<code>[A-Z]+\d+):\s(?P<message>.+)$',
+              re.IGNORECASE)
 
           reported = set()
+          errors = 0
 
           for line in lines:
               text = line.strip()
@@ -65,18 +70,26 @@ jobs:
 
               if match:
                   code = match['code']
+                  level = match['level'].lower()
                   detail = f"{match['message']} ({match['file']})"
               elif re.search(r'\berror\b\s*[A-Z]+\d*\s*:', text, re.IGNORECASE) or text.startswith('error '):
                   code = 'Build'
+                  level = 'error'
                   detail = text
               else:
                   continue
 
-              if detail in reported:
+              key = (level, code, detail)
+
+              if key in reported:
                   continue
 
-              reported.add(detail)
-              print(f'::error title={code}::{detail[:900]}')
+              reported.add(key)
+
+              if level == 'error':
+                  errors += 1
+
+              print(f'::{level} title={code}::{detail[:900]}')
 
               if len(reported) >= 50:
                   break
@@ -84,7 +97,7 @@ jobs:
           # The last few lines say how the build ended, which is often the most useful thing of all.
           tail = ' | '.join(line.strip() for line in lines[-8:] if line.strip())
           print(f'::error title=Build tail::{tail[:900]}')
-          print(f'{len(reported)} build error(s) reported.')
+          print(f'{errors} error(s) and {len(reported) - errors} warning(s) reported.')
           PY
 
       # A failing test says why in its own output, which is not visible from a headless session, so each failure is
