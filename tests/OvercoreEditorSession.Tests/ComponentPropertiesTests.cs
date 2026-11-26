@@ -132,7 +132,7 @@ public class ComponentPropertiesTests
             .Should().BeFalse();
 
         error.Should().Contain("list of numbers");
-        shadows.Splits.Should().Equal(0.2f, 0.5f, 0.8f, "a rejected edit leaves the value alone");
+        shadows.Splits.Should().Equal(0.2f, 0.5f, 0.8f);
     }
 
     [Fact]
