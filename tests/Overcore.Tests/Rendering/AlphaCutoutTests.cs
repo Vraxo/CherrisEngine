@@ -139,8 +139,12 @@ public class AlphaCutoutTests
         }
     }
 
-    /// <summary>A texture with no backend, which is all these rules ever ask of one.</summary>
-    private sealed class FakeTexture : ITexture
+    /// <summary>
+    /// A texture with no backend, which is all these rules ever ask of one. Fully qualified because the enclosing
+    /// namespace of this file ends in `.Rendering`, and resolving the bare name inside `Overcore.Tests.Rendering`
+    /// does not reach `Overcore.Rendering.ITexture` the way the same name does from a sibling test namespace.
+    /// </summary>
+    private sealed class FakeTexture : Overcore.Rendering.ITexture
     {
         public object GetBackendHandle() => new object();
 
