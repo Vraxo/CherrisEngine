@@ -214,14 +214,14 @@ public class ShadowFrameTests
         ShadowFrame small = ShadowFrame.Build([gameObject], Camera(), 16f / 9f, 1024);
         ShadowFrame large = ShadowFrame.Build([gameObject], Camera(), 16f / 9f, 4096);
 
-        // Twice the texels a side is half the world per texel, which is what makes the normal offset scale with the
-        // resolution instead of detaching a shadow at exactly one of them.
+        // Four times the texels a side is a quarter of the world per texel, which is what makes the normal offset scale
+        // with the resolution instead of detaching a shadow at exactly one of them.
         //
-        // A ratio with a relative tolerance, not `small / 2 ≈ large`: the texel size is the box's extent over the map
-        // side, and the extent itself grows with the texel size (the fit pads the box by a texel on every axis so a
-        // caster on the boundary still lands inside). So the ratio is 2 and the difference is not exactly zero, which
-        // is a property of the fit rather than a rounding artefact to widen a tolerance around.
-        (small.Cascades[0].TexelSize / large.Cascades[0].TexelSize).Should().BeApproximately(2f, 0.01f);
+        // Not exactly 4, and the reason is a property of the fit rather than rounding: the box is the slice's sphere
+        // plus one texel of slack on every axis (`LightSpaceFit.SlackTexels`), so a coarser map carries a
+        // proportionally larger slack and its texel divides out slightly more than a quarter. At these resolutions the
+        // difference is 0.15%, which is why this is a relative tolerance rather than an equality.
+        (small.Cascades[0].TexelSize / large.Cascades[0].TexelSize).Should().BeApproximately(4f, 0.01f);
     }
 
     // ---------------------------------------------------------------- the singleton
