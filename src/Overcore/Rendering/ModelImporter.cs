@@ -657,9 +657,11 @@ public static class ModelImporter
         AnimationProperty property,
         AnimationClip clip)
     {
-        AnimationCurve x = new(bonePath, property, AnimationAxis.X);
-        AnimationCurve y = new(bonePath, property, AnimationAxis.Y);
-        AnimationCurve z = new(bonePath, property, AnimationAxis.Z);
+        AnimationInterpolation interpolation = InterpolationOf(sampler.InterpolationMode);
+
+        AnimationCurve x = new(bonePath, property, AnimationAxis.X) { Interpolation = interpolation };
+        AnimationCurve y = new(bonePath, property, AnimationAxis.Y) { Interpolation = interpolation };
+        AnimationCurve z = new(bonePath, property, AnimationAxis.Z) { Interpolation = interpolation };
 
         if (sampler.InterpolationMode == AnimationInterpolationMode.CUBICSPLINE)
         {
@@ -688,10 +690,12 @@ public static class ModelImporter
     /// <summary>Copies a rotation sampler into four component curves, made continuous before they are stored.</summary>
     private static void AddRotationCurves(IAnimationSampler<Quaternion> sampler, string bonePath, AnimationClip clip)
     {
-        AnimationCurve x = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.X);
-        AnimationCurve y = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.Y);
-        AnimationCurve z = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.Z);
-        AnimationCurve w = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.W);
+        AnimationInterpolation interpolation = InterpolationOf(sampler.InterpolationMode);
+
+        AnimationCurve x = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.X) { Interpolation = interpolation };
+        AnimationCurve y = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.Y) { Interpolation = interpolation };
+        AnimationCurve z = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.Z) { Interpolation = interpolation };
+        AnimationCurve w = new(bonePath, AnimationProperty.LocalRotation, AnimationAxis.W) { Interpolation = interpolation };
 
         Quaternion previous = Quaternion.Identity;
         bool first = true;
@@ -726,6 +730,17 @@ public static class ModelImporter
         clip.AddCurve(z);
         clip.AddCurve(w);
     }
+
+    /// <summary>
+    /// Maps glTF's sampler mode onto the engine's. <c>STEP</c> is the important one to carry: a stepped channel is how
+    /// a file says "this does not move between keys", and sampling it linearly would smooth away the jump it means.
+    /// </summary>
+    private static AnimationInterpolation InterpolationOf(AnimationInterpolationMode mode) => mode switch
+    {
+        AnimationInterpolationMode.STEP => AnimationInterpolation.Constant,
+        AnimationInterpolationMode.CUBICSPLINE => AnimationInterpolation.Cubic,
+        _ => AnimationInterpolation.Linear
+    };
 
     /// <summary>
     /// Flips a key that is more than a half turn from its predecessor. <c>q</c> and <c>-q</c> are the same

@@ -96,6 +96,13 @@ public class AnimationCurve
 
     public AnimationAxis Axis { get; }
 
+    /// <summary>
+    /// How this curve's keys are interpolated. glTF puts the mode on the sampler, so it travels with the channel: one
+    /// clip can hold a stepped visibility track and a cubic limb at the same time. A hand-built curve defaults to
+    /// linear, which is also the clip-wide default.
+    /// </summary>
+    public AnimationInterpolation Interpolation { get; set; } = AnimationInterpolation.Linear;
+
     /// <summary>The keys, in time order.</summary>
     public IReadOnlyList<AnimationKey> Keys => _keys;
 
