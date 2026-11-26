@@ -22,8 +22,11 @@ namespace Overcore.Animation;
 /// </remarks>
 public sealed class AnimationEventDispatch
 {
-    /// <summary>Parameter shapes an event method may have, tried in this order — Unity's order.</summary>
-    private static readonly Type[] ParameterShapes = [typeof(float), typeof(int), typeof(string), Type.EmptyTypes];
+    /// <summary>
+    /// The parameter shapes an event method may have, tried in this order — Unity's order. Null means a method that
+    /// takes no arguments at all, which is the most common handler and so is tried before the typed ones.
+    /// </summary>
+    private static readonly Type?[] ParameterShapes = [null, typeof(float), typeof(int), typeof(string)];
 
     /// <summary>Events already reported as missing, so a bad handler is logged once rather than every frame.</summary>
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
@@ -140,7 +143,7 @@ public sealed class AnimationEventDispatch
         MethodInfo[] methods = type.GetMethods(
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-        foreach (Type parameter in ParameterShapes)
+        foreach (Type? parameter in ParameterShapes)
         {
             foreach (MethodInfo method in methods)
             {
@@ -151,17 +154,21 @@ public sealed class AnimationEventDispatch
 
                 ParameterInfo[] parameters = method.GetParameters();
 
-                if (parameters.Length != (parameter == Type.EmptyTypes ? 0 : 1))
+                // A null shape asks for a no-argument method; a typed one asks for exactly that one parameter.
+                if (parameter is null)
                 {
+                    if (parameters.Length == 0)
+                    {
+                        return method;
+                    }
+
                     continue;
                 }
 
-                if (parameters.Length == 1 && parameters[0].ParameterType != parameter)
+                if (parameters.Length == 1 && parameters[0].ParameterType == parameter)
                 {
-                    continue;
+                    return method;
                 }
-
-                return method;
             }
         }
 
