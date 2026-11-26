@@ -96,6 +96,13 @@ public class AnimationCurve
 
     public AnimationAxis Axis { get; }
 
+    /// <summary>
+    /// How this curve's keys are interpolated. glTF puts the mode on the sampler, so it travels with the channel: one
+    /// clip can hold a stepped visibility track and a cubic limb at the same time. A hand-built curve defaults to
+    /// linear, which is also the clip-wide default.
+    /// </summary>
+    public AnimationInterpolation Interpolation { get; set; } = AnimationInterpolation.Linear;
+
     /// <summary>The keys, in time order.</summary>
     public IReadOnlyList<AnimationKey> Keys => _keys;
 
@@ -164,6 +171,62 @@ public class AnimationCurve
         return interpolation == AnimationInterpolation.Cubic
             ? EvaluateCubic(from, to, span, t)
             : from.Value + ((to.Value - from.Value) * t);
+    }
+
+    /// <summary>
+    /// The two keys that bracket <paramref name="time"/> and how far between them it sits, which is what a rotation
+    /// needs to slerp: four component curves cannot be slerped axis by axis, so the pair has to be picked once for the
+    /// quaternion they make up together.
+    /// </summary>
+    /// <param name="time">A time within the curve's range.</param>
+    /// <param name="from">The key at or before the time.</param>
+    /// <param name="to">The key after it, or the same key when there is no segment.</param>
+    /// <param name="t">How far from <paramref name="from"/> to <paramref name="to"/>, in <c>0..1</c>.</param>
+    /// <returns>True when a real segment was found; false when the time is outside the keys or nothing brackets it.</returns>
+    public bool TryGetSegment(float time, out AnimationKey from, out AnimationKey to, out float t)
+    {
+        from = default;
+        to = default;
+        t = 0f;
+
+        if (_keys.Count < 2)
+        {
+            return false;
+        }
+
+        if (time <= _keys[0].Time)
+        {
+            from = _keys[0];
+            to = _keys[0];
+
+            return false;
+        }
+
+        if (time >= _keys[^1].Time)
+        {
+            from = _keys[^1];
+            to = _keys[^1];
+
+            return false;
+        }
+
+        int right = _keys.FindIndex(key => key.Time > time);
+
+        from = _keys[right - 1];
+        to = _keys[right];
+
+        float span = to.Time - from.Time;
+
+        if (span <= 0f)
+        {
+            to = from;
+
+            return false;
+        }
+
+        t = (time - from.Time) / span;
+
+        return true;
     }
 
     /// <summary>

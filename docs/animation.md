@@ -1,10 +1,11 @@
 # Animation & Skinning
 
-> **Status: increment 1 of 4 is implemented.** The importer, the skeleton data model, clip data and the 32-bit index
-> path exist; sampling, the `Animator` and GPU skinning do not. §8 says exactly which is which, and the rest of this
-> document is the contract the remaining increments follow — the semantics, the file formats and the API shape — so
-> that the code and its tests have one ground truth to agree on, the way [`prefabs.md`](prefabs.md) and
-> [`physics.md`](physics.md) do for the layers that already exist.
+> **Status: increments 1 and 2 of 4 are implemented.** The importer, the skeleton data model, clip data, the 32-bit
+> index path, sampling into a pose, blending, wrap arithmetic, event dispatch and the frame step exist; the `Animator`
+> state machine and GPU skinning do not. §8 says exactly which is which, and the rest of this document is the contract
+> the remaining increments follow — the semantics, the file formats and the API shape — so that the code and its tests
+> have one ground truth to agree on, the way [`prefabs.md`](prefabs.md) and [`physics.md`](physics.md) do for the
+> layers that already exist.
 
 Overcore draws static geometry and nothing else: `ModelLoader` reads `POSITION`, `NORMAL` and `TEXCOORD_0` out of a
 glTF primitive and throws the node graph away, `Vertex` has no room for bone weights, and a scene frame has no step
@@ -72,10 +73,12 @@ A curve addresses one property of one transform, the same three-part path Unity 
 | Property | `localPosition`, `localRotation`, `localScale` |
 | Axis | `x`/`y`/`z` for position and scale; `x`/`y`/`z`/`w` for rotation; none for a whole-vector curve |
 
-Keys are `(time, value, inTangent, outTangent)`. Interpolation is the clip's, not the curve's — Unity's
-`AnimationClip` is uniform, and the importer takes the mode from the glTF sampler
-(`LINEAR` → `Linear`, `STEP` → `Constant`, `CUBICSPLINE` → `Cubic` with the sampler's tangents). Quaternion curves are
-sampled component-wise and then **normalized**, so a long slerp-free stretch cannot drift into a non-unit rotation.
+Keys are `(time, value, inTangent, outTangent)`. Unity's `AnimationClip` is uniform in interpolation mode, but glTF
+puts the mode on each *sampler*, so the mode travels on the curve and the clip carries a default. The importer sets it
+per channel — `LINEAR` → `Linear`, `STEP` → `Constant`, `CUBICSPLINE` → `Cubic` with the sampler's tangents — which is
+what lets one clip hold a stepped visibility track and a cubic limb at once. Quaternion curves are sampled
+component-wise and then **normalized**, so a long stretch of component interpolation cannot drift into a non-unit
+rotation.
 
 ### 2.1 Sampling rules
 
@@ -401,12 +404,33 @@ pose, which is what the importer left its bones in, so a rigged character import
 **importer does not write `.anim`/`.controller` files** — clips live in memory, keyed by file and name, because
 serializing an object reference is its own piece of work (§6).
 
-### Next: increment 2 — sampling
+### Landed: increment 2 — sampling
 
-`AnimationClip.Sample` into an `AnimationPose`, weight blending, the wrap arithmetic applied per frame, and event
-dispatch. `AnimationCurve.Evaluate` and `AnimationClip.WrapTime` already exist and are tested, so this increment is the
-part that walks a clip's curves, maps their bone paths onto transforms, and turns the result into a pose that a
-renderer or a transform hierarchy can consume.
+- `AnimationPose` holds bone transforms keyed by the same hierarchy paths a clip's curves are addressed by, so
+  sampling needs no scene: it is arithmetic over a dictionary. `ApplyTo` writes a pose onto a hierarchy, `CaptureFrom`
+  fills one from a hierarchy, and `Resolve` turns a path into a `Transform`.
+- `AnimationClip.Sample(time, pose, weight)` and `SampleAt(...)` walk the curves grouped by bone path, so a bone's
+  position is blended as one value rather than three independent writes. A weight of one overwrites, zero is a no-op,
+  and two clips at half each land halfway between them. A bone a clip does not address is left alone — the mask that
+  keeps a hand-authored clip on a hand's worth of bones from flattening the body.
+- A position or scale driven by only some of its axes keeps the pose's value on the others, so a clip that animates
+  height alone does not slide the object to the origin.
+- Rotation curves are normalized after sampling and slerped, not lerped, so a sign flip mid-clip takes the short way
+  round and a component-interpolated quaternion stays a rotation.
+- Interpolation mode travels on the curve, so a stepped channel stays stepped and a cubic one keeps the file's
+  tangents.
+- `AnimationClip.SampleAnimation(root, time)` applies a clip in one call, with no clock — the inspector scrubber.
+- `Animation` — the legacy component: one clip, a clock, a wrap mode with a per-object override, `Weight` and
+  `RotationWeight`, `Play`, `PlayAt` and `Rewind`. `PlayAt` fires no events, because a scrub is not playback.
+- `AnimationEventDispatch` fires the events a frame *crossed*, in time order, once each, splitting correctly across a
+  loop boundary; a missing handler is logged once rather than every frame.
+- `Scene.Update` gained `AdvanceAnimation` between `AdvanceCoroutines(CoroutinePhase.Update, …)` and
+  `AdvanceLateUpdate()` — §4.4's placement, so a clip overrides a transform written in `Update` and a script reading
+  the final pose in `LateUpdate` sees this frame's.
+
+A limit of the component is worth stating: **nothing deforms a vertex yet.** `Animation` moves the bone transforms a
+skeleton's joint palette is computed from, but no shader reads that palette, so a rigged character's transforms animate
+while its mesh still draws at its bind pose. Increment 4 is what closes that.
 
 ### Then: increment 3 — the `Animator`
 
@@ -459,13 +483,23 @@ today (`✔`) and what the remaining increments add (`…`):
 | ✔ A repeated key time does not divide by zero | the degenerate segment (§2.1) |
 | ✔ `Loop` folds past the end, including negative time; `PingPong` reverses | wrap math (§2.3) |
 | ✔ A clip's curves address the node path the hierarchy registered | §2 binding |
-| … Sample at a key's exact time returns that key's value | key bracketing, off-by-one at the ends |
-| … Sample mid-segment matches a hand-computed lerp/slerp | interpolation form |
-| … A quaternion curve with a sign flip takes the short way round | shortest-path slerp (§2.1) |
-| … `Sample(w = 0)` and `Sample(w = 1)` are no-op and overwrite | blend identity (§2.2) |
+| ✔ Sample at a key's exact time returns that key's value | key bracketing, off-by-one at the ends |
+| ✔ Sample mid-segment matches a hand-computed lerp | interpolation form |
+| ✔ A quaternion curve with a sign flip takes the short way round | shortest-path slerp (§2.1) |
+| ✔ A sampled rotation is unit length even when its axes interpolate independently | normalization (§2.1) |
+| ✔ A stepped curve holds its key; a cubic one follows the file's tangents | interpolation mode per channel (§2) |
+| ✔ `Sample(w = 0)` and `Sample(w = 1)` are no-op and overwrite | blend identity (§2.2) |
+| ✔ Two clips at half weight each meet in the middle | blend identity (§2.2) |
+| ✔ A bone the clip does not address keeps the value the pose held | the mask (§2.2) |
+| ✔ An axis the clip does not drive keeps the pose's value | a missing axis is not zero |
+| ✔ The pose is written onto the hierarchy, and a paused clock still applies it | the component's clock (§4.4) |
+| ✔ `Update` runs the clip after `Update` and before `LateUpdate` | the frame placement (§4.4) |
 | … Two transitions from one state take the first whose conditions all pass | transition ordering (§4.2) |
 | … A consumed trigger is false on the next evaluation | trigger semantics (§4.1) |
-| … A frame spanning three event times fires all three, in order | event dispatch (§2.4) |
+| ✔ A frame spanning three event times fires all three, in order | event dispatch (§2.4) |
+| ✔ An event fires once, not every frame the playhead sits past it | half-open intervals (§2.4) |
+| ✔ A frame that wrapped fires the events on both sides of the loop | loop dispatch (§2.4) |
+| ✔ A missing handler is logged once, not once per frame | diagnostic economy (§2.4) |
 | … Re-import keeps a clip's guid | asset identity (§6) |
 
 ## 11. Where the code lives
@@ -483,10 +517,12 @@ today (`✔`) and what the remaining increments add (`…`):
 | ✔ `SkinnedMesh` — the mesh-to-bones link | `src/Overcore/Components/SkinnedMesh.cs` |
 | ✔ 32-bit index buffers and the six-attribute vertex layout | `OpenGLMeshRendererData.cs`, `VeldridMeshRendererData.cs`, `VeldridRenderer.cs` |
 | ✔ Mesh lookup through the import cache | `src/Overcore/Rendering/ResourceManager.cs`, `ResourceManagerBase.cs` |
-| … `AnimationPose`, blending, pose → transforms | `src/Overcore/Animation/AnimationPose.cs` |
+| ✔ `AnimationPose`, blending, pose → transforms | `src/Overcore/Animation/AnimationPose.cs` |
+| ✔ `Animation` — the one-clip player | `src/Overcore/Animation/Animation.cs` |
+| ✔ Event dispatch by reflection | `src/Overcore/Animation/AnimationEventDispatch.cs` |
 | … `Animator`, parameters, state machine | `src/Overcore/Animation/Animator.cs` |
 | … Controller asset (YAML) | `src/Overcore/Animation/AnimatorController.cs` |
 | … GL bone texture + skinning shaders | `src/Overcore/Rendering/OpenTK/OpenGLSkinnedMeshData.cs`, `EditorResources/Shaders/skin.*` |
-| … The frame step | `src/Overcore/Scenes/Scene.cs` (`AdvanceAnimation`) |
+| ✔ The frame step | `src/Overcore/Scenes/Scene.cs` (`AdvanceAnimation`) |
 | … Reading/writing `.anim`, `.controller` | `src/Overcore/Scenes/SceneSerializer.cs`, `SceneLoader.cs` |
 | … Inspector scrubber, state list | `src/OvercoreEditorSession/Scene/`, `src/OvercoreEditorPhotino/Components/` |

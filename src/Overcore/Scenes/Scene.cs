@@ -1,4 +1,5 @@
-﻿using Overcore.Components;
+﻿using Overcore.Animation;
+using Overcore.Components;
 using Overcore.Core.Logging;
 using Overcore.Core.Physics;
 using System.Numerics;
@@ -287,6 +288,7 @@ public class Scene : IDisposable
         }
 
         AdvanceCoroutines(CoroutinePhase.Update, deltaTime);
+        AdvanceAnimation(deltaTime);
         AdvanceLateUpdate();
         AdvanceCoroutines(CoroutinePhase.EndOfFrame, 0.0f);
 
@@ -367,6 +369,50 @@ public class Scene : IDisposable
                     Logger.Error(
                         $"[Scene] Exception in a {script.GetType().Name} coroutine on '{gameObject.Name}': {ex.Message}");
                     script.IsSuspended = true;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Advances every <see cref="AnimationPlayer"/> and writes its pose, between <c>Update</c> and <c>LateUpdate</c>.
+    /// </summary>
+    /// <remarks>
+    /// That placement is Unity's and it matters: a script that moves a bone in <c>Update</c> is overridden by the clip
+    /// that drives it, and a script that wants the final pose reads it in <c>LateUpdate</c>. An <see cref="AnimationPlayer"/>
+    /// whose clock is paused still applies its pose, so a scrubber needs no playback.
+    /// </remarks>
+    /// <param name="deltaTime">Seconds since the previous frame, in scaled time.</param>
+    private void AdvanceAnimation(float deltaTime)
+    {
+        int count = GameObjects.Count;
+
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (AnimationPlayer animation in gameObject.GetComponents<AnimationPlayer>().ToList())
+            {
+                if (animation.IsDestroyed || !animation.IsActive)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    animation.Advance(animation.UseUnscaledTime
+                        ? Time.UnscaledDeltaTime
+                        : deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(
+                        $"[Scene] Exception in AnimationPlayer.Advance() on '{gameObject.Name}': {ex.Message}");
                 }
             }
         }
