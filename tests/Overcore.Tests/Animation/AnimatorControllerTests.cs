@@ -195,7 +195,7 @@ public class AnimatorControllerTests
 
         AnimatorParameter speed = new("Speed", AnimatorParameterType.Float) { FloatValue = 5f };
 
-        BlendTree1D tree = new(speed.Hash).Add(walk, 0f).Add(run, 5f);
+        BlendTree1D tree = new BlendTree1D(speed.Hash).Add(walk, 0f).Add(run, 5f);
 
         AnimationPose pose = new();
         tree.Sample(0f, pose, 1f, hash => hash == speed.Hash ? speed : null);
@@ -212,7 +212,7 @@ public class AnimatorControllerTests
         AnimationClip walk = Clip("Walk", height: 1f);
         AnimationClip run = Clip("Run", height: 9f);
 
-        BlendTree1D tree = new(speed.Hash).Add(walk, 0f).Add(run, 5f);
+        BlendTree1D tree = new BlendTree1D(speed.Hash).Add(walk, 0f).Add(run, 5f);
 
         AnimationPose pose = new();
         tree.Sample(0f, pose, 1f, hash => hash == speed.Hash ? speed : null);
@@ -229,7 +229,7 @@ public class AnimatorControllerTests
         AnimationClip walk = Clip("Walk", height: 0f);
         AnimationClip run = Clip("Run", height: 10f);
 
-        BlendTree1D tree = new(speed.Hash).Add(walk, 0f).Add(run, 10f);
+        BlendTree1D tree = new BlendTree1D(speed.Hash).Add(walk, 0f).Add(run, 10f);
 
         AnimationPose pose = new();
         tree.Sample(0f, pose, 1f, hash => hash == speed.Hash ? speed : null);
@@ -247,7 +247,7 @@ public class AnimatorControllerTests
         AnimationClip walk = Clip("Walk", height: 0f);
 
         // Added high-threshold first: the tree must sort rather than assume the order it was given.
-        BlendTree1D tree = new(speed.Hash).Add(run, 10f).Add(walk, 0f);
+        BlendTree1D tree = new BlendTree1D(speed.Hash).Add(run, 10f).Add(walk, 0f);
 
         AnimationPose pose = new();
         tree.Sample(0f, pose, 1f, hash => hash == speed.Hash ? speed : null);
@@ -260,7 +260,7 @@ public class AnimatorControllerTests
     {
         AnimatorParameter speed = new("Speed", AnimatorParameterType.Float) { FloatValue = 100f };
 
-        BlendTree1D tree = new(speed.Hash).Add(Clip("Only", height: 4f), 0f);
+        BlendTree1D tree = new BlendTree1D(speed.Hash).Add(Clip("Only", height: 4f), 0f);
 
         AnimationPose pose = new();
         tree.Sample(0f, pose, 1f, hash => hash == speed.Hash ? speed : null);

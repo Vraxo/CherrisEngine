@@ -342,7 +342,7 @@ public class AnimatorTests : IDisposable
         AnimatorLayer layer = controller.AddLayer("Base");
         AnimatorParameter speed = controller.AddParameter("Speed", AnimatorParameterType.Float);
 
-        BlendTree1D locomotion = new(speed.Hash)
+        BlendTree1D locomotion = new BlendTree1D(speed.Hash)
             .Add(Clip("Walk", 0f), 0f)
             .Add(Clip("Run", 10f), 10f);
 
