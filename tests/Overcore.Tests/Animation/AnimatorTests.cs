@@ -112,8 +112,8 @@ public class AnimatorTests : IDisposable
     [Fact]
     public void OnlyOneTransitionIsTakenPerFrame()
     {
-        // A state whose two exits both pass must not chain through the graph in a single tick: one per frame is the
-        // rule, and it is what stops a badly wired controller from spinning.
+        // A chain A -> B -> C with unconditioned exits would run the whole graph in one tick if each transition were
+        // evaluated after the previous landed. The frame that enters A may take A's exit, and stops there.
         AnimatorController controller = new();
         AnimatorLayer layer = controller.AddLayer("Base");
 
@@ -127,13 +127,11 @@ public class AnimatorTests : IDisposable
         GameObject root = Hierarchy("Hips", out _);
         Animator animator = root.AddComponent(new Animator { Controller = controller });
 
-        animator.Advance(0.1f);
-        animator.CurrentState.Should().BeSameAs(a);
-
-        // The transition out of A is taken this frame; C is not reached until the next.
+        // One advance enters A and takes its exit to B, and no further.
         animator.Advance(0.1f);
         animator.CurrentState.Should().BeSameAs(b);
 
+        // The next frame takes B's exit; C is reached only now, not a frame earlier.
         animator.Advance(0.1f);
         animator.CurrentState.Should().BeSameAs(c);
     }
@@ -248,7 +246,7 @@ public class AnimatorTests : IDisposable
     [Fact]
     public void ATransitionWithADuration_BlendsTheTwoStates()
     {
-        // Halfway through a one-second cross-fade from height 0 to height 10 is height 5.
+        // A one-second cross-fade from height 0 to height 10.
         AnimatorController controller = new();
         AnimatorLayer layer = controller.AddLayer("Base");
         AnimatorParameter go = controller.AddParameter("Go", AnimatorParameterType.Bool);
@@ -269,7 +267,9 @@ public class AnimatorTests : IDisposable
         animator.Advance(0.5f);
 
         animator.IsInTransition.Should().BeTrue();
-        hips.Transform.Position.Y.Should().BeApproximately(2.5f, 1e-4f);
+
+        // Halfway through the fade the destination is half in over the source: half of the way from 0 to 10.
+        hips.Transform.Position.Y.Should().BeApproximately(5f, 1e-4f);
     }
 
     [Fact]
@@ -369,12 +369,26 @@ public class AnimatorTests : IDisposable
         GameObject root = Hierarchy("Hips", out _);
         Animator animator = root.AddComponent(new Animator { Controller = controller });
 
-        // A one-second damp from zero to ten, a quarter of a second per frame, lands on 2.5, then 5.
+        // A critically damped approach starts from rest and closes on the target without overshooting it.
         animator.SetFloat("Speed", 10f, 1f, 0.25f);
-        animator.GetFloat("Speed").Should().BeApproximately(2.5f, 1e-4f);
+        float first = animator.GetFloat("Speed");
+
+        first.Should().BeGreaterThan(0f).And.BeLessThan(10f);
 
         animator.SetFloat("Speed", 10f, 1f, 0.25f);
-        animator.GetFloat("Speed").Should().BeApproximately(5f, 1e-4f);
+        float second = animator.GetFloat("Speed");
+
+        // Further along than the first step, and never past the target.
+        second.Should().BeGreaterThan(first).And.BeLessThan(10f);
+
+        // Given enough time it arrives, without ever reading past the value asked for.
+        for (int frame = 0; frame < 200; frame++)
+        {
+            animator.SetFloat("Speed", 10f, 1f, 0.016f);
+            animator.GetFloat("Speed").Should().BeLessThanOrEqualTo(10f + 1e-4f);
+        }
+
+        animator.GetFloat("Speed").Should().BeApproximately(10f, 0.05f);
     }
 
     [Fact]

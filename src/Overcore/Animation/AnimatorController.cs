@@ -238,6 +238,12 @@ public sealed class BlendTree1D : AnimatorMotion
 
     public override bool IsEmpty => Entries.Count == 0;
 
+    /// <summary>
+    /// The longest clip in the tree, in seconds, which is the tree's cycle: every entry is sampled at the same
+    /// normalized time, so the tree runs at the pace of its slowest motion.
+    /// </summary>
+    public float Length => Entries.Count == 0 ? 0f : Entries.Max(entry => entry.Clip.Length);
+
     /// <summary>Adds a motion at a threshold, returning this tree so it can be built as one expression.</summary>
     public BlendTree1D Add(AnimationClip clip, float threshold)
     {

@@ -33,6 +33,9 @@ public class Animator : Component
     private readonly AnimationEventDispatch _events = new();
     private readonly List<LayerMachine> _machines = [];
 
+    /// <summary>Per-parameter spring velocity, so a damped set continues the motion it started instead of restarting.</summary>
+    private readonly Dictionary<string, float> _velocities = new(StringComparer.Ordinal);
+
     /// <summary>The controller to play, or null for an Animator that writes nothing.</summary>
     public AnimatorController? Controller
     {
@@ -46,6 +49,7 @@ public class Animator : Component
 
             _controller = value;
             _machines.Clear();
+            _velocities.Clear();
         }
     }
 
@@ -125,15 +129,24 @@ public class Animator : Component
         if (dampTime <= 0f || deltaTime <= 0f)
         {
             parameter.FloatValue = target;
+            _velocities.Remove(name);
 
             return;
         }
 
-        // A fixed approach rate would make a short move finish instantly and a long one crawl; dividing the distance
-        // by the time gives the same feel at any scale.
-        float rate = MathF.Abs(target - parameter.FloatValue) / dampTime;
+        // A critically damped spring, which is what `dampTime` names: the value accelerates from rest, overshoots
+        // nothing, and settles — so a locomotion blend eases rather than snapping or decaying unevenly.
+        float omega = 2f / dampTime;
+        float x = omega * deltaTime;
+        float decay = 1f / (1f + x + (0.48f * x * x) + (0.235f * x * x * x));
 
-        parameter.FloatValue = MoveTowards(parameter.FloatValue, target, rate * deltaTime);
+        float change = parameter.FloatValue - target;
+        float temp = (_velocities.GetValueOrDefault(name) + (omega * change)) * deltaTime;
+        float velocity = (_velocities.GetValueOrDefault(name) - (omega * temp)) * decay;
+
+        _velocities[name] = velocity;
+
+        parameter.FloatValue = target + ((change + temp) * decay);
     }
 
     /// <summary>True when a layer's state is the one named — Unity's <c>IsName("Run")</c>.</summary>
@@ -296,6 +309,30 @@ public class Animator : Component
         return wrapped < 0f ? wrapped + 1f : wrapped;
     }
 
+    /// <summary>How long a motion runs, in seconds. A state with no motion has no length to divide by.</summary>
+    private static float LengthOf(AnimatorMotion? motion)
+    {
+        if (motion is ClipMotion clip)
+        {
+            return MathF.Max(clip.Clip.Length, 0f);
+        }
+
+        if (motion is BlendTree1D tree)
+        {
+            return MathF.Max(tree.Length, 0f);
+        }
+
+        return 0f;
+    }
+
+    /// <summary>A state's clock in seconds, as a position through its motion. A motion of no length is at its start.</summary>
+    private static float Normalize(float seconds, AnimatorState state)
+    {
+        float length = LengthOf(state.Motion);
+
+        return length > 0f ? seconds / length : 0f;
+    }
+
     /// <summary>Moves a value toward a target by at most one step, without overshooting it.</summary>
     private static float MoveTowards(float current, float target, float maxDelta)
     {
@@ -313,6 +350,7 @@ public class Animator : Component
         base.OnInstantiated();
 
         _machines.Clear();
+        _velocities.Clear();
         _pose.Clear();
         _scratch.Clear();
     }
@@ -334,6 +372,13 @@ public class Animator : Component
         private float _normalizedTime;
         private float _previousNormalizedTime;
 
+        /// <summary>
+        /// Normalized time since the state was entered, without wrapping. Exit time is a threshold within the state's
+        /// stay, so checking it against the wrapped clock would make <c>exitTime = 1</c> unreachable on a looping
+        /// clip: the clock hits the end, wraps to near zero, and the check never sees the crossing.
+        /// </summary>
+        private float _elapsedNormalized;
+
         public LayerMachine(Action<AnimatorState> entered) => _entered = entered;
 
         public AnimatorState? Current => _current;
@@ -346,9 +391,12 @@ public class Animator : Component
         public void Enter(AnimatorState state, float normalizedTime, bool notify)
         {
             _current = state;
-            _stateTime = state.Motion is null ? 0f : Math.Clamp(normalizedTime, 0f, 1f);
-            _normalizedTime = Wrap01(_stateTime + state.CycleOffset);
+
+            // The clock is seconds, so the normalized time a caller names is multiplied out by the motion's length.
+            _stateTime = Math.Clamp(normalizedTime, 0f, 1f) * LengthOf(state.Motion);
+            _normalizedTime = Wrap01(Normalize(_stateTime, state) + state.CycleOffset);
             _previousNormalizedTime = _normalizedTime;
+            _elapsedNormalized = 0f;
             _transition = null;
             _transitionSource = null;
             _transitionTime = 0f;
@@ -381,8 +429,8 @@ public class Animator : Component
 
             _previousNormalizedTime = _normalizedTime;
 
-            AdvanceTransition(layer, deltaTime, speedScale, parameter);
             AdvanceClock(deltaTime, speedScale);
+            AdvanceTransition(layer, deltaTime, speedScale, parameter);
             Sample(layer, pose, scratch, parameter);
         }
 
@@ -414,11 +462,17 @@ public class Animator : Component
                 // controller from chaining through its whole graph in a single tick.
                 TryTakeTransition(layer, parameter);
 
-                return;
+                if (_transition is null)
+                {
+                    return;
+                }
+
+                // A transition that begins now still owes this frame its time, or a cut would sit in flight until
+                // the next tick for no reason the author asked for.
             }
 
             // The two states each run on their own clock, so neither jumps when the other starts.
-            _destinationTime += deltaTime * _transition.Destination.Speed * speedScale;
+            _destinationTime += deltaTime * _transition!.Destination.Speed * speedScale;
             _transitionTime += deltaTime;
 
             if (_transition.Duration > 0f && _transitionTime < _transition.Duration)
@@ -432,7 +486,9 @@ public class Animator : Component
 
             _current = destination;
             _stateTime = _destinationTime;
-            _normalizedTime = Wrap01(_destinationTime + destination.CycleOffset);
+            _normalizedTime = Wrap01(Normalize(_stateTime, destination) + destination.CycleOffset);
+            _previousNormalizedTime = _normalizedTime;
+            _elapsedNormalized = 0f;
             _transition = null;
             _transitionSource = null;
             _transitionTime = 0f;
@@ -472,7 +528,7 @@ public class Animator : Component
             {
                 // A transition with an exit time may not start until the state has reached it; one without may start
                 // the moment its conditions pass.
-                if (candidate.HasExitTime && source is not null && _normalizedTime < candidate.ExitTime)
+                if (candidate.HasExitTime && source is not null && _elapsedNormalized < candidate.ExitTime)
                 {
                     continue;
                 }
@@ -497,7 +553,7 @@ public class Animator : Component
             _transitionSource = _current;
             _transition = transition;
             _transitionTime = 0f;
-            _destinationTime = Math.Clamp(transition.TransitionOffset, 0f, 1f);
+            _destinationTime = Math.Clamp(transition.TransitionOffset, 0f, 1f) * LengthOf(_current?.Motion);
 
             // A trigger is consumed by the transition that read it, so a second jump press does not fire twice.
             foreach (AnimatorCondition condition in transition.Conditions)
@@ -519,8 +575,15 @@ public class Animator : Component
             }
 
             // The source keeps playing underneath a transition, so a cross-fade does not freeze the pose it leaves.
-            _stateTime += deltaTime * _current.Speed * speedScale;
-            _normalizedTime = Wrap01(_stateTime + _current.CycleOffset);
+            float advance = deltaTime * _current.Speed * speedScale;
+
+            _stateTime += advance;
+            _normalizedTime = Wrap01(Normalize(_stateTime, _current) + _current.CycleOffset);
+
+            // A negative speed plays a clip backwards, which still spends time in the state, so progress is unsigned.
+            float length = LengthOf(_current.Motion);
+
+            _elapsedNormalized += length > 0f ? MathF.Abs(advance) / length : 0f;
         }
 
         private void Sample(
@@ -557,7 +620,7 @@ public class Animator : Component
             scratch.CopyFrom(pose);
 
             _transition.Destination.Motion?.Sample(
-                Wrap01(_destinationTime + _transition.Destination.CycleOffset),
+                Wrap01(Normalize(_destinationTime, _transition.Destination) + _transition.Destination.CycleOffset),
                 scratch,
                 1f,
                 parameter);
