@@ -60,8 +60,8 @@ public class BonePaletteTests
 
         BonePalette.PackIdentity(1, palette);
 
-        // Row 1 of the identity, then row 2, then row 3 — in row-vector order, so the M14/M24/M34 translation lands in
-        // the fourth component of each texel rather than in a column of its own.
+        // Column 0 of the identity, then column 1, then column 2. A texel is a column, which is what GLSL's mat4
+        // constructor takes, so the three texels and the affine fourth column reassemble the matrix itself.
         palette[..4].Should().Equal(1f, 0f, 0f, 0f);
         palette[4..8].Should().Equal(0f, 1f, 0f, 0f);
         palette[8..12].Should().Equal(0f, 0f, 1f, 0f);
@@ -81,12 +81,13 @@ public class BonePaletteTests
 
         BonePalette.Pack([matrix], palette);
 
-        palette[..4].Should().Equal(1f, 2f, 3f, 4f);
-        palette[4..8].Should().Equal(5f, 6f, 7f, 8f);
-        palette[8..12].Should().Equal(9f, 10f, 11f, 12f);
+        // Column 0 is (M11, M21, M31, M41), which for this matrix is (1, 5, 9, 13).
+        palette[..4].Should().Equal(1f, 5f, 9f, 13f);
+        palette[4..8].Should().Equal(2f, 6f, 10f, 14f);
+        palette[8..12].Should().Equal(3f, 7f, 11f, 15f);
 
         // The fourth column is what is dropped, and it is the one a shader reconstructs as (0, 0, 0, 1).
-        palette.Should().NotContain(13f);
+        palette.Should().NotContain(4f).And.NotContain(8f).And.NotContain(12f).And.NotContain(16f);
     }
 
     [Fact]
@@ -99,9 +100,35 @@ public class BonePaletteTests
 
         BonePalette.Pack([translation], palette);
 
-        palette[3].Should().Be(5f);    // M14
-        palette[7].Should().Be(-3f);   // M24
-        palette[11].Should().Be(2f);   // M34
+        // The translation is the fourth row M41/M42/M43, and it lands in the fourth component of each column.
+        palette[3].Should().Be(5f);    // M41
+        palette[7].Should().Be(-3f);   // M42
+        palette[11].Should().Be(2f);   // M43
+    }
+
+    [Fact]
+    public void APackedTranslationLandsWhereTheShaderReadsIt()
+    {
+        // The bug this pins: packing *rows* of a row-vector matrix drops the translation, because in that order the
+        // translation is the fourth row and not the fourth column. The character would then rotate about the origin
+        // instead of moving — visible, but easy to blame on the rig.
+        //
+        // The shader rebuilds mat4(column0, column1, column2, (0,0,0,1)) and multiplies a point by it. A pure
+        // translation has an identity linear part, so its result is exactly the translation, and that is the fourth
+        // component of each packed texel.
+        Matrix4x4 bone = Matrix4x4.CreateTranslation(5f, -3f, 2f);
+
+        float[] palette = new float[BonePalette.FloatsPerBone];
+        BonePalette.Pack([bone], palette);
+
+        Vector3 translation = new(palette[3], palette[7], palette[11]);
+
+        translation.Should().BeApproximately(new Vector3(5f, -3f, 2f), 1e-5f);
+
+        // And the linear part is the identity, so a translated bone does not also scale or rotate what it carries.
+        palette[0].Should().BeApproximately(1f, 1e-5f);
+        palette[4 + 1].Should().BeApproximately(1f, 1e-5f);
+        palette[8 + 2].Should().BeApproximately(1f, 1e-5f);
     }
 
     [Fact]
@@ -165,7 +192,7 @@ public class BonePaletteTests
             palette[offset + 0].Should().BeApproximately(1f, 1e-5f, $"bone {bone} M11");
             palette[offset + 5].Should().BeApproximately(1f, 1e-5f, $"bone {bone} M22");
             palette[offset + 10].Should().BeApproximately(1f, 1e-5f, $"bone {bone} M33");
-            palette[offset + 3].Should().BeApproximately(0f, 1e-5f, $"bone {bone} M14");
+            palette[offset + 3].Should().BeApproximately(0f, 1e-5f, $"bone {bone} M41");
         }
     }
 
@@ -191,8 +218,8 @@ public class BonePaletteTests
         {
             int offset = bone * BonePalette.FloatsPerBone;
 
-            palette[offset + 3].Should().BeApproximately(jointMatrices[bone].M14, 1e-5f, $"bone {bone} M14");
-            palette[offset + 7].Should().BeApproximately(jointMatrices[bone].M24, 1e-5f, $"bone {bone} M24");
+            palette[offset + 3].Should().BeApproximately(jointMatrices[bone].M41, 1e-5f, $"bone {bone} M41");
+            palette[offset + 7].Should().BeApproximately(jointMatrices[bone].M42, 1e-5f, $"bone {bone} M42");
         }
     }
 

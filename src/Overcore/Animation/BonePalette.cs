@@ -14,11 +14,14 @@ namespace Overcore.Animation;
 /// failure to ship. A texture's size is bounded instead by <c>GL_MAX_TEXTURE_SIZE</c>, which is thousands of bones.
 /// </para>
 /// <para>
-/// The layout is one bone per row, three texels per bone, each texel an <c>RGBA32F</c>: four floats. That is twelve
-/// floats a bone, which is a 4×4 matrix minus its fourth column — the column that is always
-/// <c>(0, 0, 0, 1)</c> for an affine transform. Rows one through three of a row-vector matrix are what a vertex is
-/// actually multiplied by, so the fourth column is the only part that can be dropped, and dropping it turns sixteen
-/// floats into twelve: a quarter less upload traffic on the one buffer that changes every frame.
+/// The layout is three texels per bone, each an <c>RGBA32F</c>: four floats. That is twelve floats a bone, which is a
+/// 4×4 matrix minus its fourth column — the column that is always <c>(0, 0, 0, 1)</c> for an affine transform.
+/// </para>
+/// <para>
+/// A texel holds a <em>column</em> of the matrix, not a row. In the row-vector order this engine uses
+/// (<c>[x y z 1] * M</c>) each output component is a dot of the position against a column, and the translation sits
+/// in the fourth row <c>(M41, M42, M43)</c> — which is the fourth component of the first three columns and therefore
+/// survives. Packing rows instead would drop the translation and leave a character that rotates about the origin.
 /// </para>
 /// <para>
 /// This type holds no GPU state. It packs numbers into a caller's array, which is what makes it testable without a
@@ -28,10 +31,10 @@ namespace Overcore.Animation;
 /// </remarks>
 public static class BonePalette
 {
-    /// <summary>Floats a bone occupies: three <c>vec4</c> texels, the first three rows of its matrix.</summary>
+    /// <summary>Floats a bone occupies: three <c>vec4</c> texels, the first three columns of its matrix.</summary>
     public const int FloatsPerBone = 12;
 
-    /// <summary>Texels a bone occupies, one per row of its matrix.</summary>
+    /// <summary>Texels a bone occupies, one per column of its matrix.</summary>
     public const int TexelsPerBone = 3;
 
     /// <summary>Components a texel carries, since an <c>RGBA32F</c> texel is four floats.</summary>

@@ -16,7 +16,7 @@ uniform mat4 view;
 uniform mat4 projection;
 uniform vec2 uTiling;
 
-// Three texels per bone, one per row of the joint matrix. RGBA32F so a matrix row is exact.
+// Three texels per bone, one per column of the joint matrix. RGBA32F so a column is exact.
 uniform sampler2D uBoneTexture;
 
 out vec3 FragPos;
@@ -26,17 +26,17 @@ out vec2 fsin_TexCoord;
 
 // One bone's joint matrix, read from the palette.
 //
-// The fourth column of an affine matrix is always (0, 0, 0, 1), so only three rows are uploaded and the fourth is
-// reconstructed. The palette is in row-vector order, so a row of the matrix is a texel.
+// A texel holds a column. The fourth column of an affine matrix is always (0, 0, 0, 1), so only three are uploaded
+// and the fourth is reconstructed — GLSL's mat4 constructor takes columns, so this is the matrix itself.
 mat4 BoneMatrix(int bone)
 {
     int texel = bone * 3;
 
-    vec4 row0 = texelFetch(uBoneTexture, ivec2(texel + 0, 0), 0);
-    vec4 row1 = texelFetch(uBoneTexture, ivec2(texel + 1, 0), 0);
-    vec4 row2 = texelFetch(uBoneTexture, ivec2(texel + 2, 0), 0);
+    vec4 column0 = texelFetch(uBoneTexture, ivec2(texel + 0, 0), 0);
+    vec4 column1 = texelFetch(uBoneTexture, ivec2(texel + 1, 0), 0);
+    vec4 column2 = texelFetch(uBoneTexture, ivec2(texel + 2, 0), 0);
 
-    return mat4(row0, row1, row2, vec4(0.0, 0.0, 0.0, 1.0));
+    return mat4(column0, column1, column2, vec4(0.0, 0.0, 0.0, 1.0));
 }
 
 // The vertex's four influences blended by weight. A vertex no bone moves would be annihilated by a zero matrix, so
