@@ -554,7 +554,6 @@ public static class ComponentProperties
             range?.Min,
             range?.Max);
     }
-    }
 
     private static string Number(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
