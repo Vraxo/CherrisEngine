@@ -269,7 +269,8 @@ public class LightSpaceFitTests
             Matrix4x4 turned = Matrix4x4.CreateFromYawPitchRoll(0.7f, 0.2f, 0.1f) * Matrix4x4.CreateTranslation(40f, 2f, -9f);
             CascadeFit rotated = LightSpaceFit.Fit(geometry, turned, OverTheShoulder, Resolution);
 
-            rotated.HalfExtent.Should().BeApproximately(still.HalfExtent, 0.0001f);
+            // A thousandth of a unit, because the extent is about 13 and float32 resolves that to 1e-6.
+            rotated.HalfExtent.Should().BeApproximately(still.HalfExtent, 0.001f);
         }
     }
 
@@ -300,9 +301,15 @@ public class LightSpaceFitTests
 
         float[] samples = [.. Enumerable.Range(0, 301).Select(index => CoordinateAt(index * 0.01f))];
 
+        // A hundredth of a texel is the tolerance, not an exact zero, and the reason is float32 rather than sloppiness:
+        // the coordinate is a dot product of world positions, so at a few hundred texels from the origin its last bit is
+        // worth about 1.5e-5 texels. A real fraction that would mean a bug — an unsnapped centre, or a snap applied in
+        // the wrong space — is off by up to half a texel, which is fifty times this tolerance.
+        const float Tick = 0.01f;
+
         foreach (float sample in samples)
         {
-            MathF.Abs(sample - MathF.Round(sample)).Should().BeLessThan(0.0001f, $"{sample} is not a whole texel");
+            MathF.Abs(sample - MathF.Round(sample)).Should().BeLessThan(Tick, $"{sample} is not a whole texel");
         }
 
         // Both axes, at one arbitrary position, because "snapped" has to mean exactly that: a centre merely close to a
@@ -313,7 +320,7 @@ public class LightSpaceFitTests
         {
             float texels = Vector3.Dot(anywhere.Eye, AxisOf(anywhere, axis)) / anywhere.TexelSize;
 
-            MathF.Abs(texels - MathF.Round(texels)).Should().BeLessThan(0.0001f);
+            MathF.Abs(texels - MathF.Round(texels)).Should().BeLessThan(Tick);
         }
 
         List<float> jumps = [];

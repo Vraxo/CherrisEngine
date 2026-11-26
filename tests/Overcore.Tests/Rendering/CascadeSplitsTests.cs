@@ -39,7 +39,11 @@ public class CascadeSplitsTests
     {
         // The property the split exists for: each cascade is twice as deep as the one inside it, so it covers twice the
         // volume at the same texel count — which is why the halving is the rule and not an accident of 1/15, 3/15, 7/15.
-        CascadeRange[] ranges = CascadeSplits.Ranges(150f, 0.1f, 4);
+        //
+        // Measured from a near plane of 0 because that is where the property belongs: the inner cascade starts where the
+        // camera's near plane puts it, so its width is 10 minus whatever that is, and a test that included the near
+        // plane would be asserting two rules at once and failing on the one it was not about.
+        CascadeRange[] ranges = CascadeSplits.Ranges(150f, 0f, 4);
 
         float[] widths = [.. ranges.Select(range => range.Width)];
 
@@ -56,13 +60,33 @@ public class CascadeSplitsTests
     }
 
     [Fact]
+    public void TheInnerCascadeStartsWhereTheNearPlanePutsIt()
+    {
+        // The other half of the same story: with a near plane of 0.1 the innermost slice is 9.9 wide, not 10, because
+        // it begins at the camera's near plane. That is not the split being wrong; it is the two rules composed.
+        CascadeRange[] ranges = CascadeSplits.Ranges(150f, 0.1f, 4);
+
+        ranges[0].Near.Should().Be(0.1f);
+        ranges[0].Width.Should().BeApproximately(9.9f, 0.01f);
+    }
+
+    [Fact]
     public void TheDepthsAreTheUnityMetres()
     {
-        // 150 units over four cascades ends at 10, 30, 70 and 150.
-        CascadeSplits.FarDepths(150f, 4).Should().Equal(10f, 30f, 70f, 150f);
-
-        CascadeSplits.FarDepths(150f, 2).Should().Equal(50f, 150f);
+        // 150 units over four cascades ends at 10, 30, 70 and 150. Approximate rather than exact because 1/15 is not a
+        // binary fraction: `150 * (1f / 15f)` is 10.000001 in float, which is the depth the renderer will really use and
+        // a hair either side of it is not a bug to chase.
+        Matches(CascadeSplits.FarDepths(150f, 4), [10f, 30f, 70f, 150f]).Should().BeTrue();
+        Matches(CascadeSplits.FarDepths(150f, 2), [50f, 150f]).Should().BeTrue();
         CascadeSplits.FarDepths(150f, 1).Should().Equal(150f);
+    }
+
+    [Fact]
+    public void TheLastDepthIsExactlyTheDistance()
+    {
+        // Not approximately: past the last split nothing is shadowed, so that value is the distance itself and not a
+        // product that happened to round to it.
+        CascadeSplits.FarDepths(150f, 4)[^1].Should().Be(150f);
     }
 
     // ---------------------------------------------------------------- the three counts that are real
@@ -229,6 +253,13 @@ public class CascadeSplitsTests
 
         ranges.Should().OnlyContain(range => range.Width > 0f);
         float.IsNaN(ranges[0].Near).Should().BeFalse();
+    }
+
+    /// <summary>Whether two depth lists agree to within a thousandth of a unit, in order and in length.</summary>
+    private static bool Matches(float[] actual, float[] expected)
+    {
+        return actual.Length == expected.Length
+            && actual.Zip(expected, (a, e) => MathF.Abs(a - e) < 0.001f).All(close => close);
     }
 
     /// <summary>Whether each entry is greater than the one before it. A repeated boundary is a zero-depth slice.</summary>
