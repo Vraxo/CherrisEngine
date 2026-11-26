@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Overcore.Components;
+using Overcore.Rendering.Shadows;
 using System.Numerics;
 using Xunit;
 
@@ -23,7 +24,16 @@ public class ComponentPropertiesTests
             nameof(Light.AmbientStrength),
             nameof(Light.Range),
             nameof(Light.InnerConeAngle),
-            nameof(Light.OuterConeAngle));
+            nameof(Light.OuterConeAngle),
+
+            // The shadow settings, appended in declaration order. Listing them here rather than loosening the
+            // assertion is what makes the inspector's row order a decision instead of a consequence.
+            nameof(Light.Shadows),
+            nameof(Light.ShadowStrength),
+            nameof(Light.ShadowBias),
+            nameof(Light.ShadowNormalBias),
+            nameof(Light.ShadowNearPlane),
+            nameof(Light.ShadowResolution));
 
         properties.Single(property => property.Name == nameof(Light.Type)).Kind.Should().Be(PropertyKind.Choice);
         properties.Single(property => property.Name == nameof(Light.Intensity)).Kind.Should().Be(PropertyKind.Number);
@@ -74,6 +84,64 @@ public class ComponentPropertiesTests
         light.Type.Should().Be(LightType.Point);
         light.Intensity.Should().Be(2.5f);
         light.Color.Should().Be(new Vector3(1f, 0.5f, 0f));
+    }
+
+    [Fact]
+    public void Read_FlattensAListOfNumbers()
+    {
+        // The kind the split list needs, and the reason the inspector gained one: its length is data, so there is no
+        // arity to build a row from.
+        Shadows shadows = new() { Splits = [0.1f, 0.25f, 0.55f] };
+
+        PropertySnapshot splits = ComponentProperties.Read(shadows, nameof(Shadows.Splits))!;
+
+        splits.Kind.Should().Be(PropertyKind.Numbers);
+        splits.Text.Should().Be("0.1, 0.25, 0.55");
+        splits.Components.Should().Equal(0.1f, 0.25f, 0.55f);
+        splits.Choices.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Apply_WritesAListOfNumbers()
+    {
+        Shadows shadows = new();
+
+        ComponentProperties.TryApply(shadows, nameof(Shadows.Splits), "0.2, 0.5, 0.8", out _).Should().BeTrue();
+
+        shadows.Splits.Should().Equal(0.2f, 0.5f, 0.8f);
+    }
+
+    [Fact]
+    public void Apply_ReadsAnEmptyFieldAsTheEmptyList()
+    {
+        // One cascade has no boundaries, and clearing the field is how a person says so. Treating the empty field as a
+        // parse error would leave the author with no way to express the value the component supports.
+        Shadows shadows = new() { Splits = [0.2f, 0.5f, 0.8f] };
+
+        ComponentProperties.TryApply(shadows, nameof(Shadows.Splits), "", out _).Should().BeTrue();
+
+        shadows.Splits.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Apply_RefusesAListWithAWordInIt()
+    {
+        Shadows shadows = new() { Splits = [0.2f, 0.5f, 0.8f] };
+
+        ComponentProperties.TryApply(shadows, nameof(Shadows.Splits), "0.2, soon, 0.8", out string? error)
+            .Should().BeFalse();
+
+        error.Should().Contain("list of numbers");
+        shadows.Splits.Should().Equal(0.2f, 0.5f, 0.8f);
+    }
+
+    [Fact]
+    public void Read_ListsTheShadowsSettingsAndNotOnlyTheirCount()
+    {
+        // Both front ends walk the same editable set, so this is the assertion that a Shadows component is tunable at
+        // all — it is not, if the properties are hidden from the reflection walk.
+        ComponentProperties.Read(new Shadows()).Select(property => property.Name)
+            .Should().Equal(nameof(Shadows.Distance), nameof(Shadows.Cascades), nameof(Shadows.Splits));
     }
 
     [Fact]

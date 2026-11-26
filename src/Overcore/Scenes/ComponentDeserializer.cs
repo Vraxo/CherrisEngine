@@ -2,6 +2,7 @@ using Overcore.Components;
 using Overcore.Core;
 using Overcore.Core.Logging;
 using Overcore.Rendering;
+using Overcore.Rendering.Shadows;
 using Overcore.Utils;
 using System.Globalization;
 using System.Numerics;
@@ -17,6 +18,10 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Camera", CreateAndPopulateComponent<Camera>);
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
+
+        // Registered rather than left to a root-level block in the scene file: SceneLoader parses the document as
+        // Dictionary<string, List<...>> and looks up "GameObjects", so a sibling mapping would fail the whole load.
+        sceneLoader.RegisterComponentFactory("Shadows", props => CreateShadowsComponent(props));
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
         sceneLoader.RegisterComponentFactory("BoxCollider", CreateAndPopulateComponent<BoxCollider>);
         sceneLoader.RegisterComponentFactory("SphereCollider", CreateAndPopulateComponent<SphereCollider>);
@@ -45,12 +50,22 @@ public static class ComponentDeserializer
 
         Material material = CreateMaterialFromProperties(propsDict, resourceManager);
 
-        return new()
+        MeshRenderer renderer = new()
         {
             Mesh = mesh,
             Material = material,
             MeshName = meshName
         };
+
+        // Mesh and Material come from nested blocks that the generic path cannot express, so the rest of the component
+        // is populated here. Without this a scene's cast/receive choice would serialise and then be dropped on load —
+        // the file would say one thing and the running scene would do another.
+        //
+        // The two exclusions are not a optimisation: the generic path would overwrite the material just built with a
+        // null from a block it cannot parse, and would try to convert a mesh name into a Mesh.
+        PopulateComponentProperties(renderer, propsDict, nameof(MeshRenderer.Material), nameof(MeshRenderer.Mesh));
+
+        return renderer;
     }
 
     private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
@@ -86,7 +101,8 @@ public static class ComponentDeserializer
             TextureTiling = GetVector2(matProps, "TextureTiling", Vector2.One),
             EmissiveColor = GetVector3(matProps, "EmissiveColor", Vector3.Zero),
             SpecularIntensity = GetFloat(matProps, "SpecularIntensity", 0.5f),
-            Shininess = GetFloat(matProps, "Shininess", 32.0f)
+            Shininess = GetFloat(matProps, "Shininess", 32.0f),
+            AlphaCutoff = GetFloat(matProps, "AlphaCutoff", 0f)
         };
 
         return material;
@@ -108,7 +124,35 @@ public static class ComponentDeserializer
         return component;
     }
 
-    private static void PopulateComponentProperties(Component component, IReadOnlyDictionary<object, object> propsDict)
+    /// <summary>
+    /// A <see cref="Shadows"/> component, with <see cref="Shadows.Cascades"/> applied before
+    /// <see cref="Shadows.Splits"/>.
+    /// </summary>
+    /// <remarks>
+    /// The order is not a detail. The <c>Cascades</c> setter re-derives <c>Splits</c> — which is what makes a fresh
+    /// instance compare equal to a loaded one — so a hand-tuned split applied first would be overwritten by the count,
+    /// and the file would load with the split the author did not choose. The property order in a YAML mapping is
+    /// whatever the writer emitted, so the load path states the dependency rather than trusting the file to.
+    /// </remarks>
+    private static Shadows CreateShadowsComponent(object properties)
+    {
+        Shadows component = new();
+
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return component;
+        }
+
+        PopulateComponentProperties(component, propsDict, nameof(Shadows.Splits));
+        PopulateComponentProperties(component, propsDict);
+
+        return component;
+    }
+
+    private static void PopulateComponentProperties(
+        Component component,
+        IReadOnlyDictionary<object, object> propsDict,
+        params string[] skip)
     {
         if (propsDict is null)
         {
@@ -118,7 +162,7 @@ public static class ComponentDeserializer
         var componentType = component.GetType();
         foreach (var (key, value) in propsDict)
         {
-            if (key is not string propName)
+            if (key is not string propName || skip.Contains(propName))
             {
                 continue;
             }
@@ -181,6 +225,23 @@ public static class ComponentDeserializer
             convertedValue = new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2]));
             return true;
         }
+
+        // A list of floats, of any length: `Shadows.Splits` is `n - 1` numbers whose count is data rather than a
+        // type, so it gets a general conversion rather than a third fixed arity. An empty sequence is a legitimate
+        // value here — one cascade has no boundaries — and converts to an empty array.
+        if (targetType == typeof(float[]) || targetType == typeof(List<float>))
+        {
+            float[] numbers = new float[list.Count];
+
+            for (int index = 0; index < list.Count; index++)
+            {
+                numbers[index] = ToSingle(list[index]);
+            }
+
+            convertedValue = targetType == typeof(List<float>) ? new List<float>(numbers) : numbers;
+            return true;
+        }
+
         return false;
     }
 

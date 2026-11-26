@@ -1,5 +1,6 @@
 using Overcore.Components;
 using Overcore.Core;
+using Overcore.Rendering.Shadows;
 using Overcore.Utils;
 using System.Numerics;
 using System.Reflection;
@@ -193,6 +194,11 @@ public class SceneSerializer
                     [nameof(LanguageScript.SourcePath)] = languageScript.SourcePath
                 },
 
+                // A list, which is the one shape the generic path cannot compare: its "does this differ from a fresh
+                // instance" test is object.Equals, and a float[] is compared by reference, so a clean list would be
+                // written on every save and a hand edit would be written indistinguishably from a default.
+                Overcore.Rendering.Shadows.Shadows shadows => SerializeShadows(shadows),
+
                 // All other components can be serialized generically using reflection.
                 _ => SerializeComponentProperties(component)
             };
@@ -207,6 +213,40 @@ public class SceneSerializer
             componentsData[component.GetType().Name] = data;
         }
         return componentsData;
+    }
+
+    /// <summary>
+    /// A <see cref="Shadows"/> component: the scalars, and its split list only when a hand edit has made it differ
+    /// from the one <see cref="Shadows.Cascades"/> derives.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Shadows.Splits"/> is written as a plain float array, which the YAML serializer turns into a flow
+    /// sequence, and `ComponentDeserializer.TryConvertFromList` converts a YAML sequence of numbers into a `float[]`
+    /// on the way back in. What it must not do is write the list unconditionally: every derived list would then appear
+    /// in every scene file, which makes a default look like a decision and hides the one case the list exists for.
+    /// </remarks>
+    private static Dictionary<string, object> SerializeShadows(Overcore.Rendering.Shadows.Shadows shadows)
+    {
+        Dictionary<string, object> data = SerializeComponentProperties(shadows);
+
+        float[] derived = CascadeSplits.Derive(shadows.Cascades);
+        float[] stored = shadows.Splits;
+
+        bool same = stored is not null
+            && stored.Length == derived.Length
+            && stored.SequenceEqual(derived);
+
+        if (same || stored is null || stored.Length == 0)
+        {
+            // A one-cascade component has no boundaries to record, so its (empty) list says nothing either.
+            data.Remove(nameof(Shadows.Splits));
+        }
+        else
+        {
+            data[nameof(Shadows.Splits)] = stored;
+        }
+
+        return data;
     }
 
     private static Dictionary<string, object> SerializeMeshRenderer(MeshRenderer mr)
@@ -234,7 +274,28 @@ public class SceneSerializer
             materialData["Shininess"] = mr.Material.Shininess;
         }
 
+        // Written only when set, like every other property here. A material with no cutoff is the common case, and
+        // `AlphaCutoff: 0` in every block of every scene would read like a decision to be opaque rather than like the
+        // absence of one.
+        if (mr.Material.AlphaCutoff > 0f)
+        {
+            materialData["AlphaCutoff"] = mr.Material.AlphaCutoff;
+        }
+
         meshRendererData["Material"] = materialData;
+
+        // Written only when not the default, like every other property here. A renderer that casts and receives is
+        // the common case, and saying so in every line of every scene is noise in a file people read by hand.
+        if (mr.CastShadows != ShadowCastingMode.On)
+        {
+            meshRendererData["CastShadows"] = mr.CastShadows;
+        }
+
+        if (!mr.ReceiveShadows)
+        {
+            meshRendererData["ReceiveShadows"] = false;
+        }
+
         return meshRendererData;
     }
 

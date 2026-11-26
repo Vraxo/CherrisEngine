@@ -141,3 +141,90 @@ jobs:
 
       # The number-field drag is plain JavaScript without a browser, so node can check it directly.
       - run: node tests/js/numberdrag.test.js
+
+      # Nothing else in this workflow compiles a shader. The engine loads GLSL at run time, so a shader with a
+      # typo in it builds green, tests green, and fails in the editor as a black screen with a log line. That is
+      # exactly what happened: `uShadowTexelSize[cascade]` was written one statement above `int cascade = 0;`, and
+      # the only thing that ever noticed was somebody running the editor.
+      #
+      # glslangValidator parses and links GLSL against the real spec and needs no GPU, so it is the one check that
+      # can run here. It is built from source rather than downloaded because the release assets live on
+      # release-assets.githubusercontent.com, which the sandbox this job was written in cannot reach; the source is
+      # reachable from `codeload` everywhere. `-DENABLE_OPT=0` is what drops the SPIRV-Tools submodule, which is
+      # needed to emit SPIR-V and not at all to say whether a shader is well-formed; without it the clone is 90 MB
+      # heavier for a check that never looks at the output.
+      #
+      # The build is ~70 s and the check itself is one, so the binary is cached under the glslang version: the
+      # version is in the key and nothing else is, which is what makes a stale cache impossible rather than merely
+      # unlikely. A cache miss is a slower job, never a wrong one.
+      - name: Restore cached GLSL validator
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/glslang/build/StandAlone/glslang
+          key: glslang-16.1.0-${{ runner.os }}
+
+      - name: Build GLSL validator
+        run: |
+          set -eu
+          version=16.1.0
+          work="$RUNNER_TEMP/glslang"
+          if [ ! -x "$work/build/StandAlone/glslang" ]; then
+            rm -rf "$work"
+            mkdir -p "$work"
+            curl -sSL "https://codeload.github.com/KhronosGroup/glslang/tar.gz/refs/tags/$version" -o "$work/src.tgz"
+            tar xzf "$work/src.tgz" -C "$work"
+            mkdir -p "$work/build"
+            cmake -S "$work/glslang-$version" -B "$work/build" \
+              -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=0 -DENABLE_HLSL=0 \
+              -DBUILD_TESTING=0 -DENABLE_GLSLANG_BINARIES=ON > /dev/null
+            cmake --build "$work/build" --target glslang-standalone -j "$(nproc)" > /dev/null
+          fi
+          "$work/build/StandAlone/glslang" --version | head -1
+          echo "GLSLANG=$work/build/StandAlone/glslang" >> "$GITHUB_ENV"
+
+      # Every stage on its own, then the ten pairs the engine actually links into programs. The link is the half
+      # that a per-file check misses: a vertex stage can declare `out vec2 vTexCoords` and its fragment stage
+      # `in vec3 vTexCoords`, each file legal and the program unbuildable.
+      #
+      # The pairs are listed here rather than derived from the C# because they are what the renderers ask for by
+      # name, and a pair added to a renderer without a line here is a pair nobody is checking.
+      # `ShadowShaderTests.TheShadersTheRendererLinksAreTheShadersCiCompiles` reads this list back and asserts it
+      # matches what the renderers ask for, so the duplication cannot drift without a test going red.
+      - name: Validate shaders
+        run: |
+          set -eu
+          cd src/OvercoreEditor/EditorResources/Shaders
+          failed=0
+
+          for shader in *.vert *.frag; do
+            if ! output=$("$GLSLANG" "$shader" 2>&1); then
+              echo "::error title=Shader stage: $shader::$(echo "$output" | grep -v "^$shader$" | head -6 | tr '\n' '|')"
+              failed=1
+            fi
+          done
+
+          while read -r vertex fragment; do
+            [ -z "$vertex" ] && continue
+            if ! output=$("$GLSLANG" -l "$vertex" "$fragment" 2>&1); then
+              echo "::error title=Shader program: $vertex + $fragment::$(echo "$output" | grep -i error | head -6 | tr '\n' '|')"
+              failed=1
+            fi
+          done <<'PAIRS'
+          scene.vert scene.frag
+          skin.vert skin.frag
+          shadow.vert shadow.frag
+          shadow_skinned.vert shadow.frag
+          post_quad.vert post_blur.frag
+          post_quad.vert post_brightpass.frag
+          post_quad.vert post_composite.frag
+          debug.vert debug.frag
+          grid.vert grid.frag
+          skybox.vert skybox.frag
+          PAIRS
+
+          if [ "$failed" -ne 0 ]; then
+            echo "One or more shaders failed to compile or link. See the annotations above."
+            exit 1
+          fi
+
+          echo "All shader stages compile and all programs link."

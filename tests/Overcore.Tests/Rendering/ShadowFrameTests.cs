@@ -1,0 +1,264 @@
+using AwesomeAssertions;
+using Overcore.Components;
+using Overcore.Core;
+using Overcore.Rendering;
+using Overcore.Rendering.Shadows;
+using Xunit;
+
+namespace Overcore.Tests.Rendering;
+
+/// <summary>
+/// What a frame gathers for the depth pass, and — more importantly — the cases in which it gathers nothing. A frame
+/// that returns a half-built cascade list is a frame that draws into a map the receiver will sample, so every reason to
+/// skip is <see cref="ShadowFrame.None"/> rather than a partially filled instance.
+/// </summary>
+public class ShadowFrameTests
+{
+    private static Camera Camera()
+    {
+        GameObject gameObject = new("camera");
+        Camera camera = new();
+        gameObject.AddComponent(camera);
+
+        return camera;
+    }
+
+    private static GameObject CascadingLight(ShadowType shadows = ShadowType.Soft)
+    {
+        GameObject gameObject = new("sun");
+        gameObject.AddComponent(new Light { Type = LightType.Directional, Shadows = shadows });
+
+        return gameObject;
+    }
+
+    // ---------------------------------------------------------------- when there is no frame
+
+    [Fact]
+    public void NoCameraIsNoFrame()
+    {
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], null, 16f / 9f);
+
+        frame.Enabled.Should().BeFalse();
+        frame.Cascades.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NoCastingLightIsNoFrame()
+    {
+        // A scene lit by point lights only. It still draws; it just has nothing to project.
+        GameObject gameObject = new("lamp");
+        gameObject.AddComponent(new Light { Type = LightType.Point });
+
+        ShadowFrame frame = ShadowFrame.Build([gameObject], Camera(), 16f / 9f);
+
+        frame.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ADirectionalLightThatDoesNotCastIsNoFrame()
+    {
+        ShadowFrame frame = ShadowFrame.Build(
+            [CascadingLight(ShadowType.None)],
+            Camera(),
+            16f / 9f);
+
+        frame.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ADisabledLightIsNoFrame()
+    {
+        GameObject gameObject = CascadingLight();
+        gameObject.GetComponent<Light>()!.Enabled = false;
+
+        ShadowFrame.Build([gameObject], Camera(), 16f / 9f).Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ALightOnAnInactiveObjectIsNoFrame()
+    {
+        GameObject gameObject = CascadingLight();
+        gameObject.SetActive(false);
+
+        ShadowFrame.Build([gameObject], Camera(), 16f / 9f).Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AnEmptySceneIsNoFrame()
+    {
+        ShadowFrame.Build([], Camera(), 16f / 9f).Enabled.Should().BeFalse();
+        ShadowFrame.Build(null, Camera(), 16f / 9f).Enabled.Should().BeFalse();
+    }
+
+    // ---------------------------------------------------------------- when there is
+
+    [Fact]
+    public void ACastingDirectionalLightAndACameraGiveFourCascades()
+    {
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], Camera(), 16f / 9f);
+
+        frame.Enabled.Should().BeTrue();
+        frame.Cascades.Should().HaveCount(CascadeSplits.DefaultCascades);
+        frame.Ranges.Should().HaveCount(CascadeSplits.DefaultCascades);
+
+        // The depths the document promises at the defaults: 10, 30, 70 and 150 metres.
+        frame.Ranges[^1].Far.Should().Be(CascadeSplits.DefaultDistance);
+    }
+
+    [Fact]
+    public void EveryCascadeCarriesEightWorldCorners()
+    {
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], Camera(), 16f / 9f);
+
+        frame.SliceCorners.Should().HaveCount(frame.Cascades.Count * 8);
+    }
+
+    [Fact]
+    public void TheSliceCornersOfTheFirstCascadeSitInFrontOfTheCamera()
+    {
+        // A camera at the origin looking down -Z with no rotation. The first cascade covers the near plane to ten
+        // metres, so its corners are all ahead of the eye and none is behind it. A sign error in the camera matrix
+        // puts every corner behind, which culls every caster in the scene and reads as "shadows are broken".
+        GameObject gameObject = new("camera");
+        Camera camera = new();
+        gameObject.AddComponent(camera);
+
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], camera, 16f / 9f);
+
+        frame.Enabled.Should().BeTrue();
+
+        for (int corner = 0; corner < 8; corner++)
+        {
+            // Camera looks down -Z, so "in front" is a negative Z.
+            frame.SliceCorners[corner].Z.Should().BeLessThan(0f);
+        }
+    }
+
+    [Fact]
+    public void TheCascadesGetFartherFromTheCameraAsTheyGoOut()
+    {
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], Camera(), 16f / 9f);
+
+        float previous = 0f;
+
+        foreach (CascadeRange range in frame.Ranges)
+        {
+            range.Near.Should().BeGreaterThanOrEqualTo(previous);
+            range.Far.Should().BeGreaterThan(range.Near);
+            previous = range.Far;
+        }
+    }
+
+    [Fact]
+    public void TheFirstCastingDirectionalLightIsTheOneUsed()
+    {
+        // The same light OpenGLSceneRenderer shades from, chosen with FirstOrDefault. A scene with two directional
+        // lights shades and shadows from the first; the second's ShadowType is inert rather than half-honoured.
+        GameObject first = CascadingLight();
+        GameObject second = CascadingLight(ShadowType.None);
+
+        ShadowFrame frame = ShadowFrame.Build([first, second], Camera(), 16f / 9f);
+
+        frame.Enabled.Should().BeTrue();
+        frame.Light.Should().Be(first.GetComponent<Light>());
+    }
+
+    [Fact]
+    public void TheLightDirectionOpposesTheDirectionToIt()
+    {
+        // uDirLight.direction in the shading programs is the direction *to* the light, and the cascades are fitted
+        // looking back along it. Getting this backwards lights and shadows the scene from opposite ends.
+        GameObject gameObject = CascadingLight();
+        gameObject.Transform.Rotation = System.Numerics.Quaternion.CreateFromAxisAngle(
+            System.Numerics.Vector3.UnitX,
+            MathF.PI / 4f);
+
+        ShadowFrame frame = ShadowFrame.Build([gameObject], Camera(), 16f / 9f);
+
+        // LightDirection is the direction the light travels, so it is the negation of the direction to it — the axis
+        // the fit itself looks along.
+        System.Numerics.Vector3 toLight = LightSpaceFit.DirectionToLight(gameObject.Transform.Rotation);
+
+        frame.LightDirection.X.Should().BeApproximately(-toLight.X, 0.001f);
+        frame.LightDirection.Y.Should().BeApproximately(-toLight.Y, 0.001f);
+        frame.LightDirection.Z.Should().BeApproximately(-toLight.Z, 0.001f);
+    }
+
+    // ---------------------------------------------------------------- resolution
+
+    [Fact]
+    public void AnExplicitResolutionOverridesTheLightsSetting()
+    {
+        GameObject gameObject = CascadingLight();
+        gameObject.GetComponent<Light>()!.ShadowResolution = ShadowResolution.Low;
+
+        ShadowFrame.Build([gameObject], Camera(), 16f / 9f, 3072).Resolution.Should().Be(3072);
+    }
+
+    [Fact]
+    public void WithNoExplicitResolutionTheLightsSettingDecides()
+    {
+        GameObject gameObject = CascadingLight();
+        gameObject.GetComponent<Light>()!.ShadowResolution = ShadowResolution.Low;
+
+        // The parameter defaults to zero, meaning "ask the light". A caller that passed nothing used to get 2048
+        // regardless of what the light asked for, which made the setting inert without failing anything.
+        ShadowFrame.Build([gameObject], Camera(), 16f / 9f).Resolution.Should().Be(512);
+    }
+
+    [Fact]
+    public void TheResolutionFollowsTheCascadesTexelSize()
+    {
+        GameObject gameObject = CascadingLight();
+
+        ShadowFrame small = ShadowFrame.Build([gameObject], Camera(), 16f / 9f, 1024);
+        ShadowFrame large = ShadowFrame.Build([gameObject], Camera(), 16f / 9f, 4096);
+
+        // Four times the texels a side is a quarter of the world per texel, which is what makes the normal offset scale
+        // with the resolution instead of detaching a shadow at exactly one of them.
+        //
+        // Not exactly 4, and the reason is a property of the fit rather than rounding: the box is the slice's sphere
+        // plus one texel of slack on every axis (`LightSpaceFit.SlackTexels`), so a coarser map carries a
+        // proportionally larger slack and its texel divides out slightly more than a quarter. At these resolutions the
+        // difference is 0.15%, which is why this is a relative tolerance rather than an equality.
+        (small.Cascades[0].TexelSize / large.Cascades[0].TexelSize).Should().BeApproximately(4f, 0.01f);
+    }
+
+    [Fact]
+    public void EachCascadesTexelSizeIsWiderThanTheLast()
+    {
+        // The upload hands all four to the shader, which picks by cascade. If the fit returned one size for every
+        // cascade the offset would be uniform and the outer cascades would be the acne-prone ones, so the property is
+        // worth pinning where it is cheap rather than only where it is invisible.
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], Camera(), 16f / 9f);
+
+        for (int cascade = 1; cascade < frame.Cascades.Count; cascade++)
+        {
+            frame.Cascades[cascade].TexelSize.Should().BeGreaterThan(
+                frame.Cascades[cascade - 1].TexelSize,
+                "a farther cascade covers more world per texel");
+        }
+
+        // Not the slice ratio. Each cascade's box is sized by its own slice's *bounding sphere*, and the sphere is set
+        // by the slice's far plane and its field of view rather than by its width: the slices go 0.1-10, 10-30, 30-70,
+        // 70-150, so their spheres grow much faster than the widths do. At the defaults the innermost texel is 0.0125 m
+        // and the outermost 0.177 m — a factor of 14.2. (The figure is computed in the test rather than quoted from the
+        // document, which had 20 in an earlier revision and was wrong.)
+        (frame.Cascades[^1].TexelSize / frame.Cascades[0].TexelSize).Should().BeApproximately(14.2f, 0.2f);
+        frame.Cascades[0].TexelSize.Should().BeApproximately(0.0125f, 0.0005f);
+        frame.Cascades[^1].TexelSize.Should().BeApproximately(0.177f, 0.002f);
+    }
+
+    // ---------------------------------------------------------------- the singleton
+
+    [Fact]
+    public void NoneIsADisabledFrameRatherThanNull()
+    {
+        // A backend without a depth pass — Veldrid, today — is handed this and draws exactly what it drew before.
+        // Returning null would put a null check in both backends and a null dereference in whichever one forgot it.
+        ShadowFrame.None.Enabled.Should().BeFalse();
+        ShadowFrame.None.Cascades.Should().BeEmpty();
+        ShadowFrame.None.Light.Should().BeNull();
+        ShadowFrame.None.Resolution.Should().Be(Shadows.DefaultResolution);
+    }
+}

@@ -30,7 +30,14 @@ public enum PropertyKind
     Vector2,
 
     /// <summary>Three floats; <see cref="PropertySnapshot.IsColor"/> marks a colour.</summary>
-    Vector3
+    Vector3,
+
+    /// <summary>
+    /// A list of floats, of any length, written and read as comma-separated numbers. The inspector did not have a
+    /// list before, and it needs one for the same reason the serializer does: a value whose length is data rather than
+    /// a type. Drawn and edited through the text field, which is what an edit command carries anyway.
+    /// </summary>
+    Numbers
 }
 
 /// <summary>
@@ -103,6 +110,9 @@ public sealed record PropertySnapshot(
         PropertyKind.Number when HasBoundedRange && TryGetRange(out float minimum, out float maximum)
             => (maximum - minimum) / 200f,
         PropertyKind.Number => 0.01f,
+
+        // A split boundary is a fraction of the shadow distance and wants finer steps than a metre-scale field.
+        PropertyKind.Numbers => 0.001f,
         PropertyKind.Vector3 when IsColor => 1f / 255f,
         _ => 0.1f
     };
@@ -329,6 +339,30 @@ public static class ComponentProperties
                 error = null;
                 return true;
 
+            case PropertyKind.Numbers:
+                // Split on commas, and accept an empty string as the empty list: a shadow-split list of one cascade
+                // has no boundaries, and clearing the field is how a person says so.
+                string[] items = trimmed.Split(
+                    ',',
+                    StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+                float[] values = new float[items.Length];
+
+                for (int index = 0; index < items.Length; index++)
+                {
+                    if (!Single.TryParse(items[index], NumberStyles.Float, CultureInfo.InvariantCulture, out values[index]))
+                    {
+                        error = $"'{property.Name}' wants a list of numbers, and '{items[index]}' is not one.";
+                        return false;
+                    }
+                }
+
+                property.SetValue(
+                    component,
+                    property.PropertyType == typeof(List<float>) ? new List<float>(values) : values);
+                error = null;
+                return true;
+
             default:
                 error = $"'{property.Name}' is a {property.PropertyType.Name}, which the inspector cannot edit.";
                 return false;
@@ -367,7 +401,23 @@ public static class ComponentProperties
             return PropertyKind.Vector2;
         }
 
-        return type == typeof(Vector3) ? PropertyKind.Vector3 : null;
+        if (type == typeof(Vector3))
+        {
+            return PropertyKind.Vector3;
+        }
+
+        return IsFloatList(type) ? PropertyKind.Numbers : null;
+    }
+
+    /// <summary>Whether a type is the list-of-floats shape <see cref="PropertyKind.Numbers"/> draws.</summary>
+    /// <remarks>
+    /// Arrays and <c>List&lt;float&gt;</c>, because a component may store either and neither is more correct; the
+    /// inspector writes back whichever the property declared. Any other element type is left alone rather than
+    /// rendered as something it is not.
+    /// </remarks>
+    private static bool IsFloatList(Type type)
+    {
+        return type == typeof(float[]) || type == typeof(List<float>);
     }
 
     private static object? ParseChoice(Type type, string name)
@@ -471,11 +521,38 @@ public static class ComponentProperties
                 property.Name, kind.Value, Format(Number(((Vector2)value).X), Number(((Vector2)value).Y)),
                 [((Vector2)value).X, ((Vector2)value).Y], [], range?.Min, range?.Max),
 
+            // A list has no fixed arity, so both the text and Components carry every element. Components is what a
+            // vector row draws one field per entry of; the text field is what carries an edit, because a list whose
+            // length is data cannot be edited a field at a time without deciding what a new element means.
+            PropertyKind.Numbers => NumbersSnapshot(property, value, range),
+
             _ => new PropertySnapshot(
                 property.Name, kind.Value,
                 Format(Number(((Vector3)value).X), Number(((Vector3)value).Y), Number(((Vector3)value).Z)),
                 [((Vector3)value).X, ((Vector3)value).Y, ((Vector3)value).Z], [], range?.Min, range?.Max, isColor)
         };
+    }
+
+    /// <summary>One <see cref="PropertyKind.Numbers"/> row: every element, as text and as floats.</summary>
+    private static PropertySnapshot NumbersSnapshot(PropertyInfo property, object value, RangeAttribute? range)
+    {
+        IEnumerable<float> elements = value switch
+        {
+            float[] array => array,
+            List<float> list => list,
+            _ => []
+        };
+
+        float[] numbers = [.. elements];
+
+        return new PropertySnapshot(
+            property.Name,
+            PropertyKind.Numbers,
+            String.Join(", ", numbers.Select(Number)),
+            numbers,
+            [],
+            range?.Min,
+            range?.Max);
     }
 
     private static string Number(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);

@@ -16,7 +16,7 @@ The solution (`Overcore.slnx`) contains four production projects under `src`:
 
 ## 🔧 Capabilities
 
-- **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. A partial `Veldrid` backend exists in `Overcore`, though both the editor and runtime currently target `OpenTK`.
+- **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. Nothing casts a shadow yet: the cascade splits and light-space fit exist as tested arithmetic (`Rendering/Shadows/`) and the contract for the passes that will use them is [Shadows](docs/shadows.md). A partial `Veldrid` backend exists in `Overcore`, though both the editor and runtime currently target `OpenTK`.
 - **Physics**: 60 Hz fixed-timestep rigid-body dynamics via `BepuPhysics` v2. `BoxCollider`, `SphereCollider` and `CapsuleCollider` are components of their own (a collider with no `RigidBody` is a fixed shape); `OnCollision*`/`OnTrigger*` callbacks, `Physics.Raycast`/`SphereCast`/`Overlap*` queries, layer collision matrix, friction and bounciness. See [Physics & Runtime Lifecycle](docs/physics.md).
 - **Audio**: 3D positional audio via OpenAL (`AudioListener` and `AudioSource`) supporting 8/16-bit mono and stereo `.wav` files.
 - **Scripting**: Dynamic C# script compilation via Roslyn (`Microsoft.CodeAnalysis.CSharp`), plus inspector attributes (`[Range]`, `[ColorUsage]`, `[DragDropTarget]`, `[HideInInspector]`).
@@ -162,6 +162,7 @@ Current limitations:
 
 - [Physics & Runtime Lifecycle](docs/physics.md): Colliders and rigid bodies, contact and trigger callbacks, physics queries and layers, the script lifecycle, `Time`, coroutines and `Invoke`, `Instantiate`/`Destroy`, and changing scenes with `SceneManager`.
 - [Animation & Skinning](docs/animation.md): The animation layer, increment by increment: what the importer and skeleton data model do today, what sampling, the `Animator` and GPU skinning will do, and the gaps (no Avatar, no IK, no root motion) that stay out of scope.
+- [Shadows](docs/shadows.md): The contract for cascaded directional shadow maps — where cascade splits, the light-space fit, texel snapping, the depth pass and the receiver's bias belong, the per-light and per-scene settings, and the gaps (no point or spot shadows, no culling, no baked occlusion) that stay out of scope.
 - [Color Consistency & Rendering Pipeline](docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Overcore/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.

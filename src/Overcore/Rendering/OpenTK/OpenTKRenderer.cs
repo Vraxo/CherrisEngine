@@ -1,5 +1,6 @@
 ﻿using Overcore.Components;
 using Overcore.Core;
+using Overcore.Rendering.Shadows;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 
@@ -15,6 +16,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLDebugRenderer _debugRenderer;
     private readonly OpenGLGizmoRenderer _gizmoRenderer;
     private readonly OpenGLGridRenderer _gridRenderer;
+    private readonly OpenGLShadowRenderer _shadowRenderer;
     private Vector2i _viewportSize = new(1, 1);
     private bool _viewportConfiguredThisFrame;
     public bool ShowGrid { get; set; } = true;
@@ -32,6 +34,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _debugRenderer = new OpenGLDebugRenderer();
         _gizmoRenderer = new OpenGLGizmoRenderer(_debugRenderer);
         _gridRenderer = new OpenGLGridRenderer();
+        _shadowRenderer = new OpenGLShadowRenderer();
         GL.FrontFace(FrontFaceDirection.Cw);
     }
     public IntPtr GetSceneTextureHandle()
@@ -80,6 +83,20 @@ public class OpenTKRenderer : IRenderer, IDisposable
     [Obsolete]
     private void RenderScenePass(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float exposure, bool isRuntimeMode)
     {
+        // The depth pass runs first and owns its own framebuffer, so it has to finish before BeginFrame binds the
+        // MSAA target the colour pass draws into. Sharing that target instead would leave it with a depth attachment
+        // that has been resolved four times and can be neither read nor compared.
+        float aspectRatio = (float)_viewportSize.X / MathF.Max(1f, _viewportSize.Y);
+        List<GameObject> sceneObjects = [.. gameObjects];
+
+        ShadowFrame shadows = ShadowFrame.Build(sceneObjects, mainCamera, aspectRatio);
+
+        _shadowRenderer.Render(
+            shadows,
+            sceneObjects,
+            _sceneRenderer.GetOrCreateBackendData,
+            _sceneRenderer.GetOrCreateSkinnedData);
+
         GL.Enable(EnableCap.FramebufferSrgb);
         _postProcessor.BeginFrame();
         GL.Enable(EnableCap.DepthTest);
@@ -90,11 +107,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
 
         // The camera keeps its own values inside what a perspective projection accepts — a near plane of -0.02
         // used to throw here and take the render loop with it — and the aspect is floored, so a viewport that
-        // has not been measured yet cannot divide by zero either.
-        float aspect = (float)_viewportSize.X / MathF.Max(1f, _viewportSize.Y);
+        // has not been measured yet cannot divide by zero either. The same aspect the cascades were fitted for, so
+        // the receiver's cascades and the map's slices cover the same wedge of the world.
         var projection = Matrix4.CreatePerspectiveFieldOfView(
             mainCamera.FieldOfViewRadians,
-            aspect,
+            aspectRatio,
             mainCamera.NearClipPlane,
             mainCamera.FarClipPlane);
         // Drawn whether or not the scene brought a skybox: without this the background is a cleared buffer, and an
@@ -108,7 +125,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
                 _gridRenderer.Render(view, projection, cameraPos);
             }
         }
-        _sceneRenderer.Render(gameObjects, lights, view, projection);
+        _sceneRenderer.Render(sceneObjects, lights, view, projection, shadows, _shadowRenderer.Texture);
         if (!isRuntimeMode)
         {
             _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
@@ -148,6 +165,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     public void Dispose()
     {
         _sceneRenderer.Dispose();
+        _shadowRenderer.Dispose();
         _skyboxRenderer.Dispose();
         _postProcessor.Dispose();
         _debugRenderer.Dispose();
