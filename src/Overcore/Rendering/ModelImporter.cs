@@ -13,10 +13,6 @@ using Veldrid;
 // what a MeshRenderer holds. Naming the engine's here keeps the two from being ambiguous wherever both are in scope.
 using Material = Overcore.Core.Material;
 
-// Overcore.Animation is a namespace of this engine, and it shadows SharpGLTF's Animation type wherever both are in
-// scope. The alias is what lets the file read a file's animations without qualifying the type at every use.
-using Animation = SharpGLTF.Schema2.Animation;
-
 namespace Overcore.Rendering;
 
 /// <summary>One imported object: the handle a caller needs to place, and to link, what the file described.</summary>
@@ -571,7 +567,7 @@ public static class ModelImporter
     /// <summary>Turns the file's animations into clips, one per animation, addressed by node path.</summary>
     private static void ImportClips(ModelRoot model, ImportedModel result)
     {
-        foreach (Animation animation in model.LogicalAnimations)
+        foreach (SharpGLTF.Schema2.Animation animation in model.LogicalAnimations)
         {
             string name = string.IsNullOrWhiteSpace(animation.Name)
                 ? $"Animation {animation.LogicalIndex}"
