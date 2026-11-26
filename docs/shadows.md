@@ -357,10 +357,11 @@ The static program takes exactly two uniforms, `model` and `lightViewProjection`
 third, the palette sampler on the bone unit. Not `view`, not `projection`, not `uTiling`, not the lights: a depth pass
 that uploads the frame's lighting uniforms is a pass someone forgot to trim.
 
-`shadow.frag` has an empty `main`, and it exists because `ShaderProgram` always compiles a vertex and a fragment source
-pair — the depth buffer is written by the rasteriser before any fragment shader runs, so the fragment stage has nothing
-to do and nothing to write. It is a file rather than a null argument because that is the shape `ShaderProgram` already
-takes for every other program in the engine.
+`shadow.frag` is two lines with an empty `main`, and it exists because `ShaderProgram` always compiles a vertex and a
+fragment source pair — the depth buffer is written by the rasteriser before any fragment shader runs, so the fragment
+stage has nothing to do and nothing to write. It is a file rather than a null argument because that is the shape
+`ShaderProgram` already takes for every other program in the engine, and one empty shader is a smaller price than a
+second constructor overload on it.
 
 ### 5.4 Depth-pass state
 

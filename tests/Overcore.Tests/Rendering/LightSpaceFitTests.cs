@@ -198,14 +198,14 @@ public class LightSpaceFitTests
 
         Vector3 toLight = LightSpaceFit.DirectionToLight(facingDown);
 
-        Vector3.Transform(toLight, Quaternion.Inverse(facingDown)).Should().BeApproximately(-Vector3.UnitZ, 0.0001f,
-            "the object's own -Z, as scene.frag dots against");
+        // The object's own -Z, as scene.frag dots against.
+        Approximately(Vector3.Transform(toLight, Quaternion.Inverse(facingDown)), -Vector3.UnitZ).Should().BeTrue();
     }
 
     [Fact]
     public void AZeroRotationLooksStraightDownTheForwardAxis()
     {
-        LightSpaceFit.DirectionToLight(Quaternion.Identity).Should().BeApproximately(-Vector3.UnitZ, 0.0001f);
+        Approximately(LightSpaceFit.DirectionToLight(Quaternion.Identity), -Vector3.UnitZ).Should().BeTrue();
     }
 
     [Fact]
@@ -389,7 +389,7 @@ public class LightSpaceFitTests
 
         Vector3 naive = Vector3.Normalize(Vector3.Cross(fit.Up, fit.Forward));
 
-        AxisOf(fit, 0).Should().BeApproximately(-naive, 0.0001f);
+        Approximately(AxisOf(fit, 0), -naive).Should().BeTrue();
     }
 
     [Fact]
@@ -437,6 +437,14 @@ public class LightSpaceFitTests
             1 => new Vector3(fit.LightView.M12, fit.LightView.M22, fit.LightView.M32),
             _ => new Vector3(fit.LightView.M13, fit.LightView.M23, fit.LightView.M33)
         };
+    }
+
+    /// <summary>Whether two directions agree to within a ten-thousandth on every component.</summary>
+    private static bool Approximately(Vector3 actual, Vector3 expected)
+    {
+        return MathF.Abs(actual.X - expected.X) < 0.0001f
+            && MathF.Abs(actual.Y - expected.Y) < 0.0001f
+            && MathF.Abs(actual.Z - expected.Z) < 0.0001f;
     }
 
     /// <summary>Whether all sixteen entries are finite. A NaN anywhere in a matrix renders as a black frame silently.</summary>
