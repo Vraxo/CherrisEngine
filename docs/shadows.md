@@ -4,9 +4,10 @@
 > `OpenTKRenderer.RenderScenePass` runs the pass before `_postProcessor.BeginFrame()`. Every setting in §2 is
 > editable from both front ends and round-trips through the scene file, `Splits` included.
 > The tests pin what needs no GPU — splits, the fit, the caster rules, the frame's early returns, the receivers'
-> text against each other, the inspector's list kind, and the round-trip of every new serialized property. Nothing in
-> CI compiles a GLSL shader, so a shader error is a runtime failure and not a build one (§8). The Veldrid backend
-> renders no shadows at all.
+> text against each other, the inspector's list kind, and the round-trip of every new serialized property. CI also
+> compiles every shader and links all ten programs with `glslang`, which is what caught the compile error in both
+> receivers that nothing else could (§7.1); what that still cannot judge is the picture. The Veldrid backend renders
+> no shadows at all.
 
 Before this layer Overcore lit everything as if nothing were ever in the way. `scene.frag` sums a directional term,
 up to four point lights and up to four spot lights over an albedo, and every surface it shades is lit through every
@@ -614,6 +615,45 @@ The four depth passes do not pay for MSAA, do not resolve, do not bloom and do n
 is the vertex and raster work and not the per-pixel cost of the colour pass. That is what makes `n + 1` draws affordable
 here where `n + 1` full shading passes would not be.
 
+### 7.1 The shader gate, and the bug that earned it
+
+The engine loads GLSL at run time. There is no build step that reads a `.frag`, so a shader that does not compile is not
+a build failure — it is a program that fails to link when the editor starts, a log line nobody reads, and a black
+viewport. This layer shipped one:
+
+```glsl
+float texelWorld = uShadowTexelSize[cascade];   // used here
+
+vec3 offsetPos = worldPos + normal * (uShadowNormalBias * texelWorld);
+
+int cascade = 0;                                 // declared here
+```
+
+That is an error in both `scene.frag` and `skin.frag`, which together are the entire colour pass. It passed the C#
+build, because the shader is a text resource; it passed every test in §9, because those read the shader's text and
+nothing in a test can evaluate a fragment stage; and it survived review, because the statement is eleven lines from the
+declaration and reads correctly in both places. **The engine drew nothing and said so once, in a log.**
+
+CI now compiles every stage and links all ten programs with `glslang`, which parses against the real specification and
+needs no GPU and no display. Three things about it are worth knowing:
+
+- It is built from the glslang **source**, not downloaded as a binary. The official release assets are served from
+  `release-assets.githubusercontent.com`, which the environment this was written in cannot reach; `codeload.github.com`
+  is reachable wherever the workflow runs, so `curl | tar` a tag and build it. `-DENABLE_OPT=0` is what makes that
+  cheap: it drops the SPIRV-Tools submodule you need to *emit* SPIR-V and not at all to say whether a shader is
+  well-formed, and the build goes from a 90 MB clone to about fifty seconds.
+- The pairs are listed explicitly. A directory full of stages says nothing about which vertex stage belongs with which
+  fragment stage, and `shadow.frag` is linked twice — against `shadow.vert` and against `shadow_skinned.vert` — so the
+  list is per *program*, not per file. `tests/Overcore.Tests/Rendering/ShadowShaderTests.cs` reads that list out of
+  `ci.yml` and asserts it is the same list the OpenTK renderers ask for, which is the only thing stopping the two from
+  drifting apart.
+- It checks the *programs* too, not just the files. A stage and its partner can each be legal and still not link:
+  `out vec2 vTexCoords` against `in vec3 vTexCoords` is two valid files and one broken program, and the error arrives
+  at load time exactly like the one above.
+
+What it still cannot do is draw. A shader that compiles and links can be wrong about the sign of a matrix, the axis of a
+bias, or which term it multiplies, and all of §6 is that kind of claim. The gate moves the line; it does not remove it.
+
 ## 8. Honest gaps — what this is not
 
 - **One directional light casts.** Two directional lights already shade as one, and now cast as one (§5.2). Unity
@@ -647,9 +687,13 @@ here where `n + 1` full shading passes would not be.
   the constraint that will bite the first time a normal map or an emissive map is added — which is worth writing down
   before it is discovered as a driver limit. §5.5's cutout test deliberately spends none of it: it samples the diffuse
   on the unit the colour pass already binds, because it is reading the same texture for a different question.
-- **The shaders are the part CI cannot run.** Split arithmetic, the light-space fit, texel snapping, bias and the
-  cascade choice are all pure functions and all tested exactly. The draw itself needs a context, so a green run proves
-  the matrices and the CPU/GPU contract, not the picture. That is a real limit of the increment, not a gap papered over.
+- **CI compiles the shaders but cannot draw with them.** Split arithmetic, the light-space fit, texel snapping, bias
+  and the cascade choice are pure functions and are tested exactly; and since the *Validate shaders* step, every stage
+  and all ten programs are compiled and linked by `glslang` against the real GLSL specification, with no GPU involved.
+  That check is not a formality: `uShadowTexelSize[cascade]` was written one statement above `int cascade = 0;`, which
+  is a hard compile error in both receivers, and it passed the C# build, every CPU test, and a code review. What no
+  green run can still prove is the *picture* — that the matrices point the right way, that the texels land where the
+  fit says, that the bias is enough. Those need a context and an eye, and they are the reason this document exists.
 - **A shadow is not a shadow without a receiver.** An object with `ReceiveShadows` off casts but is not darkened, and so
   does everything else if the frame never uploads §6.5's uniforms — which is the shape this bug takes in practice.
   This is exactly right and is still worth naming, because "my caster casts nothing" usually means the *floor* is the
@@ -666,7 +710,9 @@ Everything but the draw is deterministic, so the tests are exact rather than app
 exceptions, both float32 facts rather than choices: the fit's tolerances are `1e-3`-scale because a dot product hundreds
 of texels from the origin loses more than that, and the slice-width test composes two rules (the near plane and the
 staircase) so it is stated at a near plane of zero. A `…` below is an assertion this layer relies on and does not yet
-make: mostly the receiver's arithmetic, which is GLSL and therefore outside anything CI can execute.
+make: mostly the receiver's arithmetic, which needs a fragment stage to evaluate. Note that the `✔` rows about shader
+*text* and the two rows below about the shader *programs* are different kinds of claim: the first reads a file, the
+second is `glslang` agreeing the file is legal GLSL, and neither is a rendered frame.
 
 | Test | Pins |
 | :--- | :--- |
@@ -717,6 +763,9 @@ make: mostly the receiver's arithmetic, which is GLSL and therefore outside anyt
 | ✔ All three fragment stages discard below the same `uAlphaCutoff`, and the value defaults to off | §5.5, asserted on the shaders' own text |
 | ✔ Both depth vertex stages carry the texcoord the cutout needs | that a fence's shadow is fence-shaped, §5.5 |
 | ✔ A material's cutoff survives a save and a load, and an opaque one writes nothing | §5.5 through the real serializer |
+| ✔ Every stage compiles, and all ten programs link, in CI under `glslang` | the class of error no C# test can see: mismatched varyings, a name used before its declaration, a storage qualifier the stage may not use |
+| ✔ The cascade index is declared before the array is subscripted with it | the exact bug that shipped, in both receivers |
+| ✔ The pairs CI compiles are the pairs the renderers link | that a program added to a renderer without a line in the workflow is a program nobody is checking |
 
 ## 10. Where the code lives
 
@@ -743,6 +792,8 @@ layer reuses rather than adds.
 | ✔ The depth shaders, and the cutout discard in all three fragment stages | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
 | ✔ The cutout threshold on the material, and its two-sided serialization | `src/Overcore/Rendering/Material.cs`, `src/Overcore/Scenes/{SceneSerializer,ComponentDeserializer}.cs` |
 | ✔ The receiver in the lit shaders | `src/OvercoreEditor/EditorResources/Shaders/scene.frag`, `skin.frag` |
+| ✔ The shader gate: every stage compiled, every program linked, in CI | `.github/workflows/ci.yml` (*Validate shaders*) |
+| ✔ The pair list, read back so it cannot drift from the renderers | `tests/Overcore.Tests/Rendering/ShadowShaderTests.cs` |
 | ✔ The CPU-side tests: splits, the fit, the caster rules, the frame, the round-trips | `tests/Overcore.Tests/Rendering/{CascadeSplits,LightSpaceFit,Shadows,ShadowCasters,ShadowFrame,ShadowShader}Tests.cs`, `tests/Overcore.Tests/Scenes/ShadowSerializationTests.cs` |
 | ✔ The list-of-numbers property kind the split list needs | `src/OvercoreEditorSession/Scene/ComponentProperties.cs`, `src/OvercoreEditorPhotino/Components/InspectorPanel.razor` |
 | ✔ A `ComponentCatalog.BuiltIn` entry, so either front end can add a `Shadows` component | `src/Overcore/Components/ComponentCatalog.cs` |

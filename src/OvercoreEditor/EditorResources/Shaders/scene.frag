@@ -177,16 +177,16 @@ float ShadowFactor(vec3 worldPos, vec3 normal)
     // texel is 0.0125 m and the outermost's is 0.177 m, so an offset sized for the first is 14× too small in the last
     // and the outer cascade is where acne shows. Indexing by cascade is a constant expression, so the lookup is legal
     // here even though the sampler array would not be.
-    float texelWorld = uShadowTexelSize[cascade];
-
-    vec3 offsetPos = worldPos + normal * (uShadowNormalBias * texelWorld);
-
     int cascade = 0;
 
     while (cascade < uCascadeCount - 1 && depth > uCascadeSplits[cascade])
     {
         cascade++;
     }
+
+    float texelWorld = uShadowTexelSize[cascade];
+
+    vec3 offsetPos = worldPos + normal * (uShadowNormalBias * texelWorld);
 
     float visibility = CascadeVisibility(cascade, offsetPos, normal, ndotl);
 

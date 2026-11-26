@@ -264,4 +264,133 @@ public class ShadowShaderTests
             receiver.Should().Contain(token);
         }
     }
+
+    // ---------------------------------------------------------------- the cascade, and the order it is found in
+
+    [Theory]
+    [InlineData("scene.frag")]
+    [InlineData("skin.frag")]
+    public void TheCascadeIsChosenBeforeItIsIndexed(string shader)
+    {
+        // GLSL needs a declaration above the statement that reads it, and `uShadowTexelSize[cascade]` was written
+        // above `int cascade = 0;`. Every C# test in this file passed, the build passed, and the shader did not
+        // compile — the editor loaded it, failed, and drew nothing. A whole-program compile is the only check that
+        // catches this, which is what CI's *Validate shaders* step is for; this test exists so the reason survives in
+        // the file somebody will edit next.
+        string source = Code(shader);
+
+        int declared = source.IndexOf("int cascade = 0;", StringComparison.Ordinal);
+        int texel = source.IndexOf("uShadowTexelSize[cascade]", StringComparison.Ordinal);
+
+        declared.Should().BeGreaterThan(0);
+        texel.Should().BeGreaterThan(0);
+        declared.Should().BeLessThan(texel, "the index has to exist before the array is subscripted with it");
+    }
+
+    [Fact]
+    public void TheShadersTheRendererLinksAreTheShadersCiCompiles()
+    {
+        // The *Validate shaders* step lists the programs by name, because a pair is what a renderer asks for and a
+        // directory full of stages says nothing about which two belong together. That list is a second copy of the
+        // truth, and a second copy drifts: the check is only worth running if it covers the pair somebody just added.
+        //
+        // Both sides are read as text rather than reflected over, since the renderers' file names are string literals
+        // and the workflow is a YAML file this project has no reason to parse.
+        string workflow = ReadRepositoryFile(".github", "workflows", "ci.yml");
+
+        // The list is the body of a `while read … done <<'PAIRS'` heredoc, so it is bounded by the opening tag and a
+        // line that holds nothing but the closing one. Anchoring on the tag and not on the bare word matters: the
+        // closing delimiter is the bare word, and taking the first match swallowed the shell below it.
+        const string opening = "<<'PAIRS'";
+        const string closing = "PAIRS";
+
+        int tag = workflow.IndexOf(opening, StringComparison.Ordinal);
+
+        tag.Should().BeGreaterThan(0, "the validate step reads its pair list from a heredoc tagged PAIRS");
+
+        string[] lines = workflow[(tag + opening.Length)..].Split('\n');
+
+        int close = Array.FindIndex(lines, line => line.Trim() == closing);
+
+        close.Should().BeGreaterThan(0);
+
+        HashSet<string> compiled = [.. lines[..close]
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0)
+            .Select(line => line.Replace(" ", "", StringComparison.Ordinal))];
+
+        HashSet<string> linked = [.. RendererSource()
+            .SelectMany(source => ShaderNames(source))
+            .Chunk(2)
+            .Where(pair => pair.Length == 2)
+            .Select(pair => pair[0] + pair[1])];
+
+        linked.Should().NotBeEmpty("the renderers are where the pairs come from");
+        compiled.Should().BeEquivalentTo(linked);
+    }
+
+    /// <summary>
+    /// The vertex/fragment file names each renderer asks for, in the order it asks for them: <c>FromFiles(vert, frag)</c>
+    /// for the ones that build a program from a pair, and the constructor's first two arguments for
+    /// <c>OpenGLSceneRenderer</c>'s <c>Program</c>.
+    /// </summary>
+    private static IEnumerable<string> ShaderNames(string source)
+    {
+        // The shadow renderer loads `shadow.frag` twice against two different vertex stages, which is two programs and
+        // has to stay two entries; so this walks the calls rather than collecting a set of names.
+        foreach (string line in source.Split('\n'))
+        {
+            if (!line.Contains("Shaders/", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (string name in line.Split('"'))
+            {
+                if (name.StartsWith("Shaders/", StringComparison.Ordinal))
+                {
+                    yield return name["Shaders/".Length..];
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> RendererSource()
+    {
+        // Shaders/ -> EditorResources -> OvercoreEditor -> src, then down into the engine's OpenTK backend.
+        string directory = Path.GetFullPath(Path.Combine(
+            ShaderDirectory(),
+            "..", "..", "..",
+            "Overcore", "Rendering", "OpenTK"));
+
+        Directory.Exists(directory).Should().BeTrue($"the OpenTK backend should be at {directory}");
+        Directory.EnumerateFiles(directory, "*.cs").Should().NotBeEmpty();
+
+        return Directory
+            .EnumerateFiles(directory, "*.cs")
+            .Where(file => File.ReadAllText(file).Contains("Shaders/", StringComparison.Ordinal))
+            .Select(File.ReadAllText)
+            .ToList();
+    }
+
+    /// <summary>A file from the repository root, found the same way the shader directory is.</summary>
+    private static string ReadRepositoryFile(params string[] parts)
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            string candidate = directory.FullName;
+
+            foreach (string part in parts)
+            {
+                candidate = Path.Combine(candidate, part);
+            }
+
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+        }
+
+        throw new FileNotFoundException($"Could not find {Path.Combine(parts)} from the test binary.");
+    }
 }
