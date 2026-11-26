@@ -123,7 +123,7 @@ public class ShadowFrameTests
         Camera camera = new();
         gameObject.AddComponent(camera);
 
-        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], gameObject, 16f / 9f);
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], camera, 16f / 9f);
 
         frame.Enabled.Should().BeTrue();
 

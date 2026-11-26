@@ -96,7 +96,7 @@ public class ShadowSerializationTests
         {
             Mesh = Triangle(),
             MeshName = "triangle",
-            Material = new Material()
+            Material = Untextured()
         });
 
         string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
