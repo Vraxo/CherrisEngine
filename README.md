@@ -162,6 +162,7 @@ Current limitations:
 
 - [Physics & Runtime Lifecycle](docs/physics.md): Colliders and rigid bodies, contact and trigger callbacks, physics queries and layers, the script lifecycle, `Time`, coroutines and `Invoke`, `Instantiate`/`Destroy`, and changing scenes with `SceneManager`.
 - [Animation & Skinning](docs/animation.md): The animation layer, increment by increment: what the importer and skeleton data model do today, what sampling, the `Animator` and GPU skinning will do, and the gaps (no Avatar, no IK, no root motion) that stay out of scope.
+- [Shadows](docs/shadows.md): The contract for cascaded directional shadow maps — where cascade splits, the light-space fit, texel snapping, the depth pass and the receiver's bias belong, the per-light and per-scene settings, and the gaps (no point or spot shadows, no culling, no baked occlusion) that stay out of scope.
 - [Color Consistency & Rendering Pipeline](docs/color-consistency.md): Notes on linear vs. sRGB framebuffer behavior between the ImGui viewport and standalone runtime.
 - [Troubleshooting Guide](docs/troubleshooting.md): Root-cause writeups for viewport culling and runtime input/update issues.
 - [Webview Host (PhotinoX/Blazor)](docs/photinox-blazor-viewport.md): The off-screen render path (`src/Overcore/Rendering/Headless/`) and the frame, pixel, and input contracts a webview-hosted UI must implement to display the game view.
