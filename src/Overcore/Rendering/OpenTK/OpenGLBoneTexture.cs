@@ -23,12 +23,12 @@ internal sealed class OpenGLBoneTexture : IDisposable
     private int _width;
     private bool _disposed;
 
-    public OpenGLBoneTexture(int textureUnit)
+    public OpenGLBoneTexture(TextureUnit unit)
     {
-        TextureUnit = textureUnit;
+        TextureUnit = unit;
 
         _handle = GL.GenTexture();
-        GL.ActiveTexture(TextureUnit);
+        GL.ActiveTexture(unit);
         GL.BindTexture(TextureTarget.Texture2D, _handle);
 
         // Nearest and no mipmaps: the shader fetches exact texels by index, so filtering would blend two bones
@@ -41,6 +41,9 @@ internal sealed class OpenGLBoneTexture : IDisposable
 
     /// <summary>Which unit the texture is bound to, so the draw binds it where the shader expects.</summary>
     public TextureUnit TextureUnit { get; }
+
+    /// <summary>The unit as GL's integer spelling, for a call that takes one.</summary>
+    public int UnitIndex => (int)TextureUnit;
 
     public int Handle => _handle;
 
