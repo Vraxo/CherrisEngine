@@ -79,7 +79,7 @@ public class AnimationPlaybackTests : IDisposable
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (1f, 1f));
         clip.WrapMode = AnimationWrapMode.Loop;
 
-        AnimationPlayer animation = root.AddComponent(new Animation
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer
         {
             Clip = clip,
             WrapModeOverride = AnimationWrapMode.ClampForever

@@ -32,7 +32,7 @@ namespace Overcore.Components;
 /// <para>
 /// A clip is sampled into a pose that starts as a copy of the transforms the hierarchy already holds, so a clip that
 /// only drives a hand leaves the rest of the body where a script put it. That also means the component is not
-/// additive: two <see cref="Animation"/> components driving the same bone fight, and the last one to be ticked wins —
+/// additive: two <see cref="AnimationPlayer"/> components driving the same bone fight, and the last one to be ticked wins —
 /// the same as Unity.
 /// </para>
 /// </remarks>
