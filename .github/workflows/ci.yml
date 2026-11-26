@@ -24,9 +24,55 @@ jobs:
           cache: true
           cache-dependency-path: '**/*.csproj'
 
-      - run: dotnet build
+      # Compiler diagnostics go to the step's log, which a headless session cannot read, so they are also written
+      # to a file and repeated as annotations below.
+      - run: |
+          set -o pipefail
+          dotnet build --logger "console;verbosity=normal" 2>&1 | tee build.log
 
       - run: dotnet test --no-build --logger "trx;LogFileName=tests.trx"
+
+      # Every compiler error and warning, as an annotation on the pull request. `dotnet build` stops at the first
+      # project that fails, so a build break in Overcore hides everything downstream of it; the annotations make
+      # the diagnostics visible without a log download.
+      - name: Report build errors
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          if not os.path.exists('build.log'):
+              print('::error title=Build::dotnet build produced no log to read.')
+              sys.exit(0)
+
+          # MSBuild diagnostics: "path(line,col): error CS1234: message [project]"
+          pattern = re.compile(r'^(?P<file>.+?\(\d+,\d+\)):\s(?P<level>error|warning)\s+(?P<code>[A-Z]+\d+):\s(?P<message>.+?)(?:\s\[(?P<project>[^\]]+)\])?$')
+
+          reported = set()
+
+          with open('build.log', encoding='utf-8', errors='replace') as log:
+              for line in log:
+                  match = pattern.match(line.strip())
+
+                  if not match:
+                      continue
+
+                  if match['level'] != 'error':
+                      continue
+
+                  key = (match['code'], match['file'], match['message'])
+
+                  if key in reported:
+                      continue
+
+                  reported.add(key)
+                  location = match['file'].replace('\\', '/').split('/')[-1]
+                  print(f"::error title={match['code']} in {location}::{match['message']} ({match['file']})")
+
+          print(f'{len(reported)} build error(s) reported.')
+          PY
 
       # A failing test says why in its own output, which is not visible from a headless session, so each failure is
       # repeated as an annotation on the pull request.
