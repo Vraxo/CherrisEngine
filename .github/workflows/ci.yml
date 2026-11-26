@@ -28,7 +28,7 @@ jobs:
       # to a file and repeated as annotations below.
       - run: |
           set -o pipefail
-          dotnet build --logger "console;verbosity=normal" 2>&1 | tee build.log
+          dotnet build 2>&1 | tee build.log
 
       - run: dotnet test --no-build --logger "trx;LogFileName=tests.trx"
 
