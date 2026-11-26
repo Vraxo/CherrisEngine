@@ -10,7 +10,7 @@ using Xunit;
 namespace Overcore.Tests.AnimationTests;
 
 /// <summary>
-/// The <see cref="Animation"/> component and the event dispatcher: the clock, the pose written onto a real hierarchy,
+/// The <see cref="AnimationPlayer"/> component and the event dispatcher: the clock, the pose written onto a real hierarchy,
 /// and the events a frame crosses. A scene is not needed — an object and a clip are.
 /// </summary>
 public class AnimationPlaybackTests : IDisposable
@@ -28,7 +28,7 @@ public class AnimationPlaybackTests : IDisposable
 
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (1f, 2f));
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip });
 
         animation.Advance(0.5f);
 
@@ -44,7 +44,7 @@ public class AnimationPlaybackTests : IDisposable
 
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (1f, 2f));
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip, IsPlaying = false });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip, IsPlaying = false });
 
         animation.Time = 0.75f;
         animation.Advance(10f);
@@ -62,7 +62,7 @@ public class AnimationPlaybackTests : IDisposable
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (1f, 1f));
         clip.WrapMode = AnimationWrapMode.Loop;
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip });
 
         animation.Advance(1.25f);
 
@@ -79,7 +79,7 @@ public class AnimationPlaybackTests : IDisposable
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (1f, 1f));
         clip.WrapMode = AnimationWrapMode.Loop;
 
-        Animation animation = root.AddComponent(new Animation
+        AnimationPlayer animation = root.AddComponent(new Animation
         {
             Clip = clip,
             WrapModeOverride = AnimationWrapMode.ClampForever
@@ -98,7 +98,7 @@ public class AnimationPlaybackTests : IDisposable
 
         AnimationClip clip = HeightOf("Hips", (0f, 5f), (1f, 5f));
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip, Weight = 0f });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip, Weight = 0f });
 
         animation.Advance(0.5f);
 
@@ -112,7 +112,7 @@ public class AnimationPlaybackTests : IDisposable
 
         AnimationClip clip = HeightOf("Hips", (0f, 4f), (1f, 4f));
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip, Weight = 0.5f });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip, Weight = 0.5f });
 
         animation.Advance(0.5f);
 
@@ -125,7 +125,7 @@ public class AnimationPlaybackTests : IDisposable
     {
         GameObject root = Hierarchy("Hips", out GameObject hips);
 
-        Animation animation = root.AddComponent(new Animation());
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer());
 
         animation.Invoking(a => a.Advance(1f)).Should().NotThrow();
         hips.Transform.Position.Y.Should().Be(0f);
@@ -138,7 +138,7 @@ public class AnimationPlaybackTests : IDisposable
 
         AnimationClip clip = HeightOf("Hips", (0f, 9f), (1f, 9f));
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip });
         animation.Enabled = false;
 
         animation.Advance(0.5f);
@@ -154,7 +154,7 @@ public class AnimationPlaybackTests : IDisposable
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (2f, 2f));
         clip.WrapMode = AnimationWrapMode.ClampForever;
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip });
 
         for (int frame = 0; frame < 4; frame++)
         {
@@ -171,7 +171,7 @@ public class AnimationPlaybackTests : IDisposable
 
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (1f, 1f));
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip, Time = 0.9f });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip, Time = 0.9f });
 
         animation.Play(clip);
 
@@ -190,7 +190,7 @@ public class AnimationPlaybackTests : IDisposable
 
         Recorder recorder = root.AddComponent(new Recorder());
 
-        Animation animation = root.AddComponent(new Animation { Clip = clip });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip });
 
         animation.PlayAt(0.9f);
 

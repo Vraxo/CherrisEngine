@@ -26,7 +26,7 @@ public class SceneAnimationStepTests
         Scene scene = Start(root, physics, audio);
 
         AnimationClip clip = HeightOf("Hips", (0f, 0f), (2f, 2f));
-        Animation animation = root.AddComponent(new Animation { Clip = clip });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = clip });
 
         scene.Update(0.5f);
 
@@ -48,7 +48,7 @@ public class SceneAnimationStepTests
         Scene scene = Start(root, physics, audio);
 
         AnimationClip clip = HeightOf("Hips", (0f, 7f), (1f, 7f));
-        root.AddComponent(new Animation { Clip = clip, WrapModeOverride = AnimationWrapMode.ClampForever });
+        root.AddComponent(new AnimationPlayer { Clip = clip, WrapModeOverride = AnimationWrapMode.ClampForever });
         root.AddComponent(new ScriptThatMovesBones(hips));
 
         scene.Update(0.1f);
@@ -66,7 +66,7 @@ public class SceneAnimationStepTests
 
         Scene scene = Start(root, physics, audio);
 
-        Animation animation = root.AddComponent(new Animation { Clip = HeightOf("Bone", (0f, 5f), (1f, 5f)) });
+        AnimationPlayer animation = root.AddComponent(new AnimationPlayer { Clip = HeightOf("Bone", (0f, 5f), (1f, 5f)) });
 
         // Switched off after it was running, which is the case a pause or a deactivated enemy hits.
         root.SetActive(false);
@@ -90,7 +90,7 @@ public class SceneAnimationStepTests
 
         Scene scene = Start(root, physics, audio);
 
-        root.AddComponent(new Animation { Clip = HeightOf("Hips", (0f, 4f), (1f, 4f)) });
+        root.AddComponent(new AnimationPlayer { Clip = HeightOf("Hips", (0f, 4f), (1f, 4f)) });
 
         Reader reader = root.AddComponent(new Reader(hips));
 

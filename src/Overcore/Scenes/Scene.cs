@@ -375,11 +375,11 @@ public class Scene : IDisposable
     }
 
     /// <summary>
-    /// Advances every <see cref="Animation"/> and writes its pose, between <c>Update</c> and <c>LateUpdate</c>.
+    /// Advances every <see cref="AnimationPlayer"/> and writes its pose, between <c>Update</c> and <c>LateUpdate</c>.
     /// </summary>
     /// <remarks>
     /// That placement is Unity's and it matters: a script that moves a bone in <c>Update</c> is overridden by the clip
-    /// that drives it, and a script that wants the final pose reads it in <c>LateUpdate</c>. An <see cref="Animation"/>
+    /// that drives it, and a script that wants the final pose reads it in <c>LateUpdate</c>. An <see cref="AnimationPlayer"/>
     /// whose clock is paused still applies its pose, so a scrubber needs no playback.
     /// </remarks>
     /// <param name="deltaTime">Seconds since the previous frame, in scaled time.</param>
@@ -396,7 +396,7 @@ public class Scene : IDisposable
                 continue;
             }
 
-            foreach (Animation animation in gameObject.GetComponents<Animation>().ToList())
+            foreach (AnimationPlayer animation in gameObject.GetComponents<AnimationPlayer>().ToList())
             {
                 if (animation.IsDestroyed || !animation.IsActive)
                 {
@@ -412,7 +412,7 @@ public class Scene : IDisposable
                 catch (Exception ex)
                 {
                     Logger.Error(
-                        $"[Scene] Exception in Animation.Advance() on '{gameObject.Name}': {ex.Message}");
+                        $"[Scene] Exception in AnimationPlayer.Advance() on '{gameObject.Name}': {ex.Message}");
                 }
             }
         }

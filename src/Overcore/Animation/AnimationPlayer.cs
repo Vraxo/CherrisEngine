@@ -11,6 +11,19 @@ namespace Overcore.Components;
 /// </summary>
 /// <remarks>
 /// <para>
+/// It is called <c>AnimationPlayer</c> rather than Unity's <c>Animation</c> for a reason worth writing down: a type
+/// named <c>Animation</c> is unreachable by its bare name from anywhere inside the engine's own namespaces. C# resolves
+/// a simple name against the members of each enclosing namespace before it consults a <c>using</c> directive, and
+/// <c>Overcore</c> already contains the namespace <c>Overcore.Animation</c> — so <c>Animation</c> means that namespace
+/// in every file under <c>Overcore.*</c>, and a type of the same name can only be named by fully qualifying it. The
+/// cost of the rename is one word; the cost of keeping it is a landmine in every file that ever refers to the type.
+/// </para>
+/// <para>
+/// The rest of the API keeps Unity's names, so what a script sees is unchanged.
+/// </para>
+/// </remarks>
+/// <remarks>
+/// <para>
 /// The component writes the pose onto the object's own hierarchy, so playing a clip needs no skeleton and no renderer:
 /// a door that swings, a camera that flies a path and a character that walks are the same mechanism. A skeleton is
 /// only involved when a mesh is skinned, and then the bone transforms this writes are exactly the ones the joint
@@ -23,7 +36,7 @@ namespace Overcore.Components;
 /// the same as Unity.
 /// </para>
 /// </remarks>
-public class Animation : Component
+public class AnimationPlayer : Component
 {
     private AnimationPose _pose = new();
     private AnimationEventDispatch _events = new();
