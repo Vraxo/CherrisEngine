@@ -1,6 +1,5 @@
 using Overcore.Attributes;
 using Overcore.Components;
-using Overcore.Utils;
 
 namespace Overcore.Rendering.Shadows;
 
@@ -64,11 +63,25 @@ public class Shadows : Component
     }
 
     /// <summary>
-    /// The cumulative boundaries between cascades as fractions of <see cref="Distance"/>, or the derived ones. Written
-    /// to the scene file only once a hand edit has made it differ — see <see cref="CascadeSplits.Sanitize"/> for how a
-    /// list that disagrees with <see cref="Cascades"/> is treated on load.
+    /// The cumulative boundaries between cascades as fractions of <see cref="Distance"/>: <c>n - 1</c> values that
+    /// must rise and end below 1. Written to the scene file only once a hand edit has made it differ from the derived
+    /// list — see <see cref="CascadeSplits.Sanitize"/> for how a list that disagrees with <see cref="Cascades"/> is
+    /// treated on load.
     /// </summary>
-    [HideInInspector]
+    /// <remarks>
+    /// <para>
+    /// Editable, and deliberately not <c>[HideInInspector]</c>. Hiding it made the split untunable and one of this
+    /// layer's tests unreachable: a hidden property is never written to the scene file and never read back from it, so
+    /// "a hand-tuned split survives a save" was a claim no code path could keep, and
+    /// <see cref="CascadeSplits.Sanitize"/>'s repair of a descending or wrong-length list could never run outside a
+    /// unit test. The inspector draws it as comma-separated numbers, which is the same text an edit command carries.
+    /// </para>
+    /// <para>
+    /// A setter still cannot produce an unusable list — both the inspector and the loader go through
+    /// <c>ComponentProperties.TryApply</c>, which parses the text or refuses it — but it does not sanitise, because
+    /// sanitising here would rewrite a value while it is being typed.
+    /// </para>
+    /// </remarks>
     public float[] Splits
     {
         get => _splits;

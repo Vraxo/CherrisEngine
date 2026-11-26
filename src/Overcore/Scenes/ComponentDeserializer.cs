@@ -21,7 +21,7 @@ public static class ComponentDeserializer
 
         // Registered rather than left to a root-level block in the scene file: SceneLoader parses the document as
         // Dictionary<string, List<...>> and looks up "GameObjects", so a sibling mapping would fail the whole load.
-        sceneLoader.RegisterComponentFactory("Shadows", CreateAndPopulateComponent<Shadows>);
+        sceneLoader.RegisterComponentFactory("Shadows", props => CreateShadowsComponent(props));
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
         sceneLoader.RegisterComponentFactory("BoxCollider", CreateAndPopulateComponent<BoxCollider>);
         sceneLoader.RegisterComponentFactory("SphereCollider", CreateAndPopulateComponent<SphereCollider>);
@@ -123,6 +123,31 @@ public static class ComponentDeserializer
         return component;
     }
 
+    /// <summary>
+    /// A <see cref="Shadows"/> component, with <see cref="Shadows.Cascades"/> applied before
+    /// <see cref="Shadows.Splits"/>.
+    /// </summary>
+    /// <remarks>
+    /// The order is not a detail. The <c>Cascades</c> setter re-derives <c>Splits</c> — which is what makes a fresh
+    /// instance compare equal to a loaded one — so a hand-tuned split applied first would be overwritten by the count,
+    /// and the file would load with the split the author did not choose. The property order in a YAML mapping is
+    /// whatever the writer emitted, so the load path states the dependency rather than trusting the file to.
+    /// </remarks>
+    private static Shadows CreateShadowsComponent(object properties)
+    {
+        Shadows component = new();
+
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return component;
+        }
+
+        PopulateComponentProperties(component, propsDict, nameof(Shadows.Splits));
+        PopulateComponentProperties(component, propsDict);
+
+        return component;
+    }
+
     private static void PopulateComponentProperties(
         Component component,
         IReadOnlyDictionary<object, object> propsDict,
@@ -199,6 +224,23 @@ public static class ComponentDeserializer
             convertedValue = new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2]));
             return true;
         }
+
+        // A list of floats, of any length: `Shadows.Splits` is `n - 1` numbers whose count is data rather than a
+        // type, so it gets a general conversion rather than a third fixed arity. An empty sequence is a legitimate
+        // value here — one cascade has no boundaries — and converts to an empty array.
+        if (targetType == typeof(float[]) || targetType == typeof(List<float>))
+        {
+            float[] numbers = new float[list.Count];
+
+            for (int index = 0; index < list.Count; index++)
+            {
+                numbers[index] = ToSingle(list[index]);
+            }
+
+            convertedValue = targetType == typeof(List<float>) ? new List<float>(numbers) : numbers;
+            return true;
+        }
+
         return false;
     }
 

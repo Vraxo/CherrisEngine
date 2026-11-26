@@ -288,6 +288,17 @@
                                                        @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
                                                 break;
 
+                                            case PropertyKind.Numbers:
+                                                @* Comma-separated, in a plain text field: a list's length is data, so
+                                                   there is no fixed set of boxes to build. An empty field is the empty
+                                                   list, which is what one cascade's split list is. *@
+                                                <input type="text" class="imgui-input" value="@DisplayText(propertyKey, property)"
+                                                       placeholder="0.07, 0.2, 0.47"
+                                                       @key="KeyFor(propertyKey)"
+                                                       disabled="@(!CanEdit)" aria-label="@propertyTitle"
+                                                       @onchange="e => OnPropertyChanged(node, component, property, e.Value?.ToString())" />
+                                                break;
+
                                             case PropertyKind.Vector2:
                                             case PropertyKind.Vector3:
                                                 @if (property.IsColor)

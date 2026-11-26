@@ -80,6 +80,92 @@ public class ShadowSerializationTests
     }
 
     [Fact]
+    public void AHandTunedSplitSurvivesASaveAndALoad()
+    {
+        // The property this whole round-trip exists for, and the one that could not work while Splits was hidden: a
+        // hidden property is never written and never read, so the promise in docs/shadows.md §2.3 had no code path
+        // behind it and CascadeSplits.Sanitize's repair could only ever run in a unit test.
+        GameObject gameObject = new("settings");
+        gameObject.AddComponent(new Shadows { Distance = 200f, Cascades = 4, Splits = [0.1f, 0.25f, 0.55f] });
+
+        string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
+
+        yaml.Should().Contain("Splits");
+
+        Shadows shadows = Loader().LoadSceneFromYaml(yaml)[0].GetComponent<Shadows>()!;
+
+        shadows.Cascades.Should().Be(4);
+        shadows.Splits.Should().HaveCount(3);
+
+        // The depths those fractions describe, so the assertion is about the cascade schedule rather than only about
+        // three floats that happen to be stored.
+        float[] far = shadows.FarDepths();
+
+        far[0].Should().BeApproximately(20f, 0.01f);
+        far[1].Should().BeApproximately(50f, 0.01f);
+        far[2].Should().BeApproximately(110f, 0.01f);
+        far[3].Should().Be(200f, "the last cascade always ends at the distance");
+
+        // And that it is the author's list rather than the derived 10 / 30 / 70 / 150.
+        shadows.Splits[0].Should().BeApproximately(0.1f, 0.0001f);
+    }
+
+    [Fact]
+    public void CascadesIsAppliedBeforeSplitsSoALoadedSplitIsTheAuthors()
+    {
+        // The dependency the loader states rather than trusts: the Cascades setter re-derives Splits, so a file that
+        // listed Splits first would lose the hand edit. The property order in a YAML mapping is the writer's, so this
+        // is written in the order that would break it.
+        string yaml = """
+            GameObjects:
+            - Id: 11111111-1111-1111-1111-111111111111
+              Name: settings
+              Transform:
+                Position: [0, 0, 0]
+                Rotation: [0, 0, 0]
+                Scale: [1, 1, 1]
+              Components:
+                Shadows:
+                  Splits: [0.2, 0.5, 0.8]
+                  Cascades: 4
+                  Distance: 120
+            """;
+
+        Shadows shadows = Loader().LoadSceneFromYaml(yaml)[0].GetComponent<Shadows>()!;
+
+        shadows.Cascades.Should().Be(4);
+        shadows.Splits[0].Should().BeApproximately(0.2f, 0.0001f);
+        shadows.Splits[2].Should().BeApproximately(0.8f, 0.0001f);
+    }
+
+    [Fact]
+    public void ADefaultSplitListIsNotWritten()
+    {
+        // The list's default is not a constant — it is derived from Cascades — so a naive serializer would write a
+        // list into every scene file and make a default look like a decision.
+        GameObject gameObject = new("settings");
+        gameObject.AddComponent(new Shadows { Distance = 220f, Cascades = 2 });
+
+        string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
+
+        yaml.Should().NotContain("Splits");
+        yaml.Should().Contain("Cascades");
+    }
+
+    [Fact]
+    public void AOneCascadeComponentWritesNoSplitList()
+    {
+        // One cascade has no boundaries, so its list is empty and says nothing. Written as `[]` it would look like a
+        // decision to have no boundaries rather than the consequence of having one cascade.
+        GameObject gameObject = new("settings");
+        gameObject.AddComponent(new Shadows { Cascades = 1 });
+
+        string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
+
+        yaml.Should().NotContain("Splits");
+    }
+
+    [Fact]
     public void ADefaultShadowsComponentWritesNothingItDoesNotNeedTo()
     {
         GameObject gameObject = new("settings");

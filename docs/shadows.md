@@ -1,11 +1,12 @@
-> **Status: increment 2 of 4 implemented — the depth pass, and it draws.** `CascadeSplits` (§3),
-> `LightSpaceFit` (§4), `Shadows` (§2.3), `ShadowCasters` (§5.2), the depth shaders (§5.3) and
-> `OpenGLShadowRenderer` with its `ShadowDepthTarget` layered attachment (§5.1) exist, and `OpenTKRenderer.RenderScenePass` runs
-> the pass before `_postProcessor.BeginFrame()`. The receiver (§6) is in `scene.frag` and `skin.frag` and samples the map.
-> Every claim below is implemented unless §8 or the parenthetical says otherwise. The tests pin what needs no GPU —
-> splits, the fit, the caster rules, the frame's early returns and the two shaders' agreement — plus the round-trip of
-> every new serialized property; nothing in CI compiles a shader, so a GLSL error is a runtime failure and not a build
-> one. The Veldrid backend still renders no shadows at all (§8).
+> **Status: the layer is implemented; increments 3 and 4 are polish.** `CascadeSplits` (§3), `LightSpaceFit` (§4),
+> the `Shadows` component (§2.3), `ShadowCasters` (§5.2), the depth shaders (§5.3), `OpenGLShadowRenderer` with its
+> `ShadowDepthTarget` layered attachment (§5.1) and the receiver in `scene.frag` / `skin.frag` (§6) all exist, and
+> `OpenTKRenderer.RenderScenePass` runs the pass before `_postProcessor.BeginFrame()`. Every setting in §2 is
+> editable from both front ends and round-trips through the scene file, `Splits` included.
+> The tests pin what needs no GPU — splits, the fit, the caster rules, the frame's early returns, the receivers'
+> text against each other, the inspector's list kind, and the round-trip of every new serialized property. Nothing in
+> CI compiles a GLSL shader, so a shader error is a runtime failure and not a build one (§8). The Veldrid backend
+> renders no shadows at all.
 
 Before this layer Overcore lit everything as if nothing were ever in the way. `scene.frag` sums a directional term,
 up to four point lights and up to four spot lights over an albedo, and every surface it shades is lit through every
@@ -112,20 +113,25 @@ GameObjects:
   Components:
     Light: …
     Shadows:
-      Distance: 150
-      Cascades: 4
-      Splits: [0.06666667, 0.2, 0.46666667]
-      Resolution: High
+      Distance: 220
+      Cascades: 2
+      Splits: [0.25]
 ```
+
+`Splits` appears only when a hand edit has made it differ from the derived list, and the block above is written the way
+the serializer writes it: scalars that match a fresh instance are omitted, so a default component is a bare
+`Shadows:` line.
 
 | Member | Default | Notes |
 | :--- | :--- | :--- |
 | `Distance` | `150` | Metres of camera view depth covered by shadows. Past it, nothing is shadowed. |
 | `Cascades` | `4` | `1`, `2`, `4`. Unity offers 1/2/4 for the same reason: 3 does not divide a view nicely and the split formula in §3 degenerates. |
-| `Splits` | derived from `Cascades` (§3.2) | The `n-1` cumulative boundaries, normalised to `0..1` of `Distance`. Present in the file so a hand-tuned split survives a save. |
-| `Resolution` | `High` | The per-cascade default; a light's own `ShadowResolution` overrides it. |
-| `Softness` | `1.0` | The PCF tap spacing, in texels (§6.2). `1` is a tent one texel wide; larger is a wider, softer edge. |
-| `BlendBand` | `0.1` | The fraction of a cascade's range over which it cross-fades into the next (§6.3). `0` is a hard switch. |
+| `Splits` | derived from `Cascades` (§3.2) | The `n-1` cumulative boundaries, normalised to `0..1` of `Distance`. Present in the file so a hand-tuned split survives a save, and editable as comma-separated numbers. A list that is out of order, too long or non-finite is repaired by `CascadeSplits.Sanitize` on use rather than rejected. |
+
+`Resolution`, `Softness` and `BlendBand` were in an earlier draft of this table and are **not** on the component. The
+map's size is the casting light's `ShadowResolution`, which is where Unity keeps it too; the tent's radius and the
+cross-fade's width are `Shadows.PcfTexels` and `Shadows.BlendBand`, constants (§6.2). A scene-level knob that only the
+receiver reads is a knob with no second reader, and what it would cost to add later is one property and one uniform.
 
 **Exactly one is consulted.** A scene may hold several — one per region is a reasonable thing to want — and the one in
 force is the first on an object that is `ActiveInHierarchy` with the component `Enabled`, which is the same "first
@@ -138,15 +144,24 @@ layer, and is worth saying out loud because it is the one backward-compatible ch
 existing project. There is therefore nothing to "add" to an existing scene to get shadows; adding the component is how a
 project *departs* from the defaults.
 
-Serializing it is the one place this document asks for new code in an existing file. `SerializeComponentProperties`
-skips a property whose value equals a fresh instance's, and `Splits` is a list whose default is **not** a constant: it
-depends on `Cascades`. The component therefore exposes `Splits` as a stored list that its `Cascades` setter rewrites in
-place, so a fresh instance is born holding the derived default for its own `Cascades` and equality still works. `Splits`
-is only written to the file once a hand edit has made it differ, and `Cascades` alone round-trips through the ordinary
-path. A list-valued property is the one shape this serializer does not handle defensively — `TryConvertFromList` converts a
-YAML sequence only to `Vector2` and `Vector3` and returns false for anything else, which reaches the inspector as a
-conversion warning — so `Splits` is `float[]`, read back by the component's own load path rather than by reflection. That is stated here because it is the sort of detail that is discovered by a saved scene coming back
-with four cascades and the wrong splits.
+Serializing it needed code in three existing files, and the list is why.
+
+`SerializeComponentProperties` skips a property whose value equals a fresh instance's, comparing with `object.Equals`.
+A `float[]` is compared by **reference**, so that test is true for every list: a default list would be written into every
+scene file and a hand-tuned one would look no different from it. `Splits` is therefore written by its own arm in
+`SceneSerializer`, which compares element by element against `CascadeSplits.Derive(Cascades)` and writes the list only
+when they differ. On the way back in, `ComponentDeserializer.TryConvertFromList` gained `float[]` and `List<float>` —
+before it converted a YAML sequence to `Vector2` and `Vector3` and refused everything else.
+
+The order of the two values matters as much as either conversion. `Cascades`' setter rewrites `Splits`, which is what
+makes a fresh instance compare equal to a loaded one, so a file that listed `Splits` before `Cascades` would lose the
+hand edit to the derived list. The loader's `CreateShadowsComponent` applies `Cascades` first and `Splits` second
+instead of trusting the order the YAML writer emitted.
+
+`Splits` is **not** `[HideInInspector]`, and that was a bug in this layer's first cut rather than a stylistic choice. A
+hidden property is never written to a scene file and never read from one, so "a hand-tuned split survives a save" was
+a claim with no code path behind it, and `CascadeSplits.Sanitize`'s repair of a descending list could only ever run in a
+unit test. The inspector shows it as comma-separated numbers, which is the same text an edit command carries.
 
 ## 3. Cascade splits
 
@@ -474,7 +489,12 @@ cameraForward)`, compared against the cascade's `nearDepth`/`farDepth`. View dep
 clip-space depth is non-linear in a perspective projection and its comparison in a shadow map's linear orthographic
 depth would be meaningless.
 
-Below `ShadowNearPlane` and past `Distance`, no sample is taken and the factor is `1.0`.
+Below `ShadowNearPlane` and past `Distance`, no sample is taken and the factor is `1.0`. The two bounds come from
+different places on purpose: the first is the light's own setting (§2.1) and the second is the cascade schedule's. Both
+of `ShadowNearPlane` and the normal offset were inert in this layer's first cut — the near plane was uploaded from the
+first cascade's range instead of from the light, and the offset read only the first component of the texel vector — and
+neither showed up as anything but "the shadows look a bit wrong at distance". Both are now asserted in
+`ShadowShaderTests`.
 
 In the last `BlendBand` of each cascade's range — 10% by default — the two adjacent cascades are both sampled and mixed
 linearly, so the factor at the boundary is identical from either side. The outermost cascade has no successor and ends
@@ -514,11 +534,11 @@ is a scene that is simply, uniformly lit:
 | `uCascadeSplits` | `vec4` | The four `farDepth` values in view depth, `(10, 30, 70, 150)` at the defaults. |
 | `uCascadeCount` | `int` | How many of the four are real this frame. |
 | `uShadowDistance` | `float` | `Distance`. |
-| `uShadowNearPlane` | `float` | The first cascade's **near range**, in camera view depth — the value below which §6.3 takes no sample. Not `CascadeFit.NearPlane`, which is a distance along the light's axis and is a different quantity in a different space. |
+| `uShadowNearPlane` | `float` | `Light.ShadowNearPlane`, in camera view depth — the value below which §6.3 takes no sample. Not `CascadeFit.NearPlane`, which is a distance along the light's axis and is a different quantity in a different space. |
 | `uShadowBias` / `uShadowNormalBias` | `float` | §6.1's two biases. |
 | `uShadowStrength` | `float` | §6.2's blend toward `1.0`. |
 | `uShadowSoftness` / `uShadowBlendBand` | `float` | The PCF tent's radius in texels and the cross-fade's fraction — `Shadows.PcfTexels` and `Shadows.BlendBand`, or `0` for a hard shadow. §6.2 says why they are constants rather than scene settings. |
-| `uShadowTexelSize` | `float` | World units per texel, per cascade packed into a `vec4`, for the normal offset. |
+| `uShadowTexelSize` | `vec4` | World units per texel, one component per cascade, indexed by `[cascade]` for the normal offset. All four, not just the first: one texel is 0.0125 m in the innermost cascade and 0.177 m in the outermost at the defaults, so reusing the first value would leave the outer cascades acne-prone by a factor of fourteen. |
 | `uReceiveShadows` | `int` | `0` short-circuits the whole receiver. |
 | `uCameraForward` | `vec3` | The view depth's axis (§6.3). Already derivable from the existing view matrix, but uploaded so the shader does not invert a matrix per fragment. |
 
@@ -596,8 +616,14 @@ here where `n + 1` full shading passes would not be.
   cascade choice are all pure functions and all tested exactly. The draw itself needs a context, so a green run proves
   the matrices and the CPU/GPU contract, not the picture. That is a real limit of the increment, not a gap papered over.
 - **A shadow is not a shadow without a receiver.** An object with `ReceiveShadows` off casts but is not darkened, and so
-  does everything else if the frame never uploads §6.5's uniforms — which is the shape this bug takes in practice. This is exactly right and
-  is still worth naming, because "my caster casts nothing" usually means the *floor* is the problem.
+  does everything else if the frame never uploads §6.5's uniforms — which is the shape this bug takes in practice.
+  This is exactly right and is still worth naming, because "my caster casts nothing" usually means the *floor* is the
+  problem.
+- **An empty custom split list is repaired, not honoured.** `Splits: []` on a four-cascade component is a list of the
+  wrong length, so `CascadeSplits.Sanitize` discards it and derives the default rather than treating "no boundaries" as
+  "one cascade is three times too wide". The alternative — stretching one boundary over the whole range — would draw
+  something; this draws what the count says. The repair is silent outside the component's own return value, so a
+  mistyped list looks like the default rather than like an error.
 
 ## 9. What the tests pin
 
@@ -648,6 +674,11 @@ make: mostly the receiver's arithmetic, which is GLSL and therefore outside anyt
 | ✔ `TwoSided` culls nothing; every other caster culls front faces | §5.4 |
 | ✔ `ShadowFrame.None` is a disabled frame, not null | that the Veldrid backend can be handed it |
 | ✔ The fit's projection emits NDC depth in `[0, 1]`, so the buffer holds `[0.5, 1]` and the shader remaps | the convention mismatch that makes every shadow invisible, §4.1 |
+| ✔ A hand-tuned split survives a save and a load, and a derived one is not written | §2.3, and the reference-equality trap a `float[]` sets |
+| ✔ `Cascades` is applied before `Splits` on load, whatever order the file lists them | §2.3's dependency, asserted on a file written in the order that breaks it |
+| ✔ The normal offset reads `uShadowTexelSize[cascade]`, and the receiver honours `uShadowNearPlane` | the two settings that were inert, §6.3 |
+| ✔ Each cascade's texel size is wider than the last | §6.3, on the CPU side of the same contract |
+| ✔ The inspector reads, writes, empties and refuses a list of numbers | `PropertyKind.Numbers`, §2.3 |
 
 ## 10. Where the code lives
 
@@ -674,8 +705,9 @@ layer reuses rather than adds.
 | ✔ The depth shaders | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
 | ✔ The receiver in the lit shaders | `src/OvercoreEditor/EditorResources/Shaders/scene.frag`, `skin.frag` |
 | ✔ The CPU-side tests: splits, the fit, the caster rules, the frame, the round-trips | `tests/Overcore.Tests/Rendering/{CascadeSplits,LightSpaceFit,Shadows,ShadowCasters,ShadowFrame,ShadowShader}Tests.cs`, `tests/Overcore.Tests/Scenes/ShadowSerializationTests.cs` |
-| Inspector rows for the new properties | `src/OvercoreEditor/Inspector/`, `src/OvercoreEditorSession/Scene/ComponentProperties.cs` |
+| ✔ The list-of-numbers property kind the split list needs | `src/OvercoreEditorSession/Scene/ComponentProperties.cs`, `src/OvercoreEditorPhotino/Components/InspectorPanel.razor` |
 | ✔ A `ComponentCatalog.BuiltIn` entry, so either front end can add a `Shadows` component | `src/Overcore/Components/ComponentCatalog.cs` |
+| ✔ The split list's own serialization arm, and the loader's ordering of `Cascades` before `Splits` | `src/Overcore/Scenes/SceneSerializer.cs`, `ComponentDeserializer.cs` |
 
 Three notes on what is deliberately *not* in that table. There is no `FramebufferBuilder` change: the builder's
 `Build()` returns a colour target with an optional depth **renderbuffer**, which cannot be sampled, and the shadow target
@@ -683,11 +715,14 @@ wants the opposite shape — a samples-able depth texture with no colour at all.
 put a `layers` parameter on a method that has no use for one in nine of its ten calls, so `ShadowDepthTarget` owns its
 own object. There is no `ShadowSoftness`/`BlendBand` on `Shadows` either: the receiver needs a constant, and a scene knob
 that only the receiver reads is a knob with no second reader — §6.2 says what it costs to add one later. And the
-inspector rows are genuinely not done. A `Shadows` component can be added from either front end and its values are
-saved and loaded, but tuning it means editing the file or using the generic property rows, and the enums and `[Range]`
-floats are only as good as whatever row picks them up. The one test this touches is
-`EditorCommandTests.Catalog_ListsCreatableComponentsWithUniqueNames`, which instantiates every catalog entry — so it now
-also asserts that `new Shadows()` is constructible and is the type the menu names.
+There are no bespoke inspector rows, and none are needed: both front ends walk public instance properties with a setter
+and skip `[HideInInspector]`, so every setting in §2 was already tunable the moment it was declared — `ShadowType`,
+`ShadowResolution` and `ShadowCastingMode` as enum popups, the biases as `[Range]`-bounded numbers, `ReceiveShadows` as a
+checkbox. An earlier revision of this document claimed those rows were outstanding; they were not, and the correction
+matters because "not done" hid a real gap next to it. What genuinely was missing is `PropertyKind.Numbers`, a
+comma-separated list of floats, which `Splits` needed and the inspector did not have. That is one `KindOf` case, one
+`Read` arm and one `TryApply` case, plus a `case` in the Photino panel's switch — and `ComponentPropertiesTests` now
+pins it reading, writing, accepting an empty field and refusing a word.
 
 The Veldrid backend needs nothing: `IRenderer.RenderFrame`'s signature is unchanged, and its `Render` takes no shadow
 frame because it has no depth pass to give one to.

@@ -183,6 +183,31 @@ public class ShadowShaderTests
     [Theory]
     [InlineData("scene.frag")]
     [InlineData("skin.frag")]
+    public void TheNormalOffsetUsesTheFragmentsOwnCascadeTexel(string shader)
+    {
+        // Uploading the tan of four texel sizes and then reading only `.x` would make the normal offset 20× too small
+        // in the outermost cascade — 0.013 m against 0.26 m at the defaults — and the outer cascade is the one big
+        // enough to show acne. A constant index is legal on a vec4, and it is also legal on a sampler array, so the
+        // absence of `uShadowTexelSize.x` is the assertion.
+        string source = Code(shader);
+
+        source.Should().Contain("uShadowTexelSize[cascade]");
+        source.Should().NotContain("uShadowTexelSize.x");
+    }
+
+    [Theory]
+    [InlineData("scene.frag")]
+    [InlineData("skin.frag")]
+    public void TheReceiverHonoursTheLightsNearPlane(string shader)
+    {
+        // Light.ShadowNearPlane is a per-light setting, declared and serialized. It was uploaded from the first
+        // cascade's *range* instead, which made the setting inert — the kind of inert that looks like a feature.
+        Code(shader).Should().Contain("depth < uShadowNearPlane");
+    }
+
+    [Theory]
+    [InlineData("scene.frag")]
+    [InlineData("skin.frag")]
     public void TheReceiverRemapsTheDepthIntoTheSpaceTheTextureHolds(string shader)
     {
         // The one bug in this layer that is invisible: the fit's projection emits NDC depth in [0, 1] and OpenGL stores

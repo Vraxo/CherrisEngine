@@ -351,29 +351,33 @@ internal class OpenGLSceneRenderer : IDisposable
             GL.Uniform1(_shadow.Count, cascades);
             GL.Uniform1(_shadow.Distance, cascades > 0 ? far[cascades - 1] : settings.Distance);
 
-            // The camera's near plane, which the shader compares against a *view* depth — so it is the first
-            // cascade's near range, not the shadow projection's near plane. Those are different quantities in
-            // different spaces: CascadeFit.NearPlane is a distance along the light's forward axis, and comparing a
-            // camera depth against it would discard fragments for no reason anybody could see.
-            GL.Uniform1(_shadow.NearPlane, frame.Ranges.Count > 0 ? frame.Ranges[0].Near : 0f);
+            // A *view* depth, so this is the camera's near plane and not CascadeFit.NearPlane — that one is a distance
+            // along the light's forward axis, and comparing a camera depth against it would discard fragments for no
+            // reason anybody could see. Read from the light rather than from frame.Ranges[0].Near, which was the bug
+            // this replaced: the light's setting was declared, serialized, drawn in the inspector, and never uploaded.
+            GL.Uniform1(_shadow.NearPlane, light.ShadowNearPlane);
 
             GL.Uniform1(_shadow.Bias, light.ShadowBias);
             GL.Uniform1(_shadow.NormalBias, light.ShadowNormalBias);
             GL.Uniform1(_shadow.Strength, light.ShadowStrength);
 
-            // Soft: a tentative 3x3 PCF that widens with the map, so a 1024 map is as soft as a 4096 one. Hard: one
-            // fetch. That is the whole difference between the two modes, which is the honest amount of difference a
-            // filter this size can claim.
+            // Soft: a 3x3 tent, one texel wide. Hard: one fetch. That is the whole difference between the two modes,
+            // which is the honest amount of difference a filter this size can claim. The tent's width is a constant
+            // rather than a scene setting (§6.2), and it is in *texels*, so a smaller map is both coarser and softer —
+            // the penumbra's width in world units follows the texel size, which is the behaviour a reader would expect
+            // and the one an earlier comment here described backwards.
             GL.Uniform1(_shadow.Softness, light.Shadows == ShadowType.Soft ? Overcore.Rendering.Shadows.Shadows.PcfTexels : 0f);
             GL.Uniform1(_shadow.BlendBand, light.Shadows == ShadowType.Soft ? Overcore.Rendering.Shadows.Shadows.BlendBand : 0f);
 
-            // Texel size in world units for the innermost cascade, which is what the normal offset is scaled by.
+            // Texel size in world units, one per cascade. All four, not just the first: the offset is scaled by the
+            // cascade's own texel, and one texel is 0.0125 m in the innermost cascade against 0.177 m in the outermost,
+            // so reusing the first value there makes the outer cascades acne-prone by a factor of fourteen.
             GL.Uniform4(
                 _shadow.TexelSize,
-                cascades > 0 ? frame.Cascades[0].TexelSize : 0f,
-                0f,
-                0f,
-                0f);
+                TexelSizeOf(frame, 0),
+                TexelSizeOf(frame, 1),
+                TexelSizeOf(frame, 2),
+                TexelSizeOf(frame, 3));
 
             GL.Uniform3(_shadow.CameraForward, cameraForward);
 
@@ -401,6 +405,22 @@ internal class OpenGLSceneRenderer : IDisposable
     /// <summary>One split, or <paramref name="fallback"/> when the list is shorter than the shader's vec4.</summary>
     private static float At(float[] splits, int index, float fallback) =>
         index < splits.Length ? splits[index] : fallback;
+
+    /// <summary>
+    /// One cascade's world units per texel, or the last cascade's when the shader's vec4 is longer than the frame —
+    /// so an unused slot carries a sane number rather than zero, which would silently disable the normal offset.
+    /// </summary>
+    private static float TexelSizeOf(ShadowFrame frame, int cascade)
+    {
+        int count = frame.Cascades.Count;
+
+        if (count == 0)
+        {
+            return 0f;
+        }
+
+        return frame.Cascades[Math.Min(cascade, count - 1)].TexelSize;
+    }
 
     /// <summary>
     /// Draws the scene's lit geometry, sampling the shadow map the depth pass has already rendered.

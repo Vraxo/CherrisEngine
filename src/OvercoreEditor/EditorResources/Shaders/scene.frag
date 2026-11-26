@@ -155,6 +155,9 @@ float ShadowFactor(vec3 worldPos, vec3 normal)
     // The eye's position is already a uniform, and the forward axis is what turns it into a view depth.
     float depth = dot(worldPos - uViewPos, uCameraForward);
 
+    // Nearer than the light's own near plane, or past the last cascade: nothing to compare against. The first
+    // condition is a per-light setting and the second is the cascade schedule's, so both are honoured rather than
+    // either — a light with a large near plane is asked not to shadow what is right under the eye.
     if (depth < uShadowNearPlane || depth > uShadowDistance)
     {
         return 1.0;
@@ -164,7 +167,14 @@ float ShadowFactor(vec3 worldPos, vec3 normal)
 
     // The normal offset: move the sample off the surface along its own normal before projecting it. This is the bias
     // that fixes acne on a curved surface without detaching the shadow at the contact point.
-    vec3 offsetPos = worldPos + normal * (uShadowNormalBias * uShadowTexelSize.x);
+    //
+    // Per cascade, because one texel is a different number of metres in each. At the defaults the innermost cascade's
+    // texel is 0.0125 m and the outermost's is 0.177 m, so an offset sized for the first is 14× too small in the last
+    // and the outer cascade is where acne shows. Indexing by cascade is a constant expression, so the lookup is legal
+    // here even though the sampler array would not be.
+    float texelWorld = uShadowTexelSize[cascade];
+
+    vec3 offsetPos = worldPos + normal * (uShadowNormalBias * texelWorld);
 
     int cascade = 0;
 

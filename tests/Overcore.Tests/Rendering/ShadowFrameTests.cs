@@ -224,6 +224,31 @@ public class ShadowFrameTests
         (small.Cascades[0].TexelSize / large.Cascades[0].TexelSize).Should().BeApproximately(4f, 0.01f);
     }
 
+    [Fact]
+    public void EachCascadesTexelSizeIsWiderThanTheLast()
+    {
+        // The upload hands all four to the shader, which picks by cascade. If the fit returned one size for every
+        // cascade the offset would be uniform and the outer cascades would be the acne-prone ones, so the property is
+        // worth pinning where it is cheap rather than only where it is invisible.
+        ShadowFrame frame = ShadowFrame.Build([CascadingLight()], Camera(), 16f / 9f);
+
+        for (int cascade = 1; cascade < frame.Cascades.Count; cascade++)
+        {
+            frame.Cascades[cascade].TexelSize.Should().BeGreaterThan(
+                frame.Cascades[cascade - 1].TexelSize,
+                "a farther cascade covers more world per texel");
+        }
+
+        // Not the slice ratio. Each cascade's box is sized by its own slice's *bounding sphere*, and the sphere is set
+        // by the slice's far plane and its field of view rather than by its width: the slices go 0.1-10, 10-30, 30-70,
+        // 70-150, so their spheres grow much faster than the widths do. At the defaults the innermost texel is 0.0125 m
+        // and the outermost 0.177 m — a factor of 14.2. (The figure is computed in the test rather than quoted from the
+        // document, which had 20 in an earlier revision and was wrong.)
+        (frame.Cascades[^1].TexelSize / frame.Cascades[0].TexelSize).Should().BeApproximately(14.2f, 0.2f);
+        frame.Cascades[0].TexelSize.Should().BeApproximately(0.0125f, 0.0005f);
+        frame.Cascades[^1].TexelSize.Should().BeApproximately(0.177f, 0.002f);
+    }
+
     // ---------------------------------------------------------------- the singleton
 
     [Fact]
