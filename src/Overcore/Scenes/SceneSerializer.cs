@@ -235,6 +235,19 @@ public class SceneSerializer
         }
 
         meshRendererData["Material"] = materialData;
+
+        // Written only when not the default, like every other property here. A renderer that casts and receives is
+        // the common case, and saying so in every line of every scene is noise in a file people read by hand.
+        if (mr.CastShadows != ShadowCastingMode.On)
+        {
+            meshRendererData["CastShadows"] = mr.CastShadows;
+        }
+
+        if (!mr.ReceiveShadows)
+        {
+            meshRendererData["ReceiveShadows"] = false;
+        }
+
         return meshRendererData;
     }
 

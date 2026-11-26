@@ -108,9 +108,13 @@ public readonly record struct CascadeFit(
 /// them. The light's direction <em>to</em> the light is <c>Vector3.Transform(-Vector3.UnitZ, rotation)</c> — the same
 /// vector <c>scene.frag</c> dots the surface normal against, and the same one the renderer negates when it uploads
 /// <c>uDirLight.direction</c>; <see cref="DirectionToLight"/> is the one place that is written down.
-/// <see cref="Matrix4x4.CreateOrthographicOffCenter"/> is right-handed and takes positive plane distances, so the depth
-/// it produces rises from the near plane to the far one in the range <c>[0, 1]</c> — which is what the depth texture
-/// holds and what the receiver compares against, with no remap in between.
+/// <see cref="Matrix4x4.CreateOrthographicOffCenter"/> is right-handed and takes positive plane distances, so the NDC
+/// depth it produces rises from the near plane to the far one in the range <c>[0, 1]</c> — the Direct3D convention, not
+/// OpenGL's <c>[-1, 1]</c>. The depth <em>texture</em> therefore holds <c>[(0 + 1) / 2, (1 + 1) / 2]</c>, because the
+/// viewport transform remaps it, and a receiver that compared its own <c>[0, 1]</c> against those values would find
+/// nothing shadowed anywhere. The remap lives in the shader (<c>(projected.z + 1) * 0.5</c>), not here, so that the
+/// matrix this class builds stays in one convention and the tests over its extents and its snapping mean what they
+/// say. <c>TheProjectionsDepthIsDirect3DConventionAndTheShaderRemapsIt</c> pins the half of that contract CI can see.
 /// </para>
 /// <para>
 /// No GPU, no engine state: this is arithmetic over matrices and floats, which is what makes every claim in

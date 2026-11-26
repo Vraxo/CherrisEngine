@@ -145,8 +145,8 @@ public class LightSpaceFitTests
     [Fact]
     public void TheDepthTheBoxRecordsIsInTheUnitRange()
     {
-        // The receiver compares against the depth texture's [0, 1]. Anything outside it is a corner that is inside the
-        // x/y square but clipped out of the depth buffer, which looks exactly like a caster that casts nothing.
+        // Any corner whose depth falls outside [0, 1] is one that is inside the x/y square but clipped out of the depth
+        // buffer, which looks exactly like a caster that casts nothing.
         Matrix4x4 camera = CameraAt();
         SliceGeometry geometry = Slice(0.1f, 10f);
         CascadeFit fit = LightSpaceFit.Fit(geometry, camera, OverTheShoulder, Resolution);
@@ -158,6 +158,38 @@ public class LightSpaceFitTests
 
             depth.Should().BeInRange(-0.0001f, 1.0001f);
         }
+    }
+
+    [Fact]
+    public void TheProjectionsDepthIsDirect3DConventionAndTheShaderRemapsIt()
+    {
+        // The bug this pins is worth the test: Matrix4x4.CreateOrthographicOffCenter emits NDC depth in [0, 1], the
+        // Direct3D convention, and OpenGL's viewport transform then writes (ndc + 1) / 2 to the depth buffer. So the
+        // shadow map holds [0.5, 1] while a receiver computing the same matrix gets [0, 1], and a comparison between
+        // the two reports "lit" for every fragment: shadows that are invisible everywhere, on every object, with no
+        // error to find. scene.frag and skin.frag remap with `(projected.z + 1.0) * 0.5` for exactly this reason.
+        //
+        // Asserted here rather than only in the shader because this is the side that makes the decision, and the day
+        // someone swaps in a [-1, 1] projection is the day the shader's remap becomes wrong.
+        Matrix4x4 camera = CameraAt();
+        SliceGeometry geometry = Slice(0.1f, 10f);
+        CascadeFit fit = LightSpaceFit.Fit(geometry, camera, OverTheShoulder, Resolution);
+
+        float nearNdc = float.MaxValue;
+        float farNdc = float.MinValue;
+
+        foreach (Vector3 corner in geometry.Corners())
+        {
+            Vector4 clip = Vector4.Transform(new Vector4(Vector3.Transform(corner, camera), 1f), fit.LightViewProjection);
+            float ndc = clip.Z / clip.W;
+
+            nearNdc = MathF.Min(nearNdc, ndc);
+            farNdc = MathF.Max(farNdc, ndc);
+        }
+
+        // The near end of the box is 0 and the far end is 1 — not -1 and 1.
+        nearNdc.Should().BeApproximately(0f, 0.01f, "the near plane maps to 0, so the buffer's near end is 0.5 once OpenGL remaps it");
+        farNdc.Should().BeApproximately(1f, 0.01f);
     }
 
     [Fact]

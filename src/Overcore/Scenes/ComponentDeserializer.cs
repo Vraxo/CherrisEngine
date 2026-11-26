@@ -2,6 +2,7 @@ using Overcore.Components;
 using Overcore.Core;
 using Overcore.Core.Logging;
 using Overcore.Rendering;
+using Overcore.Rendering.Shadows;
 using Overcore.Utils;
 using System.Globalization;
 using System.Numerics;
@@ -17,6 +18,10 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("Camera", CreateAndPopulateComponent<Camera>);
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
+
+        // Registered rather than left to a root-level block in the scene file: SceneLoader parses the document as
+        // Dictionary<string, List<...>> and looks up "GameObjects", so a sibling mapping would fail the whole load.
+        sceneLoader.RegisterComponentFactory("Shadows", CreateAndPopulateComponent<Shadows>);
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
         sceneLoader.RegisterComponentFactory("BoxCollider", CreateAndPopulateComponent<BoxCollider>);
         sceneLoader.RegisterComponentFactory("SphereCollider", CreateAndPopulateComponent<SphereCollider>);
@@ -45,12 +50,22 @@ public static class ComponentDeserializer
 
         Material material = CreateMaterialFromProperties(propsDict, resourceManager);
 
-        return new()
+        MeshRenderer renderer = new()
         {
             Mesh = mesh,
             Material = material,
             MeshName = meshName
         };
+
+        // Mesh and Material come from nested blocks that the generic path cannot express, so the rest of the component
+        // is populated here. Without this a scene's cast/receive choice would serialise and then be dropped on load —
+        // the file would say one thing and the running scene would do another.
+        //
+        // The two exclusions are not a optimisation: the generic path would overwrite the material just built with a
+        // null from a block it cannot parse, and would try to convert a mesh name into a Mesh.
+        PopulateComponentProperties(renderer, propsDict, nameof(MeshRenderer.Material), nameof(MeshRenderer.Mesh));
+
+        return renderer;
     }
 
     private static AudioSource CreateAudioSourceComponent(object properties, IResourceManager resourceManager)
@@ -108,7 +123,10 @@ public static class ComponentDeserializer
         return component;
     }
 
-    private static void PopulateComponentProperties(Component component, IReadOnlyDictionary<object, object> propsDict)
+    private static void PopulateComponentProperties(
+        Component component,
+        IReadOnlyDictionary<object, object> propsDict,
+        params string[] skip)
     {
         if (propsDict is null)
         {
@@ -118,7 +136,7 @@ public static class ComponentDeserializer
         var componentType = component.GetType();
         foreach (var (key, value) in propsDict)
         {
-            if (key is not string propName)
+            if (key is not string propName || skip.Contains(propName))
             {
                 continue;
             }

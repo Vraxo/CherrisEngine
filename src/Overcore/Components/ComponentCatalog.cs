@@ -1,3 +1,5 @@
+using Overcore.Rendering.Shadows;
+
 namespace Overcore.Components;
 
 /// <summary>
@@ -28,6 +30,10 @@ public static class ComponentCatalog
     [
         new Entry("Camera", typeof(Camera)),
         new Entry("Light", typeof(Light)),
+
+        // The scene's shadow settings. Ordering it beside the light is deliberate: a scene has one of these, and it is
+        // the counterpart of the light that casts.
+        new Entry("Shadows", typeof(Shadows)),
         new Entry("Rigid Body", typeof(RigidBody)),
         new Entry("Box Collider", typeof(BoxCollider)),
         new Entry("Sphere Collider", typeof(SphereCollider)),

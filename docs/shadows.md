@@ -1,11 +1,11 @@
-# Shadows
-
-> **Status: increment 1 of 4 implemented — the arithmetic, and nothing that draws.** `CascadeSplits` (§3) and
-> `LightSpaceFit` (§4) exist with their tests in `tests/Overcore.Tests/Rendering`; every other section is still a
-> contract, and §9 and §10 mark those entries `…`. Nothing is uploaded, no depth texture exists and no shader samples
-> one, so a scene renders exactly as it did before. This document remains the ground truth the code and its tests agree
-> on, the way [`animation.md`](animation.md) is for skinning, [`physics.md`](physics.md) for the simulation and
-> [`prefabs.md`](prefabs.md) for asset identity.
+> **Status: increment 2 of 4 implemented — the depth pass, and it draws.** `CascadeSplits` (§3),
+> `LightSpaceFit` (§4), `Shadows` (§2.3), `ShadowCasters` (§5.2), the depth shaders (§5.3) and
+> `OpenGLShadowRenderer` with its `ShadowDepthTarget` layered attachment (§5.1) exist, and `OpenTKRenderer.RenderScenePass` runs
+> the pass before `_postProcessor.BeginFrame()`. The receiver (§6) is in `scene.frag` and `skin.frag` and samples the map.
+> Every claim below is implemented unless §8 or the parenthetical says otherwise. The tests pin what needs no GPU —
+> splits, the fit, the caster rules, the frame's early returns and the two shaders' agreement — plus the round-trip of
+> every new serialized property; nothing in CI compiles a shader, so a GLSL error is a runtime failure and not a build
+> one. The Veldrid backend still renders no shadows at all (§8).
 
 Before this layer Overcore lit everything as if nothing were ever in the way. `scene.frag` sums a directional term,
 up to four point lights and up to four spot lights over an albedo, and every surface it shades is lit through every
@@ -217,8 +217,19 @@ for the four sign combinations at each of `d = nearDepth` and `d = farDepth` —
 
 Transform all eight by the light's `view` matrix, take the componentwise min and max, and that is the orthographic box:
 `left/right` from `x`, `bottom/top` from `y`, and the near/far pair from `z`. The projection is
-`Matrix4x4.CreateOrthographicOffCenter(left, right, bottom, top, near, far)`, which maps to a depth in `[0, 1]` — the
-same range `FramebufferBuilder` allocates and the same range `gl_FragCoord.z` is in, so no remap is needed anywhere.
+`Matrix4x4.CreateOrthographicOffCenter(left, right, bottom, top, near, far)`.
+
+**One remap is needed, and forgetting it is invisible.** The projection maps a corner to an NDC depth in `[0, 1]` —
+`System.Numerics` follows the Direct3D convention, where the near plane is 0 — and OpenGL's viewport transform then
+writes `(ndc + 1) / 2` into the depth buffer, so the shadow map holds `[0.5, 1]`. A receiver that computed the same
+matrix and compared its `[0, 1]` value against the texture would find the stored depth greater than the fragment's for
+every fragment of every object: `step()` returns 1, the surface is fully lit, and the feature is present, compiling,
+running and doing nothing at all. The remap is therefore in the shader, `storedDepth = (projected.z + 1.0) * 0.5`, and
+it is asserted from both ends — `TheProjectionsDepthIsDirect3DConventionAndTheShaderRemapsIt` pins that this side really
+does emit `[0, 1]`, and `ShadowShaderTests` pins that both receivers remap.
+
+The alternative — baking the remap into the matrix — was rejected because it would make every test of §4's extents and
+snapping assert against OpenGL's clip convention, which is a property of the backend rather than of the fit.
 
 The light's `view` matrix is `CreateLookAt(eye, eye + lightDirection, up)` where `eye` is the centre of the slice's
 bounding sphere and `lightDirection` is the direction the light *travels* — the negated `uDirLight.direction` the
@@ -296,12 +307,20 @@ layer, which is exactly the operation the receiver needs, so one texture with a 
 expressible in the shader version this engine compiles.
 
 The builder allocates `Texture2DArray` storage of `DepthComponent24` with `layers` slices and a side of `resolution`,
-sets `TextureCompareMode = CompareRefToTexture` and `TextureCompareFunc = Lequal` for hardware PCF, and clamps to edge
-in all three dimensions. Each cascade is attached in turn with `GL.FramebufferTextureLayer` to
-`DepthAttachment` of one framebuffer, `glDrawBuffer(GL_NONE)` and `glReadBuffer(GL_NONE)` once — a depth-only
-framebuffer declares no colour attachment, and saying so is not optional: a framebuffer the driver thinks is incomplete
-draws nothing and raises nothing. Status is checked with `GL.CheckFramebufferStatus` after each attachment exactly as
-`Build` already does, and an incomplete one throws naming the cascade rather than rendering a blank frame.
+sets nearest filtering and clamps to edge in all three dimensions. Each cascade is attached in turn with
+`GL.FramebufferTextureLayer` to `DepthAttachment` of one framebuffer, `glDrawBuffer(GL_NONE)` and `glReadBuffer(GL_NONE)`
+once — a depth-only framebuffer declares no colour attachment, and saying so is not optional: a framebuffer the driver
+thinks is incomplete draws nothing and raises nothing. Status is checked with `GL.CheckFramebufferStatus` **after each
+attachment**, and an incomplete one throws naming the layer rather than rendering a blank frame.
+
+**Not a `sampler2DArrayShadow`, and not `TextureCompareMode = CompareRefToTexture`.** An earlier draft of this document
+specified hardware comparison and the implementation does the comparison itself after an ordinary fetch. Two reasons,
+and the second is the one that decided it: a slope-scaled bias has to be applied to the fragment's depth *before* the
+test, and a hardware comparison's reference value is the one the shader passes in but its configured function and mode
+are properties of the sampler, fixed when the program is compiled. `ShadowType.Hard` and `ShadowType.Soft` then cannot
+share a program, which costs a whole second pair of lit shaders to save nine ALU instructions. An ordinary fetch of a
+depth texture returns the stored depth in `.r`, so the test is `step(projected.z - bias, sampled)` — the same
+comparison, written where the bias can be seen.
 
 `DepthComponent24` rather than `DepthComponent32F`: 24 bits over a directional cascade's depth range is 16.7 million
 levels across a few hundred metres, far past what the bias in §6.1 can meaningfully use, and 32-bit float depths cost
@@ -313,8 +332,9 @@ box has neither problem.
 shadow map wraps the far side of a cascade onto its near side, which reads as a shadow that is present and in the wrong
 place.
 
-The array is allocated once at the resolution in force — the scene's `Resolution`, or the casting directional light's
-`ShadowResolution` when it sets one — with `Cascades` layers, and reallocated only when one of those three changes.
+The array is allocated once at the resolution in force — the casting directional light's `ShadowResolution`, spelled in
+texels by `Shadows.TexelsOf` — with `Cascades` layers, and reallocated only when either changes. `ShadowFrame.Build`
+takes an explicit override as well, which is what a test uses to pin the two apart.
 There is one directional light casting per frame, so there is one allocation to make; the note exists because the
 obvious alternative, a texture array per light, is what a two-directional-light future would need and is not what this
 increment builds.
@@ -332,7 +352,12 @@ scene lists, which is exactly the light `Program.UploadLights` picks with
 the first alone, so it now shadows from the first alone too, and the second's `Shadows` setting is inert rather than
 half-honoured.
 
-There is no frustum test against the cascade in this increment, so every caster is drawn into every cascade (§8).
+Each caster is tested against the cascade's slice before it is drawn: its world-space AABB — `GameObject.GetWorldSpaceAABB`,
+which already exists for selection — widened by its own half diagonal and compared against the min and max of the
+cascade's eight world corners. It is a box-versus-box test over a conservative corner set, so it never skips something a
+cascade could have seen; a caster smaller than the widening is drawn in every cascade, which is the direction a
+conservative test has to fail in. What it buys is the difference between every caster in every cascade and roughly one
+cascade's worth per caster, which for a 500-object scene is 2,000 draws a frame against about 520.
 
 ### 5.3 The two programs
 
@@ -357,7 +382,7 @@ The static program takes exactly two uniforms, `model` and `lightViewProjection`
 third, the palette sampler on the bone unit. Not `view`, not `projection`, not `uTiling`, not the lights: a depth pass
 that uploads the frame's lighting uniforms is a pass someone forgot to trim.
 
-`shadow.frag` is two lines with an empty `main`, and it exists because `ShaderProgram` always compiles a vertex and a
+`shadow.frag` is a `#version` line and an empty `main`, and it exists because `ShaderProgram` always compiles a vertex and a
 fragment source pair — the depth buffer is written by the rasteriser before any fragment shader runs, so the fragment
 stage has nothing to do and nothing to write. It is a file rather than a null argument because that is the shape
 `ShaderProgram` already takes for every other program in the engine, and one empty shader is a smaller price than a
@@ -419,8 +444,12 @@ The two failure modes, and the honest trade:
 
 ### 6.2 PCF
 
-`ShadowType.Soft` takes a 3×3 weighted tap set around the fragment's texel, with each tap's offset scaled by the
-scene's `Softness` so a project can widen the penumbra without a second shader. Weight is the standard separable tent
+`ShadowType.Soft` takes a 3×3 weighted tap set around the fragment's texel, with each tap's offset one texel — the
+radius is `Shadows.PcfTexels`, a constant rather than a scene knob. A wider tent is a wider penumbra and also a
+penumbra that overflows the map's edge by more than a texel, and no scene in this engine has asked for either yet; the
+uniform exists so that it costs nothing to add. What is *not* fixed is the penumbra's width in world units: one texel
+of a 512 map covers eight times the ground one texel of a 4096 map does, so a low resolution is both coarser and
+softer, which is the honest behaviour rather than a bug to smooth over. Weight is the standard separable tent
 (`1, 2, 1` per axis). `ShadowType.Hard` takes the single centre tap, and is the setting that makes a 4× MSAA frame look
 crisper at the cost of stair-stepped edges.
 
@@ -485,7 +514,7 @@ is a scene that is simply, uniformly lit:
 | `uCascadeSplits` | `vec4` | The four `farDepth` values in view depth, `(10, 30, 70, 150)` at the defaults. |
 | `uCascadeCount` | `int` | How many of the four are real this frame. |
 | `uShadowDistance` | `float` | `Distance`. |
-| `uShadowNearPlane` | `float` | The light's `ShadowNearPlane`. |
+| `uShadowNearPlane` | `float` | The first cascade's **near range**, in camera view depth — the value below which §6.3 takes no sample. Not `CascadeFit.NearPlane`, which is a distance along the light's axis and is a different quantity in a different space. |
 | `uShadowBias` / `uShadowNormalBias` | `float` | §6.1's two biases. |
 | `uShadowStrength` | `float` | §6.2's blend toward `1.0`. |
 | `uShadowSoftness` / `uShadowBlendBand` | `float` | §6.2 and §6.3. |
@@ -493,9 +522,13 @@ is a scene that is simply, uniformly lit:
 | `uReceiveShadows` | `int` | `0` short-circuits the whole receiver. |
 | `uCameraForward` | `vec3` | The view depth's axis (§6.3). Already derivable from the existing view matrix, but uploaded so the shader does not invert a matrix per fragment. |
 
-A light whose `Shadows` is `None` uploads `uShadowStrength = 0`, which is the same uniform path as a light with
-`ShadowStrength = 0` — there is no "shadows off" code path for the shader to take, and that is deliberate: one path with
-a value that switches it off is one path to test.
+A light whose `Shadows` is `None` never reaches the shader: `ShadowFrame.Build` returns `ShadowFrame.None`, the depth
+pass draws nothing, and the receiver uploads `uReceiveShadows = 0`. That is a stronger version of the original intent
+below it — no separate "shadows off" code path in the shader, only a uniform that short-circuits the receiver — and it
+costs nothing: the pass that would have drawn four depth maps is skipped entirely rather than run and then ignored.
+
+`uReceiveShadows = 0` is also what a per-renderer `ReceiveShadows = false` uploads, so a renderer that does not receive
+in a scene that does is the same short circuit rather than a per-object shader variant.
 
 ## 7. Frame order and what it costs
 
@@ -519,8 +552,9 @@ against. Getting this backwards renders four cascades into the scene's colour ta
 
 Cost, stated plainly: **the draw call count per object goes from one to `n + 1`** — four cascades plus the colour pass
 at the default — and the same for a skinned object, whose vertices additionally sample the bone palette once per
-cascade. Without frustum culling (§8) every caster is drawn into every cascade, so a scene of 500 casters goes from 500
-draws a frame to 2,500. That is the single largest reason the culling increment is on the roadmap beside this one rather
+cascade. §5.2's per-cascade slice test cuts that back to roughly one cascade's worth per caster, so a scene of 500
+casters goes from 500 draws a frame to about 520 rather than 2,500. It is a box test, not a hierarchy, so the CPU side is
+still one iteration per object per cascade; a tree is what removes that and is not what this builds.
 than after it, and the reason `Distance` and `Cascades` are exposed on the scene's `Shadows` component: turning a scene
 down to 2 cascades cuts the shadow pass in half immediately, with no code change.
 
@@ -538,8 +572,10 @@ here where `n + 1` full shading passes would not be.
   §1's model deliberately says "a directional light". The practical consequence today is that a scene lit mostly by a
   lamp in a corner still lights through walls; the directional light is the one that matters outdoors and the one whose
   fit is worth getting right first.
-- **No frustum or occlusion culling.** Every caster is drawn into every cascade. Adding shadows without adding culling
-  is a 5× draw count; adding culling is what makes it a 2× one indoors.
+- **No occlusion culling, and no culling hierarchy.** §5.2 tests each caster's box against each cascade's slice, so an
+  object is not drawn into a cascade that cannot see it — but the test is an iteration over a flat list, so it is
+  `casters × cascades` box tests a frame. A BVH over the scene's objects is what removes that, and it is what a scene
+  with tens of thousands of casters would need; §8's "occlusion" half of the phrase is untouched either way.
 - **No alpha-tested casters.** `Vertex` carries no texture alpha and no `cutout` material flag, so a chain-link fence or
   a leaf card casts the shadow of its quad, not of its holes. This needs a material flag and an `alpha < cutoff` discard
   in the depth shader — small, but it is a change to `Material` and to the mesh pipeline's contract, not a local one.
@@ -565,8 +601,11 @@ here where `n + 1` full shading passes would not be.
 
 ## 9. What the tests pin
 
-Everything but the draw is deterministic, so the tests are exact rather than approximate. Every entry is `…` because
-nothing in this document exists yet:
+Everything but the draw is deterministic, so the tests are exact rather than approximate — with two deliberate
+exceptions, both float32 facts rather than choices: the fit's tolerances are `1e-3`-scale because a dot product hundreds
+of texels from the origin loses more than that, and the slice-width test composes two rules (the near plane and the
+staircase) so it is stated at a near plane of zero. A `…` below is an assertion this layer relies on and does not yet
+make: mostly the receiver's arithmetic, which is GLSL and therefore outside anything CI can execute.
 
 | Test | Pins |
 | :--- | :--- |
@@ -575,8 +614,8 @@ nothing in this document exists yet:
 | ✔ Slice widths double: 1:2:4:8 | the property the split exists for |
 | ✔ A split list out of order is clamped, not trusted | §3.2, and that a hand-edited file cannot divide by zero |
 | ✔ A split list of the wrong length falls back to the derived default, and says it did | §3.2's recovery path |
-| … A scene with no `Shadows` component gets 150 / 4 / the derived splits | that every existing `.yaml` still loads |
-| … Two `Shadows` components resolve to the first on an active, enabled object | §2.3's "exactly one is consulted" |
+| ✔ A scene with no `Shadows` component gets 150 / 4 / the derived splits | that every existing `.yaml` still loads |
+| ✔ Two `Shadows` components resolve to the first on an active, enabled object | §2.3's "exactly one is consulted" |
 | ✔ The light's box contains all eight slice corners, at every light angle and slice | §4.1 |
 | ✔ A light pointing straight down — or up — does not produce a NaN matrix | the degenerate up vector, §4.1 |
 | ✔ The light matrix points the shadow away from the sun, not into it | the negated direction convention |
@@ -586,47 +625,69 @@ nothing in this document exists yet:
 | ✔ The depth of the centre is not quantised | §4.2, the axis that is deliberately left alone |
 | ✔ The fit's basis is the view matrix's own, and `axisX` is the negation of `cross(up, forward)` | the mirrored-basis bug §4.1 names |
 | … A shadow framebuffer is refused, not rendered, when the status is incomplete | §5.1 |
-| … `shadow.vert` declares no `aBones` and no `uBoneTexture`; `shadow_skinned.vert` reads 4 and 5 | the two-program split, as `SkinningShaderTests` does for `scene.vert` / `skin.vert` |
-| … `shadow_skinned.vert` computes `bone * 3` and rebuilds `vec4(0.0, 0.0, 0.0, 1.0)` | that the palette contract of `skin.vert` is not forked |
-| … The receiver samples a `sampler2DArray` and never indexes an array of samplers | §5.1's GLSL 330 constraint |
-| … `scene.frag` and `skin.frag` declare the same receiver uniform names | §6.5, in both lit programs at once |
-| … The receiver multiplies the `CalcDirLight` term and no other | §6.4's order, asserted on the shader's own text |
-| … The depth shaders upload `model` and `lightViewProjection` and nothing else | that the pass was trimmed |
+| ✔ `shadow.vert` declares no `aBones` and no `uBoneTexture`; `shadow_skinned.vert` reads 4 and 5 | the two-program split, as `SkinningShaderTests` does for `scene.vert` / `skin.vert` |
+| ✔ `shadow_skinned.vert` computes `bone * 3` and rebuilds `vec4(0.0, 0.0, 0.0, 1.0)` | that the palette contract of `skin.vert` is not forked |
+| ✔ The receiver samples a `sampler2DArray` and never indexes an array of samplers | §5.1's GLSL 330 constraint |
+| ✔ `scene.frag` and `skin.frag` declare the same receiver uniform names | §6.5, in both lit programs at once |
+| ✔ The receiver multiplies the `CalcDirLight` term and no other | §6.4's order, asserted on the shader's own text |
+| ✔ The depth shaders upload `model` and `lightViewProjection` and nothing else | that the pass was trimmed |
 | … A more grazing normal biases more, up to the clamp | the slope term and its ceiling |
 | … A normal offset moves the sample along the normal, not along the view | §6.1's two-bias split |
 | … Cascade selection uses view depth, and switches at the split | §6.3 |
 | … The last 10% of a cascade mixes both | the blend band, and that it lands exactly on the outer cascade |
 | … `ShadowStrength = 0` leaves the surface fully lit; `1` fully dark | the `mix` direction, §6.2 |
 | … The shadow factor multiplies the directional term and not ambient or emissive | §6.4's order |
-| … A `Skybox` object is in no cascade's caster list | the exclusion both colour passes already make |
-| … `CastShadows = Off` removes a caster; `ShadowsOnly` still draws in the depth pass and not in the colour pass | §5.2 and §2.2 |
+| ✔ A `Skybox` object is in no cascade's caster list | the exclusion both colour passes already make |
+| ✔ `CastShadows = Off` removes a caster; `ShadowsOnly` still draws in the depth pass and not in the colour pass | §5.2 and §2.2 |
+| ✔ Every new serialized property survives a save and a load, and a default writes nothing | §2 and §2.3, through the real `SceneSerializer` and `SceneLoader` |
+| ✔ `Cascades` rewrites `Splits`, and a load agrees with the instance that was saved | §2.3's round-trip property |
+| ✔ `Build` returns `None` for no camera, no casting directional light, a light whose `Shadows` is `None`, and an empty scene | §5.2's "which light", and that a half-built frame is never returned |
+| ✔ `Build` takes the first casting light, and its direction opposes `LightSpaceFit.DirectionToLight` | the same choice `UploadLights` makes, and the sign convention |
+| ✔ An explicit resolution overrides the light's; with none, the light's `ShadowResolution` decides | that the per-light setting is not inert |
+| ✔ A child of an inactive object casts nothing, and gets its shadow back when the parent re-activates | §5.2's `ActiveInHierarchy` rule |
+| ✔ `TwoSided` culls nothing; every other caster culls front faces | §5.4 |
+| ✔ `ShadowFrame.None` is a disabled frame, not null | that the Veldrid backend can be handed it |
+| ✔ The fit's projection emits NDC depth in `[0, 1]`, so the buffer holds `[0.5, 1]` and the shader remaps | the convention mismatch that makes every shadow invisible, §4.1 |
 
 ## 10. Where the code lives
 
-`✔` means it exists; `…` (no mark) means it is the increments still to come, and `✔` inside the path column means a
-piece this layer reuses rather than adds.
+`✔` means it exists; no mark means it is an increment still to come, and `✔` inside the path column means a piece this
+layer reuses rather than adds.
 
 | Piece | File |
 | :--- | :--- |
 | ✔ Split arithmetic, cascade ranges, the split sanitiser | `src/Overcore/Rendering/Shadows/CascadeSplits.cs` |
 | ✔ The slice's corners, the light-space fit, texel snapping | `src/Overcore/Rendering/Shadows/LightSpaceFit.cs` |
-| ✔ Their tests | `tests/Overcore.Tests/Rendering/CascadeSplitsTests.cs`, `LightSpaceFitTests.cs` |
-| The per-scene `Shadows` component and its defaults | `src/Overcore/Rendering/Shadows/Shadows.cs`, `src/Overcore/Scenes/ComponentDeserializer.cs`, `ComponentCatalog.cs` |
-| Per-light shadow properties | `src/Overcore/Rendering/Light.cs` |
-| Per-renderer casting and receiving modes | `src/Overcore/Rendering/MeshRenderer.cs` |
-| The depth texture array and the layer framebuffers | `src/Overcore/Rendering/OpenTK/FramebufferBuilder.cs`, `FrameBuffer.cs` |
-| The four depth passes and the cascade state | `src/Overcore/Rendering/OpenTK/OpenGLShadowRenderer.cs`, `OpenGLSceneRenderer.cs` |
-| The bone texture the skinned caster reuses | ✔ `src/Overcore/Rendering/OpenTK/OpenGLBoneTexture.cs`, `OpenGLSkinnedMeshData.cs` |
-| The vertex layout both passes share | ✔ `src/Overcore/Rendering/Vertex.cs` |
-| The scene's and skybox's draw order | ✔ `src/Overcore/Rendering/OpenTK/OpenTKRenderer.cs` |
-| The depth shaders | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
-| The receiver in the lit shaders | `src/OvercoreEditor/EditorResources/Shaders/scene.frag`, `skin.frag` |
+| ✔ The per-scene `Shadows` component, its defaults and its resolution table | `src/Overcore/Rendering/Shadows/Shadows.cs` |
+| ✔ Which objects cast, and from which side of their faces | `src/Overcore/Rendering/Shadows/ShadowCasters.cs` |
+| ✔ A frame's cascades, gathered once, with `None` as the disabled value | `src/Overcore/Rendering/Shadows/ShadowFrame.cs` |
+| ✔ Per-light shadow properties | `src/Overcore/Rendering/Light.cs` |
+| ✔ Per-renderer casting and receiving modes | `src/Overcore/Rendering/MeshRenderer.cs` |
+| ✔ The layered depth texture and its per-layer framebuffer | `src/Overcore/Rendering/OpenTK/ShadowDepthTarget.cs` |
+| ✔ The four depth passes, the caster cull and the pass's GL state | `src/Overcore/Rendering/OpenTK/OpenGLShadowRenderer.cs` |
+| ✔ The receiver's uniforms and their upload | `src/Overcore/Rendering/OpenTK/OpenGLSceneRenderer.cs` |
+| ✔ The component factory, and the mesh renderer's non-nested properties | `src/Overcore/Scenes/ComponentDeserializer.cs` |
+| ✔ The mesh renderer's cast/receive properties in the scene file | `src/Overcore/Scenes/SceneSerializer.cs` |
+| ✔ The bone texture the skinned caster reuses | ✔ `src/Overcore/Rendering/OpenTK/OpenGLBoneTexture.cs`, `OpenGLSkinnedMeshData.cs` |
+| ✔ The vertex layout both passes share | ✔ `src/Overcore/Rendering/Vertex.cs` |
+| ✔ The frame order the pass slots into | ✔ `src/Overcore/Rendering/OpenTK/OpenTKRenderer.cs` |
+| ✔ The depth shaders | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
+| ✔ The receiver in the lit shaders | `src/OvercoreEditor/EditorResources/Shaders/scene.frag`, `skin.frag` |
+| ✔ The CPU-side tests: splits, the fit, the caster rules, the frame, the round-trips | `tests/Overcore.Tests/Rendering/{CascadeSplits,LightSpaceFit,Shadows,ShadowCasters,ShadowFrame,ShadowShader}Tests.cs`, `tests/Overcore.Tests/Scenes/ShadowSerializationTests.cs` |
 | Inspector rows for the new properties | `src/OvercoreEditor/Inspector/`, `src/OvercoreEditorSession/Scene/ComponentProperties.cs` |
-| The depth-pass and shader tests | `tests/Overcore.Tests/Rendering/ShadowShaderTests.cs` |
+| ✔ A `ComponentCatalog.BuiltIn` entry, so either front end can add a `Shadows` component | `src/Overcore/Components/ComponentCatalog.cs` |
 
-Beyond the components and the shaders, four existing files gain a line each: `ComponentCatalog.BuiltIn` needs a
-`Shadows` entry so either front end's Add Component menu can create one, `ComponentDeserializer.RegisterFactories`
-needs its factory, `OpenTKRenderer.RenderScenePass` needs the pass between the skybox and the scene, and
-`OpenGLSceneRenderer` needs to upload §6.5's uniforms beside the ones it already uploads. The inspector needs no new
-control kind: `ShadowType`, `ShadowResolution` and `ShadowCastingMode` are enums both front ends already draw as popups,
-and `ShadowStrength`, `ShadowBias`, `ShadowNormalBias`, `Softness` and `BlendBand` are floats that `[Range]` covers.
+Three notes on what is deliberately *not* in that table. There is no `FramebufferBuilder` change: the builder's
+`Build()` returns a colour target with an optional depth **renderbuffer**, which cannot be sampled, and the shadow target
+wants the opposite shape — a samples-able depth texture with no colour at all. Bending one builder to produce both would
+put a `layers` parameter on a method that has no use for one in nine of its ten calls, so `ShadowDepthTarget` owns its
+own object. There is no `ShadowSoftness`/`BlendBand` on `Shadows` either: the receiver needs a constant, and a scene knob
+that only the receiver reads is a knob with no second reader — §6.2 says what it costs to add one later. And the
+inspector rows are genuinely not done. A `Shadows` component can be added from either front end and its values are
+saved and loaded, but tuning it means editing the file or using the generic property rows, and the enums and `[Range]`
+floats are only as good as whatever row picks them up. The one test this touches is
+`EditorCommandTests.Catalog_ListsCreatableComponentsWithUniqueNames`, which instantiates every catalog entry — so it now
+also asserts that `new Shadows()` is constructible and is the type the menu names.
+
+The Veldrid backend needs nothing: `IRenderer.RenderFrame`'s signature is unchanged, and its `Render` takes no shadow
+frame because it has no depth pass to give one to.

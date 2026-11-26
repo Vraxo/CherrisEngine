@@ -4,6 +4,25 @@ using Overcore.Utils;
 
 namespace Overcore.Components;
 
+/// <summary>What a mesh does in the shadow pass, and whether the colour pass draws it at all.</summary>
+public enum ShadowCastingMode
+{
+    /// <summary>Never drawn into a shadow map. The object is lit but casts nothing.</summary>
+    Off,
+
+    /// <summary>
+    /// Drawn into the depth map with the face toward the light culled — the depth pass culls front faces, so the map
+    /// records the surface the light cannot reach. The cheap and ordinary case.
+    /// </summary>
+    On,
+
+    /// <summary>Drawn with no face culling, for a foliage card or a wall with two sides.</summary>
+    TwoSided,
+
+    /// <summary>Drawn into shadow maps and skipped in the colour pass: an invisible caster.</summary>
+    ShadowsOnly
+}
+
 public class MeshRenderer : Component, IDisposable
 {
     public required Mesh Mesh { get; set; }
@@ -37,6 +56,14 @@ public class MeshRenderer : Component, IDisposable
     /// </summary>
     [HideInInspector]
     public object? SkinnedBackendData { get; set; }
+
+    /// <summary>What this mesh does in the shadow pass. <see cref="ShadowCastingMode.ShadowsOnly"/> is the invisible
+    /// caster: a collider-shaped box standing in for a detailed prop, with no colour draw of its own.</summary>
+    public ShadowCastingMode CastShadows { get; set; } = ShadowCastingMode.On;
+
+    /// <summary>Whether the shader samples shadows at all. Off is what makes a fake shadow blob or a baked look
+    /// possible, and it is per renderer rather than per light for exactly that reason.</summary>
+    public bool ReceiveShadows { get; set; } = true;
 
     private void InvalidateBackendData()
     {
