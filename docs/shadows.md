@@ -93,6 +93,11 @@ Two more, because "does this cast" and "does this receive" are properties of a r
 `ShadowsOnly` is the mode that makes an invisible caster — a collider-shaped box standing in for a detailed prop — a
 one-line answer instead of a second material trick.
 
+A third setting lives on the *material* rather than on either of those, because it describes the texture rather than the
+object: **`Material.AlphaCutoff`**, `0` by default, the threshold below which a fragment is discarded in the colour pass
+and in the depth pass alike. A fence whose holes are cut out of its texture needs both, and §5.5 says why one number
+drives them.
+
 ### 2.3 Per scene — the `Shadows` component on an object
 
 Cascade count, distance and splits are quality settings in Unity, held in `QualitySettings.asset` and overridable per
@@ -417,6 +422,33 @@ Rasteriser state is deliberately the opposite of the colour pass in the two plac
 `ShadowCastingMode.TwoSided` is exactly the mode that turns face culling off for a caster — a foliage card or a
 double-sided wall has no back face to cull to.
 
+### 5.5 Cutouts, and why the test lives on the material
+
+A chain-link fence, a leaf card and a grille are quads with holes cut in a texture. **`Material.AlphaCutoff`, `0` off by
+default**, is the threshold below which a fragment is discarded — and it is one value read by three fragment stages:
+
+| Stage | Test | Effect |
+| :--- | :--- | :--- |
+| `scene.frag`, `skin.frag` | `diffuse.a * fsin_Color.a < uAlphaCutoff` | the fence has holes to look through |
+| `shadow.frag` | `texture(uDiffuse, fsin_TexCoord).a < uAlphaCutoff` | its shadow has the same holes |
+
+Two discards on one number, because the failure this avoids is not a coarse shadow but a *disagreeing* one: a fence
+that is see-through and casts a wall reads as a bug in the shadows rather than as a missing setting.
+
+**`discard` and not blending**, and that is not a shortcut. There is no `GL.Blend` anywhere in the scene pass — the
+composite is a full-screen quad and the scene target is MSAA and resolved, not blended — so a fragment's alpha has
+exactly two meanings available: draw it or do not. Sorting translucent geometry per frame is a different feature with a
+different cost, and it is not what a fence needs.
+
+The depth pass's cost is one extra varying per caster and one texture bind that it did not need before, on the unit the
+colour pass already uses — so no fourth texture unit is spent, and §8's three-unit limit is unchanged. `uAlphaCutoff`
+is uploaded per caster beside `uTiling`, so a scene can mix a cutout fence and an opaque wall in the same cascade.
+
+A material with no cutoff sends `0`, and `alpha < 0.0` is false for every alpha a texture can hold, so the opaque case
+costs one comparison and no branch that the compiler cannot fold away. A caster with no texture at all binds unit 0 to
+zero rather than leaving the previous draw's texture there: OpenGL then samples `(0, 0, 0, 1)`, alpha 1, and the caster
+is opaque, which is the right answer.
+
 ## 6. The receiver
 
 ### 6.1 Bias: two forms, and what each one costs
@@ -596,9 +628,11 @@ here where `n + 1` full shading passes would not be.
   object is not drawn into a cascade that cannot see it — but the test is an iteration over a flat list, so it is
   `casters × cascades` box tests a frame. A BVH over the scene's objects is what removes that, and it is what a scene
   with tens of thousands of casters would need; §8's "occlusion" half of the phrase is untouched either way.
-- **No alpha-tested casters.** `Vertex` carries no texture alpha and no `cutout` material flag, so a chain-link fence or
-  a leaf card casts the shadow of its quad, not of its holes. This needs a material flag and an `alpha < cutoff` discard
-  in the depth shader — small, but it is a change to `Material` and to the mesh pipeline's contract, not a local one.
+- **Cutouts test texture alpha only, not vertex alpha.** `Material.AlphaCutoff` (§5.5) discards in all three fragment
+  stages, and the colour passes weigh `Vertex.Color.a` in as well because the output alpha already does. The depth pass
+  does not: `shadow.vert` declares location 0 and location 3 and no colour, so a caster whose opacity comes from vertex
+  alpha casts its whole quad. Fixing that means a third attribute and a third varying in the cheapest pass in the
+  engine, for a case no material in this project uses.
 - **Nothing is baked.** No lightmaps, no light probes, no static shadow masks. `ShadowStrength` below `1` is a
   stand-in for the ambient occlusion that real-time shadows alone do not provide, and it is a much blunter instrument.
 - **No contact shadows, no screen-space ray marching.** A shadow's contact point is as tight as the cascade's texel size,
@@ -611,7 +645,8 @@ here where `n + 1` full shading passes would not be.
 - **A third texture unit, so a fragment shader can sample at most three things.** The material's diffuse is on unit 0,
   the bone palette on unit 1, and the cascades now on unit 2. That is fine for every material this engine has, and it is
   the constraint that will bite the first time a normal map or an emissive map is added — which is worth writing down
-  before it is discovered as a driver limit.
+  before it is discovered as a driver limit. §5.5's cutout test deliberately spends none of it: it samples the diffuse
+  on the unit the colour pass already binds, because it is reading the same texture for a different question.
 - **The shaders are the part CI cannot run.** Split arithmetic, the light-space fit, texel snapping, bias and the
   cascade choice are all pure functions and all tested exactly. The draw itself needs a context, so a green run proves
   the matrices and the CPU/GPU contract, not the picture. That is a real limit of the increment, not a gap papered over.
@@ -679,6 +714,9 @@ make: mostly the receiver's arithmetic, which is GLSL and therefore outside anyt
 | ✔ The normal offset reads `uShadowTexelSize[cascade]`, and the receiver honours `uShadowNearPlane` | the two settings that were inert, §6.3 |
 | ✔ Each cascade's texel size is wider than the last | §6.3, on the CPU side of the same contract |
 | ✔ The inspector reads, writes, empties and refuses a list of numbers | `PropertyKind.Numbers`, §2.3 |
+| ✔ All three fragment stages discard below the same `uAlphaCutoff`, and the value defaults to off | §5.5, asserted on the shaders' own text |
+| ✔ Both depth vertex stages carry the texcoord the cutout needs | that a fence's shadow is fence-shaped, §5.5 |
+| ✔ A material's cutoff survives a save and a load, and an opaque one writes nothing | §5.5 through the real serializer |
 
 ## 10. Where the code lives
 
@@ -702,7 +740,8 @@ layer reuses rather than adds.
 | ✔ The bone texture the skinned caster reuses | ✔ `src/Overcore/Rendering/OpenTK/OpenGLBoneTexture.cs`, `OpenGLSkinnedMeshData.cs` |
 | ✔ The vertex layout both passes share | ✔ `src/Overcore/Rendering/Vertex.cs` |
 | ✔ The frame order the pass slots into | ✔ `src/Overcore/Rendering/OpenTK/OpenTKRenderer.cs` |
-| ✔ The depth shaders | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
+| ✔ The depth shaders, and the cutout discard in all three fragment stages | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
+| ✔ The cutout threshold on the material, and its two-sided serialization | `src/Overcore/Rendering/Material.cs`, `src/Overcore/Scenes/{SceneSerializer,ComponentDeserializer}.cs` |
 | ✔ The receiver in the lit shaders | `src/OvercoreEditor/EditorResources/Shaders/scene.frag`, `skin.frag` |
 | ✔ The CPU-side tests: splits, the fit, the caster rules, the frame, the round-trips | `tests/Overcore.Tests/Rendering/{CascadeSplits,LightSpaceFit,Shadows,ShadowCasters,ShadowFrame,ShadowShader}Tests.cs`, `tests/Overcore.Tests/Scenes/ShadowSerializationTests.cs` |
 | ✔ The list-of-numbers property kind the split list needs | `src/OvercoreEditorSession/Scene/ComponentProperties.cs`, `src/OvercoreEditorPhotino/Components/InspectorPanel.razor` |

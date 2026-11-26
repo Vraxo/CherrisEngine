@@ -31,8 +31,14 @@ namespace Overcore.Rendering.OpenTK;
 /// </remarks>
 internal sealed class OpenGLShadowRenderer : IDisposable
 {
-    /// <summary>The palette's unit. Unit 0 is the material's diffuse, and the depth pass binds nothing there.</summary>
+    /// <summary>The palette's unit, for the skinned stage.</summary>
     private const TextureUnit BoneTextureUnit = TextureUnit.Texture1;
+
+    /// <summary>
+    /// The material's diffuse, on the unit the colour pass already uses for it. The cutout test samples it, so a caster
+    /// needs exactly the binding it would have had anyway and no fourth texture unit.
+    /// </summary>
+    private const TextureUnit DiffuseTextureUnit = TextureUnit.Texture0;
 
     private readonly ShaderProgram _static;
     private readonly ShaderProgram _skinned;
@@ -42,6 +48,13 @@ internal sealed class OpenGLShadowRenderer : IDisposable
     private readonly int _skinnedModel;
     private readonly int _skinnedLightMatrix;
     private readonly int _skinnedBoneTexture;
+
+    private readonly int _staticTiling;
+    private readonly int _staticDiffuse;
+    private readonly int _staticAlphaCutoff;
+    private readonly int _skinnedTiling;
+    private readonly int _skinnedDiffuse;
+    private readonly int _skinnedAlphaCutoff;
 
     private ShadowDepthTarget? _target;
     private bool _disposed;
@@ -61,6 +74,13 @@ internal sealed class OpenGLShadowRenderer : IDisposable
         _skinnedModel = _skinned.GetUniformLocation("model");
         _skinnedLightMatrix = _skinned.GetUniformLocation("lightViewProjection");
         _skinnedBoneTexture = _skinned.GetUniformLocation("uBoneTexture");
+
+        _staticTiling = _static.GetUniformLocation("uTiling");
+        _staticDiffuse = _static.GetUniformLocation("uDiffuse");
+        _staticAlphaCutoff = _static.GetUniformLocation("uAlphaCutoff");
+        _skinnedTiling = _skinned.GetUniformLocation("uTiling");
+        _skinnedDiffuse = _skinned.GetUniformLocation("uDiffuse");
+        _skinnedAlphaCutoff = _skinned.GetUniformLocation("uAlphaCutoff");
     }
 
     /// <summary>The texture the receiver samples, or zero when nothing has been rendered.</summary>
@@ -131,6 +151,7 @@ internal sealed class OpenGLShadowRenderer : IDisposable
 
             _static.Use();
             GL.UniformMatrix4(_staticLightMatrix, false, ref lightMatrix);
+            GL.Uniform1(_staticDiffuse, (int)DiffuseTextureUnit);
 
             DrawStatic(casters, layer, frame, rendererData);
 
@@ -142,6 +163,7 @@ internal sealed class OpenGLShadowRenderer : IDisposable
             _skinned.Use();
             GL.UniformMatrix4(_skinnedLightMatrix, false, ref lightMatrix);
             GL.Uniform1(_skinnedBoneTexture, (int)BoneTextureUnit);
+            GL.Uniform1(_skinnedDiffuse, (int)DiffuseTextureUnit);
 
             DrawSkinned(casters, layer, frame, skinnedData);
         }
@@ -181,6 +203,7 @@ internal sealed class OpenGLShadowRenderer : IDisposable
             Matrix4 model = ToOpenTKMatrix(gameObject.Transform.GetModelMatrix());
 
             GL.UniformMatrix4(_staticModel, false, ref model);
+            UploadMaterial(renderer, _staticTiling, _staticAlphaCutoff);
             GL.BindVertexArray(data.VaoHandle);
             GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedInt, 0);
         }
@@ -219,6 +242,7 @@ internal sealed class OpenGLShadowRenderer : IDisposable
             Matrix4 model = ToOpenTKMatrix(gameObject.Transform.GetModelMatrix());
 
             GL.UniformMatrix4(_skinnedModel, false, ref model);
+            UploadMaterial(renderer, _skinnedTiling, _skinnedAlphaCutoff);
             GL.BindVertexArray(data.VaoHandle);
             GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedInt, 0);
         }
@@ -262,6 +286,39 @@ internal sealed class OpenGLShadowRenderer : IDisposable
         return centre.X + radius >= sliceMin.X && centre.X - radius <= sliceMax.X
             && centre.Y + radius >= sliceMin.Y && centre.Y - radius <= sliceMax.Y
             && centre.Z + radius >= sliceMin.Z && centre.Z - radius <= sliceMax.Z;
+    }
+
+    /// <summary>
+    /// Binds one caster's diffuse and uploads what the cutout test needs: its tiling and its threshold.
+    /// </summary>
+    /// <remarks>
+    /// A material with no texture still gets a bind — to zero — because the sampler is bound to unit 0 for the whole
+    /// program and a caster that discarded nothing would otherwise sample whatever the previous draw left there. With
+    /// nothing bound, OpenGL returns (0, 0, 0, 1): alpha 1, so the test passes and the caster is opaque, which is the
+    /// right answer for a material with no texture.
+    /// </remarks>
+    private static void UploadMaterial(MeshRenderer renderer, int tilingLocation, int cutoffLocation)
+    {
+        // A renderer built in code rather than loaded from a scene may not have a material yet. The colour pass
+        // already depends on it and would fail on the same renderer, so this is not a guard for a case that renders;
+        // it is what keeps the depth pass from being the first thing to throw.
+        Material? material = renderer.Material;
+
+        if (material?.Texture is OpenTKTexture texture)
+        {
+            texture.Bind(DiffuseTextureUnit);
+        }
+        else
+        {
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+        }
+
+        GL.Uniform2(
+            tilingLocation,
+            material?.TextureTiling.X ?? 1f,
+            material?.TextureTiling.Y ?? 1f);
+
+        GL.Uniform1(cutoffLocation, material?.AlphaCutoff ?? 0f);
     }
 
     /// <summary>

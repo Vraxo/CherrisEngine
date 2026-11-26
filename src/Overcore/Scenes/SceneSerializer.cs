@@ -274,6 +274,14 @@ public class SceneSerializer
             materialData["Shininess"] = mr.Material.Shininess;
         }
 
+        // Written only when set, like every other property here. A material with no cutoff is the common case, and
+        // `AlphaCutoff: 0` in every block of every scene would read like a decision to be opaque rather than like the
+        // absence of one.
+        if (mr.Material.AlphaCutoff > 0f)
+        {
+            materialData["AlphaCutoff"] = mr.Material.AlphaCutoff;
+        }
+
         meshRendererData["Material"] = materialData;
 
         // Written only when not the default, like every other property here. A renderer that casts and receives is

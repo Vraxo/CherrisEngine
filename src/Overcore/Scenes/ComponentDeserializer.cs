@@ -101,7 +101,8 @@ public static class ComponentDeserializer
             TextureTiling = GetVector2(matProps, "TextureTiling", Vector2.One),
             EmissiveColor = GetVector3(matProps, "EmissiveColor", Vector3.Zero),
             SpecularIntensity = GetFloat(matProps, "SpecularIntensity", 0.5f),
-            Shininess = GetFloat(matProps, "Shininess", 32.0f)
+            Shininess = GetFloat(matProps, "Shininess", 32.0f),
+            AlphaCutoff = GetFloat(matProps, "AlphaCutoff", 0f)
         };
 
         return material;

@@ -18,7 +18,12 @@ layout (location = 4) in vec4 aBones;
 layout (location = 5) in vec4 aWeights;
 
 uniform mat4 model;
+uniform vec2 uTiling;
 uniform mat4 lightViewProjection;
+
+// The diffuse texcoord, for the cutout test in the fragment stage. Declared for every skinned caster and used by the
+// ones whose material has a cutoff.
+out vec2 fsin_TexCoord;
 
 // Three texels per bone, one per column of the joint matrix. RGBA32F so a column is exact.
 uniform sampler2D uBoneTexture;
@@ -64,4 +69,5 @@ void main()
     vec3 skinnedPosition = vec3(vec4(aPosition, 1.0) * SkinMatrix());
 
     gl_Position = lightViewProjection * model * vec4(skinnedPosition, 1.0);
+    fsin_TexCoord = aTexCoord * uTiling;
 }

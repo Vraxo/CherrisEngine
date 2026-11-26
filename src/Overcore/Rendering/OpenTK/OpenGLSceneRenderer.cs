@@ -47,6 +47,7 @@ internal class OpenGLSceneRenderer : IDisposable
             public int Emissive;
             public int Specular;
             public int Shininess;
+            public int AlphaCutoff;
         }
 
         private struct DirLightUniforms
@@ -137,7 +138,8 @@ internal class OpenGLSceneRenderer : IDisposable
                 Tiling = Location("uTiling"),
                 Emissive = Location("uEmissive"),
                 Specular = Location("uMaterial.specularIntensity"),
-                Shininess = Location("uMaterial.shininess")
+                Shininess = Location("uMaterial.shininess"),
+                AlphaCutoff = Location("uAlphaCutoff")
             };
 
             _dirLight = new()
@@ -221,6 +223,10 @@ internal class OpenGLSceneRenderer : IDisposable
             GL.Uniform3(_material.Emissive, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
             GL.Uniform1(_material.Specular, material.SpecularIntensity);
             GL.Uniform1(_material.Shininess, material.Shininess);
+
+            // One value, two passes: the depth pass uploads the same number for the same material, which is what keeps
+            // a cutout object's shadow the shape of its holes rather than the shape of its quad.
+            GL.Uniform1(_material.AlphaCutoff, material.AlphaCutoff);
         }
 
         public void UploadLights(IReadOnlyList<Light> lights)

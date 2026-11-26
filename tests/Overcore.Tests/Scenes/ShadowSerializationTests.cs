@@ -226,6 +226,48 @@ public class ShadowSerializationTests
     }
 
     [Fact]
+    public void AMaterialsAlphaCutoffSurvivesASaveAndALoad()
+    {
+        // The material block is written by named keys rather than by reflection, so a property added to Material is
+        // written only if its own line is added on both sides — the same way CastShadows was lost before it had one.
+        Material fence = Untextured();
+        fence.AlphaCutoff = 0.5f;
+
+        GameObject gameObject = new("fence");
+        gameObject.AddComponent(new MeshRenderer
+        {
+            Mesh = Triangle(),
+            MeshName = "triangle",
+            Material = fence
+        });
+
+        string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
+
+        yaml.Should().Contain("AlphaCutoff");
+
+        MeshRenderer renderer = Loader().LoadSceneFromYaml(yaml)[0].GetComponent<MeshRenderer>()!;
+
+        renderer.Material.AlphaCutoff.Should().Be(0.5f);
+    }
+
+    [Fact]
+    public void AnOpaqueMaterialWritesNoCutoffAndComesBackOpaque()
+    {
+        GameObject gameObject = new("crate");
+        gameObject.AddComponent(new MeshRenderer
+        {
+            Mesh = Triangle(),
+            MeshName = "triangle",
+            Material = Untextured()
+        });
+
+        string yaml = new SceneSerializer().SerializeSceneToString([gameObject]);
+
+        yaml.Should().NotContain("AlphaCutoff");
+        Loader().LoadSceneFromYaml(yaml)[0].GetComponent<MeshRenderer>()!.Material.AlphaCutoff.Should().Be(0f);
+    }
+
+    [Fact]
     public void ALightKeepsItsShadowSettings()
     {
         GameObject sun = new("sun");

@@ -65,6 +65,11 @@ uniform vec3 uViewPos;
 uniform vec3 uEmissive;
 
 uniform Material uMaterial;
+
+// The cutout test's threshold, beside the rest of the material's uniforms rather than in the shadow block: it belongs
+// to the surface, and the depth pass reads the same value for the same material.
+uniform float uAlphaCutoff;
+
 uniform DirLight uDirLight;
 uniform bool uHasDirLight;
 
@@ -206,7 +211,17 @@ float ShadowFactor(vec3 worldPos, vec3 normal)
 
 void main()
 {
-    vec3 albedo = texture(uMaterial.texture_diffuse, fsin_TexCoord).rgb * fsin_Color.rgb;
+    vec4 diffuse = texture(uMaterial.texture_diffuse, fsin_TexCoord);
+
+    // The material's alpha cutoff, the same value the depth pass tests: a fence that is cut out here and solid in its
+    // shadow is worse than one that is solid in both, because it looks like a bug rather than like missing coverage.
+    // 0 disables the test, and `alpha < 0.0` is false for every alpha a texture can hold.
+    if (diffuse.a * fsin_Color.a < uAlphaCutoff)
+    {
+        discard;
+    }
+
+    vec3 albedo = diffuse.rgb * fsin_Color.rgb;
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(uViewPos - FragPos);
 
