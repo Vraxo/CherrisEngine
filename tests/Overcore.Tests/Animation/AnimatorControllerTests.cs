@@ -111,12 +111,15 @@ public class AnimatorControllerTests
     {
         AnimatorParameter grounded = new("Grounded", AnimatorParameterType.Bool);
 
-        new AnimatorCondition(grounded.Hash, AnimatorConditionMode.If, 0f).IsMetBy(grounded).Should().BeFalse();
+        AnimatorCondition isTrue = new(grounded.Hash, AnimatorConditionMode.If, 0f);
+        AnimatorCondition isFalse = new(grounded.Hash, AnimatorConditionMode.IfNot, 0f);
+
+        isTrue.IsMetBy(grounded).Should().BeFalse();
 
         grounded.BoolValue = true;
 
-        new AnimatorCondition(grounded.Hash, AnimatorConditionMode.If, 0f).IsMetBy(grounded).Should().BeTrue();
-        new AnimatorCondition(grounded.Hash, AnimatorConditionMode.IfNot, 0f).IsMetBy(grounded).Should().BeFalse();
+        isTrue.IsMetBy(grounded).Should().BeTrue();
+        isFalse.IsMetBy(grounded).Should().BeFalse();
     }
 
     [Fact]
@@ -124,13 +127,13 @@ public class AnimatorControllerTests
     {
         AnimatorParameter speed = new("Speed", AnimatorParameterType.Float) { FloatValue = 3.2f };
 
-        new AnimatorCondition(speed.Hash, AnimatorConditionMode.Greater, 3f).IsMetBy(speed).Should().BeTrue();
-        new AnimatorCondition(speed.Hash, AnimatorConditionMode.Less, 3f).IsMetBy(speed).Should().BeFalse();
-        new AnimatorCondition(speed.Hash, AnimatorConditionMode.Less, 4f).IsMetBy(speed).Should().BeTrue();
+        Condition(speed, AnimatorConditionMode.Greater, 3f).Should().BeTrue();
+        Condition(speed, AnimatorConditionMode.Less, 3f).Should().BeFalse();
+        Condition(speed, AnimatorConditionMode.Less, 4f).Should().BeTrue();
 
         // Exact comparison, because an int-backed condition is how a state picks one of a set.
-        new AnimatorCondition(speed.Hash, AnimatorConditionMode.Equals, 3.2f).IsMetBy(speed).Should().BeTrue();
-        new AnimatorCondition(speed.Hash, AnimatorConditionMode.NotEqual, 3.2f).IsMetBy(speed).Should().BeFalse();
+        Condition(speed, AnimatorConditionMode.Equals, 3.2f).Should().BeTrue();
+        Condition(speed, AnimatorConditionMode.NotEqual, 3.2f).Should().BeFalse();
     }
 
     [Fact]
@@ -138,26 +141,25 @@ public class AnimatorControllerTests
     {
         AnimatorParameter weapon = new("Weapon", AnimatorParameterType.Int) { IntValue = 2 };
 
-        new AnimatorCondition(weapon.Hash, AnimatorConditionMode.Equals, 2f).IsMetBy(weapon).Should().BeTrue();
-        new AnimatorCondition(weapon.Hash, AnimatorConditionMode.Equals, 1f).IsMetBy(weapon).Should().BeFalse();
-        new AnimatorCondition(weapon.Hash, AnimatorConditionMode.Greater, 1f).IsMetBy(weapon).Should().BeTrue();
+        Condition(weapon, AnimatorConditionMode.Equals, 2f).Should().BeTrue();
+        Condition(weapon, AnimatorConditionMode.Equals, 1f).Should().BeFalse();
+        Condition(weapon, AnimatorConditionMode.Greater, 1f).Should().BeTrue();
     }
 
     [Fact]
     public void AConditionOnAMissingParameter_FailsRatherThanThrowing()
     {
         // A controller that outlives a renamed parameter should stall, not take the frame down.
-        new AnimatorCondition(12345, AnimatorConditionMode.If, 0f)
-            .IsMetBy(null)
-            .Should()
-            .BeFalse();
+        AnimatorCondition condition = new(12345, AnimatorConditionMode.If, 0f);
+
+        condition.IsMetBy(null).Should().BeFalse();
     }
 
     [Fact]
     public void ATransitionWithNoConditions_IsAlwaysReady()
     {
         AnimatorController controller = new();
-        AnimatorTransition transition = new(new AnimatorState("Next"));
+        AnimatorTransition transition = new AnimatorTransition(new AnimatorState("Next"));
 
         transition.AreConditionsMet(controller.FindParameter).Should().BeTrue();
     }
@@ -169,7 +171,7 @@ public class AnimatorControllerTests
         AnimatorParameter speed = controller.AddParameter("Speed", AnimatorParameterType.Float);
         AnimatorParameter grounded = controller.AddParameter("Grounded", AnimatorParameterType.Bool);
 
-        AnimatorTransition transition = new(new AnimatorState("Run"))
+        AnimatorTransition transition = new AnimatorTransition(new AnimatorState("Run"))
             .When(speed.Hash, AnimatorConditionMode.Greater, 0.1f)
             .When(grounded.Hash, AnimatorConditionMode.If);
 
@@ -290,6 +292,14 @@ public class AnimatorControllerTests
         controller.FindState("Run")!.Hash.Should().Be(AnimatorController.StringToHash("Run"));
         controller.FindState("Missing").Should().BeNull();
         controller.StateNames().Should().ContainSingle().Which.Should().Be("Run");
+    }
+
+    /// <summary>Whether a condition against a threshold holds for a parameter, which is what every case here asks.</summary>
+    private static bool Condition(AnimatorParameter parameter, AnimatorConditionMode mode, float threshold)
+    {
+        AnimatorCondition condition = new(parameter.Hash, mode, threshold);
+
+        return condition.IsMetBy(parameter);
     }
 
     /// <summary>A one-bone clip whose height is constant, so a blend is a number to read off.</summary>
