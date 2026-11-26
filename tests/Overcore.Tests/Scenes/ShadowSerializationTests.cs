@@ -25,9 +25,38 @@ public class ShadowSerializationTests
     private static SceneLoader Loader()
     {
         SceneLoader loader = new(null!);
-        ComponentDeserializer.RegisterFactories(loader, null!);
+
+        // A real resource source, not null: the MeshRenderer factory asks it for the mesh and the texture by name, so a
+        // null here is a NullReferenceException inside the loader rather than a test failure with a message.
+        ComponentDeserializer.RegisterFactories(loader, new TestResources());
 
         return loader;
+    }
+
+    /// <summary>
+    /// Hands back one shared mesh and one shared texture for any name asked for.
+    /// </summary>
+    /// <remarks>
+    /// Any name, rather than only "triangle", because the loader asks for the names the file records and this test is
+    /// about the properties beside them. A stub that served one exact name would turn a rename into an unrelated
+    /// failure.
+    /// </remarks>
+    private sealed class TestResources : IResourceManager
+    {
+        private readonly Mesh _mesh = Triangle();
+        private readonly ITexture _texture = new FakeTexture();
+
+        public void LoadInitialAssets() { }
+
+        public Mesh GetMesh(string name) => _mesh;
+
+        public ITexture GetTexture(string name) => _texture;
+
+        public Skybox GetSkybox(string name) => throw new NotSupportedException("No shadow test loads a skybox.");
+
+        public AudioClip GetAudioClip(string name) => throw new NotSupportedException("No shadow test loads audio.");
+
+        public void Dispose() { }
     }
 
     [Fact]

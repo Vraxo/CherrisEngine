@@ -41,6 +41,28 @@ public class ShadowShaderTests
 
     private static string Read(string name) => File.ReadAllText(Path.Combine(ShaderDirectory(), name));
 
+    /// <summary>
+    /// The shader with its <c>//</c> comments removed, for the assertions that claim something is <em>absent</em>.
+    /// </summary>
+    /// <remarks>
+    /// A negative assertion against the raw text is an assertion about the prose too: the receiver's comment explains
+    /// that it does not use a <c>sampler2DArrayShadow</c>, and that sentence alone made the check fail on a shader that
+    /// was correct. Comments are where the reasoning lives, so they must not be able to fail a test that is about code.
+    /// </remarks>
+    private static string Code(string name)
+    {
+        IEnumerable<string> lines = Read(name)
+            .Split('\n')
+            .Select(line =>
+            {
+                int comment = line.IndexOf("//", StringComparison.Ordinal);
+
+                return comment >= 0 ? line[..comment] : line;
+            });
+
+        return string.Join('\n', lines);
+    }
+
     // ---------------------------------------------------------------- the palette constants
 
     [Theory]
@@ -104,7 +126,7 @@ public class ShadowShaderTests
     {
         // Deliberately absent: a static mesh pays nothing for a layout it never reads, which is the same reason the
         // colour pass has two programs rather than a branch.
-        string shader = Read("shadow.vert");
+        string shader = Code("shadow.vert");
 
         shader.Should().NotContain("layout (location = 4)");
         shader.Should().NotContain("uBoneTexture");
@@ -116,14 +138,14 @@ public class ShadowShaderTests
         // The framebuffer has no colour attachment, so an output here would be a shader that links but writes nowhere.
         foreach (string shader in new[] { "shadow.vert", "shadow_skinned.vert" })
         {
-            Read(shader).Should().NotContain("out vec4");
+            Code(shader).Should().NotContain("out vec4");
         }
     }
 
     [Fact]
     public void TheFragmentStageIsEmpty()
     {
-        string shader = Read("shadow.frag");
+        string shader = Code("shadow.frag");
 
         shader.Should().Contain("void main()");
         shader.Should().NotContain("gl_FragDepth", "the rasteriser's depth is the one that is wanted");
@@ -138,10 +160,10 @@ public class ShadowShaderTests
     {
         // GLSL 330 indexes an array of samplers only by a constant expression, so a run-time cascade index can only be
         // a layer of one texture. This is the constraint the whole storage choice is downstream of.
-        string source = Read(shader);
+        string source = Code(shader);
 
         source.Should().Contain("uniform sampler2DArray uShadowMap;");
-        source.Should().NotContain("sampler2DArrayShadow");
+        source.Should().NotContain("sampler2DArrayShadow", "a comparison sampler's mode is fixed at compile time, so Hard and Soft could not share a program");
     }
 
     [Theory]
@@ -151,7 +173,7 @@ public class ShadowShaderTests
     {
         // The ambient is deliberately untouched: a shadow that dimmed the ambient would make a corner go black rather
         // than shaded. Only CalcDirLight is multiplied by the shadow term.
-        string source = Read(shader);
+        string source = Code(shader);
 
         source.Should().Contain("CalcDirLight(uDirLight, norm, viewDir, albedo) * shadow;");
         source.Should().NotContain("CalcPointLight(uPointLights[i], norm, FragPos, viewDir, albedo) * shadow");
@@ -166,7 +188,7 @@ public class ShadowShaderTests
         // The one bug in this layer that is invisible: the fit's projection emits NDC depth in [0, 1] and OpenGL stores
         // (ndc + 1) / 2, so a receiver comparing raw NDC against the texture finds every fragment lit. Shadowed and lit
         // are the only two answers, so there is nothing half-working to notice.
-        string source = Read(shader);
+        string source = Code(shader);
 
         source.Should().Contain("float storedDepth = (projected.z + 1.0) * 0.5;");
         source.Should().Contain("step(storedDepth - bias");

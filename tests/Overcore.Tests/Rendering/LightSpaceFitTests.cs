@@ -187,9 +187,13 @@ public class LightSpaceFitTests
             farNdc = MathF.Max(farNdc, ndc);
         }
 
-        // The near end of the box is 0 and the far end is 1 — not -1 and 1.
-        nearNdc.Should().BeApproximately(0f, 0.01f, "the near plane maps to 0, so the buffer's near end is 0.5 once OpenGL remaps it");
-        farNdc.Should().BeApproximately(1f, 0.01f);
+        // What matters is the convention, not that a corner lands exactly on a plane: the box is padded past the slice
+        // (the eight corners are the slice's, and the fit adds a margin on every axis), so the slice's own corners sit
+        // strictly inside. Under Direct3D's convention the whole span is [0, 1]; under OpenGL's it would straddle zero
+        // and go negative, which is the half that would break the shader's `x2 + 1` remap.
+        nearNdc.Should().BeGreaterThanOrEqualTo(0f, "the near end is 0, not -1 — the buffer's near end is 0.5 once OpenGL remaps it");
+        farNdc.Should().BeLessThanOrEqualTo(1f + 0.0001f);
+        farNdc.Should().BeGreaterThan(0.5f, "the far end is at 1, so the stored span is [0.5, 1] and not a sliver near 0");
     }
 
     [Fact]

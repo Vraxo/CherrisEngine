@@ -23,7 +23,16 @@ public class ComponentPropertiesTests
             nameof(Light.AmbientStrength),
             nameof(Light.Range),
             nameof(Light.InnerConeAngle),
-            nameof(Light.OuterConeAngle));
+            nameof(Light.OuterConeAngle),
+
+            // The shadow settings, appended in declaration order. Listing them here rather than loosening the
+            // assertion is what makes the inspector's row order a decision instead of a consequence.
+            nameof(Light.Shadows),
+            nameof(Light.ShadowStrength),
+            nameof(Light.ShadowBias),
+            nameof(Light.ShadowNormalBias),
+            nameof(Light.ShadowNearPlane),
+            nameof(Light.ShadowResolution));
 
         properties.Single(property => property.Name == nameof(Light.Type)).Kind.Should().Be(PropertyKind.Choice);
         properties.Single(property => property.Name == nameof(Light.Intensity)).Kind.Should().Be(PropertyKind.Number);

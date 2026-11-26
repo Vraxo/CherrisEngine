@@ -517,7 +517,7 @@ is a scene that is simply, uniformly lit:
 | `uShadowNearPlane` | `float` | The first cascade's **near range**, in camera view depth — the value below which §6.3 takes no sample. Not `CascadeFit.NearPlane`, which is a distance along the light's axis and is a different quantity in a different space. |
 | `uShadowBias` / `uShadowNormalBias` | `float` | §6.1's two biases. |
 | `uShadowStrength` | `float` | §6.2's blend toward `1.0`. |
-| `uShadowSoftness` / `uShadowBlendBand` | `float` | §6.2 and §6.3. |
+| `uShadowSoftness` / `uShadowBlendBand` | `float` | The PCF tent's radius in texels and the cross-fade's fraction — `Shadows.PcfTexels` and `Shadows.BlendBand`, or `0` for a hard shadow. §6.2 says why they are constants rather than scene settings. |
 | `uShadowTexelSize` | `float` | World units per texel, per cascade packed into a `vec4`, for the normal offset. |
 | `uReceiveShadows` | `int` | `0` short-circuits the whole receiver. |
 | `uCameraForward` | `vec3` | The view depth's axis (§6.3). Already derivable from the existing view matrix, but uploaded so the shader does not invert a matrix per fragment. |

@@ -216,7 +216,12 @@ public class ShadowFrameTests
 
         // Twice the texels a side is half the world per texel, which is what makes the normal offset scale with the
         // resolution instead of detaching a shadow at exactly one of them.
-        (small.Cascades[0].TexelSize / 2f).Should().BeApproximately(large.Cascades[0].TexelSize, 0.001f);
+        //
+        // A ratio with a relative tolerance, not `small / 2 ≈ large`: the texel size is the box's extent over the map
+        // side, and the extent itself grows with the texel size (the fit pads the box by a texel on every axis so a
+        // caster on the boundary still lands inside). So the ratio is 2 and the difference is not exactly zero, which
+        // is a property of the fit rather than a rounding artefact to widen a tolerance around.
+        (small.Cascades[0].TexelSize / large.Cascades[0].TexelSize).Should().BeApproximately(2f, 0.01f);
     }
 
     // ---------------------------------------------------------------- the singleton
