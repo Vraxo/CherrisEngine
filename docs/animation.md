@@ -1,23 +1,24 @@
 # Animation & Skinning
 
-> **Status: increments 1 and 2 of 4 are implemented.** The importer, the skeleton data model, clip data, the 32-bit
-> index path, sampling into a pose, blending, wrap arithmetic, event dispatch and the frame step exist; the `Animator`
-> state machine and GPU skinning do not. §8 says exactly which is which, and the rest of this document is the contract
-> the remaining increments follow — the semantics, the file formats and the API shape — so that the code and its tests
-> have one ground truth to agree on, the way [`prefabs.md`](prefabs.md) and [`physics.md`](physics.md) do for the
-> layers that already exist.
+> **Status: all four increments are implemented.** The importer, the skeleton data model, clip data, the 32-bit index
+> path, sampling into a pose, blending, wrap arithmetic, event dispatch, the `Animator` state machine, and GPU skinning
+> on the OpenGL backend all exist. §8 says exactly what is and is not there — root motion, the `.controller` asset and
+> the Veldrid skinning path are the three things left — and the rest of this document is the contract those follow: the
+> semantics, the file formats and the API shape, so that the code and its tests have one ground truth to agree on, the
+> way [`prefabs.md`](prefabs.md) and [`physics.md`](physics.md) do for the layers that already exist.
 
-Overcore draws static geometry and nothing else: `ModelLoader` reads `POSITION`, `NORMAL` and `TEXCOORD_0` out of a
-glTF primitive and throws the node graph away, `Vertex` has no room for bone weights, and a scene frame has no step
-between `Update` and `LateUpdate` where a pose could be computed. A character cannot walk, a door cannot open and a
-camera cannot fly a path.
+Before this layer Overcore drew static geometry and nothing else: `ModelLoader` read `POSITION`, `NORMAL` and
+`TEXCOORD_0` out of a glTF primitive and threw the node graph away, `Vertex` had no room for bone weights, and a scene
+frame had no step between `Update` and `LateUpdate` where a pose could be computed. A character could not walk, a door
+could not open and a camera could not fly a path.
 
-This is the layer that fixes that. It is Unity's animation stack, reimplemented: a **clip** is keyframed curves, an
-**Animator** picks clips through a state machine, a **SkinnedMeshRenderer** deforms a mesh by a **skeleton** of
+This is the layer that changed that, and it is Unity's animation stack reimplemented: a **clip** is keyframed curves,
+an **Animator** picks clips through a state machine, a **SkinnedMeshRenderer** deforms a mesh by a **skeleton** of
 transforms, and animation **events** call back into scripts.
 
-Everything below except the two GPU passes is plain arithmetic over arrays, which is what makes it testable without a
-window, a context or a GPU — the same property that makes `tests/Overcore.Tests/World` cheap to run.
+Everything below except the skinning upload and the draw itself is plain arithmetic over arrays, which is what makes
+it testable without a window, a context or a GPU — the same property that makes `tests/Overcore.Tests/World` cheap to
+run, and the reason the palette packing is a separate, exhaustively tested type rather than a loop inside the renderer.
 
 ## 1. Import: a model is a hierarchy, not a bag of meshes
 
@@ -212,6 +213,23 @@ exactly the lighting `scene.frag` already does. One extra `DrawElements` path, n
 The palette is re-uploaded only when the pose changed since the last draw, so a static prop made of skinned parts
 costs nothing per frame.
 
+**A texel is a column of the joint matrix, not a row**, and that is the one detail worth being exact about because the
+wrong choice is silent for every unrotated bone. In this engine's row-vector order (`[x y z 1] * M`) a bone's
+translation lives in the fourth *row* — `M41`, `M42`, `M43`. Packing the first three rows and reconstructing the
+fourth column as `(0, 0, 0, 1)` therefore throws the translation away, and a skinned character rotates about the origin
+instead of moving with its bones. Packing the first three *columns* keeps the translation as the fourth component of
+each texel, and is what `mat4(column0, column1, column2, column3)` in GLSL already wants, so the shader reassembles the
+matrix with no transposition. The dropped column is still the affine `(0, 0, 0, 1)` one, so reconstructing it is safe.
+
+`BonePalette` does the packing as arithmetic over an array, which is what makes the half of skinning a shader depends
+on the half CI can check: the stride, the column order, the translation surviving, and a bind pose producing the
+identity for every bone. Only the upload itself is left to the eye.
+
+Two programs, not one with a branch. `scene.vert` declares no bone attributes at all, so a static vertex pays nothing
+for a fetch it never makes; `skin.vert` is the stage that reads locations four and five. A vertex with no weight at all
+takes the identity rather than a zero matrix, so a mesh with no bone data draws where it was modelled instead of
+collapsing to a point.
+
 ## 4. `Animator`: the state machine
 
 `Animator` owns a controller asset, a set of parameters, and the state machine that decides which clips run and how
@@ -399,10 +417,10 @@ The layer is being built in four increments. Three have landed; the files are na
 - `SkinnedMesh` links a mesh to its skeleton, and `ModelAssets` caches an import once per file so a resource manager
   can still resolve a mesh by the name a scene wrote.
 
-Two limits of that work are worth stating plainly. **Nothing deforms a vertex yet**: a skinned mesh draws at its bind
-pose, which is what the importer left its bones in, so a rigged character imports and animates nothing. And the
-**importer does not write `.anim`/`.controller` files** — clips live in memory, keyed by file and name, because
-serializing an object reference is its own piece of work (§6).
+Two limits of that work were worth stating plainly at the time. **Nothing deformed a vertex yet** — a skinned mesh drew
+at its bind pose, which is what the importer left its bones in — which increment 4 closed. And the **importer does not
+write `.anim`/`.controller` files**: clips live in memory, keyed by file and name, because serializing an object
+reference is its own piece of work (§6). That second limit still stands.
 
 ### Landed: increment 2 — sampling
 
@@ -428,9 +446,9 @@ serializing an object reference is its own piece of work (§6).
   `AdvanceLateUpdate()` — §4.4's placement, so a clip overrides a transform written in `Update` and a script reading
   the final pose in `LateUpdate` sees this frame's.
 
-A limit of the component is worth stating: **nothing deforms a vertex yet.** `Animation` moves the bone transforms a
-skeleton's joint palette is computed from, but no shader reads that palette, so a rigged character's transforms animate
-while its mesh still draws at its bind pose. Increment 4 is what closes that.
+A limit of the component was worth stating at the time: **nothing deformed a vertex yet.** `Animation` moved the bone
+transforms a skeleton's joint palette is computed from, but no shader read that palette, so a rigged character's
+transforms animated while its mesh still drew at its bind pose. Increment 4 closed that; the OpenGL backend now skins.
 
 ### Landed: increment 3 — the `Animator`
 
@@ -481,10 +499,31 @@ that would drive it (§5). The `.controller` file is still only a contract (§6)
 
 ### Then: increment 4 — GPU skinning
 
-### Then: increment 4 — GPU skinning
+### Landed: increment 4 — GPU skinning
 
-The skinning vertex shader and the bone-matrix texture. This is the only increment that needs a graphics context, and
-therefore the only one CI cannot check.
+- `BonePalette` packs a skeleton's joint matrices into the texture layout: three `RGBA32F` texels a bone, each a
+  **column** of the matrix, twelve floats instead of sixteen. A quarter less upload traffic on the one buffer that
+  changes every frame, and the column that is dropped is always the affine `(0, 0, 0, 1)` one.
+- `OpenGLBoneTexture` owns the texture handle and the upload; `OpenGLSkinnedMeshData` owns the geometry plus the
+  palette, and rebuilds the palette only when a joint actually moved. A character standing still costs one draw call
+  and no texture traffic.
+- `skin.vert` / `skin.frag` are a second program, not a branch in `scene.vert`: the static stage declares no bone
+  attributes, so a static vertex pays nothing. The skinning stage reconstructs the dropped column, blends four
+  influences by weight, normalizes them before use, and falls back to the identity for a vertex no bone moves.
+- `OpenGLSceneRenderer` draws a static pass and then a skinned pass, each with its own program and its own global
+  uniforms. The bone texture lives on unit 1, away from the material's diffuse on unit 0.
+- `MeshRenderer` carries a `SkinnedBackendData` slot beside `BackendData`, so a skinned mesh's palette state is not
+  thrown away by the geometry it shares with the static path.
+
+Three things this increment does **not** do, named so they are not mistaken for done:
+
+- **The Veldrid backend does not skin.** The editor runs OpenTK (`Program.cs`), and the Veldrid path is the alternate
+  one; a skinned mesh drawn there sits at its bind pose, and the first time it happens the renderer logs a warning
+  saying so rather than leaving a character quietly still.
+- **There is no frustum culling**, so `UpdateWhenOffscreen` is still ignored (§3.3).
+- **The shaders are the part CI cannot run.** Everything the shader depends on — the stride, the column order, the
+  translation surviving the round trip, bind pose producing the identity — is asserted against the shader source and
+  the packing code, but nothing here executes a draw. That is a real limit of the increment, not a gap papered over.
 
 ## 9. Honest gaps — what this is not
 
@@ -510,6 +549,12 @@ therefore the only one CI cannot check.
 - **Packed assets** (`Assets.pak`) can carry `.anim`/`.controller`, but a model imported from a pack gets no sibling
   files written — clips for a packed model must be packed alongside it, authored separately.
 - **No frustum culling**, so `UpdateWhenOffscreen` has nothing to skip (§3.3). When culling arrives, it belongs here.
+- **Skinning is OpenGL only.** The Veldrid backend has the static pipeline, so a skinned mesh drawn through it sits at
+  its bind pose. The editor runs OpenTK, and the renderer logs a warning the first time it happens rather than leaving a
+  character quietly still (§3.4).
+- **The shaders are never executed by the tests.** The stride, the column order, the translation and the bind-pose
+  identity are all asserted against the packing code and the shader source, but a draw needs a context. That is the one
+  part of this layer a green CI run does not prove.
 
 ## 10. What the tests pin
 
@@ -556,6 +601,15 @@ today (`✔`) and what the remaining increments add (`…`):
 | ✔ A blend tree sorts its entries, so a file may list them in any order | §4.3 |
 | ✔ `Normal` animators step before `LateUpdate`; `AnimatePhysics` ones step in the fixed step instead | the frame placement (§4.4) |
 | ✔ A damped `SetFloat` closes on its target without overshooting it | §4.1 |
+| ✔ A bone packs three texels of four floats, never a zero-width texture | the palette layout (§3.4) |
+| ✔ A packed texel is a matrix **column**, so a translation survives the round trip | the row/column order (§3.4) |
+| ✔ A translation lands in the fourth component of each column, and picks up no scale | the bug this pins (§3.4) |
+| ✔ Packing several bones lays them out back to back at `bone * 3` | the shader's stride (§3.4) |
+| ✔ A too-small palette buffer is refused, not overrun | §3.4 |
+| ✔ At bind pose the packed palette is the identity for every bone | §3.1's invariant, in the packed form |
+| ✔ The shader reads `bone * 3` and reassembles `mat4(column0, column1, column2, …)` | the CPU/GPU contract (§3.4) |
+| ✔ The static shader declares no bone attributes; the skinning one reads locations 4 and 5 | the two-program split (§3.4) |
+| ✔ An unweighted vertex takes the identity rather than a zero matrix | the "disappears to a point" failure (§3.2) |
 | ✔ A frame spanning three event times fires all three, in order | event dispatch (§2.4) |
 | ✔ An event fires once, not every frame the playhead sits past it | half-open intervals (§2.4) |
 | ✔ A frame that wrapped fires the events on both sides of the loop | loop dispatch (§2.4) |
@@ -584,6 +638,11 @@ today (`✔`) and what the remaining increments add (`…`):
 | ✔ `Animator` — the state machine and the frame step | `src/Overcore/Animation/Animator.cs` |
 | ✔ The physics-phase step | `src/Overcore/Scenes/Scene.cs` (`AdvanceAnimation`, `AdvancePhysicsAnimation`) |
 | … Controller asset (YAML) | `src/Overcore/Scenes/SceneSerializer.cs`, `SceneLoader.cs` |
-| … GL bone texture + skinning shaders | `src/Overcore/Rendering/OpenTK/OpenGLSkinnedMeshData.cs`, `EditorResources/Shaders/skin.*` |
+| ✔ The palette packing — texel stride, column order, identity fill | `src/Overcore/Animation/BonePalette.cs` |
+| ✔ The bone texture and its upload | `src/Overcore/Rendering/OpenTK/OpenGLBoneTexture.cs` |
+| ✔ Skinned draw state, palette rebuilt only when the pose moved | `src/Overcore/Rendering/OpenTK/OpenGLSkinnedMeshData.cs` |
+| ✔ The skinning shaders | `src/OvercoreEditor/EditorResources/Shaders/skin.vert`, `skin.frag` |
+| ✔ The static-then-skinned passes | `src/Overcore/Rendering/OpenTK/OpenGLSceneRenderer.cs` |
+| … Skinning on the Veldrid backend | `src/Overcore/Rendering/VeldridRenderer.cs` |
 | … Reading/writing `.anim`, `.controller` | `src/Overcore/Scenes/SceneSerializer.cs`, `SceneLoader.cs` |
 | … Inspector scrubber, state list | `src/OvercoreEditorSession/Scene/`, `src/OvercoreEditorPhotino/Components/` |
