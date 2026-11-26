@@ -16,7 +16,7 @@ The solution (`Overcore.slnx`) contains four production projects under `src`:
 
 ## 🔧 Capabilities
 
-- **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. A partial `Veldrid` backend exists in `Overcore`, though both the editor and runtime currently target `OpenTK`.
+- **Rendering**: OpenGL 4 pipeline (`OpenTK`) with directional, point, and spot lights, cubemap skyboxes, MSAA, bloom, and exposure post-processing. Nothing casts a shadow yet: the cascade splits and light-space fit exist as tested arithmetic (`Rendering/Shadows/`) and the contract for the passes that will use them is [Shadows](docs/shadows.md). A partial `Veldrid` backend exists in `Overcore`, though both the editor and runtime currently target `OpenTK`.
 - **Physics**: 60 Hz fixed-timestep rigid-body dynamics via `BepuPhysics` v2. `BoxCollider`, `SphereCollider` and `CapsuleCollider` are components of their own (a collider with no `RigidBody` is a fixed shape); `OnCollision*`/`OnTrigger*` callbacks, `Physics.Raycast`/`SphereCast`/`Overlap*` queries, layer collision matrix, friction and bounciness. See [Physics & Runtime Lifecycle](docs/physics.md).
 - **Audio**: 3D positional audio via OpenAL (`AudioListener` and `AudioSource`) supporting 8/16-bit mono and stereo `.wav` files.
 - **Scripting**: Dynamic C# script compilation via Roslyn (`Microsoft.CodeAnalysis.CSharp`), plus inspector attributes (`[Range]`, `[ColorUsage]`, `[DragDropTarget]`, `[HideInInspector]`).

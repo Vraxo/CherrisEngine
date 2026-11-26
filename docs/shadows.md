@@ -1,10 +1,11 @@
 # Shadows
 
-> **Status: contract, nothing implemented.** This document is the ground truth the shadow layer and its tests will
-> agree on, the way [`animation.md`](animation.md) is for skinning, [`physics.md`](physics.md) is for the simulation and
-> [`prefabs.md`](prefabs.md) is for asset identity. Every section below describes behaviour that does not exist yet;
-> §9 and §10 mark every entry `…` for that reason. The first three increments — cascade arithmetic, the depth pass, the
-> receiver — are what this is written to hand to.
+> **Status: increment 1 of 4 implemented — the arithmetic, and nothing that draws.** `CascadeSplits` (§3) and
+> `LightSpaceFit` (§4) exist with their tests in `tests/Overcore.Tests/Rendering`; every other section is still a
+> contract, and §9 and §10 mark those entries `…`. Nothing is uploaded, no depth texture exists and no shader samples
+> one, so a scene renders exactly as it did before. This document remains the ground truth the code and its tests agree
+> on, the way [`animation.md`](animation.md) is for skinning, [`physics.md`](physics.md) for the simulation and
+> [`prefabs.md`](prefabs.md) for asset identity.
 
 Before this layer Overcore lit everything as if nothing were ever in the way. `scene.frag` sums a directional term,
 up to four point lights and up to four spot lights over an albedo, and every surface it shades is lit through every
@@ -255,12 +256,27 @@ Three properties of that, each of which is the reason for the line above it:
 - **Only the centre is snapped**, and `x`/`y` alone. The depth extent is widened to cover the slice and never quantised:
   depth resolution is precious and there is no visual gain from snapping it.
 
-**The invariant:** for a camera that does not change its field of view or aspect and translates by less than one
-texel's worth of world space, the cascade's `lightView * lightProjection` matrix is **bit-identical**. That single assertion catches a snap applied in
-the wrong space, a snap applied before the fit instead of after, a snap that quantises depth, and a fit that silently
-depends on the camera's absolute position — which is the failure that only appears once a level is 20 km from the
-origin. It is this layer's equivalent of `palette * rendererWorld == identity` in the skinning layer, and it needs no
-GPU to check.
+Only `x` and `y` are quantised. Depth is left alone: it gains nothing from a texel grid, since the depth buffer's own
+resolution is what matters there, and quantising it pushes a corner out of the box on the one frame the rounding goes
+the wrong way.
+
+**The invariant, stated precisely,** because the looser version of this sentence is false and was written here first: a
+camera translating by less than one texel does *not* leave the whole matrix bit-identical — the box is anchored to the
+world, so the camera's distance along the light is a real change. What holds, and is what stops crawling, is three
+things:
+
+- **The extent, and therefore the texel size, is identical** for any camera translation that does not change the lens or
+  the cascade's depths. This is the property a fit read back from min/max would break.
+- **The snapped centre is always an exact whole number of texels** from the origin along each of the light's `x` and `y`
+  axes — not merely close to one.
+- **The snapped coordinate is a staircase.** As the camera moves, it holds still, then steps by exactly one whole texel
+  — it never takes a fractional value. A depth map anchored this way is identical for a whole band of camera positions
+  and then changes in one jump; the crawl this removes is a map that slides by a fraction of a texel every frame.
+
+Together those are what "the shadow does not crawl" means, and each is a plain assertion. They catch a snap applied
+before the fit instead of after, a snap in a mirrored basis, a snap that quantises depth, and a fit that depends on the
+camera's absolute position — the failure that only appears once a level is 20 km from the origin. This is the layer's
+equivalent of `palette * rendererWorld == identity` in the skinning layer, and it needs no GPU to check.
 
 ## 5. The depth pass
 
@@ -553,19 +569,21 @@ nothing in this document exists yet:
 
 | Test | Pins |
 | :--- | :--- |
-| … Four cascades split at 1/15, 3/15, 7/15 of the distance | §3.1's formula, against Unity's published `shadowCascade4Split` |
-| … Two cascades split at 1/3 | the same formula at `n = 2`, against `shadowCascade2Split` |
-| … Slice widths double: 1:2:4:8 | the property the split exists for |
-| … A split list out of order is clamped, not trusted | §3.2, and that a hand-edited file cannot divide by zero |
-| … A split list of the wrong length falls back to the derived default, with a warning | §3.2's recovery path |
+| ✔ Four cascades split at 1/15, 3/15, 7/15 of the distance | §3.1's formula, against Unity's published `shadowCascade4Split` |
+| ✔ Two cascades split at 1/3 | the same formula at `n = 2`, against `shadowCascade2Split` |
+| ✔ Slice widths double: 1:2:4:8 | the property the split exists for |
+| ✔ A split list out of order is clamped, not trusted | §3.2, and that a hand-edited file cannot divide by zero |
+| ✔ A split list of the wrong length falls back to the derived default, and says it did | §3.2's recovery path |
 | … A scene with no `Shadows` component gets 150 / 4 / the derived splits | that every existing `.yaml` still loads |
 | … Two `Shadows` components resolve to the first on an active, enabled object | §2.3's "exactly one is consulted" |
-| … The light's box contains all eight slice corners | §4.1, including the far slice's corners |
-| … A light pointing straight down does not produce a NaN matrix | gravity-vector up, §4.1 |
-| … The light matrix points the shadow away from the sun, not into it | the negated direction convention |
-| … A sub-texel camera translation leaves the cascade matrix bit-identical | texel snapping, §4.2 |
-| … Snapping never shrinks the box | that snapping widens and does not clip a caster out |
-| … Snapping leaves the depth extent unquantised | §4.2, the axis that is not snapped |
+| ✔ The light's box contains all eight slice corners, at every light angle and slice | §4.1 |
+| ✔ A light pointing straight down — or up — does not produce a NaN matrix | the degenerate up vector, §4.1 |
+| ✔ The light matrix points the shadow away from the sun, not into it | the negated direction convention |
+| ✔ The extent and texel size are identical for any camera translation that leaves the lens alone | the property a min/max fit breaks, §4.2 |
+| ✔ The snapped centre is an exact whole number of texels from the origin, on x and y | that the snap is a snap and not an approximation, §4.2 |
+| ✔ The snapped x is a staircase: still, then exactly one texel, never a fraction | §4.2's third clause, and that nothing jitters at a fraction of a texel |
+| ✔ The depth of the centre is not quantised | §4.2, the axis that is deliberately left alone |
+| ✔ The fit's basis is the view matrix's own, and `axisX` is the negation of `cross(up, forward)` | the mirrored-basis bug §4.1 names |
 | … A shadow framebuffer is refused, not rendered, when the status is incomplete | §5.1 |
 | … `shadow.vert` declares no `aBones` and no `uBoneTexture`; `shadow_skinned.vert` reads 4 and 5 | the two-program split, as `SkinningShaderTests` does for `scene.vert` / `skin.vert` |
 | … `shadow_skinned.vert` computes `bone * 3` and rebuilds `vec4(0.0, 0.0, 0.0, 1.0)` | that the palette contract of `skin.vert` is not forked |
@@ -584,11 +602,14 @@ nothing in this document exists yet:
 
 ## 10. Where the code lives
 
-Every entry is `…`, except the three pieces this layer reuses rather than adds.
+`✔` means it exists; `…` (no mark) means it is the increments still to come, and `✔` inside the path column means a
+piece this layer reuses rather than adds.
 
 | Piece | File |
 | :--- | :--- |
-| Split arithmetic, the light-space fit, texel snapping | `src/Overcore/Rendering/Shadows/CascadeSplits.cs`, `LightSpaceFit.cs` |
+| ✔ Split arithmetic, cascade ranges, the split sanitiser | `src/Overcore/Rendering/Shadows/CascadeSplits.cs` |
+| ✔ The slice's corners, the light-space fit, texel snapping | `src/Overcore/Rendering/Shadows/LightSpaceFit.cs` |
+| ✔ Their tests | `tests/Overcore.Tests/Rendering/CascadeSplitsTests.cs`, `LightSpaceFitTests.cs` |
 | The per-scene `Shadows` component and its defaults | `src/Overcore/Rendering/Shadows/Shadows.cs`, `src/Overcore/Scenes/ComponentDeserializer.cs`, `ComponentCatalog.cs` |
 | Per-light shadow properties | `src/Overcore/Rendering/Light.cs` |
 | Per-renderer casting and receiving modes | `src/Overcore/Rendering/MeshRenderer.cs` |
@@ -600,7 +621,7 @@ Every entry is `…`, except the three pieces this layer reuses rather than adds
 | The depth shaders | `src/OvercoreEditor/EditorResources/Shaders/shadow.vert`, `shadow_skinned.vert`, `shadow.frag` |
 | The receiver in the lit shaders | `src/OvercoreEditor/EditorResources/Shaders/scene.frag`, `skin.frag` |
 | Inspector rows for the new properties | `src/OvercoreEditor/Inspector/`, `src/OvercoreEditorSession/Scene/ComponentProperties.cs` |
-| The tests | `tests/Overcore.Tests/Rendering/ShadowCascadeTests.cs`, `ShadowShaderTests.cs` |
+| The depth-pass and shader tests | `tests/Overcore.Tests/Rendering/ShadowShaderTests.cs` |
 
 Beyond the components and the shaders, four existing files gain a line each: `ComponentCatalog.BuiltIn` needs a
 `Shadows` entry so either front end's Add Component menu can create one, `ComponentDeserializer.RegisterFactories`
