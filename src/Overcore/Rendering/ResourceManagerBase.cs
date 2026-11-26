@@ -1,6 +1,5 @@
 ﻿using Overcore.Components;
 using Overcore.Rendering;
-using Overcore.Utils;
 
 namespace Overcore.Core;
 
@@ -8,58 +7,32 @@ public abstract class ResourceManagerBase : IResourceManager
 {
     protected readonly Dictionary<string, Mesh> _meshes = [];
 
+    /// <summary>
+    /// A mesh by the name a scene uses: a built-in (<c>"Cube"</c>), or a model's mesh by its qualified key
+    /// (<c>"Assets/Models/Hero.gltf#Head"</c>) or a bare name the import owns.
+    /// </summary>
+    /// <remarks>
+    /// An import registers its meshes under both keys, so a file's single mesh is still reachable by its name. What
+    /// changed is that a name is no longer a wildcard into whichever file was opened last: the first import to claim a
+    /// bare name keeps it, which is what makes two models with a <c>"Body"</c> predictable rather than order-dependent.
+    /// </remarks>
     public Mesh? GetMesh(string name)
     {
-        if (_meshes.TryGetValue(name, out var mesh))
+        if (_meshes.TryGetValue(name, out Mesh? mesh))
         {
             return mesh;
         }
 
-        string[] parts = name.Split('#');
-        string filePathPart = parts[0];
+        Mesh? imported = ModelAssets.FindMesh(name);
 
-        if (filePathPart.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) ||
-            filePathPart.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+        if (imported is null)
         {
-            if (_meshes.Keys.Any(k => k.StartsWith(filePathPart + "#")))
-            {
-                Console.WriteLine($"[ResourceManager] Mesh '{name}' not found in already loaded file '{filePathPart}'.");
-                return null;
-            }
-
-            string? fullPath = ProjectFiles.Find(filePathPart);
-            if (fullPath is null)
-            {
-                Console.WriteLine($"[ResourceManager] Could not find model file for '{filePathPart}'.");
-                return null;
-            }
-
-            var loadedMeshes = ModelLoader.LoadMeshesFromFile(fullPath);
-            if (!loadedMeshes.Any())
-            {
-                Console.WriteLine($"[ResourceManager] No meshes found in model file '{fullPath}'.");
-                return null;
-            }
-
-            foreach (var (meshName, loadedMesh) in loadedMeshes)
-            {
-                string cacheKey = $"{filePathPart}#{meshName}";
-                _meshes[cacheKey] = loadedMesh;
-            }
-            Console.WriteLine($"[ResourceManager] Loaded and cached {loadedMeshes.Count} mesh(es) from '{filePathPart}'.");
-
-            if (_meshes.TryGetValue(name, out var finalMesh))
-            {
-                return finalMesh;
-            }
-
-            if (parts.Length == 1)
-            {
-                return loadedMeshes.Values.First();
-            }
+            return null;
         }
 
-        return null;
+        _meshes[name] = imported;
+
+        return imported;
     }
 
     public abstract void LoadInitialAssets();

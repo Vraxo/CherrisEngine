@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Veldrid;
 
 namespace Overcore.Components;
@@ -6,15 +6,29 @@ namespace Overcore.Components;
 public class Mesh
 {
     public Vertex[] Vertices { get; }
-    public ushort[] Indices { get; }
+    public uint[] Indices { get; }
     public BoundingBox AABB { get; }
 
-    public Mesh(Vertex[] vertices, ushort[] indices)
+    public Mesh(Vertex[] vertices, uint[] indices)
     {
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(indices);
+
         Vertices = vertices;
         Indices = indices;
         AABB = CalculateAABB();
     }
+
+    /// <summary>
+    /// True when the mesh has fewer than 65,536 vertices, so its indices fit in a 16-bit buffer — the choice a
+    /// backend makes between <c>UnsignedShort</c> and <c>UnsignedInt</c> draw calls.
+    /// </summary>
+    /// <remarks>
+    /// Indices are 32-bit because a character routinely passes 65,535 vertices once it is split into UV seams;
+    /// a <c>ushort</c> index array wrapped silently at that point and drew garbage. Small meshes still take the
+    /// narrow path, so nothing that fits in 16 bits pays for the width.
+    /// </remarks>
+    public bool UsesSixteenBitIndices => Vertices.Length <= ushort.MaxValue + 1;
 
     private BoundingBox CalculateAABB()
     {
@@ -79,7 +93,7 @@ public class Mesh
             new(new(+0.5f, -0.5f, -0.5f), new(0, 0, -1), RgbaFloat.White, new(0, 1)),
         };
 
-        ushort[] indices =
+        uint[] indices =
         {
             0,1,2, 0,2,3,
             4,5,6, 4,6,7,
@@ -106,7 +120,7 @@ public class Mesh
 
         // Reversed winding order to be visible with existing pipeline state.
         // The original order (0,1,2) was being culled.
-        ushort[] indices =
+        uint[] indices =
         {
             0,2,1, 0,3,2
         };

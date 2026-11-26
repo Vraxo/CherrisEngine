@@ -34,7 +34,7 @@ public class SkyboxRenderer
         _skyboxVertexBuffer = factory.CreateBuffer(new BufferDescription((uint)(Vertex.SizeInBytes * skyboxMesh.Vertices.Length), BufferUsage.VertexBuffer));
         gd.UpdateBuffer(_skyboxVertexBuffer, 0, skyboxMesh.Vertices);
 
-        _skyboxIndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(ushort) * skyboxMesh.Indices.Length), BufferUsage.IndexBuffer));
+        _skyboxIndexBuffer = factory.CreateBuffer(new BufferDescription((uint)(sizeof(uint) * skyboxMesh.Indices.Length), BufferUsage.IndexBuffer));
         gd.UpdateBuffer(_skyboxIndexBuffer, 0, skyboxMesh.Indices);
         _skyboxIndexCount = (uint)skyboxMesh.Indices.Length;
 
@@ -93,7 +93,7 @@ public class SkyboxRenderer
         }
 
         commandList.SetVertexBuffer(0, _skyboxVertexBuffer);
-        commandList.SetIndexBuffer(_skyboxIndexBuffer, IndexFormat.UInt16);
+        commandList.SetIndexBuffer(_skyboxIndexBuffer, IndexFormat.UInt32);
         commandList.SetPipeline(_skyboxPipeline);
         commandList.SetGraphicsResourceSet(0, _skyboxVpResourceSet);
         commandList.SetGraphicsResourceSet(1, textureSet);

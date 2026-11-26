@@ -40,4 +40,19 @@ public class MeshRenderer : Component, IDisposable
     {
         InvalidateBackendData();
     }
+
+    /// <summary>
+    /// A clone drops the backend handles it inherited. <see cref="PendingDestruction.CloneComponent"/> is a shallow
+    /// copy, so an instantiated object's renderer starts out holding the original's VAO and buffers; once the original
+    /// is destroyed those are gone, and the clone would draw from freed handles. Forgetting them here makes the
+    /// renderer build its own on the next frame, which is also what keeps two instances of one mesh from freeing each
+    /// other's GPU state.
+    /// </summary>
+    internal override void OnInstantiated()
+    {
+        base.OnInstantiated();
+
+        // Not InvalidateBackendData: that would dispose the handles the *original* is still drawing with.
+        BackendData = null;
+    }
 }

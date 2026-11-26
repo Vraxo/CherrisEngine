@@ -38,10 +38,15 @@ public partial class VeldridRenderer : IRenderer
     private void CreateResources()
     {
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
+        // Field order, not size: Veldrid walks the elements against the struct as laid out, so a missing element
+        // shifts every one after it and the mesh draws with garbage vertex data.
         VertexLayoutDescription vertexLayout = new(
             new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
+            new VertexElementDescription("Normal", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
             new VertexElementDescription("Color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
-            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2));
+            new VertexElementDescription("TexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2),
+            new VertexElementDescription("BoneIndices", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
+            new VertexElementDescription("BoneWeights", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4));
         _sampler = factory.CreateSampler(new SamplerDescription
         {
             AddressModeU = SamplerAddressMode.Wrap,

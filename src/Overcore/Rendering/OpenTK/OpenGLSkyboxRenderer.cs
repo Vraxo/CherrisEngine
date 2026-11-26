@@ -78,7 +78,7 @@ internal class OpenGLSkyboxRenderer : IDisposable
         GL.Uniform3(_skyGroundLoc, SkyGround);
 
         GL.BindVertexArray(_cubeData.VaoHandle);
-        GL.DrawElements(PrimitiveType.Triangles, _cubeData.IndexCount, DrawElementsType.UnsignedShort, 0);
+        GL.DrawElements(PrimitiveType.Triangles, _cubeData.IndexCount, DrawElementsType.UnsignedInt, 0);
 
         GL.BindVertexArray(0);
         GL.BindTexture(TextureTarget.TextureCubeMap, 0);

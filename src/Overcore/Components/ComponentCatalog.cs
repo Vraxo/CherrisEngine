@@ -33,7 +33,8 @@ public static class ComponentCatalog
         new Entry("Sphere Collider", typeof(SphereCollider)),
         new Entry("Capsule Collider", typeof(CapsuleCollider)),
         new Entry("Audio Source", typeof(AudioSource)),
-        new Entry("Audio Listener", typeof(AudioListener))
+        new Entry("Audio Listener", typeof(AudioListener)),
+        new Entry("Skinned Mesh", typeof(SkinnedMesh))
     ];
 
     /// <summary>
