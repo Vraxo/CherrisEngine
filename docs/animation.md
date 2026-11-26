@@ -141,10 +141,21 @@ vertexLocal    = Σ w[j] * (vertexLocal * jointMatrix[j])
 ```
 
 Written in the row-vector order this engine's `Matrix4x4` and `Transform` already use (`local * parent`), which is the
-same transform as the glTF specification's column-vector form with the multiplication order reversed. The reason a mesh
-drawn at its bind pose is pixel-identical to the unskinned mesh follows from it: every `jointMatrix` is the identity
-when the pose equals the bind pose. **That identity is the single most valuable
-test in this layer** — it catches a transposed matrix, a wrong multiplication order and a wrong bind inverse at once.
+same transform as the glTF specification's column-vector form with the multiplication order reversed.
+
+The reason a mesh drawn at its bind pose is pixel-identical to the unskinned mesh follows from it, with one detail worth
+being exact about: the palette is in the renderer's *parent* space, not its own, because a glTF `inverseBindMatrices`
+accessor holds each joint's inverse in the scene the file was authored in. The vertex therefore still takes the ordinary
+`model * view * projection` path — the palette is applied first, then the renderer's world matrix, as for any other mesh
+— and the invariant that makes bind pose a no-op is
+
+```
+jointMatrix[j] * rendererWorld == identity    (when the pose equals the bind pose)
+```
+
+At the origin this is the stronger and simpler "every `jointMatrix` is the identity"; off the origin only the pair
+collapses. **That cancellation is the single most valuable test in this layer** — it catches a transposed matrix, a
+wrong multiplication order, a wrong bind inverse and a renderer term baked in at the wrong end, all at once.
 
 Bone matrices are rebuilt from the pose on the CPU once per frame and only for bones whose world transform actually
 changed; a 60-bone character on a clip touching 12 bones costs 12 matrix products, not 60.
@@ -152,9 +163,15 @@ changed; a 60-bone character on a clip touching 12 bones costs 12 matrix product
 ### 3.2 Influences
 
 Four bones per vertex, as in Unity's default `SkinnedMeshRenderer` quality and glTF's `JOINTS_0`/`WEIGHTS_0`. Weights
-are normalized on import (a `WEIGHTS_0` accessor with `normalized: true` is rescaled from its integer storage), and a
-vertex whose weights sum to zero is pinned to bone `0` rather than collapsing to the origin — the failure mode that
-makes an imported character disappear to a point.
+are normalized on import, and a vertex whose weights sum to zero is pinned to bone `0` rather than collapsing to the
+origin — the failure mode that makes an imported character disappear to a point.
+
+The storage formats are part of the contract, not an implementation detail. A conforming file stores `JOINTS_0` as
+`UNSIGNED_BYTE` or `UNSIGNED_SHORT` — never a float — and `WEIGHTS_0` as either float or integer with `normalized:
+true`, where the four weights of a vertex sum to 255 (`UNSIGNED_BYTE`) or 65535 (`UNSIGNED_SHORT`). The importer reads
+each accessor through its declared encoding, so both integer forms arrive as ordinary `0..1` weights. Slots that carry
+no weight are dropped and the survivors compacted to the front, which keeps a shader from multiplying by a
+zero-weighted bone left at index `0`.
 
 A mesh that needs more than four influences is imported at four: the smallest weights are dropped and the rest
 re-normalized. That is a real, visible difference from a source file that meant it; §9 says so.
@@ -366,8 +383,9 @@ The layer is being built in four increments. This is the state of each, and the 
 - `ModelImporter` reads a `.gltf`/`.glb` into **objects**: one `GameObject` per glTF node, parented to match the node
   graph, local TRS taken from the file. The old `ModelLoader`, which flattened a file into a name → mesh dictionary,
   is gone.
-- `Vertex` carries four bone indices and four weights, read from `JOINTS_0`/`WEIGHTS_0`, normalized on import, with a
-  zero-weight vertex pinned to bone 0 instead of collapsing to the origin.
+- `Vertex` carries four bone indices and four weights, read from `JOINTS_0`/`WEIGHTS_0` through their declared
+  encoding (integer or normalized-integer storage included), normalized on import, with a vertex weighted to no bone
+  at all pinned to bone 0 instead of collapsing to the origin.
 - `Mesh.Indices` is `uint[]`, and the OpenGL, Veldrid and skybox paths draw 32-bit indices. A model past 65,535
   vertices no longer wraps its index array.
 - `Skeleton` holds the bones and their inverse bind matrices, and computes the joint matrix palette. A mesh drawn at
@@ -431,11 +449,12 @@ today (`✔`) and what the remaining increments add (`…`):
 
 | Test | Pins |
 | :--- | :--- |
-| ✔ Pose at bind pose → every joint matrix is identity | matrix order, bind inverse direction (§3.1) |
-| ✔ The joint palette cancels a renderer that is not at the origin | the renderer term is not baked into the pose |
+| ✔ Pose at bind pose → every joint matrix is identity at the origin | matrix order, bind inverse direction (§3.1) |
+| ✔ The joint palette cancels a renderer that is not at the origin (`palette * rendererWorld == I`) | the renderer term is applied at the right end (§3.1) |
 | ✔ Node graph survives import, mesh node keeps its parent and local TRS | the whole point of §1 |
 | ✔ Winding is reversed on import | the engine's clockwise front faces (§1) |
-| ✔ Four weights normalize to one; a zero-weight vertex pins to bone 0 | §3.2 |
+| ✔ Four weights normalize to one; slots with no weight compact to the front | §3.2 |
+| ✔ A vertex weighted to no bone at all pins to bone 0 | §3.2 |
 | ✔ Curve keys stay sorted when a file lists them out of order | key bracketing (§2.1) |
 | ✔ A repeated key time does not divide by zero | the degenerate segment (§2.1) |
 | ✔ `Loop` folds past the end, including negative time; `PingPong` reverses | wrap math (§2.3) |

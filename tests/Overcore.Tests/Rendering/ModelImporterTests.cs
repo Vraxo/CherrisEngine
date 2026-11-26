@@ -13,9 +13,14 @@ namespace Overcore.Tests.Rendering;
 
 /// <summary>
 /// The importer, exercised on a GLB written by hand into a byte array: no asset on disk, no graphics context, no
-/// scene. The fixture is a two-node hierarchy whose leaf carries a triangle, four bones per vertex, and a
-/// three-key translation channel — enough to pin the hierarchy, the vertex attributes, the winding and the clip
-/// addressing all at once.
+/// scene. The fixture is a four-joint rig whose mesh node carries a triangle and a three-key translation channel —
+/// enough to pin the hierarchy, the vertex attributes, the winding and the clip addressing all at once.
+/// <para>
+/// The bytes are laid out the way an exporter lays them out, not the way a test finds convenient: <c>JOINTS_0</c> is
+/// <c>UNSIGNED_BYTE</c>, <c>WEIGHTS_0</c> is <c>UNSIGNED_BYTE</c> normalized, and every weight quad sums to 255.
+/// SharpGLTF reads files in strict mode and rejects anything else, so a fixture that only looks valid would fail to
+/// load before the importer was ever reached.
+/// </para>
 /// </summary>
 public class ModelImporterTests
 {
@@ -26,19 +31,27 @@ public class ModelImporterTests
         new(0f, 1f, 0f)
     ];
 
-    /// <summary>Four influences per vertex, deliberately not normalized, so normalizing is observable.</summary>
-    private static readonly Vector4[] Joints =
+    /// <summary>
+    /// Bone indices per vertex, stored the way a real file stores them: four unsigned bytes, each naming a joint. The
+    /// glTF specification allows only <c>UNSIGNED_BYTE</c> or <c>UNSIGNED_SHORT</c> here, never a float.
+    /// </summary>
+    private static readonly byte[] Joints =
     [
-        new(0f, 1f, 2f, 3f),
-        new(0f, 1f, 2f, 3f),
-        new(0f, 1f, 2f, 3f)
+        0, 1, 2, 3,
+        0, 1, 2, 3,
+        0, 1, 2, 3
     ];
 
-    private static readonly Vector4[] Weights =
+    /// <summary>
+    /// Weights per vertex, stored the way a real file stores them: four normalized unsigned bytes that sum to 255 for
+    /// every vertex. Vertex 1 splits its weight between bones 1 and 2 and leaves the outer slots at zero, so the
+    /// importer's compaction is observable; vertex 2 rides bone 0 alone.
+    /// </summary>
+    private static readonly byte[] Weights =
     [
-        new(1f, 1f, 1f, 1f),
-        new(0f, 2f, 2f, 0f),
-        new(0f, 0f, 0f, 0f)
+        64, 64, 64, 63,
+        0, 127, 128, 0,
+        255, 0, 0, 0
     ];
 
     private static readonly float[] Times = [0f, 0.5f, 1f];
@@ -89,7 +102,7 @@ public class ModelImporterTests
 
         skinned.Should().NotBeNull();
         skinned.Skeleton.Should().NotBeNull();
-        skinned.Skeleton!.Bones.Should().HaveCount(2);
+        skinned.Skeleton!.Bones.Should().HaveCount(4);
     }
 
     [Fact]
@@ -104,22 +117,27 @@ public class ModelImporterTests
     }
 
     [Fact]
-    public void ImportMesh_RenormalizesBoneWeights_AndPinsAZeroWeightVertexToBoneZero()
+    public void ImportMesh_DecodesNormalizedByteWeights_AndKeepsOnlyTheInfluencesThatCarryWeight()
     {
         ImportedModel imported = ModelImporter.Import(ReadFixture(), "fixture.glb")!;
 
         Vertex[] vertices = imported.Meshes["Tri"].Vertices;
 
-        // Vertex 0: four equal weights.
+        // A real file stores weights as four unsigned bytes normalized to 255, not as floats. The bytes 64, 64, 64, 63
+        // therefore have to arrive as four weights of roughly a quarter — reading them as floats would produce
+        // denormal garbage near zero and skin the whole mesh into the origin.
         Sum(vertices[0].BoneWeights).Should().BeApproximately(1f, 1e-5f);
-        vertices[0].BoneWeights.X.Should().BeApproximately(0.25f, 1e-5f);
+        vertices[0].BoneWeights.X.Should().BeApproximately(64f / 255f, 1e-5f);
         vertices[0].BoneIndices.Should().Be(new Vector4(0f, 1f, 2f, 3f));
 
-        // Vertex 1: two weights of 2, which normalize to 0.5 each rather than staying at 2.
+        // Vertex 1 carries weight on bones 1 and 2 only. The empty slots are dropped and the survivors compacted to
+        // the front, so a shader that reads all four slots never multiplies by a zero-weighted bone at index zero.
+        vertices[1].BoneIndices.Should().Be(new Vector4(1f, 2f, 0f, 0f));
         Sum(vertices[1].BoneWeights).Should().BeApproximately(1f, 1e-5f);
-        vertices[1].BoneWeights.X.Should().BeApproximately(0.5f, 1e-5f);
+        vertices[1].BoneWeights.X.Should().BeApproximately(127f / 255f, 1e-5f);
+        vertices[1].BoneWeights.Y.Should().BeApproximately(128f / 255f, 1e-5f);
 
-        // Vertex 2: no weight at all. It is pinned to bone 0 instead of collapsing to the origin.
+        // A vertex weighted to one bone rides it with the whole weight, and is never left collapsed to the origin.
         vertices[2].BoneWeights.Should().Be(new Vector4(1f, 0f, 0f, 0f));
         vertices[2].BoneIndices.Should().Be(Vector4.Zero);
     }
@@ -148,6 +166,24 @@ public class ModelImporterTests
         height.Evaluate(0.75f, AnimationInterpolation.Linear).Should().BeApproximately(1.5f, 1e-5f);
 
         clip.Length.Should().BeApproximately(1f, 1e-5f);
+    }
+
+    /// <remarks>
+    /// A file cannot carry an all-zero weight quad — glTF requires the four weights to sum to one — but a hand-built
+    /// mesh or a future blend tree can, so the pinning is exercised here rather than through the fixture.
+    /// </remarks>
+    [Fact]
+    public void NormalizeInfluences_PinsAVertexWithNoWeightAtAllToBoneZero()
+    {
+        (Vector4 indices, Vector4 weights) = ModelImporter.NormalizeInfluences(
+            Vector4.Zero,
+            [new Vector4(3f, 2f, 1f, 0f)],
+            0);
+
+        // Full weight on bone zero rather than a zero weight everywhere, which would divide the vertex by nothing and
+        // collapse the whole mesh to a point at the renderer's origin.
+        weights.Should().Be(new Vector4(1f, 0f, 0f, 0f));
+        indices.Should().Be(Vector4.Zero);
     }
 
     [Fact]
@@ -226,10 +262,14 @@ public class ModelImporterTests
     private static float Sum(Vector4 value) => value.X + value.Y + value.Z + value.W;
 
     /// <summary>Reads a hand-written GLB: Root -> Body, a triangle with four influences and a translation channel.</summary>
+    /// <remarks>
+    /// Every JOINTS_0 component has to name a joint that exists — SharpGLTF rejects the file otherwise — which is why
+    /// the skin declares four joints even though the animation only drives a body and a root.
+    /// </remarks>
     private static ModelRoot ReadFixture() => ModelRoot.ParseGLB(new ArraySegment<byte>(BuildGlb()));
 
     /// <summary>
-    /// Writes a valid binary glTF file: a JSON chunk describing two nodes, a mesh with one triangle, a two-joint
+    /// Writes a valid binary glTF file: a JSON chunk describing six nodes, a mesh with one triangle, a four-joint
     /// skin, and one animation; then a binary chunk holding exactly the bytes those accessors point at.
     /// </summary>
     private static byte[] BuildGlb()
@@ -238,11 +278,12 @@ public class ModelImporterTests
         int positionOffset = 0;
         int positionLength = Positions.Length * 12;
 
+        // Four unsigned bytes per vertex, so the buffer views are as long as the arrays themselves.
         int jointsOffset = positionOffset + positionLength;
-        int jointsLength = Joints.Length * 16;
+        int jointsLength = Joints.Length;
 
         int weightsOffset = jointsOffset + jointsLength;
-        int weightsLength = Weights.Length * 16;
+        int weightsLength = Weights.Length;
 
         int indicesOffset = weightsOffset + weightsLength;
         int indicesLength = 3 * 4;
@@ -254,15 +295,15 @@ public class ModelImporterTests
         int translationsLength = Translations.Length * 12;
 
         int bindOffset = translationsOffset + translationsLength;
-        int bindLength = 2 * 64;
+        int bindLength = 4 * 64;
 
         int binaryLength = bindOffset + bindLength;
 
         byte[] binary = new byte[binaryLength];
 
         WriteVector3Array(binary, positionOffset, Positions);
-        WriteVector4Array(binary, jointsOffset, Joints);
-        WriteVector4Array(binary, weightsOffset, Weights);
+        Array.Copy(Joints, 0, binary, jointsOffset, Joints.Length);
+        Array.Copy(Weights, 0, binary, weightsOffset, Weights.Length);
 
         WriteUInt32(binary, indicesOffset, 0);
         WriteUInt32(binary, indicesOffset + 4, 1);
@@ -271,9 +312,11 @@ public class ModelImporterTests
         WriteFloatArray(binary, timesOffset, Times);
         WriteVector3Array(binary, translationsOffset, Translations);
 
-        // Two identity inverse bind matrices: the bones are at the origin in bind pose.
-        WriteIdentityMatrix(binary, bindOffset);
-        WriteIdentityMatrix(binary, bindOffset + 64);
+        // One identity inverse bind matrix per joint: the bones are at the origin in bind pose.
+        for (int joint = 0; joint < 4; joint++)
+        {
+            WriteIdentityMatrix(binary, bindOffset + (joint * 64));
+        }
 
         string json = $$"""
         {
@@ -281,8 +324,12 @@ public class ModelImporterTests
           "scene": 0,
           "scenes": [ { "nodes": [0] } ],
           "nodes": [
-            { "name": "Root", "children": [1] },
-            { "name": "Body", "translation": [0, 1, 0], "mesh": 0, "skin": 0 }
+            { "name": "Root", "children": [1, 2, 3, 4, 5] },
+            { "name": "Body", "translation": [0, 1, 0], "mesh": 0, "skin": 0 },
+            { "name": "Hips" },
+            { "name": "Spine" },
+            { "name": "Arm" },
+            { "name": "Hand" }
           ],
           "meshes": [
             {
@@ -296,7 +343,7 @@ public class ModelImporterTests
             }
           ],
           "skins": [
-            { "name": "Rig", "joints": [0, 1], "inverseBindMatrices": 6 }
+            { "name": "Rig", "joints": [2, 3, 4, 5], "inverseBindMatrices": 6 }
           ],
           "animations": [
             {
@@ -307,12 +354,12 @@ public class ModelImporterTests
           ],
           "accessors": [
             { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0] },
-            { "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC4" },
-            { "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4" },
+            { "bufferView": 1, "componentType": 5121, "count": 3, "type": "VEC4" },
+            { "bufferView": 2, "componentType": 5121, "normalized": true, "count": 3, "type": "VEC4" },
             { "bufferView": 3, "componentType": 5125, "count": 3, "type": "SCALAR" },
             { "bufferView": 4, "componentType": 5126, "count": 3, "type": "SCALAR", "min": [0], "max": [1] },
             { "bufferView": 5, "componentType": 5126, "count": 3, "type": "VEC3" },
-            { "bufferView": 6, "componentType": 5126, "count": 2, "type": "MAT4" }
+            { "bufferView": 6, "componentType": 5126, "count": 4, "type": "MAT4" }
           ],
           "bufferViews": [
             { "buffer": 0, "byteOffset": {{positionOffset}}, "byteLength": {{positionLength}} },
@@ -371,18 +418,6 @@ public class ModelImporterTests
             WriteFloat(target, offset + 4, value.Y);
             WriteFloat(target, offset + 8, value.Z);
             offset += 12;
-        }
-    }
-
-    private static void WriteVector4Array(byte[] target, int offset, Vector4[] values)
-    {
-        foreach (Vector4 value in values)
-        {
-            WriteFloat(target, offset, value.X);
-            WriteFloat(target, offset + 4, value.Y);
-            WriteFloat(target, offset + 8, value.Z);
-            WriteFloat(target, offset + 12, value.W);
-            offset += 16;
         }
     }
 

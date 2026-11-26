@@ -29,14 +29,16 @@ public class SkeletonTests
 
         Matrix4x4 joint = skeleton.GetJointMatrix(0, Matrix4x4.Identity);
 
-        joint.Should().Be(Matrix4x4.Identity);
+        // A bind inverse times the same matrix is the identity only up to float rounding, so it is compared with the
+        // same tolerance the other cases use.
+        AssertIdentity(joint);
     }
 
     [Fact]
-    public void GetJointMatrix_IsTheIdentity_WhenTheBoneIsUnderANonIdentityRenderer()
+    public void GetJointMatrix_LeavesTheBindPoseUntouched_WhenTheRendererSitsSomewhere()
     {
-        // The renderer itself sits somewhere in the world; the joint matrix is expressed in its space, so the
-        // renderer's own transform must cancel out rather than being baked into the deformation.
+        // The renderer itself sits somewhere in the world. The palette is scene-space, so what has to come out even is
+        // jointMatrix * rendererWorld: the vertex gets carried back to exactly where it was modelled.
         GameObject renderer = new("Renderer");
         renderer.Transform.Position = new Vector3(-4f, 0.5f, 9f);
         renderer.Transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.25f);
@@ -50,9 +52,13 @@ public class SkeletonTests
         Skeleton skeleton = new();
         skeleton.AddBone(bone, bindInverse);
 
-        Matrix4x4 joint = skeleton.GetJointMatrix(0, renderer.Transform.GetModelMatrix());
+        Matrix4x4 rendererWorld = renderer.Transform.GetModelMatrix();
 
-        AssertIdentity(joint);
+        Matrix4x4 joint = skeleton.GetJointMatrix(0, rendererWorld);
+
+        // jointMatrix alone is inverse(rendererWorld) here, which is a rotation and so not the identity; the vertex
+        // transform that matters is the pair.
+        AssertIdentity(joint * rendererWorld);
     }
 
     [Fact]

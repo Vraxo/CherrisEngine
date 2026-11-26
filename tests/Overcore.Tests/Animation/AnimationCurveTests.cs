@@ -107,8 +107,10 @@ public class AnimationCurveTests
         curve.AddKey(new AnimationKey(0f, 0f, 0f, 1f));
         curve.AddKey(new AnimationKey(1f, 1f, 0f, 0f));
 
-        // At the midpoint the Hermite segment sits at exactly one half for these values.
-        curve.Evaluate(0.5f, AnimationInterpolation.Cubic).Should().BeApproximately(0.5f, 1e-5f);
+        // At the midpoint the Hermite basis is h00=0.5, h10=0.125, h01=0.5, h11=-0.125, so these values give
+        // 0.5*0 + 0.125*1 + 0.5*1 + (-0.125)*0 = 0.625. The outgoing slope lifts the curve above the straight line
+        // and the incoming flat tangent brings it back to 1 at the end.
+        curve.Evaluate(0.5f, AnimationInterpolation.Cubic).Should().BeApproximately(0.625f, 1e-5f);
 
         // The slope is positive throughout: the value rises rather than dipping.
         curve.Evaluate(0.25f, AnimationInterpolation.Cubic)

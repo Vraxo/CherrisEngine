@@ -51,19 +51,28 @@ public class Skeleton
     }
 
     /// <summary>
-    /// The matrix a vertex weighted to <paramref name="boneIndex"/> is multiplied by, in the renderer's local space:
+    /// The matrix a vertex weighted to <paramref name="boneIndex"/> is multiplied by:
     /// <c>inverseBindMatrix * boneWorld * inverse(rendererWorld)</c>.
     /// </summary>
-    /// <remarks>
-    /// Written in the row-vector order <see cref="Matrix4x4"/> and <see cref="Transform"/> already
-    /// use (<c>local * parent</c>), not the column-vector order the glTF specification writes it in. The two are
-    /// the same transform; only the multiplication order differs.
-    /// </remarks>
     /// <param name="boneIndex">Index into <see cref="Bones"/>.</param>
-    /// <param name="rendererWorld">The skinned object's world matrix — the space the result is expressed in.</param>
+    /// <param name="rendererWorld">The skinned object's world matrix.</param>
     /// <remarks>
-    /// The result is the identity when the bone sits where the bind pose put it, which is the property the tests pin:
-    /// a transposed matrix, a reversed multiplication order or a missing inverse all break it.
+    /// <para>
+    /// Written in the row-vector order <see cref="Matrix4x4"/> and <see cref="Transform"/> already use
+    /// (<c>local * parent</c>), not the column-vector order the glTF specification writes it in. The two are the same
+    /// transform; only the multiplication order differs.
+    /// </para>
+    /// <para>
+    /// The result is in the renderer's <em>parent</em> space, not its own, because that is the space a glTF
+    /// <c>inverseBindMatrices</c> accessor is written in: the inverse of each joint's transform in the scene the file
+    /// was authored in. Cancelling the renderer's world out here is what lets the vertex then take the same
+    /// <c>model * view * projection</c> path as every other mesh instead of needing a second one.
+    /// </para>
+    /// <para>
+    /// The invariant that follows is <c>jointMatrix * rendererWorld == identity</c> at bind pose: the bone sits where
+    /// the bind pose put it, so the vertex lands exactly where it was modelled. A transposed matrix, a reversed
+    /// multiplication order or a missing inverse all break that, which is what the tests pin.
+    /// </para>
     /// </remarks>
     public Matrix4x4 GetJointMatrix(int boneIndex, Matrix4x4 rendererWorld)
     {
