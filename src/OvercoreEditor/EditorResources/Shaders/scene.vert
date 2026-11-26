@@ -4,6 +4,9 @@ layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec4 aColor;
 layout (location = 3) in vec2 aTexCoord;
 
+// Locations 4 and 5 carry bone indices and weights for a skinned mesh. This shader does not declare them, so the
+// static pipeline pays nothing for a layout it never reads; skin.vert is the stage that does.
+
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;

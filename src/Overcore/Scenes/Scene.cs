@@ -415,6 +415,71 @@ public class Scene : IDisposable
                         $"[Scene] Exception in AnimationPlayer.Advance() on '{gameObject.Name}': {ex.Message}");
                 }
             }
+
+            // An Animator that asked for the physics phase is stepped by OnFixedStep instead, so it is skipped here
+            // rather than advanced twice in one frame.
+            foreach (Animator animator in gameObject.GetComponents<Animator>().ToList())
+            {
+                if (animator.IsDestroyed || !animator.IsActive ||
+                    animator.UpdateMode == AnimatorUpdateMode.AnimatePhysics)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    animator.Advance(animator.UpdateMode == AnimatorUpdateMode.UnscaledTime
+                        ? Time.UnscaledDeltaTime
+                        : deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(
+                        $"[Scene] Exception in Animator.Advance() on '{gameObject.Name}': {ex.Message}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Advances the animators that asked for the physics phase, once per fixed step and after the step's physics.
+    /// </summary>
+    /// <remarks>
+    /// This is what a pose that drives colliders needs: an AnimationMode of <c>AnimatePhysics</c> means the pose is
+    /// computed on the fixed clock, so a hitbox moved by a clip lands on the same schedule the solver runs on.
+    /// </remarks>
+    /// <param name="step">The step's length in seconds.</param>
+    private void AdvancePhysicsAnimation(float step)
+    {
+        int count = GameObjects.Count;
+
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject gameObject = GameObjects[index];
+
+            if (!gameObject.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (Animator animator in gameObject.GetComponents<Animator>().ToList())
+            {
+                if (animator.IsDestroyed || !animator.IsActive ||
+                    animator.UpdateMode != AnimatorUpdateMode.AnimatePhysics)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    animator.Advance(step);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(
+                        $"[Scene] Exception in Animator.Advance() on '{gameObject.Name}': {ex.Message}");
+                }
+            }
         }
     }
 
@@ -497,6 +562,8 @@ public class Scene : IDisposable
                 }
             }
         }
+
+        AdvancePhysicsAnimation(step);
 
         _ = step;
     }

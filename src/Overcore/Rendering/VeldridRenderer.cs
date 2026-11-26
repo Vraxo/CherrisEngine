@@ -1,4 +1,5 @@
 ﻿using Overcore.Components;
+using Overcore.Core.Logging;
 using Overcore.Rendering;
 using System.Numerics;
 using Veldrid;
@@ -65,11 +66,27 @@ public partial class VeldridRenderer : IRenderer
         _bloomRenderer = new BloomRenderer(_graphicsDevice);
         OnWindowResized();
     }
+    /// <summary>
+    /// Set once, so a scene full of skinned meshes logs a line rather than one per object per frame.
+    /// </summary>
+    private bool _warnedAboutSkinning;
+
     private VeldridMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
     {
         if (mr.BackendData is VeldridMeshRendererData data)
         {
             return data;
+        }
+
+        // The Veldrid backend has the static pipeline only: a skinned mesh drawn here sits at its bind pose, because
+        // this path never reads a bone palette. Saying so once beats a character that quietly does not move.
+        if (!_warnedAboutSkinning && mr.GameObject?.GetComponent<SkinnedMesh>() is not null)
+        {
+            _warnedAboutSkinning = true;
+
+            Logger.Warning(
+                "[Veldrid] Skinned meshes draw at their bind pose on this backend. " +
+                "GPU skinning is implemented for the OpenGL backend; see docs/animation.md section 3.4.");
         }
         var newData = new VeldridMeshRendererData(_graphicsDevice, mr, _sceneRenderer.TextureLayout, _sceneRenderer.MaterialLayout, _sampler);
         mr.BackendData = newData;
