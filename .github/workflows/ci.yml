@@ -32,45 +32,58 @@ jobs:
 
       - run: dotnet test --no-build --logger "trx;LogFileName=tests.trx"
 
-      # Every compiler error and warning, as an annotation on the pull request. `dotnet build` stops at the first
-      # project that fails, so a build break in Overcore hides everything downstream of it; the annotations make
-      # the diagnostics visible without a log download.
+      # Every error the build printed, as an annotation on the pull request. `dotnet build` stops at the first
+      # project that fails, so a break in Overcore hides everything downstream; and a headless session cannot read
+      # the step's log. Restore failures ("error NU1101") have no file or line, which is why the fallback below
+      # annotates the raw line rather than only matching "<file>(<line>,<col>): error CS####: <message>".
       - name: Report build errors
         if: failure()
         run: |
           python3 - <<'PY'
           import os
           import re
-          import sys
 
           if not os.path.exists('build.log'):
               print('::error title=Build::dotnet build produced no log to read.')
-              sys.exit(0)
+              raise SystemExit(0)
 
-          # MSBuild diagnostics: "path(line,col): error CS1234: message [project]"
-          pattern = re.compile(r'^(?P<file>.+?\(\d+,\d+\)):\s(?P<level>error|warning)\s+(?P<code>[A-Z]+\d+):\s(?P<message>.+?)(?:\s\[(?P<project>[^\]]+)\])?$')
+          with open('build.log', encoding='utf-8', errors='replace') as log:
+              lines = [line.rstrip('\n') for line in log]
+
+          # MSBuild diagnostics carry a file and position; anything else that says "error" is annotated as-is.
+          located = re.compile(r'^(?P<file>.+?\(\d+,\d+\)):\s(?:error|warning)\s(?P<code>[A-Z]+\d+):\s(?P<message>.+)$')
 
           reported = set()
 
-          with open('build.log', encoding='utf-8', errors='replace') as log:
-              for line in log:
-                  match = pattern.match(line.strip())
+          for line in lines:
+              text = line.strip()
 
-                  if not match:
-                      continue
+              if not text:
+                  continue
 
-                  if match['level'] != 'error':
-                      continue
+              match = located.match(text)
 
-                  key = (match['code'], match['file'], match['message'])
+              if match:
+                  code = match['code']
+                  detail = f"{match['message']} ({match['file']})"
+              elif re.search(r'\berror\b\s*[A-Z]+\d*\s*:', text, re.IGNORECASE) or text.startswith('error '):
+                  code = 'Build'
+                  detail = text
+              else:
+                  continue
 
-                  if key in reported:
-                      continue
+              if detail in reported:
+                  continue
 
-                  reported.add(key)
-                  location = match['file'].replace('\\', '/').split('/')[-1]
-                  print(f"::error title={match['code']} in {location}::{match['message']} ({match['file']})")
+              reported.add(detail)
+              print(f'::error title={code}::{detail[:900]}')
 
+              if len(reported) >= 50:
+                  break
+
+          # The last few lines say how the build ended, which is often the most useful thing of all.
+          tail = ' | '.join(line.strip() for line in lines[-8:] if line.strip())
+          print(f'::error title=Build tail::{tail[:900]}')
           print(f'{len(reported)} build error(s) reported.')
           PY
 
