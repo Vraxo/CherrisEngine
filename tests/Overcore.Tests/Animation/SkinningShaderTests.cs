@@ -13,14 +13,24 @@ public class SkinningShaderTests
 {
     // ---------------------------------------------------------------- the palette constants
 
-    [Theory]
-    [InlineData("skin.vert")]
-    [InlineData("scene.vert")]
-    public void TheBoneTextureIsThreeTexelsPerBone_AsThePalettePacks(string shader)
+    [Fact]
+    public void TheBoneTextureIsThreeTexelsPerBone_AsThePalettePacks()
     {
         // The shader computes `bone * 3`. If either side changed that stride, every bone after the first would read
-        // another bone's matrix.
-        Shader(shader).Should().Contain("bone * 3");
+        // another bone's matrix. Only the skinning stage reads the palette; the static one declares no bones at all.
+        Shader("skin.vert").Should().Contain("bone * 3");
+        Shader("skin.vert").Should().Contain($"bone * {BonePalette.TexelsPerBone}");
+    }
+
+    [Fact]
+    public void TheShaderReassemblesTheColumnsThePalettePacks()
+    {
+        // A texel is a column, so GLSL's mat4(column0, column1, column2, column3) is the matrix itself. Reading the
+        // texels as rows would transpose every bone and shear a rotating limb.
+        string shader = Shader("skin.vert");
+
+        shader.Should().Contain("mat4(column0, column1, column2, vec4(0.0, 0.0, 0.0, 1.0))");
+        shader.Should().NotContain("row0");
     }
 
     [Fact]

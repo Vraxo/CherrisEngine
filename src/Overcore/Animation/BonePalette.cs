@@ -56,10 +56,10 @@ public static class BonePalette
     /// <param name="jointMatrices">One matrix per bone, in bone order — what <see cref="Skeleton.GetJointMatrices"/> returns.</param>
     /// <param name="destination">The array the texels are written into.</param>
     /// <remarks>
-    /// Written in the row-vector order the engine uses (<c>local * parent</c>), so row one of a matrix is
-    /// <c>(M11, M12, M13, M14)</c>. The shader reconstructs the fourth column as <c>(0, 0, 0, 1)</c> because an affine
-    /// transform always has it, then does <c>dot(texel, position)</c> for each row — which is the matrix product with
-    /// the multiplication order reversed, and therefore the same transform.
+    /// Each texel is a column of the matrix. In the row-vector order the engine uses (<c>local * parent</c>) the
+    /// translation sits in the fourth row <c>(M41, M42, M43)</c>, which is exactly the fourth component of the first
+    /// three columns — so a column pack carries it and a row pack would not. The shader reconstructs the fourth
+    /// column as <c>(0, 0, 0, 1)</c>, because an affine transform always has it.
     /// </remarks>
     public static int Pack(IReadOnlyList<Matrix4x4> jointMatrices, float[] destination)
     {
@@ -81,10 +81,11 @@ public static class BonePalette
         {
             Matrix4x4 matrix = jointMatrices[bone];
 
-            // Row-vector order, so a row of the matrix becomes a texel the shader dots against the position.
-            Write(destination, ref written, matrix.M11, matrix.M12, matrix.M13, matrix.M14);
-            Write(destination, ref written, matrix.M21, matrix.M22, matrix.M23, matrix.M24);
-            Write(destination, ref written, matrix.M31, matrix.M32, matrix.M33, matrix.M34);
+            // A column becomes a texel. In row-vector order the translation is the fourth row, so it survives here
+            // as the fourth component of each column; packing rows would drop it.
+            Write(destination, ref written, matrix.M11, matrix.M21, matrix.M31, matrix.M41);
+            Write(destination, ref written, matrix.M12, matrix.M22, matrix.M32, matrix.M42);
+            Write(destination, ref written, matrix.M13, matrix.M23, matrix.M33, matrix.M43);
         }
 
         return written;
@@ -114,9 +115,9 @@ public static class BonePalette
 
         for (int bone = 0; bone < boneCount; bone++)
         {
-            Write(destination, ref written, identity.M11, identity.M12, identity.M13, identity.M14);
-            Write(destination, ref written, identity.M21, identity.M22, identity.M23, identity.M24);
-            Write(destination, ref written, identity.M31, identity.M32, identity.M33, identity.M34);
+            Write(destination, ref written, identity.M11, identity.M21, identity.M31, identity.M41);
+            Write(destination, ref written, identity.M12, identity.M22, identity.M32, identity.M42);
+            Write(destination, ref written, identity.M13, identity.M23, identity.M33, identity.M43);
         }
 
         return written;
