@@ -641,7 +641,8 @@ needs no GPU and no display. Three things about it are worth knowing:
   `release-assets.githubusercontent.com`, which the environment this was written in cannot reach; `codeload.github.com`
   is reachable wherever the workflow runs, so `curl | tar` a tag and build it. `-DENABLE_OPT=0` is what makes that
   cheap: it drops the SPIRV-Tools submodule you need to *emit* SPIR-V and not at all to say whether a shader is
-  well-formed, and the build goes from a 90 MB clone to about fifty seconds.
+  well-formed, and the build goes from a 90 MB clone to about fifty seconds. The binary is cached on the glslang
+  version alone — 50 s on a miss, 0 s on a hit — and the check itself is 1 s either way.
 - The pairs are listed explicitly. A directory full of stages says nothing about which vertex stage belongs with which
   fragment stage, and `shadow.frag` is linked twice — against `shadow.vert` and against `shadow_skinned.vert` — so the
   list is per *program*, not per file. `tests/Overcore.Tests/Rendering/ShadowShaderTests.cs` reads that list out of
