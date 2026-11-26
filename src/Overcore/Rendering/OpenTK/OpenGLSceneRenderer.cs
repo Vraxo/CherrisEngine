@@ -1,4 +1,5 @@
-﻿using Overcore.Components;
+using Overcore.Animation;
+using Overcore.Components;
 using Overcore.Core;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -12,6 +13,15 @@ internal class OpenGLSceneRenderer : IDisposable
     private const int MaxSpotLights = 4;
 
     private readonly ShaderProgram _shader;
+
+    /// <summary>
+    /// The skinning program: the same lighting, with the bone palette applied in the vertex stage. A separate program
+    /// rather than a branch, because the branch would cost every static vertex a texture fetch it never uses.
+    /// </summary>
+    private readonly ShaderProgram _skinnedShader;
+
+    /// <summary>The unit the bone palette lives on. Away from texture 0, which the material's diffuse texture owns.</summary>
+    private const TextureUnit BoneTextureUnit = TextureUnit.Texture1;
 
     private struct MatrixUniforms
     {
@@ -61,6 +71,8 @@ internal class OpenGLSceneRenderer : IDisposable
     private readonly MatrixUniforms _matrices;
     private readonly MaterialUniforms _material;
     private readonly DirLightUniforms _dirLight;
+
+    private readonly int _boneTextureLocation;
 
     private readonly int _numPointLightsLoc;
     private readonly PointLightUniforms[] _pointLights = new PointLightUniforms[MaxPointLights];
@@ -112,6 +124,11 @@ internal class OpenGLSceneRenderer : IDisposable
             };
         }
 
+        _skinnedShader = ShaderProgram.FromFiles("Shaders/skin.vert", "Shaders/skin.frag")
+                      ?? throw new InvalidOperationException("Failed to load skinning shaders.");
+
+        _boneTextureLocation = _skinnedShader.GetUniformLocation("uBoneTexture");
+
         _numSpotLightsLoc = _shader.GetUniformLocation("uNumSpotLights");
         for (int i = 0; i < MaxSpotLights; i++)
         {
@@ -131,11 +148,31 @@ internal class OpenGLSceneRenderer : IDisposable
 
     public void Render(IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, Matrix4 view, Matrix4 projection)
     {
-        _shader.Use();
+        // Materialised once: each pass walks the list, and the scene's objects are a live collection a script may
+        // have added to this frame.
+        List<GameObject> objects = [.. gameObjects];
+        List<Light> lit = [.. lights];
+
+        // One program per pass, because a shader program's uniforms belong to it: the global block is uploaded twice,
+        // which is a handful of calls against a per-object rebind of every light and matrix.
+        BeginPass(_shader, view, projection, lit);
+        DrawObjects(objects);
+
+        BeginPass(_skinnedShader, view, projection, lit);
+
+        // The palette lives on its own unit, so it is named once for the program rather than per draw.
+        GL.Uniform1(_boneTextureLocation, (int)BoneTextureUnit);
+
+        DrawSkinnedObjects(objects);
+    }
+
+    /// <summary>Binds a program and gives it the frame's matrices and lights.</summary>
+    private void BeginPass(ShaderProgram program, Matrix4 view, Matrix4 projection, List<Light> lights)
+    {
+        program.Use();
 
         SetupGlobalUniforms(view, projection);
         UploadLights(lights);
-        DrawObjects(gameObjects);
     }
 
     private void SetupGlobalUniforms(Matrix4 view, Matrix4 projection)
@@ -201,29 +238,72 @@ internal class OpenGLSceneRenderer : IDisposable
         }
     }
 
-    private void DrawObjects(IEnumerable<GameObject> gameObjects)
+    private void DrawObjects(List<GameObject> objects)
     {
-        foreach (var go in gameObjects)
+        foreach (GameObject go in objects)
         {
-            var mr = go.GetComponent<MeshRenderer>();
-
-            // Skip switched-off objects, disabled renderers, invalid meshes and skyboxes (drawn by SkyboxRenderer)
-            if (mr?.Mesh is null || !mr.Enabled || !go.ActiveInHierarchy || go.GetComponent<Skybox>() is not null)
+            // A skinned mesh is drawn by the other pass, through the program that reads its bones.
+            if (go.GetComponent<SkinnedMesh>() is not null
+                || go.GetComponent<MeshRenderer>() is not { } renderer
+                || renderer.Mesh is null
+                || !renderer.Enabled
+                || !go.ActiveInHierarchy
+                || go.GetComponent<Skybox>() is not null)
             {
                 continue;
             }
 
-            DrawSingleObject(go, mr);
+            DrawSingleObject(go, renderer);
         }
     }
 
-    private void DrawSingleObject(GameObject go, MeshRenderer mr)
+    /// <summary>
+    /// Draws the objects a <see cref="SkinnedMesh"/> marks, through the skinning program. The palette is uploaded only
+    /// when the pose moved, so a character standing still costs one draw call and no texture traffic.
+    /// </summary>
+    private void DrawSkinnedObjects(List<GameObject> objects)
     {
-        var data = GetOrCreateBackendData(mr);
-        var mat = mr.Material;
+        foreach (GameObject go in objects)
+        {
+            if (go.GetComponent<SkinnedMesh>()?.Skeleton is not { } skeleton
+                || go.GetComponent<MeshRenderer>() is not { } renderer
+                || renderer.Mesh is null
+                || !renderer.Enabled
+                || !go.ActiveInHierarchy
+                || go.GetComponent<Skybox>() is not null)
+            {
+                continue;
+            }
 
-        // Texture binding
-        if (mat.Texture is OpenTKTexture glTexture)
+            OpenGLSkinnedMeshData data = GetOrCreateSkinnedData(renderer, skeleton);
+
+            // The skeleton resolves its joint matrices against the renderer's world, which is what puts the palette
+            // in the renderer's parent space and lets the vertex take the ordinary model path afterwards.
+            data.UpdatePalette(skeleton, go.Transform.GetModelMatrix());
+            data.BoneTexture.Bind();
+
+            DrawBound(go, renderer, data.VaoHandle, data.IndexCount);
+
+            CheckGLError($"Draw skinned '{go.Name}'");
+        }
+    }
+
+    private void DrawSingleObject(GameObject go, MeshRenderer renderer)
+    {
+        OpenGLMeshRendererData data = GetOrCreateBackendData(renderer);
+
+        DrawBound(go, renderer, data.VaoHandle, data.IndexCount);
+
+        CheckGLError($"Draw '{go.Name}'");
+    }
+
+    /// <summary>Uploads an object's material and model, then draws its bound vertex array.</summary>
+    private void DrawBound(GameObject go, MeshRenderer renderer, int vaoHandle, int indexCount)
+    {
+        Material material = renderer.Material;
+
+        // Texture binding. The material's diffuse owns unit 0; the bone palette owns unit 1.
+        if (material.Texture is OpenTKTexture glTexture)
         {
             glTexture.Bind(TextureUnit.Texture0);
         }
@@ -232,20 +312,33 @@ internal class OpenGLSceneRenderer : IDisposable
             GL.BindTexture(TextureTarget.Texture2D, 0);
         }
 
-        // Material uniforms
-        var model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
+        Matrix4 model = ToOpenTKMatrix(go.Transform.GetModelMatrix());
+
         GL.UniformMatrix4(_matrices.Model, false, ref model);
-        GL.Uniform2(_material.Tiling, mat.TextureTiling.X, mat.TextureTiling.Y);
-        GL.Uniform3(_material.Emissive, mat.EmissiveColor.X, mat.EmissiveColor.Y, mat.EmissiveColor.Z);
-        GL.Uniform1(_material.Specular, mat.SpecularIntensity);
-        GL.Uniform1(_material.Shininess, mat.Shininess);
+        GL.Uniform2(_material.Tiling, material.TextureTiling.X, material.TextureTiling.Y);
+        GL.Uniform3(_material.Emissive, material.EmissiveColor.X, material.EmissiveColor.Y, material.EmissiveColor.Z);
+        GL.Uniform1(_material.Specular, material.SpecularIntensity);
+        GL.Uniform1(_material.Shininess, material.Shininess);
 
-        // Draw call
-        GL.BindVertexArray(data.VaoHandle);
-        GL.DrawElements(PrimitiveType.Triangles, data.IndexCount, DrawElementsType.UnsignedInt, 0);
+        GL.BindVertexArray(vaoHandle);
+        GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0);
         GL.BindVertexArray(0);
+    }
 
-        CheckGLError($"Draw '{go.Name}'");
+    private OpenGLSkinnedMeshData GetOrCreateSkinnedData(MeshRenderer renderer, Skeleton skeleton)
+    {
+        // Keyed off the renderer, like the static data: a clone drops it in OnInstantiated and builds its own.
+        if (renderer.SkinnedBackendData is OpenGLSkinnedMeshData existing && existing.BoneCapacity == skeleton.BoneCount)
+        {
+            return existing;
+        }
+
+        (renderer.SkinnedBackendData as IDisposable)?.Dispose();
+
+        OpenGLSkinnedMeshData created = new(renderer.Mesh, skeleton.BoneCount, BoneTextureUnit);
+        renderer.SkinnedBackendData = created;
+
+        return created;
     }
 
     private OpenGLMeshRendererData GetOrCreateBackendData(MeshRenderer mr)
@@ -284,6 +377,7 @@ internal class OpenGLSceneRenderer : IDisposable
     public void Dispose()
     {
         _shader.Dispose();
+        _skinnedShader.Dispose();
     }
 }
 

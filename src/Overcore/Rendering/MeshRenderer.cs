@@ -30,10 +30,21 @@ public class MeshRenderer : Component, IDisposable
     [HideInInspector]
     public object? BackendData { get; set; }
 
+    /// <summary>
+    /// The skinning backend's state: the bone texture and the palette buffer, which a static mesh has no use for.
+    /// Kept apart from <see cref="BackendData"/> so a mesh that gains or loses a skeleton does not throw away the
+    /// vertex buffers it shares between both paths.
+    /// </summary>
+    [HideInInspector]
+    public object? SkinnedBackendData { get; set; }
+
     private void InvalidateBackendData()
     {
         (BackendData as IDisposable)?.Dispose();
+        (SkinnedBackendData as IDisposable)?.Dispose();
+
         BackendData = null;
+        SkinnedBackendData = null;
     }
 
     public void Dispose()
@@ -54,5 +65,6 @@ public class MeshRenderer : Component, IDisposable
 
         // Not InvalidateBackendData: that would dispose the handles the *original* is still drawing with.
         BackendData = null;
+        SkinnedBackendData = null;
     }
 }
