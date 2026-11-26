@@ -88,6 +88,11 @@ public class Light : Component
     [Range(0f, 10f, 0.01f)]
     public float ShadowNearPlane { get; set; } = 0.2f;
 
-    /// <summary>This light's shadow-map size, unless the scene's <c>Shadows</c> component overrides it.</summary>
+    /// <summary>
+    /// This light's shadow-map size. The one setting that decides it: the scene's <c>Shadows</c> component has no
+    /// resolution of its own, because a map belongs to the light that casts into it, and a scene-level value that only
+    /// the one directional light ever read would be a setting with a single reader. <c>ShadowFrame.Build</c> takes an
+    /// explicit override for tests, which is not a scene feature.
+    /// </summary>
     public ShadowResolution ShadowResolution { get; set; } = ShadowResolution.High;
 }
