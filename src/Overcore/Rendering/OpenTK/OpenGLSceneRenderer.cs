@@ -20,6 +20,12 @@ internal class OpenGLSceneRenderer : IDisposable
     private const TextureUnit BoneTextureUnit = TextureUnit.Texture1;
 
     /// <summary>
+    /// The shadow map's unit. Beside the other two rather than inside <c>Program</c>, because the outer class binds and
+    /// unbinds it as well as the program that samples it.
+    /// </summary>
+    private const TextureUnit ShadowMapTextureUnit = TextureUnit.Texture2;
+
+    /// <summary>
     /// One shader program and the uniform locations that belong to it. Locations are indices into a <em>specific</em>
     /// program, so the static and skinning programs each need their own set: sharing one cache would upload the view
     /// matrix to whatever the other program happens to keep at that index.
@@ -108,9 +114,6 @@ internal class OpenGLSceneRenderer : IDisposable
         }
 
         private readonly ShadowUniforms _shadow;
-
-        /// <summary>The units the receiver's inputs own. Away from the material (0) and the palette (1).</summary>
-        public const TextureUnit ShadowMapTextureUnit = TextureUnit.Texture2;
 
         /// <summary>One cascade's four matrices, uploaded as one array. Shared, because it is per frame.</summary>
         private readonly float[] _shadowMatrixScratch = new float[MaxShadowCascades * 16];
