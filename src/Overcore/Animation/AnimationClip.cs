@@ -236,15 +236,7 @@ public class AnimationClip
 
             if (curves.HasRotation)
             {
-                Quaternion rotation = new(
-                    curves.Evaluate(curves.Rotation, AnimationAxis.X, time, current.Rotation.X),
-                    curves.Evaluate(curves.Rotation, AnimationAxis.Y, time, current.Rotation.Y),
-                    curves.Evaluate(curves.Rotation, AnimationAxis.Z, time, current.Rotation.Z),
-                    curves.Evaluate(curves.Rotation, AnimationAxis.W, time, current.Rotation.W));
-
-                // Normalized because a component-wise sample of four independently interpolated axes is no longer a
-                // unit quaternion, and a non-unit rotation shears the mesh it drives.
-                sampled.Rotation = rotation.Length() <= 0f ? Quaternion.Identity : Quaternion.Normalize(rotation);
+                sampled.Rotation = curves.EvaluateRotation(time, current.Rotation);
             }
 
             if (curves.HasScale)
@@ -286,6 +278,63 @@ public class AnimationClip
             axes.TryGetValue(axis, out AnimationCurve? curve)
                 ? curve.Evaluate(time, curve.Interpolation)
                 : fallback;
+
+        /// <summary>
+        /// The bone's rotation at a time, slerped between the two keys that bracket it.
+        /// </summary>
+        /// <remarks>
+        /// Slerped as one quaternion, not interpolated axis by axis: a component-wise lerp of four corners does not
+        /// rotate at constant speed, and it takes the long way round whenever a sign flip puts two keys in opposite
+        /// halves of the same sphere — the difference between a 10° turn and a 350° one. Interpolating each axis' curve
+        /// separately and normalizing the result would be exactly that mistake.
+        /// </remarks>
+        public Quaternion EvaluateRotation(float time, Quaternion fallback)
+        {
+            // The axes of a rotation are always emitted together, so the X curve speaks for all four.
+            if (!Rotation.TryGetValue(AnimationAxis.X, out AnimationCurve? curve))
+            {
+                return fallback;
+            }
+
+            if (!curve.TryGetSegment(time, out AnimationKey from, out AnimationKey to, out float t))
+            {
+                // Outside the keys there is no segment to slerp across: the curve clamps to its nearest key, which is
+                // read axis by axis so a rotation keyed on one axis only still behaves as it always did.
+                Quaternion keyed = EvaluateComponentWise(time, fallback);
+
+                return keyed.Length() <= 0f ? Quaternion.Identity : Quaternion.Normalize(keyed);
+            }
+
+            // All four corners of a key are read at that key's own time, so the quaternion is the one the file stored
+            // rather than four components sampled at slightly different instants.
+            Quaternion a = new(
+                ComponentAt(AnimationAxis.X, from.Time, fallback.X),
+                ComponentAt(AnimationAxis.Y, from.Time, fallback.Y),
+                ComponentAt(AnimationAxis.Z, from.Time, fallback.Z),
+                ComponentAt(AnimationAxis.W, from.Time, fallback.W));
+
+            Quaternion b = new(
+                ComponentAt(AnimationAxis.X, to.Time, fallback.X),
+                ComponentAt(AnimationAxis.Y, to.Time, fallback.Y),
+                ComponentAt(AnimationAxis.Z, to.Time, fallback.Z),
+                ComponentAt(AnimationAxis.W, to.Time, fallback.W));
+
+            Quaternion blended = Quaternion.Slerp(a, b, t);
+
+            return blended.Length() <= 0f ? Quaternion.Identity : Quaternion.Normalize(blended);
+        }
+
+        /// <summary>One axis' value at a key's own time, so all four corners of a key come from the same instant.</summary>
+        private float ComponentAt(AnimationAxis axis, float time, float fallback) =>
+            Evaluate(Rotation, axis, time, fallback);
+
+        /// <summary>The axis-by-axis answer, for the clamped ends where there is no segment to slerp across.</summary>
+        private Quaternion EvaluateComponentWise(float time, Quaternion fallback) =>
+            new(
+                Evaluate(Rotation, AnimationAxis.X, time, fallback.X),
+                Evaluate(Rotation, AnimationAxis.Y, time, fallback.Y),
+                Evaluate(Rotation, AnimationAxis.Z, time, fallback.Z),
+                Evaluate(Rotation, AnimationAxis.W, time, fallback.W));
 
         public Vector3 EvaluateVector(
             Dictionary<AnimationAxis, AnimationCurve> axes,

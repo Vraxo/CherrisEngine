@@ -181,34 +181,59 @@ public class AnimationPoseTests
     }
 
     [Fact]
+    public void Sample_OfAQuaternionSegment_TurnsAtAConstantRate()
+    {
+        // A quarter turn sampled halfway is an eighth of a turn. An axis-by-axis lerp of the four corners would land
+        // short of that, which is what makes a character look like it accelerates through a swing.
+        Quaternion target = Quaternion.CreateFromAxisAngle(Vector3.UnitY, Degrees(90f));
+
+        AnimationPose pose = SampleRotation(Quaternion.Identity, target, 0.5f);
+
+        AngleOf(pose.GetRotation("Bone")).Should().BeApproximately(Degrees(45f), 1e-4f);
+    }
+
+    [Fact]
     public void Sample_OfASignFlippedQuaternion_TakesTheShortWayRound()
     {
-        // q and -q are the same orientation. Slerping from identity toward a negated key has to spin 10 degrees, not
-        // 350: this is the difference the importer's sign-continuity pass exists for.
+        // q and -q are the same orientation. A key stored negated must not send the rotation the long way round the
+        // sphere: halfway between the identity and a ten degree turn has to be five degrees, not a hundred and
+        // eighty-five. This is the difference the importer's sign-continuity pass and slerp exist for together.
         Quaternion target = Quaternion.CreateFromAxisAngle(Vector3.UnitY, Degrees(10f));
+        Quaternion negated = Quaternion.Negate(target);
 
+        AnimationPose pose = SampleRotation(Quaternion.Identity, negated, 0.5f);
+
+        AngleOf(pose.GetRotation("Bone")).Should().BeApproximately(Degrees(5f), 1e-4f);
+    }
+
+    /// <summary>Samples a clip that rotates one bone from <paramref name="from"/> to <paramref name="to"/>.</summary>
+    private static AnimationPose SampleRotation(Quaternion from, Quaternion to, float time)
+    {
         AnimationClip clip = new("Turn");
 
-        foreach ((AnimationAxis axis, float value) in new[]
+        foreach ((AnimationAxis axis, float start, float end) in new[]
                  {
-                     (AnimationAxis.X, -target.X),
-                     (AnimationAxis.Y, -target.Y),
-                     (AnimationAxis.Z, -target.Z),
-                     (AnimationAxis.W, -target.W)
+                     (AnimationAxis.X, from.X, to.X),
+                     (AnimationAxis.Y, from.Y, to.Y),
+                     (AnimationAxis.Z, from.Z, to.Z),
+                     (AnimationAxis.W, from.W, to.W)
                  })
         {
-            AnimationCurve curve = RotationCurve(axis, value, value);
-            clip.AddCurve(curve);
+            clip.AddCurve(RotationCurve(axis, start, end));
         }
 
         AnimationPose pose = new();
-        clip.SampleAt(0.5f, pose);
+        clip.SampleAt(time, pose);
 
-        // Halfway between the identity and a ten degree turn is a five degree turn, either way round the circle.
-        float angle = 2f * MathF.Acos(Math.Clamp(MathF.Abs(pose.GetRotation("Bone").W), -1f, 1f));
-
-        angle.Should().BeApproximately(Degrees(5f), 1e-4f);
+        return pose;
     }
+
+    /// <summary>
+    /// The angle a rotation represents, halved-and-doubled because a quaternion encodes a half angle. The absolute
+    /// value of w makes the result independent of which sign the quaternion came back with.
+    /// </summary>
+    private static float AngleOf(Quaternion rotation) =>
+        2f * MathF.Acos(Math.Clamp(MathF.Abs(rotation.W), 0f, 1f));
 
     [Fact]
     public void Blend_WithAWeightOfOne_Overwrites()
