@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Overcore.Core;
+using Overcore.Rendering;
 using Xunit;
 
 namespace Overcore.Tests.Rendering;
