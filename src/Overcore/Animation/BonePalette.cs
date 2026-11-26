@@ -89,9 +89,10 @@ public static class BonePalette
 
     /// <summary>
     /// A palette that leaves every vertex where it is: the identity for each bone. What a renderer uploads for a
-    /// skeleton it cannot bind, so a misconfigured character draws at its bind pose instead of collapsing.
+    /// skeleton it cannot bind, so a misconfigured character draws at its bind pose instead of collapsing. Returns the
+    /// number of floats written, like <see cref="Pack"/>.
     /// </summary>
-    public static void PackIdentity(int boneCount, float[] destination)
+    public static int PackIdentity(int boneCount, float[] destination)
     {
         ArgumentNullException.ThrowIfNull(destination);
 
@@ -114,6 +115,8 @@ public static class BonePalette
             Write(destination, ref written, identity.M21, identity.M22, identity.M23, identity.M24);
             Write(destination, ref written, identity.M31, identity.M32, identity.M33, identity.M34);
         }
+
+        return written;
     }
 
     private static void Write(float[] destination, ref int offset, float x, float y, float z, float w)
