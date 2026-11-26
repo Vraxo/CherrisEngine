@@ -2,7 +2,7 @@ using AwesomeAssertions;
 using Overcore.Animation;
 using Xunit;
 
-namespace Overcore.Tests.Animation;
+namespace Overcore.Tests.AnimationTests;
 
 /// <summary>A clip's length, its wrap arithmetic, and the shape of its events.</summary>
 public class AnimationClipTests

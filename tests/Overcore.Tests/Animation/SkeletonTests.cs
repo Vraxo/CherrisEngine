@@ -4,7 +4,7 @@ using Overcore.Core;
 using System.Numerics;
 using Xunit;
 
-namespace Overcore.Tests.Animation;
+namespace Overcore.Tests.AnimationTests;
 
 /// <summary>
 /// The skeleton is where a transposed matrix, a reversed multiplication order or a wrong bind inverse hides, and all

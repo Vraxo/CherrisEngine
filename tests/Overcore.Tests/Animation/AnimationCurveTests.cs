@@ -2,7 +2,7 @@ using AwesomeAssertions;
 using Overcore.Animation;
 using Xunit;
 
-namespace Overcore.Tests.Animation;
+namespace Overcore.Tests.AnimationTests;
 
 /// <summary>
 /// Curve evaluation: the part of the animation layer that is pure arithmetic, and therefore pinned exactly rather
