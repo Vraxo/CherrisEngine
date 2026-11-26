@@ -121,9 +121,10 @@ public class BonePaletteTests
         float[] palette = new float[BonePalette.FloatsPerBone];
         BonePalette.Pack([bone], palette);
 
-        Vector3 translation = new(palette[3], palette[7], palette[11]);
-
-        translation.Should().BeApproximately(new Vector3(5f, -3f, 2f), 1e-5f);
+        // Vector3 has no approximate assertion of its own, so each component is checked where it lands.
+        palette[3].Should().BeApproximately(5f, 1e-5f, "M41");
+        palette[7].Should().BeApproximately(-3f, 1e-5f, "M42");
+        palette[11].Should().BeApproximately(2f, 1e-5f, "M43");
 
         // And the linear part is the identity, so a translated bone does not also scale or rotate what it carries.
         palette[0].Should().BeApproximately(1f, 1e-5f);
