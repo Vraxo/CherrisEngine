@@ -1,4 +1,4 @@
-﻿using BepuPhysics;
+using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
@@ -64,7 +64,6 @@ public partial class PhysicsSystem : IDisposable
     /// <summary>Every collider the world knows about, fixed or held by a body.</summary>
     public IReadOnlyList<Collider> Colliders => _colliders;
 
-    internal IReadOnlyList<CharacterController> CharacterControllers => _characterControllers;
 
     internal SimulationState Settings { get; }
 
@@ -80,7 +79,6 @@ public partial class PhysicsSystem : IDisposable
     private readonly Dictionary<int, TypedIndex> _staticShapes = [];
     private readonly List<Collider> _colliders = [];
     private readonly List<Collider> _triggers = [];
-    private readonly List<CharacterController> _characterControllers = [];
 
     private readonly ContactBuffers _contacts = new();
     // Swapped at the end of every step, so yesterday's pairs become the ones to compare against.
@@ -146,14 +144,6 @@ public partial class PhysicsSystem : IDisposable
         _contacts.Clear();
     }
 
-    internal void RegisterCharacterController(CharacterController controller)
-    {
-        if (!_characterControllers.Contains(controller)) _characterControllers.Add(controller);
-    }
-
-    internal void UnregisterCharacterController(CharacterController controller) =>
-        _characterControllers.Remove(controller);
-
     /// <summary>
     /// Adds a collider to the world. One without a <see cref="RigidBody"/> becomes a fixed shape here; one with a
     /// body is given its shape by that body, unless it is a trigger, which is a volume and never a surface.
@@ -171,7 +161,7 @@ public partial class PhysicsSystem : IDisposable
         _colliders.Add(collider);
         collider.IsRegistered = true;
 
-        if (collider.IsTrigger)
+        if (collider.IsTrigger && collider is not CharacterController)
         {
             _triggers.Add(collider);
         }
@@ -188,8 +178,8 @@ public partial class PhysicsSystem : IDisposable
             return;
         }
 
-        // A trigger with no body is only a volume to look into, so it gets no shape in the simulation.
-        if (!collider.IsTrigger)
+        // Controllers stay queryable, but their motion is constrained by Move rather than Bepu's static solver.
+        if (!collider.IsTrigger && collider is not CharacterController)
         {
             AddStaticShape(collider);
         }
@@ -531,6 +521,7 @@ public partial class PhysicsSystem : IDisposable
             {
                 if (ReferenceEquals(other, trigger)
                     || other.IsTrigger
+                    || other is CharacterController
                     || other.GameObject is null
                     || ReferenceEquals(other.GameObject, trigger.GameObject)
                     || !Physics.LayersInteract(trigger, other))
@@ -831,7 +822,6 @@ public partial class PhysicsSystem : IDisposable
         FixedStep = null;
         _colliders.Clear();
         _triggers.Clear();
-        _characterControllers.Clear();
         _bodyColliders.Clear();
         _staticColliders.Clear();
         _staticShapes.Clear();

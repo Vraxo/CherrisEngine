@@ -31,12 +31,24 @@ public sealed class CharacterControllerTests
         public int ControllerStayCount { get; private set; }
         public int ControllerExitCount { get; private set; }
         public List<string> Events { get; } = [];
-        public override void OnTriggerEnter(Collider other) { EnterCount++; Events.Add("Enter"); }
-        public override void OnTriggerStay(Collider other) { StayCount++; Events.Add("Stay"); }
-        public override void OnTriggerExit(Collider other) { ExitCount++; Events.Add("Exit"); }
-        public override void OnTriggerEnter(CharacterController other) { ControllerEnterCount++; Events.Add("Enter"); }
-        public override void OnTriggerStay(CharacterController other) { ControllerStayCount++; Events.Add("Stay"); }
-        public override void OnTriggerExit(CharacterController other) { ControllerExitCount++; Events.Add("Exit"); }
+        public override void OnTriggerEnter(Collider other)
+        {
+            EnterCount++;
+            if (other is CharacterController) ControllerEnterCount++;
+            Events.Add("Enter");
+        }
+        public override void OnTriggerStay(Collider other)
+        {
+            StayCount++;
+            if (other is CharacterController) ControllerStayCount++;
+            Events.Add("Stay");
+        }
+        public override void OnTriggerExit(Collider other)
+        {
+            ExitCount++;
+            if (other is CharacterController) ControllerExitCount++;
+            Events.Add("Exit");
+        }
     }
 
     private static Scene StartScene(PhysicsSystem physics, AudioSystem audio, params GameObject[] objects)
@@ -260,13 +272,18 @@ public sealed class CharacterControllerTests
         secondActor.Transform.WorldPosition = new Vector3(2f, 0f, 0f);
         _ = StartScene(physics, audio, firstActor, secondActor);
 
+        firstActor.GetComponent<Collider>().Should().BeSameAs(firstController);
+        Physics.CapsuleCast(new Vector3(-2f, 0.5f, 0f), new Vector3(-2f, 1.5f, 0f), 0.5f,
+            Vector3.UnitX, out RaycastHit queryHit, maxDistance: 4f).Should().BeTrue();
+        queryHit.Collider.Should().BeSameAs(firstController);
+
         CollisionFlags flags = firstController.Move(new Vector3(3f, 0f, 0f));
 
         (flags & CollisionFlags.Sides).Should().Be(CollisionFlags.Sides);
         firstActor.Transform.WorldPosition.X.Should().BeApproximately(0.92f, 0.1f);
         recorder.LastHit.Should().NotBeNull();
         recorder.LastHit!.Value.Controller.Should().BeSameAs(firstController);
-        recorder.LastHit.Value.Collider.Should().BeNull();
+        recorder.LastHit.Value.Collider.Should().BeSameAs(secondController);
         recorder.LastHit.Value.OtherController.Should().BeSameAs(secondController);
         recorder.LastHit.Value.GameObject.Should().BeSameAs(secondActor);
     }

@@ -1,3 +1,5 @@
+using BepuPhysics;
+using BepuPhysics.Collidables;
 using Overcore.Core;
 using Overcore.Core.Physics;
 using Overcore.Core.Logging;
@@ -25,26 +27,23 @@ public readonly struct ControllerColliderHit
 {
     /// <summary>The controller that made the contact.</summary>
     public CharacterController Controller { get; init; }
-    /// <summary>The collider the controller touched, or null when it hit another character controller.</summary>
-    public Collider? Collider { get; init; }
+    /// <summary>The collider the controller touched, including another character controller.</summary>
+    public Collider Collider { get; init; }
     /// <summary>The other controller when the contact was controller-to-controller.</summary>
     public CharacterController? OtherController { get; init; }
-    /// <summary>The object the touched shape belongs to.</summary>
-    public GameObject GameObject => Collider?.GameObject ?? OtherController?.GameObject
-        ?? throw new InvalidOperationException("The controller hit has no target object.");
+    /// <summary>The object the touched collider belongs to.</summary>
+    public GameObject GameObject => Collider.GameObject!;
     /// <summary>The touched object's transform.</summary>
-    public Transform Transform => Collider?.Transform ?? OtherController?.Transform
-        ?? throw new InvalidOperationException("The controller hit has no target transform.");
+    public Transform Transform => Collider.Transform;
     /// <summary>The rigid body attached to the touched collider, if any.</summary>
-    public RigidBody? RigidBody =>
-        Collider?.AttachedRigidBody ?? OtherController?.GameObject?.GetComponent<RigidBody>();
+    public RigidBody? RigidBody => Collider.AttachedRigidBody;
     /// <summary>The world-space point of contact.</summary>
     public Vector3 Point { get; init; }
     /// <summary>The contact normal, pointing away from the surface.</summary>
     public Vector3 Normal { get; init; }
-    /// <summary>The movement supplied to <see cref="CharacterController.Move"/>.</summary>
+    /// <summary>The direction the controller was moving when it made contact.</summary>
     public Vector3 MoveDirection { get; init; }
-    /// <summary>The magnitude of the movement supplied to <see cref="CharacterController.Move"/>.</summary>
+    /// <summary>How far the controller travelled in this move before making contact.</summary>
     public float MoveLength { get; init; }
 }
 
@@ -58,7 +57,7 @@ public readonly struct ControllerColliderHit
 /// <para>Capsule sweeps use conservative advancement over capsule-to-collider separation, independent of Bepu's body
 /// solver and valid for the engine's box, sphere, and capsule colliders.</para>
 /// </remarks>
-public sealed class CharacterController : Component
+public sealed class CharacterController : Collider
 {
     private enum TriggerPhase { Enter, Stay, Exit }
     private readonly record struct MotionSegment(Vector3 Start, Vector3 End);
@@ -80,7 +79,6 @@ public sealed class CharacterController : Component
     private readonly HashSet<Collider> _activeTriggers = [];
     private readonly Queue<(Collider Trigger, TriggerPhase Phase)> _pendingTriggerEvents = [];
     private bool _dispatchingTriggerEvents;
-    private PhysicsSystem? _registeredWorld;
 
     /// <summary>Total capsule height, including the rounded ends.</summary>
     public float Height
@@ -90,12 +88,30 @@ public sealed class CharacterController : Component
         {
             _height = MathF.Max(2f * _radius, value);
             _stepOffset = MathF.Min(_stepOffset, _height);
+            RefreshShape();
         }
     }
     /// <summary>Capsule radius.</summary>
-    public float Radius { get => _radius; set { _radius = MathF.Max(0.01f, value); _height = MathF.Max(_height, 2f * _radius); } }
+    public float Radius
+    {
+        get => _radius;
+        set
+        {
+            _radius = MathF.Max(0.01f, value);
+            _height = MathF.Max(_height, 2f * _radius);
+            RefreshShape();
+        }
+    }
     /// <summary>Capsule centre in local space. The default places the capsule's feet at the object origin.</summary>
-    public Vector3 Center { get => _center; set => _center = value; }
+    public override Vector3 Center
+    {
+        get => _center;
+        set
+        {
+            _center = value;
+            RefreshShape();
+        }
+    }
     /// <summary>Maximum walkable slope in degrees, from 0 through 90.</summary>
     public float SlopeLimit { get => _slopeLimit; set => _slopeLimit = Math.Clamp(value, 0f, 90f); }
     /// <summary>Maximum vertical ledge height the controller can step onto.</summary>
@@ -118,7 +134,6 @@ public sealed class CharacterController : Component
     /// <summary>Moves by a world-space displacement; gravity is not applied.</summary>
     public CollisionFlags Move(Vector3 motion)
     {
-        RegisterWithActiveWorld();
         Vector3 frameStart = Transform.WorldPosition;
         Vector3 requestedMotion = motion.Length() < MinMoveDistance ? Vector3.Zero : motion;
         Vector3 supportMotion = GetSupportMotion(frameStart);
@@ -336,21 +351,11 @@ public sealed class CharacterController : Component
     private bool Sweep(Vector3 motion, out SweepHit hit)
     {
         GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
-        bool colliderHit = Physics.CapsuleCastForController(
-            lower, upper, radius, motion, GameObject!, out RaycastHit colliderResult);
-        bool controllerHit = Physics.CapsuleCastAgainstControllers(
-            lower, upper, radius, motion, GameObject!, out CharacterController? otherController,
-            out float controllerDistance, out Vector3 controllerPoint, out Vector3 controllerNormal);
-
-        if (controllerHit && (!colliderHit || controllerDistance < colliderResult.Distance))
+        if (Physics.CapsuleCastForController(
+            lower, upper, radius, motion, GameObject!, out RaycastHit result))
         {
-            hit = new SweepHit(null, otherController, controllerDistance, controllerPoint, controllerNormal);
-            return true;
-        }
-        if (colliderHit)
-        {
-            hit = new SweepHit(colliderResult.Collider, null, colliderResult.Distance,
-                colliderResult.Point, colliderResult.Normal);
+            hit = new SweepHit(result.Collider, result.Collider as CharacterController,
+                result.Distance, result.Point, result.Normal);
             return true;
         }
 
@@ -358,37 +363,40 @@ public sealed class CharacterController : Component
         return false;
     }
 
+    internal override string ShapeName => "Character controller";
+
+    internal override TypedIndex AddBepuShape(Shapes shapes, Vector3 scale)
+    {
+        GetScaledCapsule(scale, out float radius, out float length);
+        return shapes.Add(new Capsule(radius, length));
+    }
+
+    internal override BodyInertia ComputeInertia(float mass, Vector3 scale)
+    {
+        GetScaledCapsule(scale, out float radius, out float length);
+        return new Capsule(radius, length).ComputeInertia(mass);
+    }
+
+    private void GetScaledCapsule(Vector3 scale, out float radius, out float length)
+    {
+        Vector3 absoluteScale = Vector3.Abs(scale);
+        radius = MathF.Max(Radius * MathF.Max(absoluteScale.X, absoluteScale.Z), 0.01f);
+        float height = MathF.Max(Height * absoluteScale.Y, radius * 2f);
+        length = MathF.Max(height - 2f * radius, 0f);
+    }
+
     internal void GetCapsule(out Vector3 lower, out Vector3 upper, out float radius)
     {
         Vector3 scale = Vector3.Abs(Transform.LossyScale);
         Vector3 center = Transform.WorldPosition + Vector3.Transform(Center * scale, Transform.WorldRotation);
-        radius = MathF.Max(0.01f, Radius * MathF.Max(scale.X, scale.Z));
-        float height = MathF.Max(Height * scale.Y, radius * 2f);
-        Vector3 axis = Vector3.UnitY * MathF.Max(0f, height * 0.5f - radius);
+        GetScaledCapsule(scale, out radius, out float length);
+        Vector3 axis = Vector3.UnitY * (length * 0.5f);
         lower = center - axis;
         upper = center + axis;
     }
 
-    public override void OnEnable()
-    {
-        RegisterWithActiveWorld();
-        base.OnEnable();
-    }
-
-    private void RegisterWithActiveWorld()
-    {
-        PhysicsSystem? activeWorld = IsActive ? PhysicsSystem.Active : null;
-        if (ReferenceEquals(activeWorld, _registeredWorld)) return;
-
-        _registeredWorld?.UnregisterCharacterController(this);
-        _registeredWorld = activeWorld;
-        _registeredWorld?.RegisterCharacterController(this);
-    }
-
     public override void OnDisable()
     {
-        _registeredWorld?.UnregisterCharacterController(this);
-        _registeredWorld = null;
         ClearTriggerContacts();
         _supportCollider = null;
         base.OnDisable();
@@ -396,11 +404,22 @@ public sealed class CharacterController : Component
 
     public override void OnDestroy()
     {
-        _registeredWorld?.UnregisterCharacterController(this);
-        _registeredWorld = null;
         ClearTriggerContacts();
         _supportCollider = null;
         base.OnDestroy();
+    }
+
+    internal override void OnInstantiated()
+    {
+        base.OnInstantiated();
+        _supportCollider = null;
+        _velocity = Vector3.Zero;
+        _simpleMoveVerticalVelocity = 0f;
+        IsGrounded = false;
+        CollisionFlags = ControllerCollisionFlags.None;
+        _activeTriggers.Clear();
+        _pendingTriggerEvents.Clear();
+        _dispatchingTriggerEvents = false;
     }
 
     private void ClearTriggerContacts()

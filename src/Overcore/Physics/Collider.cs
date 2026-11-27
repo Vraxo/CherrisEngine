@@ -59,7 +59,7 @@ public abstract class Collider : Component
     public float Bounciness { get; set; }
 
     /// <summary>The centre of the shape in the object's own space, for a shape that is not centred on the object.</summary>
-    public Vector3 Center
+    public virtual Vector3 Center
     {
         get => _center;
         set

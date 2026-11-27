@@ -92,6 +92,20 @@ internal static class ColliderGeometry
                 };
             }
 
+            case CharacterController controller:
+            {
+                controller.GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
+                return new ShapeInstance
+                {
+                    Kind = ShapeKind.Capsule,
+                    Center = (lower + upper) * 0.5f,
+                    Rotation = rotation,
+                    Radius = radius,
+                    SegmentA = lower,
+                    SegmentB = upper
+                };
+            }
+
             case CapsuleCollider capsule:
             {
                 float radius = MathF.Max(capsule.Radius * MathF.Max(absoluteScale.X, absoluteScale.Z), Epsilon);
