@@ -347,9 +347,9 @@ public static class Physics
     }
 
     /// <summary>
-    /// Sweeps an upright or arbitrarily oriented capsule through the active physics world. The axis is sampled with
-    /// overlapping sphere sweeps, conservatively covering the capsule segment. The controller component uses the
-    /// internal overload to ignore its own object.
+    /// Sweeps an upright or arbitrarily oriented capsule through the active physics world using conservative
+    /// advancement over capsule-to-collider separation. The controller component uses the internal overload to
+    /// ignore its own object.
     /// </summary>
     public static bool CapsuleCast(
         Vector3 point1,
@@ -365,7 +365,112 @@ public static class Physics
     internal static bool CapsuleCastForController(
         Vector3 point1, Vector3 point2, float radius, Vector3 displacement, GameObject owner, out RaycastHit hit) =>
         CapsuleCastCore(point1, point2, radius, displacement, out hit, displacement.Length(), ~0,
-            QueryTriggerInteraction.Ignore, owner);
+            QueryTriggerInteraction.Ignore, owner, respectCharacterControllerSettings: true);
+
+    internal static Collider[] ControllerTriggerColliders(GameObject owner)
+    {
+        if (!TryGetWorld(out PhysicsSystem? world)) return [];
+        return [.. world.Colliders.Where(collider =>
+            collider.IsTrigger && !collider.IsDestroyed && collider.IsActive &&
+            collider.GameObject is { ActiveInHierarchy: true } gameObject &&
+            !ReferenceEquals(gameObject, owner) && !IgnoredLayers[owner.Layer, gameObject.Layer])];
+    }
+
+    internal static bool CapsuleCastTriggerForController(
+        Collider trigger,
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 displacement,
+        GameObject owner)
+    {
+        float distance = displacement.Length();
+        if (distance <= 1e-6f || trigger.IsDestroyed || !trigger.IsActive ||
+            trigger.GameObject is not { ActiveInHierarchy: true } triggerObject ||
+            ReferenceEquals(triggerObject, owner) || IgnoredLayers[owner.Layer, triggerObject.Layer]) return false;
+
+        Vector3 radiusVector = new(radius);
+        Vector3 sweepMin = Vector3.Min(Vector3.Min(point1, point2),
+            Vector3.Min(point1 + displacement, point2 + displacement)) - radiusVector;
+        Vector3 sweepMax = Vector3.Max(Vector3.Max(point1, point2),
+            Vector3.Max(point1 + displacement, point2 + displacement)) + radiusVector;
+        var triggerBounds = trigger.Bounds;
+        if (!BoundsOverlap(sweepMin, sweepMax, triggerBounds.Min, triggerBounds.Max)) return false;
+
+        return ColliderGeometry.CapsuleCast(
+            ColliderGeometry.From(trigger), point1, point2, radius, displacement / distance, distance,
+            out _, out _, out _);
+    }
+
+    internal static Collider[] OverlapTriggersForController(
+        Vector3 point1, Vector3 point2, float radius, GameObject owner)
+    {
+        if (!TryGetWorld(out PhysicsSystem? world)) return [];
+
+        ShapeInstance controllerShape = new()
+        {
+            Kind = ShapeKind.Capsule,
+            Center = (point1 + point2) * 0.5f,
+            Radius = radius,
+            SegmentA = point1,
+            SegmentB = point2
+        };
+        Vector3 radiusVector = new(radius);
+        Vector3 controllerMin = Vector3.Min(point1, point2) - radiusVector;
+        Vector3 controllerMax = Vector3.Max(point1, point2) + radiusVector;
+        List<Collider> overlaps = [];
+        foreach (Collider collider in world.Colliders)
+        {
+            GameObject? gameObject = collider.GameObject;
+            if (!collider.IsTrigger || collider.IsDestroyed || !collider.IsActive || gameObject is null ||
+                !gameObject.ActiveInHierarchy || ReferenceEquals(gameObject, owner) ||
+                IgnoredLayers[owner.Layer, gameObject.Layer]) continue;
+
+            var triggerBounds = collider.Bounds;
+            if (!BoundsOverlap(controllerMin, controllerMax, triggerBounds.Min, triggerBounds.Max)) continue;
+            if (ColliderGeometry.Overlaps(controllerShape, ColliderGeometry.From(collider))) overlaps.Add(collider);
+        }
+        return [.. overlaps];
+    }
+
+    private static bool BoundsOverlap(Vector3 minA, Vector3 maxA, Vector3 minB, Vector3 maxB) =>
+        minA.X <= maxB.X && maxA.X >= minB.X &&
+        minA.Y <= maxB.Y && maxA.Y >= minB.Y &&
+        minA.Z <= maxB.Z && maxA.Z >= minB.Z;
+
+    internal static bool TryGetCapsulePenetration(
+        Vector3 point1, Vector3 point2, float radius, GameObject owner, out Vector3 correction, out float depth)
+    {
+        correction = Vector3.Zero;
+        depth = 0f;
+        if (!TryGetWorld(out PhysicsSystem? world)) return false;
+
+        Vector3 deepestNormal = Vector3.Zero;
+        Vector3 radiusVector = new(radius);
+        Vector3 capsuleMin = Vector3.Min(point1, point2) - radiusVector;
+        Vector3 capsuleMax = Vector3.Max(point1, point2) + radiusVector;
+        foreach (Collider collider in world.Colliders)
+        {
+            GameObject? gameObject = collider.GameObject;
+            if (collider.IsDestroyed || !collider.IsActive || gameObject is null || !gameObject.ActiveInHierarchy ||
+                collider.IsTrigger || collider is CharacterController || ReferenceEquals(gameObject, owner) ||
+                IgnoredLayers[owner.Layer, gameObject.Layer] ||
+                collider.AttachedRigidBody is { IsStatic: false }) continue;
+
+            var colliderBounds = collider.Bounds;
+            if (!BoundsOverlap(capsuleMin, capsuleMax, colliderBounds.Min, colliderBounds.Max)) continue;
+
+            float separation = ColliderGeometry.CapsuleSeparation(
+                ColliderGeometry.From(collider), point1, point2, radius, out Vector3 normal);
+            if (separation >= -depth) continue;
+            depth = -separation;
+            deepestNormal = normal;
+        }
+
+        if (depth <= 0f) return false;
+        correction = deepestNormal * depth;
+        return true;
+    }
 
     private static bool CapsuleCastCore(
         Vector3 point1,
@@ -376,7 +481,8 @@ public static class Physics
         float maxDistance,
         int layerMask,
         QueryTriggerInteraction queryTriggerInteraction,
-        GameObject? ignoredObject)
+        GameObject? ignoredObject,
+        bool respectCharacterControllerSettings = false)
     {
         hit = default;
         if (radius <= 0f || direction.LengthSquared() < 1e-12f || float.IsNaN(maxDistance) || maxDistance <= 0f ||
@@ -390,11 +496,13 @@ public static class Physics
             _ => QueriesHitTriggers
         };
         Vector3 unit = Vector3.Normalize(direction);
-        float segmentLength = Vector3.Distance(point1, point2);
-        int intervals = Math.Max(1, (int)MathF.Ceiling(segmentLength / MathF.Max(radius * 0.5f, 0.01f)));
-        float spacing = segmentLength / intervals;
-        // Inflate each sample so the union of samples encloses the continuous capsule, including the gaps between them.
-        float sampleRadius = MathF.Sqrt((radius * radius) + (spacing * spacing * 0.25f));
+        bool boundedSweep = float.IsFinite(distanceLimit);
+        Vector3 sweepDisplacement = boundedSweep ? unit * distanceLimit : Vector3.Zero;
+        Vector3 radiusVector = new(radius);
+        Vector3 sweepMin = Vector3.Min(Vector3.Min(point1, point2),
+            Vector3.Min(point1 + sweepDisplacement, point2 + sweepDisplacement)) - radiusVector;
+        Vector3 sweepMax = Vector3.Max(Vector3.Max(point1, point2),
+            Vector3.Max(point1 + sweepDisplacement, point2 + sweepDisplacement)) + radiusVector;
         bool hitAnything = false;
         float closest = distanceLimit;
 
@@ -403,32 +511,32 @@ public static class Physics
             GameObject? gameObject = collider.GameObject;
             if (collider.IsDestroyed || !collider.IsActive || gameObject is null || !gameObject.ActiveInHierarchy ||
                 (collider.IsTrigger && !hitTriggers) || ReferenceEquals(gameObject, ignoredObject) ||
+                (respectCharacterControllerSettings && collider is CharacterController { DetectCollisions: false }) ||
                 (layerMask & (1 << gameObject.Layer)) == 0 ||
                 (ignoredObject is not null && IgnoredLayers[ignoredObject.Layer, gameObject.Layer]))
                 continue;
 
-            ShapeInstance expanded = Inflate(ColliderGeometry.From(collider), sampleRadius);
-            for (int sample = 0; sample <= intervals; sample++)
+            if (boundedSweep)
             {
-                // On horizontal/upward sweeps the lowest cap is already resting on the floor. Testing its sphere
-                // against an axis-expanded box would treat that tangency as a horizontal wall; the next overlapping
-                // sample still conservatively covers the capsule's side while the dedicated downward probe handles ground.
-                if (unit.Y >= -0.1f && sample == 0) continue;
-                Vector3 origin = Vector3.Lerp(point1, point2, sample / (float)intervals);
-                if (!ColliderGeometry.Raycast(expanded, origin, unit, closest, out float travelled,
-                    out Vector3 point, out Vector3 normal)) continue;
-                if (travelled > closest) continue;
-                closest = travelled;
-                hitAnything = true;
-                hit = new RaycastHit
-                {
-                    Collider = collider,
-                    Distance = travelled,
-                    Point = point - (normal * sampleRadius),
-                    Normal = normal,
-                    Origin = origin
-                };
+                var colliderBounds = collider.Bounds;
+                if (!BoundsOverlap(sweepMin, sweepMax, colliderBounds.Min, colliderBounds.Max)) continue;
             }
+
+            ShapeInstance shape = ColliderGeometry.From(collider);
+            if (!ColliderGeometry.CapsuleCast(shape, point1, point2, radius, unit, closest,
+                out float travelled, out Vector3 point, out Vector3 normal)) continue;
+            if (travelled > closest) continue;
+
+            closest = travelled;
+            hitAnything = true;
+            hit = new RaycastHit
+            {
+                Collider = collider,
+                Distance = travelled,
+                Point = point,
+                Normal = normal,
+                Origin = point1
+            };
         }
         return hitAnything;
     }

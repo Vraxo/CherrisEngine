@@ -1,4 +1,4 @@
-﻿using BepuPhysics;
+using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
@@ -64,6 +64,7 @@ public partial class PhysicsSystem : IDisposable
     /// <summary>Every collider the world knows about, fixed or held by a body.</summary>
     public IReadOnlyList<Collider> Colliders => _colliders;
 
+
     internal SimulationState Settings { get; }
 
     /// <summary>The pool shapes and buffers come from, for a body that has to give one back.</summary>
@@ -76,6 +77,7 @@ public partial class PhysicsSystem : IDisposable
     private readonly Dictionary<int, Collider> _bodyColliders = [];
     private readonly Dictionary<int, Collider> _staticColliders = [];
     private readonly Dictionary<int, TypedIndex> _staticShapes = [];
+    private readonly Dictionary<int, Vector3> _staticScales = [];
     private readonly List<Collider> _colliders = [];
     private readonly List<Collider> _triggers = [];
 
@@ -160,7 +162,7 @@ public partial class PhysicsSystem : IDisposable
         _colliders.Add(collider);
         collider.IsRegistered = true;
 
-        if (collider.IsTrigger)
+        if (collider.IsTrigger && collider is not CharacterController)
         {
             _triggers.Add(collider);
         }
@@ -177,8 +179,8 @@ public partial class PhysicsSystem : IDisposable
             return;
         }
 
-        // A trigger with no body is only a volume to look into, so it gets no shape in the simulation.
-        if (!collider.IsTrigger)
+        // Controller motion is constrained by Move, but its static solver shape still blocks incoming rigid bodies.
+        if (!collider.IsTrigger && (collider is not CharacterController controller || controller.DetectCollisions))
         {
             AddStaticShape(collider);
         }
@@ -206,6 +208,7 @@ public partial class PhysicsSystem : IDisposable
                 Simulation.Shapes.RemoveAndDispose(shape, _bufferPool);
             }
 
+            _staticScales.Remove(handle.Value);
             _staticColliders.Remove(handle.Value);
             collider.StaticBody = null;
         }
@@ -386,6 +389,7 @@ public partial class PhysicsSystem : IDisposable
         collider.StaticBody = handle;
         _staticColliders[handle.Value] = collider;
         _staticShapes[handle.Value] = shape;
+        _staticScales[handle.Value] = scale;
     }
 
     private void RemoveColliderFromBodies(Collider collider)
@@ -402,13 +406,12 @@ public partial class PhysicsSystem : IDisposable
     }
 
     /// <summary>
-    /// Moves the fixed shapes whose objects have been moved since the last step.
+    /// Keeps fixed shapes aligned with transforms, rebuilding them when their world scale changes.
     /// </summary>
     /// <remarks>
     /// A collider with no rigid body is a static in Bepu, and Bepu never looks at the transform again once it has
-    /// the pose: this is where the two are kept in agreement, so a floor slid into place before play, a moving
-    /// platform, or a wall moved out of the way collides where it is drawn. Queries read the transform directly
-    /// and so never needed this, which is exactly why it has to be done here or not at all.
+    /// the pose or shape: this is where both are kept in agreement, so moving, rotating, or scaling a static
+    /// collider updates solver contacts as well as query geometry.
     /// </remarks>
     private void RefreshStaticPoses()
     {
@@ -417,7 +420,7 @@ public partial class PhysicsSystem : IDisposable
             return;
         }
 
-        foreach ((int handleValue, Collider collider) in _staticColliders)
+        foreach ((int handleValue, Collider collider) in _staticColliders.ToArray())
         {
             StaticHandle handle = new(handleValue);
 
@@ -426,7 +429,13 @@ public partial class PhysicsSystem : IDisposable
                 continue;
             }
 
-            collider.GetWorldPose(out Vector3 center, out Quaternion rotation, out _);
+            collider.GetWorldPose(out Vector3 center, out Quaternion rotation, out Vector3 scale);
+            if (!_staticScales.TryGetValue(handleValue, out Vector3 previousScale) ||
+                Vector3.DistanceSquared(scale, previousScale) > 1e-8f)
+            {
+                RefreshCollider(collider);
+                continue;
+            }
 
             Simulation.Statics.GetDescription(handle, out StaticDescription current);
 
@@ -520,6 +529,7 @@ public partial class PhysicsSystem : IDisposable
             {
                 if (ReferenceEquals(other, trigger)
                     || other.IsTrigger
+                    || other is CharacterController
                     || other.GameObject is null
                     || ReferenceEquals(other.GameObject, trigger.GameObject)
                     || !Physics.LayersInteract(trigger, other))
@@ -569,8 +579,10 @@ public partial class PhysicsSystem : IDisposable
     {
         Vector3 relativeVelocity = VelocityOf(pair.A) - VelocityOf(pair.B);
 
-        Notify(pair.A, pair.B, pair.ContactsForA(), relativeVelocity, phase);
-        Notify(pair.B, pair.A, pair.ContactsForB(), -relativeVelocity, phase);
+        if (pair.A is not CharacterController)
+            Notify(pair.A, pair.B, pair.ContactsForA(), relativeVelocity, phase);
+        if (pair.B is not CharacterController)
+            Notify(pair.B, pair.A, pair.ContactsForB(), -relativeVelocity, phase);
     }
 
     private void NotifyTrigger(TriggerPair pair, CollisionPhase phase)
@@ -823,6 +835,7 @@ public partial class PhysicsSystem : IDisposable
         _bodyColliders.Clear();
         _staticColliders.Clear();
         _staticShapes.Clear();
+        _staticScales.Clear();
         _bodyHandleToComponent.Clear();
         _staticHandleToComponent.Clear();
 
