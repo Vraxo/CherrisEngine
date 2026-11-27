@@ -109,6 +109,15 @@ internal sealed class OpenGLUIRenderer : IDisposable
             inputEnabled && Input.IsMouseButtonDown(MouseButton.Left),
             inputEnabled && Input.WasMouseButtonReleased(MouseButton.Left));
 
+        if (_fontSource is not null)
+        {
+            foreach (UIElement element in elements)
+            {
+                Text? textStyle = element.Text ?? (element.InputField is not null ? DefaultInputFieldText : null);
+                _fontSource.EnsureFont(textStyle?.FontName);
+            }
+        }
+
         List<UIBatch> batches = [];
         foreach (UIElement element in elements)
         {
@@ -358,12 +367,12 @@ internal sealed class OpenGLUIRenderer : IDisposable
         }
 
         float canvasScale = element.Canvas.GetScale(viewportWidth, viewportHeight);
-        float glyphScale = text.FontSize * canvasScale / MathF.Max(1f, _fontSource.FontPixelSize);
+        float glyphScale = text.FontSize * canvasScale / MathF.Max(1f, _fontSource.GetFontPixelSize(text.FontName));
         float characterSpacing = text.CharacterSpacing * canvasScale;
         float lineSpacing = text.LineSpacing * canvasScale;
         float lineAdvance = text.FontSize * canvasScale + lineSpacing;
         string[] lines = content.Replace("\r", String.Empty).Split('\n');
-        float[] lineWidths = lines.Select(line => MeasureLine(line, glyphScale, characterSpacing)).ToArray();
+        float[] lineWidths = lines.Select(line => MeasureLine(line, text.FontName, glyphScale, characterSpacing)).ToArray();
         float blockHeight = lines.Length == 0 ? 0f : text.FontSize * canvasScale + (lines.Length - 1) * lineAdvance;
         float verticalOffset = text.VerticalAlignment switch
         {
@@ -388,7 +397,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
 
             for (int characterIndex = 0; characterIndex < line.Length; characterIndex++)
             {
-                if (!_fontSource.TryGetGlyph(line[characterIndex], out ImGuiController.UIGlyph glyph))
+                if (!_fontSource.TryGetGlyph(text.FontName, line[characterIndex], out ImGuiController.UIGlyph glyph))
                 {
                     continue;
                 }
@@ -422,7 +431,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
                 _ => 0f
             };
             string prefix = firstLine[..caret];
-            float caretX = element.Rect.X + horizontalOffset + MeasureLine(prefix, glyphScale, characterSpacing);
+            float caretX = element.Rect.X + horizontalOffset + MeasureLine(prefix, text.FontName, glyphScale, characterSpacing);
             if (caret > 0 && caret < firstLine.Length)
             {
                 caretX += characterSpacing;
@@ -434,13 +443,13 @@ internal sealed class OpenGLUIRenderer : IDisposable
         }
     }
 
-    private float MeasureLine(string line, float glyphScale, float characterSpacing)
+    private float MeasureLine(string line, string? fontName, float glyphScale, float characterSpacing)
     {
         float width = 0f;
         int visibleCharacters = 0;
         foreach (char character in line)
         {
-            if (_fontSource!.TryGetGlyph(character, out ImGuiController.UIGlyph glyph))
+            if (_fontSource!.TryGetGlyph(fontName, character, out ImGuiController.UIGlyph glyph))
             {
                 width += glyph.AdvanceX * glyphScale;
                 visibleCharacters++;

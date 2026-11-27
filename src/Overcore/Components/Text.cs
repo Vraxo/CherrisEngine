@@ -6,6 +6,10 @@ namespace Overcore.Components;
 public sealed class Text : Component
 {
     public string Content { get; set; } = "Text";
+
+    /// <summary>Project-relative TrueType font asset path; blank selects the engine's bundled font.</summary>
+    public string FontName { get; set; } = String.Empty;
+
     public float FontSize { get; set; } = 24f;
     public Vector3 Color { get; set; } = Vector3.One;
     public float Alpha { get; set; } = 1f;

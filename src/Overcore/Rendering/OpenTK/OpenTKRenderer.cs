@@ -19,6 +19,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLGridRenderer _gridRenderer;
     private readonly OpenGLShadowRenderer _shadowRenderer;
     private readonly OpenGLUIRenderer _uiRenderer;
+    private readonly bool _renderImGui;
     private Vector2i _viewportSize = new(1, 1);
     private bool _viewportConfiguredThisFrame;
     private System.Numerics.Vector2 _viewportScreenOrigin;
@@ -29,12 +30,14 @@ public class OpenTKRenderer : IRenderer, IDisposable
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
     /// <param name="imGuiController">
-    /// Controller for the in-engine ImGui UI, or null for hosts that draw their own UI and only need
-    /// the off-screen scene pass (see <c>Overcore.Rendering.Headless</c>).
+    /// Controller for the font atlas and optional in-engine ImGui UI. Pass a controller with
+    /// <paramref name="renderImGui"/> false when an off-screen host needs the shared UI text renderer only.
     /// </param>
-    public OpenTKRenderer(ImGuiController? imGuiController = null, IResourceManager? resourceManager = null)
+    public OpenTKRenderer(ImGuiController? imGuiController = null, IResourceManager? resourceManager = null,
+        bool renderImGui = true)
     {
         _imGuiController = imGuiController;
+        _renderImGui = renderImGui;
         _sceneRenderer = new OpenGLSceneRenderer();
         _skyboxRenderer = new OpenGLSkyboxRenderer();
         _postProcessor = new OpenGLPostProcessor();
@@ -86,7 +89,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         // Composite UI into the post-processed scene texture before it is shown or captured. This keeps the same
         // image in the standalone runtime, native editor viewport and headless/web editor viewport paths.
         System.Numerics.Vector2 pointerPosition = Input.MousePosition;
-        if (!isRuntimeMode && _imGuiController is not null)
+        if (!isRuntimeMode && _renderImGui && _imGuiController is not null)
         {
             pointerPosition -= _viewportScreenOrigin;
         }
@@ -166,7 +169,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     {
         // Hosts without an in-engine UI (headless backends) render the scene pass only; there is no
         // window to present into and nothing to clear.
-        if (_imGuiController is null)
+        if (!_renderImGui || _imGuiController is null)
         {
             return;
         }

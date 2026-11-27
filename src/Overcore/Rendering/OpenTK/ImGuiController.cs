@@ -1,3 +1,5 @@
+using Overcore.Core.Logging;
+using Overcore.Rendering;
 using Overcore.Utils;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
@@ -27,29 +29,39 @@ public class ImGuiController : IUIController
 
     private int _windowWidth;
     private int _windowHeight;
+    private readonly IntPtr _imguiContext;
+    private readonly Dictionary<string, ImFontPtr> _loadedFonts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingFonts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _failedFonts = new(StringComparer.OrdinalIgnoreCase);
+    private ImFontPtr _defaultFont;
+    private bool _disposed;
 
     private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
 
-    public ImGuiController(int width, int height)
+    public ImGuiController(int width, int height, bool startFrame = true)
     {
         _windowWidth = width;
         _windowHeight = height;
 
-        IntPtr context = ImGui.CreateContext();
-        ImGui.SetCurrentContext(context);
+        _imguiContext = ImGui.CreateContext();
+        ImGui.SetCurrentContext(_imguiContext);
         ImGuiIOPtr io = ImGui.GetIO();
 
         const float baseFontSize = 18.0f;
-        string? fontPath = EditorResources.Find("Fonts/RobotoMono-Regular.ttf");
+        string? fontPath = ProjectFontAssets.Find(null);
 
         if (fontPath is not null && File.Exists(fontPath))
         {
-            _ = io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
+            _defaultFont = io.Fonts.AddFontFromFileTTF(fontPath, baseFontSize);
         }
         else
         {
-            Console.WriteLine($"[ImGuiController] Warning: Custom font not found. Using default font.");
-            _ = io.Fonts.AddFontDefault();
+            Console.WriteLine("[ImGuiController] Bundled font not found. Using ImGui's default font.");
+            _defaultFont = io.Fonts.AddFontDefault();
+        }
+        if (!String.IsNullOrWhiteSpace(fontPath))
+        {
+            _loadedFonts[Path.GetFullPath(fontPath)] = _defaultFont;
         }
 
         io.FontGlobalScale = 1.0f;
@@ -60,20 +72,95 @@ public class ImGuiController : IUIController
         CreateDeviceResources();
         SetPerFrameImGuiData(1f / 60f);
 
-        ImGui.NewFrame();
-        _frameBegun = true;
+        if (startFrame)
+        {
+            ImGui.NewFrame();
+            _frameBegun = true;
+        }
     }
 
     internal int FontTextureHandle => _fontTexture;
 
-    internal float FontPixelSize => ImGui.GetIO().Fonts.Fonts[0].FontSize;
+    internal float GetFontPixelSize(string? fontName) => GetFont(fontName).FontSize;
 
-    internal bool TryGetGlyph(char codepoint, out UIGlyph glyph)
+    internal bool EnsureFont(string? fontName)
     {
-        ImFontGlyphPtr source = ImGui.GetIO().Fonts.Fonts[0].FindGlyph(codepoint);
+        if (String.IsNullOrWhiteSpace(fontName))
+        {
+            return true;
+        }
+
+        string? path = ProjectFontAssets.Find(fontName);
+        if (path is null || !File.Exists(path))
+        {
+            return false;
+        }
+
+        path = Path.GetFullPath(path);
+        if (_loadedFonts.ContainsKey(path))
+        {
+            return true;
+        }
+        if (_failedFonts.Contains(path))
+        {
+            return false;
+        }
+
+        if (_frameBegun)
+        {
+            _pendingFonts.Add(path);
+            return false;
+        }
+
+        return LoadFont(path);
+    }
+
+    private bool LoadFont(string path)
+    {
+        try
+        {
+            ImGui.SetCurrentContext(_imguiContext);
+            ImFontPtr font = ImGui.GetIO().Fonts.AddFontFromFileTTF(path, 18f);
+            if (font.NativePtr == IntPtr.Zero)
+            {
+                _failedFonts.Add(path);
+                Logger.Warning($"[UI] Could not load font asset '{path}'; using the bundled font instead.");
+                return false;
+            }
+
+            _loadedFonts[path] = font;
+            RecreateFontDeviceTexture();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            _failedFonts.Add(path);
+            Logger.Warning($"[UI] Could not load font asset '{path}': {exception.Message}");
+            return false;
+        }
+    }
+
+    internal bool TryGetGlyph(string? fontName, char codepoint, out UIGlyph glyph)
+    {
+        ImFontGlyphPtr source = GetFont(fontName).FindGlyph(codepoint);
         glyph = new UIGlyph(source.AdvanceX, source.X0, source.Y0, source.X1, source.Y1,
             source.U0, source.V0, source.U1, source.V1);
         return source.AdvanceX > 0f;
+    }
+
+    private ImFontPtr GetFont(string? fontName)
+    {
+        ImGui.SetCurrentContext(_imguiContext);
+        if (!String.IsNullOrWhiteSpace(fontName) && ProjectFontAssets.Find(fontName) is { } path)
+        {
+            path = Path.GetFullPath(path);
+            if (_loadedFonts.TryGetValue(path, out ImFontPtr font))
+            {
+                return font;
+            }
+        }
+
+        return _defaultFont;
     }
 
     public void WindowResized(int width, int height)
@@ -84,11 +171,12 @@ public class ImGuiController : IUIController
 
     public void DestroyDeviceObjects()
     {
-        GL.DeleteVertexArray(_vertexArray);
-        GL.DeleteBuffer(_vertexBuffer);
-        GL.DeleteBuffer(_indexBuffer);
-        GL.DeleteTexture(_fontTexture);
-        GL.DeleteProgram(_shader);
+        if (_vertexArray != 0) GL.DeleteVertexArray(_vertexArray);
+        if (_vertexBuffer != 0) GL.DeleteBuffer(_vertexBuffer);
+        if (_indexBuffer != 0) GL.DeleteBuffer(_indexBuffer);
+        if (_fontTexture != 0) GL.DeleteTexture(_fontTexture);
+        if (_shader != 0) GL.DeleteProgram(_shader);
+        _vertexArray = _vertexBuffer = _indexBuffer = _fontTexture = _shader = 0;
     }
 
     public void CreateDeviceResources()
@@ -151,6 +239,8 @@ void main()
 
     public void RecreateFontDeviceTexture()
     {
+        ImGui.SetCurrentContext(_imguiContext);
+        int previousTexture = _fontTexture;
         ImGuiIOPtr io = ImGui.GetIO();
         io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out _);
 
@@ -164,6 +254,10 @@ void main()
 
         io.Fonts.SetTexID(_fontTexture);
         io.Fonts.ClearTexData();
+        if (previousTexture != 0)
+        {
+            GL.DeleteTexture(previousTexture);
+        }
     }
 
     public void Render()
@@ -183,6 +277,12 @@ void main()
         if (_frameBegun)
         {
             ImGui.Render();
+        }
+
+        foreach (string fontPath in _pendingFonts.ToArray())
+        {
+            _pendingFonts.Remove(fontPath);
+            LoadFont(fontPath);
         }
 
         SetPerFrameImGuiData(deltaSeconds);
@@ -369,7 +469,15 @@ void main()
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        ImGui.SetCurrentContext(_imguiContext);
         DestroyDeviceObjects();
+        ImGui.DestroyContext(_imguiContext);
     }
 
     private static readonly Dictionary<Keys, ImGuiKey> s_KeyMap = new()

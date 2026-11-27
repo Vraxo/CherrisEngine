@@ -48,6 +48,7 @@ public class UISerializationTests
         panel.AddComponent(new Text
         {
             Content = "Continue",
+            FontName = "Assets/Fonts/Display.ttf",
             FontSize = 30f,
             Color = new Vector3(0.9f, 0.8f, 0.7f),
             HorizontalAlignment = HorizontalTextAlignment.Center,
@@ -121,6 +122,7 @@ public class UISerializationTests
         image.Alpha.Should().Be(0.75f);
         Text text = loaded[1].GetComponent<Text>()!;
         text.Content.Should().Be("Continue");
+        text.FontName.Should().Be("Assets/Fonts/Display.ttf");
         text.FontSize.Should().Be(30f);
         text.HorizontalAlignment.Should().Be(HorizontalTextAlignment.Center);
         text.VerticalAlignment.Should().Be(VerticalTextAlignment.Bottom);

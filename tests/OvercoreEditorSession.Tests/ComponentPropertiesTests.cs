@@ -81,6 +81,8 @@ public class ComponentPropertiesTests
         Text text = new();
         ComponentProperties.TryApply(text, nameof(Text.Content), "Ready", out _).Should().BeTrue();
         text.Content.Should().Be("Ready");
+        ComponentProperties.TryApply(text, nameof(Text.FontName), "Assets/Fonts/Display.ttf", out _).Should().BeTrue();
+        text.FontName.Should().Be("Assets/Fonts/Display.ttf");
 
         Button button = new();
         ComponentProperties.TryApply(button, nameof(Button.Interactable), "false", out _).Should().BeTrue();
