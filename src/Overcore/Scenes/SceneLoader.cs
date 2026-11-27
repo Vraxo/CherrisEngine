@@ -1,4 +1,4 @@
-﻿using Overcore.Components;
+using Overcore.Components;
 using Overcore.Core;
 using Overcore.Core.Logging;
 using Overcore.Rendering;
@@ -25,6 +25,7 @@ public class SceneLoader
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
             .WithTypeConverter(new Vector2YamlTypeConverter())
+            .WithTypeConverter(new Vector4YamlTypeConverter())
             .Build();
         _serializer = new SerializerBuilder().Build();
     }
@@ -32,6 +33,28 @@ public class SceneLoader
     public void RegisterComponentFactory(string typeName, Func<object, Component> factory)
     {
         _componentFactories[typeName] = factory;
+    }
+
+    /// <summary>
+    /// Reads a prefab from a YAML string, optionally stamping every object that carries a file id with
+    /// <paramref name="assetGuid"/>.
+    /// </summary>
+    public List<GameObject> LoadPrefabFromString(string yamlContent, string? assetGuid = null)
+    {
+        Dictionary<GameObject, int> fileIds = [];
+        using var reader = new StringReader(yamlContent);
+        ComponentDeserializer.EnsureRegistered(this, _resourceManager);
+        List<GameObject> roots = DeserializeObjects(reader, true, fileIds);
+
+        if (!string.IsNullOrWhiteSpace(assetGuid))
+        {
+            foreach ((GameObject go, int fileId) in fileIds)
+            {
+                go.PrefabSource = new PrefabSource(assetGuid, fileId);
+            }
+        }
+
+        return roots;
     }
 
     /// <summary>
@@ -101,8 +124,10 @@ public class SceneLoader
         }
 
         var objects = new Dictionary<Guid, GameObject>();
+        var objectsByLocalId = new Dictionary<int, GameObject>();
         var parentMap = new Dictionary<Guid, Guid>();
         var resultList = new List<GameObject>();
+        var pendingReferences = new List<(Component Target, Dictionary<object, object> Properties)>();
 
         // Pass 1: Create
         foreach (var goData in gameObjectDatas)
@@ -128,10 +153,15 @@ public class SceneLoader
                     go.PrefabSource = new PrefabSource(asset, file);
                 }
             }
-            else if (fileIds is not null && goData.TryGetValue("File", out var fileObj))
+            else if (goData.TryGetValue("File", out var fileObj))
             {
                 // A prefab asset says only the id within itself; the asset guid is the file's own.
-                fileIds[go] = Convert.ToInt32(fileObj, CultureInfo.InvariantCulture);
+                int fileId = Convert.ToInt32(fileObj, CultureInfo.InvariantCulture);
+                objectsByLocalId[fileId] = go;
+                if (fileIds is not null)
+                {
+                    fileIds[go] = fileId;
+                }
             }
 
             if (goData.TryGetValue("Parent", out var pObj) && Guid.TryParse((string)pObj, out Guid pId))
@@ -150,7 +180,7 @@ public class SceneLoader
                 {
                     if ((string)kvp.Key != "Transform")
                     {
-                        AddComponent(go, (string)kvp.Key, kvp.Value);
+                        AddComponent(go, (string)kvp.Key, kvp.Value, pendingReferences);
                     }
                 }
             }
@@ -163,6 +193,12 @@ public class SceneLoader
             {
                 child.Transform.Parent = parent.Transform;
             }
+        }
+
+        // Pass 3: Deferred object & asset references (forward, sibling, self, and cyclic links)
+        foreach (var (comp, propsDict) in pendingReferences)
+        {
+            ResolveDeferredReferences(comp, propsDict, objects, objectsByLocalId);
         }
 
         return loadAsPrefab ? resultList.Where(g => g.Transform.Parent == null).ToList() : resultList;
@@ -190,7 +226,11 @@ public class SceneLoader
         }
     }
 
-    private void AddComponent(GameObject go, string componentType, object properties)
+    private void AddComponent(
+        GameObject go,
+        string componentType,
+        object properties,
+        List<(Component Target, Dictionary<object, object> Properties)> pendingReferences)
     {
         if (componentType == "Script" && properties is Dictionary<object, object> d && d.TryGetValue("Type", out var t))
         {
@@ -210,14 +250,56 @@ public class SceneLoader
 
             // The serializer writes the enable toggle for every component, whatever its factory reads
             // (SceneSerializer), so it is read back here for all of them, after the factory has had its say.
-            if (properties is Dictionary<object, object> propsDict && TryReadEnabled(propsDict, out bool enabled))
+            if (properties is Dictionary<object, object> propsDict)
             {
-                comp.Enabled = enabled;
+                if (TryReadEnabled(propsDict, out bool enabled))
+                {
+                    comp.Enabled = enabled;
+                }
+
+                if (comp is Script s)
+                {
+                    ApplyScriptProperties(s, propsDict);
+                }
+
+                pendingReferences.Add((comp, propsDict));
+            }
+        }
+    }
+
+    private static void ResolveDeferredReferences(
+        Component component,
+        Dictionary<object, object> propsDict,
+        IReadOnlyDictionary<Guid, GameObject> objectsByGuid,
+        IReadOnlyDictionary<int, GameObject> objectsByLocalId)
+    {
+        Type type = component.GetType();
+        foreach (var (key, value) in propsDict)
+        {
+            if (key is not string propName)
+            {
+                continue;
             }
 
-            if (comp is Script s && properties is Dictionary<object, object> pd)
+            PropertyInfo? prop = type.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+            if (prop is null
+                || !prop.CanWrite
+                || prop.GetIndexParameters().Length > 0
+                || prop.IsDefined(typeof(HideInInspectorAttribute), false)
+                || !ObjectReferenceResolver.IsReferenceType(prop.PropertyType))
             {
-                ApplyScriptProperties(s, pd);
+                continue;
+            }
+
+            if (ObjectReferenceResolver.TryFromYamlValue(
+                    prop.PropertyType,
+                    value,
+                    objectsByGuid,
+                    objectsByLocalId,
+                    ProjectFiles.ProjectRoot,
+                    out object? resolved))
+            {
+                prop.SetValue(component, resolved);
             }
         }
     }
@@ -257,19 +339,19 @@ public class SceneLoader
 
             // [HideInInspector] is the engine's own state, not the scene's: Component.Enabled is read above,
             // for every component, and Script.IsSuspended is never saved at all.
-            if (prop == null || !prop.CanWrite || prop.IsDefined(typeof(HideInInspectorAttribute), false))
+            if (prop == null
+                || !prop.CanWrite
+                || prop.GetIndexParameters().Length > 0
+                || prop.IsDefined(typeof(HideInInspectorAttribute), false)
+                || ObjectReferenceResolver.IsReferenceType(prop.PropertyType))
             {
                 continue;
             }
 
-            try
+            if (ComponentDeserializer.TryConvertPropertyValue(kvp.Value, prop.PropertyType, out object? converted))
             {
-                object val = prop.PropertyType.IsEnum && kvp.Value is string s
-                    ? Enum.Parse(prop.PropertyType, s, true)
-                    : Convert.ChangeType(kvp.Value, prop.PropertyType, CultureInfo.InvariantCulture);
-                prop.SetValue(script, val);
+                prop.SetValue(script, converted);
             }
-            catch { }
         }
     }
 }

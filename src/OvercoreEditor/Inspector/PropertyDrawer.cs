@@ -2,6 +2,7 @@ using Overcore.Attributes;
 using Overcore.Components;
 using Overcore.Core;
 using Overcore.Rendering;
+using Overcore.Serialization;
 using OvercoreEditor.Undo;
 using ImGuiNET;
 using System.Numerics;
@@ -171,6 +172,140 @@ public sealed class PropertyDrawer
         }
 
         return changed;
+    }
+
+    private bool DrawVector4(Component component, PropertyInfo prop, Vector4 value)
+    {
+        bool isColor = prop.GetCustomAttribute<ColorUsageAttribute>() is not null;
+        System.Numerics.Vector4 vec = value;
+
+        bool changed = isColor
+            ? ImGui.ColorEdit4("##val", ref vec, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR)
+            : ImGui.DragFloat4("##val", ref vec, 0.1f);
+
+        if (changed)
+        {
+            prop.SetValue(component, vec);
+        }
+
+        return changed;
+    }
+
+    private bool DrawLayerMask(Component component, PropertyInfo prop, LayerMask value)
+    {
+        int raw = value.Value;
+        bool changed = ImGui.DragInt("##val", ref raw);
+        if (changed)
+        {
+            prop.SetValue(component, new LayerMask(raw));
+        }
+
+        return changed;
+    }
+
+    private bool DrawObjectReference(Component component, PropertyInfo prop, object? currentValue)
+    {
+        Type targetType = prop.PropertyType;
+        string? projectRoot = _editor.ProjectManager.CurrentProject?.RootPath;
+        IEnumerable<GameObject>? sceneObjects = _editor.SceneManager.ActiveScene?.GameObjects;
+
+        (IReadOnlyList<string> tokens, IReadOnlyList<string> labels) =
+            ObjectReferenceResolver.BuildChoices(targetType, sceneObjects, projectRoot);
+
+        string currentToken = ObjectReferenceResolver.FormatToken(currentValue);
+        string currentLabel = ObjectReferenceResolver.FormatDisplayLabel(currentValue, targetType);
+
+        int selectedIndex = 0;
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            if (string.Equals(tokens[i], currentToken, StringComparison.Ordinal))
+            {
+                selectedIndex = i;
+                break;
+            }
+        }
+
+        bool changed = false;
+        string preview = selectedIndex > 0 ? labels[selectedIndex] : currentLabel;
+
+        if (ImGui.BeginCombo("##ref", preview))
+        {
+            for (int i = 0; i < labels.Count; i++)
+            {
+                bool isSelected = i == selectedIndex;
+                if (ImGui.Selectable(labels[i], isSelected))
+                {
+                    if (ObjectReferenceResolver.TryResolveToken(
+                            targetType,
+                            tokens[i],
+                            sceneObjects,
+                            projectRoot,
+                            out object? resolved,
+                            out _))
+                    {
+                        prop.SetValue(component, resolved);
+                        changed = true;
+                    }
+                }
+
+                if (isSelected)
+                {
+                    ImGui.SetItemDefaultFocus();
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            changed |= TryAcceptReferenceDrop(component, prop, targetType, sceneObjects, projectRoot);
+            ImGui.EndDragDropTarget();
+        }
+
+        return changed;
+    }
+
+    private static unsafe bool TryAcceptReferenceDrop(
+        Component component,
+        PropertyInfo prop,
+        Type targetType,
+        IEnumerable<GameObject>? sceneObjects,
+        string? projectRoot)
+    {
+        if (targetType == typeof(PrefabAsset))
+        {
+            var payload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.Prefab);
+            if (payload.NativePtr != null)
+            {
+                string path = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(payload.Data) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    prop.SetValue(component, PrefabAsset.FromPath(path, projectRoot));
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        var goPayload = ImGui.AcceptDragDropPayload(EditorConstants.DragDropPayloads.GameObjectId);
+        if (goPayload.NativePtr != null)
+        {
+            string idText = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(goPayload.Data) ?? string.Empty;
+            if (Guid.TryParse(idText, out Guid objectId) && sceneObjects is not null)
+            {
+                GameObject? targetGo = sceneObjects.FirstOrDefault(go => go.Id == objectId);
+                if (targetGo is not null
+                    && ObjectReferenceResolver.TryExtractTargetFromGameObject(targetType, targetGo, null, 0, out object? extracted))
+                {
+                    prop.SetValue(component, extracted);
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private bool DrawTexture(Component component, PropertyInfo prop, ITexture texture)

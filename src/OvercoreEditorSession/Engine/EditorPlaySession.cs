@@ -206,13 +206,17 @@ public sealed class EditorPlaySession
 
         foreach (ObjectValues state in values.Objects)
         {
-            GameObject gameObject = state.GameObject;
-
-            // Play can also take an object away, through undo of an add; the reference is still here.
-            if (!scene.GameObjects.Contains(gameObject))
+            // Play can also take an object away, through undo of an add; re-add every missing object before
+            // restoring component properties so cross-object references resolve regardless of hierarchy order.
+            if (!scene.GameObjects.Contains(state.GameObject))
             {
-                _scenes.AddGameObject(gameObject);
+                _scenes.AddGameObject(state.GameObject);
             }
+        }
+
+        foreach (ObjectValues state in values.Objects)
+        {
+            GameObject gameObject = state.GameObject;
 
             gameObject.Name = state.Name;
             gameObject.Transform.Position = state.Position;
@@ -220,6 +224,16 @@ public sealed class EditorPlaySession
             gameObject.Transform.Scale = state.Scale;
 
             RestoreComponents(gameObject, state.Components);
+
+            foreach (ParticleSystem ps in gameObject.GetComponents<ParticleSystem>())
+            {
+                ps.Stop(ParticleStopBehavior.StopEmittingAndClear);
+            }
+
+            foreach (NavMeshAgent agent in gameObject.GetComponents<NavMeshAgent>())
+            {
+                agent.ResetPath();
+            }
 
             if (gameObject.GetComponent<RigidBody>() is { } body)
             {

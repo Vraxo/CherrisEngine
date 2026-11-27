@@ -1,5 +1,7 @@
 using Overcore.Attributes;
 using Overcore.Components;
+using Overcore.Core;
+using Overcore.Serialization;
 using Overcore.Utils;
 using System.Collections.Concurrent;
 using System.Globalization;
@@ -32,12 +34,22 @@ public enum PropertyKind
     /// <summary>Three floats; <see cref="PropertySnapshot.IsColor"/> marks a colour.</summary>
     Vector3,
 
+    /// <summary>Four floats; <see cref="PropertySnapshot.IsColor"/> marks an RGBA colour.</summary>
+    Vector4,
+
     /// <summary>
     /// A list of floats, of any length, written and read as comma-separated numbers. The inspector did not have a
     /// list before, and it needs one for the same reason the serializer does: a value whose length is data rather than
     /// a type. Drawn and edited through the text field, which is what an edit command carries anyway.
     /// </summary>
-    Numbers
+    Numbers,
+
+    /// <summary>
+    /// A reference to a scene <see cref="GameObject"/>, <see cref="Transform"/>, <see cref="Component"/> (including
+    /// <see cref="Script"/>), or a project <see cref="PrefabAsset"/>. <see cref="PropertySnapshot.Choices"/> holds
+    /// candidate tokens and <see cref="PropertySnapshot.ChoiceLabels"/> holds the matching human-readable labels.
+    /// </summary>
+    ObjectReference
 }
 
 /// <summary>
@@ -54,11 +66,12 @@ public enum PropertyKind
 /// <param name="Minimum">Range lower bound, when the property declares one.</param>
 /// <param name="Maximum">Range upper bound, when the property declares one.</param>
 /// <param name="IsColor">True when a <see cref="Vector3"/> is marked <see cref="ColorUsageAttribute"/>.</param>
-/// <param name="Choices">Enum names, for <see cref="PropertyKind.Choice"/>.</param>
+/// <param name="Choices">Enum names, for <see cref="PropertyKind.Choice"/>, or reference tokens for <see cref="PropertyKind.ObjectReference"/>.</param>
 /// <param name="DefaultText">
 /// The value a freshly constructed component of this type has, in the same format as <paramref name="Text"/>, or
 /// null when the type cannot be constructed and so has no default to offer. The reset button restores it.
 /// </param>
+/// <param name="ChoiceLabels">Optional display labels parallel to <paramref name="Choices"/> (used by <see cref="PropertyKind.ObjectReference"/>).</param>
 public sealed record PropertySnapshot(
     string Name,
     PropertyKind Kind,
@@ -68,7 +81,8 @@ public sealed record PropertySnapshot(
     float? Minimum = null,
     float? Maximum = null,
     bool IsColor = false,
-    string? DefaultText = null)
+    string? DefaultText = null,
+    IReadOnlyList<string>? ChoiceLabels = null)
 {
     /// <summary>True when a toggle is on, so markup can bind it without comparing strings.</summary>
     public bool IsOn => String.Equals(Text, "true", StringComparison.Ordinal);
@@ -114,6 +128,7 @@ public sealed record PropertySnapshot(
         // A split boundary is a fraction of the shadow distance and wants finer steps than a metre-scale field.
         PropertyKind.Numbers => 0.001f,
         PropertyKind.Vector3 when IsColor => 1f / 255f,
+        PropertyKind.Vector4 when IsColor => 1f / 255f,
         _ => 0.1f
     };
 }
@@ -157,7 +172,7 @@ public static class ComponentProperties
         ArgumentNullException.ThrowIfNull(componentType);
 
         return EditableCache.GetOrAdd(componentType, static type => type.GetProperties(Flags)
-            .Where(property => property.CanRead && property.CanWrite)
+            .Where(property => property.CanRead && property.CanWrite && property.GetIndexParameters().Length == 0)
             .Where(property => !property.IsDefined(typeof(HideInInspectorAttribute), false))
             .Where(property => KindOf(property.PropertyType) is not null)
             .ToArray());
@@ -303,8 +318,9 @@ public static class ComponentProperties
             case PropertyKind.Number:
             case PropertyKind.Vector2:
             case PropertyKind.Vector3:
+            case PropertyKind.Vector4:
                 string[] parts = trimmed.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-                int expected = kind == PropertyKind.Vector3 ? 3 : kind == PropertyKind.Vector2 ? 2 : 1;
+                int expected = kind == PropertyKind.Vector4 ? 4 : kind == PropertyKind.Vector3 ? 3 : kind == PropertyKind.Vector2 ? 2 : 1;
 
                 if (parts.Length != expected)
                 {
@@ -332,7 +348,9 @@ public static class ComponentProperties
 
                 property.SetValue(component, kind switch
                 {
-                    PropertyKind.Integer => (object)(int)MathF.Round(numbers[0]),
+                    PropertyKind.Integer => property.PropertyType == typeof(LayerMask)
+                        ? (object)new LayerMask((int)MathF.Round(numbers[0]))
+                        : (int)MathF.Round(numbers[0]),
                     PropertyKind.Number => numbers[0],
                     _ => BuildValue(property.PropertyType, numbers)
                 });
@@ -363,6 +381,23 @@ public static class ComponentProperties
                 error = null;
                 return true;
 
+            case PropertyKind.ObjectReference:
+                IEnumerable<GameObject>? candidates = CollectCandidateObjects(component);
+                if (!ObjectReferenceResolver.TryResolveToken(
+                        property.PropertyType,
+                        trimmed,
+                        candidates,
+                        ProjectFiles.ProjectRoot,
+                        out object? resolved,
+                        out error))
+                {
+                    return false;
+                }
+
+                property.SetValue(component, resolved);
+                error = null;
+                return true;
+
             default:
                 error = $"'{property.Name}' is a {property.PropertyType.Name}, which the inspector cannot edit.";
                 return false;
@@ -381,7 +416,7 @@ public static class ComponentProperties
             return PropertyKind.Boolean;
         }
 
-        if (type == typeof(int))
+        if (type == typeof(int) || type == typeof(LayerMask))
         {
             return PropertyKind.Integer;
         }
@@ -404,6 +439,16 @@ public static class ComponentProperties
         if (type == typeof(Vector3))
         {
             return PropertyKind.Vector3;
+        }
+
+        if (type == typeof(Vector4))
+        {
+            return PropertyKind.Vector4;
+        }
+
+        if (ObjectReferenceResolver.IsReferenceType(type))
+        {
+            return PropertyKind.ObjectReference;
         }
 
         return IsFloatList(type) ? PropertyKind.Numbers : null;
@@ -429,9 +474,17 @@ public static class ComponentProperties
 
     private static object BuildValue(Type type, float[] numbers)
     {
-        return type == typeof(Vector2)
-            ? new Vector2(numbers[0], numbers[1])
-            : new Vector3(numbers[0], numbers[1], numbers[2]);
+        if (type == typeof(Vector2))
+        {
+            return new Vector2(numbers[0], numbers[1]);
+        }
+
+        if (type == typeof(Vector4))
+        {
+            return new Vector4(numbers[0], numbers[1], numbers[2], numbers[3]);
+        }
+
+        return new Vector3(numbers[0], numbers[1], numbers[2]);
     }
 
     /// <summary>Reads one property and states the default it would be reset to, when its type has one.</summary>
@@ -489,15 +542,25 @@ public static class ComponentProperties
     private static PropertySnapshot? Read(Component component, PropertyInfo property)
     {
         PropertyKind? kind = KindOf(property.PropertyType);
-        object? value = property.GetValue(component);
+        if (kind is null)
+        {
+            return null;
+        }
 
-        if (kind is null || value is null)
+        object? value = property.GetValue(component);
+        if (kind == PropertyKind.ObjectReference)
+        {
+            return ObjectReferenceSnapshot(component, property, value);
+        }
+
+        if (value is null)
         {
             return null;
         }
 
         RangeAttribute? range = property.GetCustomAttribute<RangeAttribute>();
         bool isColor = property.GetCustomAttribute<ColorUsageAttribute>() is not null;
+        int intValue = value is LayerMask mask ? mask.Value : (kind == PropertyKind.Integer ? (int)value : 0);
 
         return kind switch
         {
@@ -511,7 +574,7 @@ public static class ComponentProperties
                 range?.Min, range?.Max),
 
             PropertyKind.Integer => new PropertySnapshot(
-                property.Name, kind.Value, Format(((int)value).ToString(CultureInfo.InvariantCulture)), [(int)value], [],
+                property.Name, kind.Value, Format(intValue.ToString(CultureInfo.InvariantCulture)), [intValue], [],
                 range?.Min, range?.Max),
 
             PropertyKind.Number => new PropertySnapshot(
@@ -520,6 +583,11 @@ public static class ComponentProperties
             PropertyKind.Vector2 => new PropertySnapshot(
                 property.Name, kind.Value, Format(Number(((Vector2)value).X), Number(((Vector2)value).Y)),
                 [((Vector2)value).X, ((Vector2)value).Y], [], range?.Min, range?.Max),
+
+            PropertyKind.Vector4 => new PropertySnapshot(
+                property.Name, kind.Value,
+                Format(Number(((Vector4)value).X), Number(((Vector4)value).Y), Number(((Vector4)value).Z), Number(((Vector4)value).W)),
+                [((Vector4)value).X, ((Vector4)value).Y, ((Vector4)value).Z, ((Vector4)value).W], [], range?.Min, range?.Max, isColor),
 
             // A list has no fixed arity, so both the text and Components carry every element. Components is what a
             // vector row draws one field per entry of; the text field is what carries an edit, because a list whose
@@ -531,6 +599,64 @@ public static class ComponentProperties
                 Format(Number(((Vector3)value).X), Number(((Vector3)value).Y), Number(((Vector3)value).Z)),
                 [((Vector3)value).X, ((Vector3)value).Y, ((Vector3)value).Z], [], range?.Min, range?.Max, isColor)
         };
+    }
+
+    private static PropertySnapshot ObjectReferenceSnapshot(Component component, PropertyInfo property, object? value)
+    {
+        string token = ObjectReferenceResolver.FormatToken(value);
+        (IReadOnlyList<string> tokens, IReadOnlyList<string> labels) = ObjectReferenceResolver.BuildChoices(
+            property.PropertyType,
+            CollectCandidateObjects(component),
+            ProjectFiles.ProjectRoot);
+
+        // Ensure the currently assigned value is always selectable/displayable even if detached or from an unloaded root.
+        if (token.Length > 0 && !tokens.Contains(token, StringComparer.Ordinal))
+        {
+            List<string> extendedTokens = [.. tokens, token];
+            List<string> extendedLabels = [.. labels, ObjectReferenceResolver.FormatDisplayLabel(value, property.PropertyType)];
+            tokens = extendedTokens;
+            labels = extendedLabels;
+        }
+
+        return new PropertySnapshot(
+            property.Name,
+            PropertyKind.ObjectReference,
+            token,
+            [],
+            tokens,
+            ChoiceLabels: labels);
+    }
+
+    private static IEnumerable<GameObject>? CollectCandidateObjects(Component component)
+    {
+        if (component.GameObject?.scene is { } ownerScene)
+        {
+            return ownerScene.GameObjects;
+        }
+
+        if (component.GameObject is { } looseOwner)
+        {
+            Transform root = looseOwner.Transform;
+            while (root.Parent is not null)
+            {
+                root = root.Parent;
+            }
+
+            List<GameObject> hierarchy = [];
+            CollectHierarchy(root.GameObject, hierarchy);
+            return hierarchy;
+        }
+
+        return Scene.Active?.GameObjects;
+    }
+
+    private static void CollectHierarchy(GameObject go, List<GameObject> into)
+    {
+        into.Add(go);
+        foreach (Transform child in go.Transform.Children)
+        {
+            CollectHierarchy(child.GameObject, into);
+        }
     }
 
     /// <summary>One <see cref="PropertyKind.Numbers"/> row: every element, as text and as floats.</summary>

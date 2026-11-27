@@ -1041,12 +1041,16 @@
             return;
         }
 
-        string text = String.Join(", ", new[]
+        string[] parts = new string[property.Components.Count];
+        parts[0] = Format(Convert.ToInt32(hex.Substring(1, 2), 16) / 255f);
+        parts[1] = Format(Convert.ToInt32(hex.Substring(3, 2), 16) / 255f);
+        parts[2] = Format(Convert.ToInt32(hex.Substring(5, 2), 16) / 255f);
+        for (int i = 3; i < parts.Length; i++)
         {
-            Format(Convert.ToInt32(hex.Substring(1, 2), 16) / 255f),
-            Format(Convert.ToInt32(hex.Substring(3, 2), 16) / 255f),
-            Format(Convert.ToInt32(hex.Substring(5, 2), 16) / 255f)
-        });
+            parts[i] = Format(property.Components[i]);
+        }
+
+        string text = String.Join(", ", parts);
 
         string propertyKey = PropertyKey(node, component, property);
         long revision = BeginReset(propertyKey, CanResetText(property, text));

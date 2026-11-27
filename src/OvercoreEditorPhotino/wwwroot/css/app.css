@@ -213,6 +213,7 @@
     --axis-x: #cc3333;
     --axis-y: #33cc33;
     --axis-z: #334ccc;
+    --axis-w: #b28c33;
 }
 
 * {
@@ -2249,6 +2250,13 @@ span.panel-tab {
     background: transparent;
     color: color-mix(in srgb, var(--axis-z) 75%, var(--theme-foreground));
     background: color-mix(in srgb, var(--axis-z) 12%, transparent);
+}
+
+.axis-w {
+    color: var(--axis-w);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-w) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-w) 12%, transparent);
 }
 
 .vec-cell .imgui-input.vec-field {

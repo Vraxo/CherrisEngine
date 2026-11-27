@@ -18,7 +18,9 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLGizmoRenderer _gizmoRenderer;
     private readonly OpenGLGridRenderer _gridRenderer;
     private readonly OpenGLShadowRenderer _shadowRenderer;
+    private readonly OpenGLParticleRenderer _particleRenderer;
     private readonly OpenGLUIRenderer _uiRenderer;
+    private readonly IResourceManager? _resourceManager;
     private readonly bool _renderImGui;
     private Vector2i _viewportSize = new(1, 1);
     private bool _viewportConfiguredThisFrame;
@@ -38,6 +40,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     {
         _imGuiController = imGuiController;
         _renderImGui = renderImGui;
+        _resourceManager = resourceManager;
         _sceneRenderer = new OpenGLSceneRenderer();
         _skyboxRenderer = new OpenGLSkyboxRenderer();
         _postProcessor = new OpenGLPostProcessor();
@@ -45,6 +48,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _gizmoRenderer = new OpenGLGizmoRenderer(_debugRenderer);
         _gridRenderer = new OpenGLGridRenderer();
         _shadowRenderer = new OpenGLShadowRenderer();
+        _particleRenderer = new OpenGLParticleRenderer();
         _uiRenderer = new OpenGLUIRenderer(_imGuiController, resourceManager);
         GL.FrontFace(FrontFaceDirection.Cw);
     }
@@ -155,6 +159,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
             }
         }
         _sceneRenderer.Render(sceneObjects, lights, view, projection, shadows, _shadowRenderer.Texture);
+        _particleRenderer.Render(sceneObjects, view, projection, _resourceManager);
         if (!isRuntimeMode)
         {
             _gizmoRenderer.Render(gameObjects, selectedObject, ShowPhysicsColliders);
@@ -195,6 +200,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
     {
         _sceneRenderer.Dispose();
         _shadowRenderer.Dispose();
+        _particleRenderer.Dispose();
         _skyboxRenderer.Dispose();
         _postProcessor.Dispose();
         _debugRenderer.Dispose();

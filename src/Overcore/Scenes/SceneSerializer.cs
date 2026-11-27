@@ -19,6 +19,7 @@ public class SceneSerializer
             .WithNamingConvention(PascalCaseNamingConvention.Instance)
             .WithTypeConverter(new Vector3YamlTypeConverter())
             .WithTypeConverter(new Vector2YamlTypeConverter())
+            .WithTypeConverter(new Vector4YamlTypeConverter())
             .Build();
     }
 
@@ -96,7 +97,7 @@ public class SceneSerializer
                 goData["Parent"] = gameObject.Transform.Parent.GameObject.Id.ToString();
             }
 
-            Dictionary<string, object> componentsData = SerializeGameObjectComponents(gameObject);
+            Dictionary<string, object> componentsData = SerializeGameObjectComponents(gameObject, fileIds);
             goData["Components"] = componentsData;
             gameObjectsData.Add(goData);
         }
@@ -158,7 +159,9 @@ public class SceneSerializer
         return _serializer.Serialize(root);
     }
 
-    private static Dictionary<string, object> SerializeGameObjectComponents(GameObject gameObject)
+    private static Dictionary<string, object> SerializeGameObjectComponents(
+        GameObject gameObject,
+        IReadOnlyDictionary<GameObject, int>? prefabLocalIds = null)
     {
         Dictionary<string, object> componentsData = [];
 
@@ -197,10 +200,12 @@ public class SceneSerializer
                 // A list, which is the one shape the generic path cannot compare: its "does this differ from a fresh
                 // instance" test is object.Equals, and a float[] is compared by reference, so a clean list would be
                 // written on every save and a hand edit would be written indistinguishably from a default.
-                Overcore.Rendering.Shadows.Shadows shadows => SerializeShadows(shadows),
+                Overcore.Rendering.Shadows.Shadows shadows => SerializeShadows(shadows, prefabLocalIds),
+
+                ParticleSystem particleSystem => SerializeParticleSystem(particleSystem, prefabLocalIds),
 
                 // All other components can be serialized generically using reflection.
-                _ => SerializeComponentProperties(component)
+                _ => SerializeComponentProperties(component, prefabLocalIds)
             };
 
             // The loader reads the enable toggle back for every component, whatever its factory (SceneLoader),
@@ -225,9 +230,11 @@ public class SceneSerializer
     /// on the way back in. What it must not do is write the list unconditionally: every derived list would then appear
     /// in every scene file, which makes a default look like a decision and hides the one case the list exists for.
     /// </remarks>
-    private static Dictionary<string, object> SerializeShadows(Overcore.Rendering.Shadows.Shadows shadows)
+    private static Dictionary<string, object> SerializeShadows(
+        Overcore.Rendering.Shadows.Shadows shadows,
+        IReadOnlyDictionary<GameObject, int>? prefabLocalIds = null)
     {
-        Dictionary<string, object> data = SerializeComponentProperties(shadows);
+        Dictionary<string, object> data = SerializeComponentProperties(shadows, prefabLocalIds);
 
         float[] derived = CascadeSplits.Derive(shadows.Cascades);
         float[] stored = shadows.Splits;
@@ -244,6 +251,34 @@ public class SceneSerializer
         else
         {
             data[nameof(Shadows.Splits)] = stored;
+        }
+
+        return data;
+    }
+
+    private static Dictionary<string, object> SerializeParticleSystem(
+        ParticleSystem ps,
+        IReadOnlyDictionary<GameObject, int>? prefabLocalIds = null)
+    {
+        Dictionary<string, object> data = SerializeComponentProperties(ps, prefabLocalIds);
+
+        if (ps.Bursts.Count > 0)
+        {
+            List<Dictionary<string, object>> burstsData = [];
+            foreach (ParticleBurst b in ps.Bursts)
+            {
+                burstsData.Add(new Dictionary<string, object>
+                {
+                    ["Time"] = b.Time,
+                    ["MinCount"] = b.MinCount,
+                    ["MaxCount"] = b.MaxCount,
+                    ["CycleCount"] = b.CycleCount,
+                    ["RepeatInterval"] = b.RepeatInterval,
+                    ["Probability"] = b.Probability
+                });
+            }
+
+            data["Bursts"] = burstsData;
         }
 
         return data;
@@ -309,11 +344,16 @@ public class SceneSerializer
         }
     }
 
-    private static Dictionary<string, object> SerializeComponentProperties(Component component)
+    private static Dictionary<string, object> SerializeComponentProperties(
+        Component component,
+        IReadOnlyDictionary<GameObject, int>? prefabLocalIds = null)
     {
         Dictionary<string, object> propertiesData = [];
         var properties = component.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead && p.CanWrite && p.GetCustomAttribute<HideInInspectorAttribute>() is null);
+            .Where(p => p.CanRead
+                && p.CanWrite
+                && p.GetIndexParameters().Length == 0
+                && p.GetCustomAttribute<HideInInspectorAttribute>() is null);
 
         // This handles components like Camera that have no public properties to serialize.
         if (!properties.Any())
@@ -321,26 +361,62 @@ public class SceneSerializer
             return [];
         }
 
+        object? defaultComponent = null;
+        try
+        {
+            defaultComponent = Activator.CreateInstance(component.GetType());
+        }
+        catch
+        {
+            // No parameterless constructor: serialize non-null values as-is.
+        }
+
         foreach (PropertyInfo prop in properties)
         {
-            // Skip default values for cleaner YAML output.
-            // This is an optional step but preserves the behavior of the old serializer.
-            // A new component instance is created to get default values.
-            try
-            {
-                var defaultComponent = Activator.CreateInstance(component.GetType());
-                object defaultValue = prop.GetValue(defaultComponent);
-                object currentValue = prop.GetValue(component);
+            object? currentValue = prop.GetValue(component);
 
+            if (ObjectReferenceResolver.IsReferenceType(prop.PropertyType))
+            {
+                Dictionary<string, object>? serializedRef = ObjectReferenceResolver.ToYamlDictionary(
+                    currentValue,
+                    prefabLocalIds,
+                    ProjectFiles.ProjectRoot);
+
+                if (serializedRef is not null)
+                {
+                    propertiesData[prop.Name] = serializedRef;
+                }
+
+                continue;
+            }
+
+            if (prop.PropertyType == typeof(LayerMask))
+            {
+                LayerMask currentMask = currentValue is LayerMask lm ? lm : default;
+                LayerMask defaultMask = defaultComponent is not null && prop.GetValue(defaultComponent) is LayerMask dm
+                    ? dm
+                    : default;
+
+                if (defaultComponent is null || currentMask != defaultMask)
+                {
+                    propertiesData[prop.Name] = currentMask.Value;
+                }
+
+                continue;
+            }
+
+            // Skip default values for cleaner YAML output.
+            if (defaultComponent is not null)
+            {
+                object? defaultValue = prop.GetValue(defaultComponent);
                 if (currentValue is not null && !currentValue.Equals(defaultValue))
                 {
                     propertiesData[prop.Name] = currentValue;
                 }
             }
-            catch
+            else if (currentValue is not null)
             {
-                // If a component doesn't have a parameterless constructor, just serialize all properties.
-                propertiesData[prop.Name] = prop.GetValue(component);
+                propertiesData[prop.Name] = currentValue;
             }
         }
 

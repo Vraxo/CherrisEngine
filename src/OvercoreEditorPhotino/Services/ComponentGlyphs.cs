@@ -25,6 +25,10 @@ public static class ComponentGlyphs
             ["MeshRenderer"] = ("fa-cube", "component-icon-green"),
             ["RigidBody"] = ("fa-weight-hanging", "component-icon-orange"),
             ["Skybox"] = ("fa-mountain-sun", "component-icon-pink"),
+            ["ParticleSystem"] = ("fa-wand-magic-sparkles", "component-icon-pink"),
+            ["NavMeshSurface"] = ("fa-map", "component-icon-light-blue"),
+            ["NavMeshAgent"] = ("fa-person-walking", "component-icon-green"),
+            ["NavMeshObstacle"] = ("fa-road-barrier", "component-icon-orange"),
             ["Script"] = ("fa-code", "component-icon-purple"),
             ["LanguageScript"] = ("fa-scroll", "component-icon-purple")
         };

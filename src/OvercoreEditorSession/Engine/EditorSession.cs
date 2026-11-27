@@ -696,8 +696,30 @@ public sealed class EditorSession : Engine, IDisposable
 
         base.Update(deltaTime);
 
-        // Physics, audio and scripts advance only while play is running; a paused or edited scene stands still.
+        //Physics, audio and scripts advance only while play is running; a paused or edited scene stands still.
         _play.Tick(deltaTime);
+
+        // Preview selected ParticleSystem in edit mode so VFX tweaks give immediate feedback.
+        if (!_play.IsRunning
+            && _play.State == EditorPlayState.Editing
+            && SceneManager.ActiveScene is { } editScene)
+        {
+            foreach (GameObject go in editScene.GameObjects)
+            {
+                if (!go.ActiveInHierarchy)
+                {
+                    continue;
+                }
+
+                foreach (ParticleSystem ps in go.GetComponents<ParticleSystem>())
+                {
+                    if (ps.Enabled && ps.PlayOnAwake)
+                    {
+                        ps.Step(deltaTime);
+                    }
+                }
+            }
+        }
 
         if (_spinTarget is null || !_play.IsRunning)
         {
