@@ -759,14 +759,14 @@ public class ParticleSystem : Component, IDisposable
             return;
         }
 
-        // Rate over time
+        // Rate over time (1e-5f epsilon avoids losing a boundary particle to 60 Hz sub-step float rounding, e.g. 20 * 0.5 = 9.999999)
         if (RateOverTime > 0f)
         {
             _emissionAccumulator += RateOverTime * activeDt;
-            int toEmit = (int)MathF.Floor(_emissionAccumulator);
+            int toEmit = (int)MathF.Floor(_emissionAccumulator + 1e-5f);
             if (toEmit > 0)
             {
-                _emissionAccumulator -= toEmit;
+                _emissionAccumulator = MathF.Max(0f, _emissionAccumulator - toEmit);
                 EmitWithTransform(toEmit, emitterWorld);
             }
         }

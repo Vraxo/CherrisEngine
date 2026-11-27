@@ -44,9 +44,9 @@ public class TurretController : Script
 
 ## Serialization & Resolution
 
-- **Scene `.yaml` files**: Scene object and component references serialize as `obj:<Guid>` (or `obj:<Guid>:<TypeName>`) and resolve in a third pass of `SceneLoader` after every `GameObject`, hierarchy link, and `Component` has been constructed. Forward references and mutual cycles (`A.Partner = B`, `B.Partner = A`) round-trip losslessly.
-- **Prefab `.prefab` files**: References pointing inside the saved prefab hierarchy serialize using stable local file IDs (`obj:local:<FileId>`) rather than authoring GUIDs. Each loaded prefab instance resolves internal links against its own fresh hierarchy, and prefab overrides compare cleanly via `prefablink:<FileId>`.
-- **`PrefabAsset` handles**: Serialized as `prefab:<AssetGuid>|<AssetPath>`, resolving via `AssetMeta` sidecars first with path fallback.
+- **Scene `.yaml` files**: Scene object and component references serialize as structured YAML blocks (`Object: <Guid>`, optional `Component: <TypeName>`) and resolve in a third pass of `SceneLoader` after every `GameObject`, hierarchy link, and `Component` has been constructed. Forward references and mutual cycles (`A.Partner = B`, `B.Partner = A`) round-trip losslessly.
+- **Prefab `.prefab` files**: References pointing inside the saved prefab hierarchy serialize using stable local file IDs (`Object: <FileId>`) rather than authoring GUIDs. Each loaded prefab instance resolves internal links against its own fresh hierarchy, and prefab overrides compare cleanly via `prefablink:<FileId>`.
+- **`PrefabAsset` handles**: Serialized as `{ Asset: <AssetGuid>, Path: <AssetPath> }`, resolving via `AssetMeta` sidecars first with path fallback.
 - **Runtime cloning (`GameObject.Instantiate`)**: Cloning a hierarchy automatically remaps internal `GameObject`, `Transform`, and `Component` references onto the newly cloned counterparts while preserving external scene references.
 
 ## Inspector Editing

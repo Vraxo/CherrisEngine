@@ -47,8 +47,8 @@ public class ObjectReferenceInspectorTests
 
         PropertySnapshot lightProp = props.Single(p => p.Name == nameof(ReferenceHolder.LinkedLight));
         lightProp.Kind.Should().Be(PropertyKind.ObjectReference);
-        lightProp.Choices.Should().Contain($"obj:{lamp.Id:D}");
-        lightProp.Choices.Should().NotContain($"obj:{crate.Id:D}", "Crate has no Light component");
+        lightProp.Choices.Should().Contain($"obj:{lamp.Id:D}:Light");
+        lightProp.Choices.Should().NotContain(c => c.Contains(crate.Id.ToString("D")), "Crate has no Light component");
 
         // Assigning via TryApply resolves live instances and clears back to null on empty string.
         ComponentProperties.TryApply(holder, nameof(ReferenceHolder.TargetObject), $"obj:{crate.Id:D}", out _).Should().BeTrue();

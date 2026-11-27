@@ -51,8 +51,8 @@ public class ObjectReferenceSerializationTests
         SceneSerializer serializer = new();
         string yaml = serializer.SerializeSceneToString([turretA, muzzleA, turretB, target]);
 
-        yaml.Should().Contain("obj:");
-        yaml.Should().Contain("prefab:");
+        yaml.Should().Contain("Object:");
+        yaml.Should().Contain("Path: Assets/Prefabs/Rocket.prefab");
 
         SceneLoader loader = new(null!);
         ComponentDeserializer.RegisterFactories(loader, null!);
@@ -104,7 +104,7 @@ public class ObjectReferenceSerializationTests
         serializer.SavePrefab(rig, prefabPath);
 
         string yaml = File.ReadAllText(prefabPath);
-        yaml.Should().Contain("obj:local:2", "internal prefab references use local File IDs rather than authoring GUIDs");
+        yaml.Should().Contain("Object: 2", "internal prefab references use local File IDs rather than authoring GUIDs");
 
         SceneLoader loader = new(null!);
         ComponentDeserializer.RegisterFactories(loader, null!);

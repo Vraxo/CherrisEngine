@@ -832,7 +832,7 @@ public static class NavMesh
                     }
                 }
 
-                if (exitEdge == -1 || bestExitT >= 1f - 1e-5f)
+                if (exitEdge == -1 || bestExitT > 1f)
                 {
                     // Reached target inside curPoly without crossing an impassable wall!
                     Vector3 finalPos = ClosestPointOnConvexPolygon(poly, data.Vertices, targetPosition);
@@ -866,6 +866,22 @@ public static class NavMesh
                         PolygonIndex = curPoly
                     };
                     return true;
+                }
+
+                if (bestExitT >= 1f - 1e-5f)
+                {
+                    NavMeshPolygon destPoly = data.Polygons[nextPoly];
+                    Vector3 finalPos = ClosestPointOnConvexPolygon(destPoly, data.Vertices, targetPosition);
+                    hit = new NavMeshHit
+                    {
+                        Position = finalPos,
+                        Normal = Vector3.Zero,
+                        Distance = Vector3.Distance(startOnMesh, finalPos),
+                        Mask = 1 << destPoly.Area,
+                        Hit = false,
+                        PolygonIndex = nextPoly
+                    };
+                    return false;
                 }
 
                 prevPoly = curPoly;
