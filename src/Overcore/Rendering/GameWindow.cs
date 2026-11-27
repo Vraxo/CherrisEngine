@@ -1,13 +1,20 @@
-﻿using Overcore.RenderingInterface;
+using Overcore.RenderingInterface;
 using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
+using System.Runtime.InteropServices;
 
 namespace Overcore.Core;
 
 public class GameWindow : IGameWindow
 {
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SDLTextInputAction();
+
+    private static readonly Lazy<SDLTextInputAction> s_startTextInput = new(() => Sdl2Native.LoadFunction<SDLTextInputAction>("SDL_StartTextInput"));
+    private static readonly Lazy<SDLTextInputAction> s_stopTextInput = new(() => Sdl2Native.LoadFunction<SDLTextInputAction>("SDL_StopTextInput"));
+
     public Sdl2Window SdlWindow { get; }
     private readonly Vector2 _windowCenter;
     private GraphicsDevice _graphicsDevice;
@@ -45,6 +52,7 @@ public class GameWindow : IGameWindow
         };
 
         SdlWindow = VeldridStartup.CreateWindow(ref windowCI);
+        s_startTextInput.Value();
         SdlWindow.Resized += () => Resized?.Invoke();
         _windowCenter = new Vector2(SdlWindow.Width / 2f, SdlWindow.Height / 2f);
 
@@ -80,7 +88,11 @@ public class GameWindow : IGameWindow
     public void ProcessEvents()
     {
         Input.FrameStarted();
-        SdlWindow.PumpEvents();
+        InputSnapshot inputSnapshot = SdlWindow.PumpEvents();
+        foreach (char character in inputSnapshot.KeyCharPresses)
+        {
+            Input.AddTextInput(character);
+        }
 
         if (Input.WasKeyPressed(Key.Escape))
         {
@@ -105,6 +117,7 @@ public class GameWindow : IGameWindow
             return;
         }
 
+        s_stopTextInput.Value();
         SdlWindow.Close();
     }
 }
