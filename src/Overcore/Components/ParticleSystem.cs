@@ -601,12 +601,33 @@ public class ParticleSystem : Component, IDisposable
     }
 
     /// <summary>
-    /// Deterministically advances or scrubs the particle simulation by <paramref name="seconds"/>.
+    /// Deterministically advances or scrubs the particle simulation by <paramref name="seconds"/> (Unity's <c>ParticleSystem.Simulate</c>).
     /// </summary>
-    /// <param name="seconds">Time to advance in seconds.</param>
-    /// <param name="restart">When true, clears and reseeds from <c>t = 0</c> before stepping.</param>
-    /// <param name="fixedTimeStep">When true, subdivides large steps into 60 Hz sub-steps for stable integration.</param>
-    public void Simulate(float seconds, bool restart = true, bool fixedTimeStep = true)
+    public void Simulate(float seconds, bool withChildren, bool restart, bool fixedTimeStep = true)
+    {
+        SimulateSingle(seconds, restart, fixedTimeStep);
+
+        if (!withChildren || GameObject is null)
+        {
+            return;
+        }
+
+        foreach (Transform child in GameObject.Transform.Children)
+        {
+            foreach (ParticleSystem childPs in child.GameObject.GetComponentsInChildren<ParticleSystem>())
+            {
+                childPs.SimulateSingle(seconds, restart, fixedTimeStep);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Deterministically advances or scrubs this particle emitter by <paramref name="seconds"/>.
+    /// </summary>
+    public void Simulate(float seconds, bool restart = true) =>
+        SimulateSingle(seconds, restart, fixedTimeStep: true);
+
+    private void SimulateSingle(float seconds, bool restart, bool fixedTimeStep)
     {
         if (restart)
         {
@@ -643,8 +664,8 @@ public class ParticleSystem : Component, IDisposable
         }
     }
 
-    /// <summary>Called once per frame by <see cref="Scene.Update"/>.</summary>
-    internal void Step(float deltaTime)
+    /// <summary>Advances the emitter by one frame step (called by <see cref="Scene.Update"/> and editor preview).</summary>
+    public void Step(float deltaTime)
     {
         if (!Enabled || GameObject is null || !GameObject.ActiveInHierarchy)
         {

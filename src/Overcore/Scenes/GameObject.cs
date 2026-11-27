@@ -122,6 +122,8 @@ public class GameObject
         return component;
     }
 
+    public T AddComponent<T>() where T : Component, new() => AddComponent(new T());
+
     public T? GetComponent<T>() where T : Component
     {
         return _components.OfType<T>().FirstOrDefault();

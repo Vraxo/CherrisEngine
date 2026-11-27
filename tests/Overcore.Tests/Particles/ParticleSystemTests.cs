@@ -74,7 +74,7 @@ public class ParticleSystemTests
         GameObject go = new("Fountain");
         ParticleSystem ps = go.AddComponent<ParticleSystem>();
         ps.AutoRandomSeed = false;
-        ps.RandomSeed = 424242u;
+        ps.RandomSeed = 424242;
         ps.RateOverTime = 30f;
         ps.ShapeType = ParticleShapeType.Sphere;
         ps.ShapeRadius = 2.5f;
