@@ -168,6 +168,29 @@ public sealed class CharacterControllerTests
         actor.Transform.WorldPosition.X.Should().BeLessThan(1.2f);
     }
 
+    [Theory]
+    [InlineData(true, 0.65f)]
+    [InlineData(false, 0.65f)]
+    public void DetectCollisionsControlsWhetherAnIncomingRigidBodyIsBlocked(bool detectCollisions, float threshold)
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        GameObject crate = new("Crate");
+        crate.Transform.WorldPosition = new Vector3(1.5f, 1f, 0f);
+        crate.AddComponent(new BoxCollider { Size = new Vector3(0.5f) });
+        RigidBody body = crate.AddComponent(new RigidBody { UseGravity = false });
+        _ = StartScene(physics, audio, actor, crate);
+        controller.DetectCollisions = detectCollisions;
+        body.Velocity = new Vector3(-10f, 0f, 0f);
+
+        physics.Update(0.1f);
+
+        if (detectCollisions) crate.Transform.WorldPosition.X.Should().BeGreaterThan(threshold);
+        else crate.Transform.WorldPosition.X.Should().BeLessThan(threshold);
+    }
+
     [Fact]
     public void ControllerWithDetectCollisionsDisabledDoesNotBlockOtherControllers()
     {
