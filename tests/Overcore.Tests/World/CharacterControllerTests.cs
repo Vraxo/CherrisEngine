@@ -492,9 +492,11 @@ public sealed class CharacterControllerTests
 
         controller.Move(new Vector3(0.01f, 0f, 0f)).Should().Be(CollisionFlags.Below);
         platform.Transform.WorldPosition += Vector3.UnitX;
+        Time.Advance(1f / 60f);
         controller.Move(Vector3.Zero);
 
         actor.Transform.WorldPosition.X.Should().BeApproximately(1.01f, 0.02f);
+        controller.Velocity.Length().Should().BeApproximately(0f, 0.01f);
         controller.IsGrounded.Should().BeTrue();
     }
 

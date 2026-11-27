@@ -136,7 +136,7 @@ public sealed class CharacterController : Collider
     public bool EnableOverlapRecovery { get; set; } = true;
     /// <summary>True when the last movement touched a walkable surface below.</summary>
     public bool IsGrounded { get; private set; }
-    /// <summary>World-space velocity estimated from the most recent explicit move.</summary>
+    /// <summary>World-space velocity from the most recent move, excluding overlap recovery and platform carry.</summary>
     public Vector3 Velocity => _velocity;
     /// <summary>Flags produced by the most recent movement.</summary>
     public CollisionFlags CollisionFlags { get; private set; }
@@ -184,7 +184,9 @@ public sealed class CharacterController : Collider
         UpdateSupportPose();
         DispatchTriggerChanges(movementPath, triggerStartPosition);
         float dt = Time.DeltaTime;
-        _velocity = dt > 1e-6f ? (Transform.WorldPosition - frameStart) / dt : Vector3.Zero;
+        _velocity = dt > 1e-6f
+            ? (Transform.WorldPosition - movementStart - supportMotion) / dt
+            : Vector3.Zero;
         foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => (hit.Collider, hit.OtherController)))
         {
             foreach (Script script in GameObject!.GetComponents<Script>()
