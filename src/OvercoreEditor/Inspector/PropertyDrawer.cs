@@ -1,4 +1,4 @@
-﻿using Overcore.Attributes;
+using Overcore.Attributes;
 using Overcore.Components;
 using Overcore.Core;
 using Overcore.Rendering;
@@ -236,7 +236,17 @@ public sealed class PropertyDrawer
                 string path = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(payload.Data) ?? "";
                 if (!string.IsNullOrEmpty(path))
                 {
-                    string value = Path.GetFileNameWithoutExtension(path);
+                    string value;
+                    if (String.Equals(attr.PayloadType, EditorConstants.DragDropPayloads.Sprite, StringComparison.Ordinal))
+                    {
+                        string projectRoot = _editor.ProjectManager.CurrentProject?.RootPath ?? String.Empty;
+                        value = String.IsNullOrEmpty(projectRoot) ? path : Path.GetRelativePath(projectRoot, path);
+                        value = value.Replace('\\', '/');
+                    }
+                    else
+                    {
+                        value = Path.GetFileNameWithoutExtension(path);
+                    }
                     prop.SetValue(component, value);
                     SyncResource(component, prop.Name, value);
                 }

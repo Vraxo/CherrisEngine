@@ -7,6 +7,10 @@ namespace Overcore.Components;
 public sealed class Image : Component
 {
     /// <summary>Project-relative texture asset to draw; blank uses a solid-color rectangle.</summary>
+    [DragDropTarget("ASSET_PATH_SPRITE")]
+    public string SpriteName { get; set; } = String.Empty;
+
+    /// <summary>Direct project-relative texture fallback; a valid SpriteName supplies its source texture and UVs.</summary>
     [DragDropTarget("ASSET_PATH_TEXTURE")]
     public string TextureName { get; set; } = String.Empty;
 

@@ -93,8 +93,9 @@ internal sealed class VeldridUIRenderer : IDisposable
         {
             if (element.Image is { } image)
             {
-                _ = GetImageTexture(image);
-                needsWhite |= String.IsNullOrWhiteSpace(image.TextureName);
+                ResolvedSprite sprite = SpriteAssetLoader.Resolve(image);
+                _ = GetImageTexture(sprite.TextureName);
+                needsWhite |= String.IsNullOrWhiteSpace(sprite.TextureName);
             }
             needsWhite |= element.Slider is not null || element.Button is not null || element.Toggle is not null
                 || element.InputField is not null;
@@ -132,21 +133,22 @@ internal sealed class VeldridUIRenderer : IDisposable
                 else if (element.Toggle is { } toggle) tint *= _events.GetTint(toggle);
                 tint = Vector3.Clamp(tint, Vector3.Zero, Vector3.One);
                 float alpha = Math.Clamp(image.Alpha, 0f, 1f);
-                ITexture texture = GetImageTexture(image);
+                ResolvedSprite sprite = SpriteAssetLoader.Resolve(image);
+                ITexture texture = GetImageTexture(sprite.TextureName);
                 Batch batch = GetBatch(batches, texture, element.ClipRect);
-                if (String.IsNullOrWhiteSpace(image.TextureName) || ReferenceEquals(texture, GetWhiteTexture()))
+                if (String.IsNullOrWhiteSpace(sprite.TextureName) || ReferenceEquals(texture, GetWhiteTexture()))
                 {
                     AppendQuad(batch.Vertices, element.Rect, 0f, 1f, 1f, 0f, width, height,
                         new Vector4(tint, alpha));
                 }
                 else
                 {
-                    Vector2 uvMin = Vector2.Clamp(image.UVMin, Vector2.Zero, Vector2.One);
-                    Vector2 uvMax = Vector2.Clamp(image.UVMax, uvMin, Vector2.One);
-                    if (image.SliceLeft > 0f || image.SliceTop > 0f || image.SliceRight > 0f || image.SliceBottom > 0f)
+                    Vector2 uvMin = Vector2.Clamp(sprite.UVMin, Vector2.Zero, Vector2.One);
+                    Vector2 uvMax = Vector2.Clamp(sprite.UVMax, uvMin, Vector2.One);
+                    if (sprite.SliceLeft > 0f || sprite.SliceTop > 0f || sprite.SliceRight > 0f || sprite.SliceBottom > 0f)
                     {
                         foreach (UITextureQuad quad in NineSliceLayout.Build(element.Rect, uvMin, uvMax,
-                            image.SliceLeft, image.SliceTop, image.SliceRight, image.SliceBottom))
+                            sprite.SliceLeft, sprite.SliceTop, sprite.SliceRight, sprite.SliceBottom))
                         {
                             AppendQuad(batch.Vertices, quad.Rect, quad.U0, quad.V0, quad.U1, quad.V1,
                                 width, height, new Vector4(tint, alpha));
@@ -243,13 +245,13 @@ internal sealed class VeldridUIRenderer : IDisposable
             BufferUsage.VertexBuffer | BufferUsage.Dynamic));
     }
 
-    private ITexture GetImageTexture(Image image)
+    private ITexture GetImageTexture(string textureName)
     {
-        if (String.IsNullOrWhiteSpace(image.TextureName))
+        if (String.IsNullOrWhiteSpace(textureName))
         {
             return GetWhiteTexture();
         }
-        if (_resolvedTextures.TryGetValue(image.TextureName, out ITexture cached))
+        if (_resolvedTextures.TryGetValue(textureName, out ITexture cached))
         {
             return cached;
         }
@@ -257,7 +259,7 @@ internal sealed class VeldridUIRenderer : IDisposable
         ITexture texture;
         try
         {
-            texture = _resources.GetTexture(image.TextureName);
+            texture = _resources.GetTexture(textureName);
         }
         catch
         {
@@ -265,7 +267,7 @@ internal sealed class VeldridUIRenderer : IDisposable
         }
         if (!ReferenceEquals(texture, GetWhiteTexture()))
         {
-            _resolvedTextures[image.TextureName] = texture;
+            _resolvedTextures[textureName] = texture;
         }
         return texture;
     }

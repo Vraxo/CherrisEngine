@@ -60,7 +60,7 @@ public class ComponentPropertiesTests
         string[] imageProperties = ComponentProperties.Read(image).Select(property => property.Name).ToArray();
         foreach (string propertyName in new[]
         {
-            nameof(Image.TextureName), nameof(Image.UVMin), nameof(Image.UVMax), nameof(Image.SliceLeft),
+            nameof(Image.SpriteName), nameof(Image.TextureName), nameof(Image.UVMin), nameof(Image.UVMax), nameof(Image.SliceLeft),
             nameof(Image.SliceTop), nameof(Image.SliceRight), nameof(Image.SliceBottom), nameof(Image.Color)
         })
         {

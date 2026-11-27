@@ -135,7 +135,8 @@ internal sealed class OpenGLUIRenderer : IDisposable
 
                 if (image.Alpha > 0f)
                 {
-                    int textureHandle = GetTextureHandle(image);
+                    ResolvedSprite sprite = SpriteAssetLoader.Resolve(image);
+                    int textureHandle = GetTextureHandle(sprite.TextureName);
                     UIBatch batch = GetBatch(batches, textureHandle, element.ClipRect);
                     Vector3 tint = Vector3.Clamp(imageColor, Vector3.Zero, Vector3.One);
                     float alpha = Math.Clamp(image.Alpha, 0f, 1f);
@@ -146,14 +147,14 @@ internal sealed class OpenGLUIRenderer : IDisposable
                     }
                     else
                     {
-                        Vector2 uvMin = Vector2.Clamp(image.UVMin, Vector2.Zero, Vector2.One);
-                        Vector2 uvMax = Vector2.Clamp(image.UVMax, uvMin, Vector2.One);
+                        Vector2 uvMin = Vector2.Clamp(sprite.UVMin, Vector2.Zero, Vector2.One);
+                        Vector2 uvMax = Vector2.Clamp(sprite.UVMax, uvMin, Vector2.One);
                         // Image assets are loaded with their rows flipped for conventional 3D UVs. Screen-space
                         // top-left therefore samples the sprite's upper V edge.
-                        if (image.SliceLeft > 0f || image.SliceTop > 0f || image.SliceRight > 0f || image.SliceBottom > 0f)
+                        if (sprite.SliceLeft > 0f || sprite.SliceTop > 0f || sprite.SliceRight > 0f || sprite.SliceBottom > 0f)
                         {
                             foreach (UITextureQuad quad in NineSliceLayout.Build(element.Rect, uvMin, uvMax,
-                                image.SliceLeft, image.SliceTop, image.SliceRight, image.SliceBottom))
+                                sprite.SliceLeft, sprite.SliceTop, sprite.SliceRight, sprite.SliceBottom))
                             {
                                 AppendTexturedRect(batch.Vertices, quad.Rect, quad.U0, quad.V0, quad.U1, quad.V1,
                                     width, height, tint, alpha, textured: 1f);
@@ -252,14 +253,14 @@ internal sealed class OpenGLUIRenderer : IDisposable
         GL.Disable(EnableCap.Blend);
     }
 
-    private int GetTextureHandle(Image image)
+    private int GetTextureHandle(string textureName)
     {
-        if (_resources is null || String.IsNullOrWhiteSpace(image.TextureName))
+        if (_resources is null || String.IsNullOrWhiteSpace(textureName))
         {
             return 0;
         }
 
-        if (_textureHandles.TryGetValue(image.TextureName, out int cached))
+        if (_textureHandles.TryGetValue(textureName, out int cached))
         {
             return cached;
         }
@@ -267,7 +268,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
         int resolved = 0;
         try
         {
-            object handle = _resources.GetTexture(image.TextureName).GetBackendHandle();
+            object handle = _resources.GetTexture(textureName).GetBackendHandle();
             resolved = handle is int textureHandle ? textureHandle : 0;
         }
         catch
@@ -275,7 +276,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
             // An invalid asset should fail closed to the tinted solid image, not take down the render loop.
         }
 
-        _textureHandles[image.TextureName] = resolved;
+        _textureHandles[textureName] = resolved;
         return resolved;
     }
 

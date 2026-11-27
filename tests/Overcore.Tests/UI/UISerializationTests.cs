@@ -35,6 +35,7 @@ public class UISerializationTests
         });
         panel.AddComponent(new Image
         {
+            SpriteName = "Assets/UI/panel.sprite.json",
             TextureName = "Assets/UI/panel.png",
             UVMin = new Vector2(0.1f, 0.2f),
             UVMax = new Vector2(0.8f, 0.9f),
@@ -112,6 +113,7 @@ public class UISerializationTests
         rect.SizeDelta.Should().Be(new Vector2(320f, 64f));
 
         Image image = loaded[1].GetComponent<Image>()!;
+        image.SpriteName.Should().Be("Assets/UI/panel.sprite.json");
         image.TextureName.Should().Be("Assets/UI/panel.png");
         image.UVMin.Should().Be(new Vector2(0.1f, 0.2f));
         image.UVMax.Should().Be(new Vector2(0.8f, 0.9f));
