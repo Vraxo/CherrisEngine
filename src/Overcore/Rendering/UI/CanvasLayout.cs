@@ -114,11 +114,11 @@ public static class CanvasLayout
             // A nested Canvas owns its own root and sorting order; it is collected separately above.
             if (child.GameObject.GetComponent<Canvas>() is null)
             {
-                RectF? arrangedRect = arrangedChildren.TryGetValue(child.GameObject, out RectF childRect)
+                RectF? childArrangedRect = arrangedChildren.TryGetValue(child.GameObject, out RectF childRect)
                     ? childRect
                     : null;
                 Visit(child.GameObject, canvas, logicalRect, childClip, childRoundedClips,
-                    false, scale, output, ref order, arrangedRect);
+                    false, scale, output, ref order, childArrangedRect);
             }
         }
     }

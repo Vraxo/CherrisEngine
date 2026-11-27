@@ -45,7 +45,7 @@ internal sealed class VeldridFontAtlas : IDisposable
         BuildTexture(uploadImmediately: true);
     }
 
-    public void EnsureFont(string? fontName)
+    public unsafe void EnsureFont(string? fontName)
     {
         if (String.IsNullOrWhiteSpace(fontName)) return;
         string? path = ProjectFontAssets.Find(fontName);
@@ -57,7 +57,7 @@ internal sealed class VeldridFontAtlas : IDisposable
         {
             ImGui.SetCurrentContext(_context);
             ImFontPtr font = ImGui.GetIO().Fonts.AddFontFromFileTTF(path, 18f);
-            if (font.NativePtr == IntPtr.Zero)
+            if (font.NativePtr == null)
             {
                 _failedFonts.Add(path);
                 Logger.Warning($"[Veldrid UI] Could not load font '{path}'; using the bundled font.");

@@ -118,13 +118,13 @@ public class ImGuiController : IUIController
         return LoadFont(path);
     }
 
-    private bool LoadFont(string path)
+    private unsafe bool LoadFont(string path)
     {
         try
         {
             ImGui.SetCurrentContext(_imguiContext);
             ImFontPtr font = ImGui.GetIO().Fonts.AddFontFromFileTTF(path, 18f);
-            if (font.NativePtr == IntPtr.Zero)
+            if (font.NativePtr == null)
             {
                 _failedFonts.Add(path);
                 Logger.Warning($"[UI] Could not load font asset '{path}'; using the bundled font instead.");
