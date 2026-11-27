@@ -62,8 +62,9 @@ takes world-space speed, applies gravity, ignores the supplied Y speed, and retu
 The component exposes `Height`, `Radius`, `Center`, `SlopeLimit`, `StepOffset`, `SkinWidth`, `MinMoveDistance`,
 `DetectCollisions`, `EnableOverlapRecovery`, `IsGrounded`, `Velocity`, and the last `CollisionFlags`. `DetectCollisions`
 controls whether incoming rigid bodies and other controllers are blocked by this controller; it does not disable this
-controller's own `Move` collision checks. `Velocity` reflects the controller's own resolved movement, excluding
-platform carry and overlap recovery.
+controller's own `Move` collision checks. `IsGrounded` reflects below-facing contact, while the slope limit separately
+determines whether that surface can support the controller for walking and platform carry. `Velocity` reflects the
+controller's displacement during the most recent move, excluding carried platform displacement.
 
 ```csharp
 public class PlayerMotion : Script

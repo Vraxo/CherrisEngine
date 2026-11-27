@@ -75,8 +75,7 @@ public sealed class CharacterController : Collider
     private float _simpleMoveVerticalVelocity;
     private bool _detectCollisions = true;
     private Collider? _supportCollider;
-    private Quaternion _supportRotation = Quaternion.Identity;
-    private Vector3 _supportRelativePosition;
+    private Vector3 _supportLocalPosition;
     private readonly HashSet<Collider> _activeTriggers = [];
     private readonly Queue<(Collider Trigger, TriggerPhase Phase)> _pendingTriggerEvents = [];
     private bool _dispatchingTriggerEvents;
@@ -136,7 +135,7 @@ public sealed class CharacterController : Collider
     public bool EnableOverlapRecovery { get; set; } = true;
     /// <summary>True when the last movement touched a walkable surface below.</summary>
     public bool IsGrounded { get; private set; }
-    /// <summary>World-space velocity from the most recent move, excluding overlap recovery and platform carry.</summary>
+    /// <summary>World-space velocity from the most recent move, excluding carried platform displacement.</summary>
     public Vector3 Velocity => _velocity;
     /// <summary>Flags produced by the most recent movement.</summary>
     public CollisionFlags CollisionFlags { get; private set; }
@@ -160,7 +159,7 @@ public sealed class CharacterController : Collider
 
         bool probeGround = motion.Y <= 0f || (supportMotion.Y > 0f && requestedMotion.Y <= 0f);
         CollisionFlags flags = MoveAndSlide(motion, contacts, movementPath, probeGround);
-        if (StepOffset > 0f && motion.Y <= 0f &&
+        if (StepOffset > 0f && motion.Y <= 0f && _supportCollider is not null &&
             (flags & ControllerCollisionFlags.Sides) != 0 && (flags & ControllerCollisionFlags.Below) != 0)
         {
             Vector3 normalMoveEnd = Transform.WorldPosition;
@@ -185,7 +184,7 @@ public sealed class CharacterController : Collider
         DispatchTriggerChanges(movementPath, triggerStartPosition);
         float dt = Time.DeltaTime;
         _velocity = dt > 1e-6f
-            ? (Transform.WorldPosition - movementStart - supportMotion) / dt
+            ? (Transform.WorldPosition - frameStart - supportMotion) / dt
             : Vector3.Zero;
         foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => (hit.Collider, hit.OtherController)))
         {
@@ -255,11 +254,20 @@ public sealed class CharacterController : Collider
             remaining -= direction * travel;
 
             float verticalNormal = Vector3.Dot(hit.Normal, Vector3.UnitY);
-            if (verticalNormal >= WalkableDot && remaining.Y <= 0f)
+            // Below describes contact direction, not walkability: a steep face can be grounded without supporting
+            // platform carry or allowing the controller to climb it.
+            if (verticalNormal > 1e-4f && remaining.Y <= 0f)
             {
-                _supportCollider = hit.Collider;
                 flags |= ControllerCollisionFlags.Below;
-                if (remaining.Y < 0f) remaining.Y = 0f;
+                if (verticalNormal >= WalkableDot)
+                {
+                    _supportCollider = hit.Collider;
+                    if (remaining.Y < 0f) remaining.Y = 0f;
+                }
+                else
+                {
+                    flags |= ControllerCollisionFlags.Sides;
+                }
             }
             else if (verticalNormal < -1e-4f && remaining.Y > 0f)
             {
@@ -292,11 +300,26 @@ public sealed class CharacterController : Collider
         }
 
         // A short downward probe provides stable grounding when the caller's requested motion is horizontal.
-        if (probeGround && Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out SweepHit ground) &&
-            Vector3.Dot(ground.Normal, Vector3.UnitY) >= WalkableDot)
+        if (probeGround)
         {
-            _supportCollider = ground.Collider;
-            flags |= ControllerCollisionFlags.Below;
+            if (Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out SweepHit ground))
+            {
+                float groundNormal = Vector3.Dot(ground.Normal, Vector3.UnitY);
+                if (groundNormal > 1e-4f)
+                {
+                    flags |= ControllerCollisionFlags.Below;
+                    // Ground contact can be steep; only a walkable surface is a stable support to carry from.
+                    _supportCollider = groundNormal >= WalkableDot ? ground.Collider : null;
+                }
+                else
+                {
+                    _supportCollider = null;
+                }
+            }
+            else
+            {
+                _supportCollider = null;
+            }
         }
         return flags;
     }
@@ -576,11 +599,11 @@ public sealed class CharacterController : Collider
             return Vector3.Zero;
         }
 
-        Vector3 currentPlatformPosition = support.Transform.WorldPosition;
-        Quaternion currentPlatformRotation = support.Transform.WorldRotation;
-        Quaternion rotationDelta = Quaternion.Normalize(currentPlatformRotation * Quaternion.Inverse(_supportRotation));
-        Vector3 carriedPosition = currentPlatformPosition + Vector3.Transform(_supportRelativePosition, rotationDelta);
-        return carriedPosition - controllerPosition;
+        Transform supportTransform = support.Transform;
+        Vector3 carriedOffset = Vector3.Transform(
+            _supportLocalPosition * supportTransform.LossyScale,
+            supportTransform.WorldRotation);
+        return supportTransform.WorldPosition + carriedOffset - controllerPosition;
     }
 
     private void UpdateSupportPose()
@@ -593,9 +616,19 @@ public sealed class CharacterController : Collider
             return;
         }
 
-        _supportRotation = support.Transform.WorldRotation;
-        _supportRelativePosition = Transform.WorldPosition - support.Transform.WorldPosition;
+        Transform supportTransform = support.Transform;
+        Vector3 localOffset = Vector3.Transform(
+            Transform.WorldPosition - supportTransform.WorldPosition,
+            Quaternion.Inverse(supportTransform.WorldRotation));
+        Vector3 scale = supportTransform.LossyScale;
+        _supportLocalPosition = new Vector3(
+            DivideByScale(localOffset.X, scale.X),
+            DivideByScale(localOffset.Y, scale.Y),
+            DivideByScale(localOffset.Z, scale.Z));
     }
+
+    private static float DivideByScale(float value, float scale) =>
+        MathF.Abs(scale) > 1e-6f ? value / scale : 0f;
 
     private void RecoverOverlaps(List<MotionSegment> path)
     {

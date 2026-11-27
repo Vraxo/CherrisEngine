@@ -168,6 +168,26 @@ public sealed class CharacterControllerTests
         actor.Transform.WorldPosition.X.Should().BeLessThan(1.2f);
     }
 
+    [Fact]
+    public void ChangingControllerScaleRebuildsItsIncomingRigidBodyShape()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject actor = new("Player");
+        actor.AddComponent(new CharacterController());
+        GameObject crate = new("Crate");
+        crate.Transform.WorldPosition = new Vector3(2f, 1f, 0f);
+        crate.AddComponent(new BoxCollider { Size = new Vector3(0.5f) });
+        RigidBody body = crate.AddComponent(new RigidBody { UseGravity = false });
+        _ = StartScene(physics, audio, actor, crate);
+        actor.Transform.Scale = new Vector3(2f, 1f, 1f);
+        body.Velocity = new Vector3(-10f, 0f, 0f);
+
+        physics.Update(0.1f);
+
+        crate.Transform.WorldPosition.X.Should().BeGreaterThan(1.1f);
+    }
+
     [Theory]
     [InlineData(true, 0.65f)]
     [InlineData(false, 0.65f)]
@@ -439,6 +459,25 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void ControllerReportsGroundContactOnASlopeBeyondItsWalkableLimit()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject ramp = new("Steep Ramp");
+        ramp.Transform.WorldRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 3f);
+        ramp.AddComponent(new BoxCollider { Size = new Vector3(8f, 0.2f, 4f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = new Vector3(0f, 1f, 0f);
+        CharacterController controller = actor.AddComponent(new CharacterController { SlopeLimit = 45f });
+        _ = StartScene(physics, audio, ramp, actor);
+
+        CollisionFlags flags = controller.Move(new Vector3(0f, -0.5f, 0f));
+
+        (flags & CollisionFlags.Below).Should().Be(CollisionFlags.Below);
+        controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
     public void ControllerDoesNotStepOntoAnObstacleWhileAirborne()
     {
         using PhysicsSystem physics = new();
@@ -477,6 +516,28 @@ public sealed class CharacterControllerTests
         actor.Transform.WorldPosition.X.Should().BeApproximately(1f, 0.05f);
         actor.Transform.WorldPosition.Y.Should().BeGreaterThan(0.15f);
         (flags & CollisionFlags.Below).Should().Be(CollisionFlags.Below);
+    }
+
+    [Fact]
+    public void ControllerStopsBeingCarriedAfterWalkingOffAPlatform()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject platform = Floor();
+        platform.AddComponent(new BoxCollider { Size = new Vector3(2f, 1f, 2f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        _ = StartScene(physics, audio, platform, actor);
+
+        controller.Move(Vector3.Zero).Should().Be(CollisionFlags.Below);
+        controller.Move(new Vector3(3f, 0f, 0f));
+        Vector3 offPlatform = actor.Transform.WorldPosition;
+        platform.Transform.WorldPosition += new Vector3(10f, 0f, 0f);
+
+        controller.Move(Vector3.Zero);
+
+        actor.Transform.WorldPosition.X.Should().BeApproximately(offPlatform.X, 0.01f);
+        controller.IsGrounded.Should().BeFalse();
     }
 
     [Fact]
@@ -534,6 +595,25 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void GroundedControllerFollowsPlatformScaleChanges()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject platform = Floor();
+        platform.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        _ = StartScene(physics, audio, platform, actor);
+
+        controller.Move(new Vector3(0.5f, 0f, 0f));
+        platform.Transform.Scale = new Vector3(2f, 1f, 1f);
+        controller.Move(Vector3.Zero);
+
+        actor.Transform.WorldPosition.X.Should().BeApproximately(1f, 0.03f);
+        controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
     public void GroundedControllerIsCarriedByPlatformRotation()
     {
         using PhysicsSystem physics = new();
@@ -569,6 +649,47 @@ public sealed class CharacterControllerTests
         controller.Move(new Vector3(0.1f, 0f, 0f));
 
         actor.Transform.WorldPosition.X.Should().BeGreaterThan(1.4f);
+    }
+
+    [Fact]
+    public void VelocityIncludesDisplacementFromOverlapRecoveryDuringMove()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject wall = new("Wall");
+        wall.Transform.WorldPosition = new Vector3(0f, 1.25f, 0f);
+        wall.AddComponent(new BoxCollider { Size = new Vector3(2f, 2.5f, 2f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = new Vector3(0.9f, 0f, 0f);
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        _ = StartScene(physics, audio, wall, actor);
+        Time.Advance(1f / 60f);
+
+        controller.Move(Vector3.Zero);
+
+        controller.Velocity.X.Should().BeGreaterThan(1f);
+    }
+
+    [Fact]
+    public void DisablingOverlapRecoveryLeavesAnInitialStaticOverlapUntouched()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject wall = new("Wall");
+        wall.Transform.WorldPosition = new Vector3(0f, 1.25f, 0f);
+        wall.AddComponent(new BoxCollider { Size = new Vector3(2f, 2.5f, 2f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = new Vector3(0.9f, 0f, 0f);
+        CharacterController controller = actor.AddComponent(new CharacterController
+        {
+            StepOffset = 0f,
+            EnableOverlapRecovery = false
+        });
+        _ = StartScene(physics, audio, wall, actor);
+
+        controller.Move(Vector3.Zero);
+
+        actor.Transform.WorldPosition.Should().Be(new Vector3(0.9f, 0f, 0f));
     }
 
     [Fact]
