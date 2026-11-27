@@ -380,6 +380,21 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void MinMoveDistanceRejectsOnlyDisplacementsBelowTheThreshold()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { MinMoveDistance = 0.1f });
+        _ = StartScene(physics, audio, actor);
+
+        controller.Move(new Vector3(0.05f, 0f, 0f));
+        actor.Transform.WorldPosition.X.Should().BeApproximately(0f, 0.001f);
+        controller.Move(new Vector3(0.1f, 0f, 0f));
+        actor.Transform.WorldPosition.X.Should().BeApproximately(0.1f, 0.001f);
+    }
+
+    [Fact]
     public void MinMoveDistanceIgnoresSmallInputWithoutSuppressingPlatformCarry()
     {
         using PhysicsSystem physics = new();
