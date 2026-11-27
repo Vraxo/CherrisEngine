@@ -346,6 +346,93 @@ public static class Physics
         return [.. hits];
     }
 
+    /// <summary>
+    /// Sweeps an upright or arbitrarily oriented capsule through the active physics world. The axis is sampled with
+    /// overlapping sphere sweeps, conservatively covering the capsule segment. The controller component uses the
+    /// internal overload to ignore its own object.
+    /// </summary>
+    public static bool CapsuleCast(
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 direction,
+        out RaycastHit hit,
+        float maxDistance = float.PositiveInfinity,
+        int layerMask = ~0,
+        QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.UseGlobal) =>
+        CapsuleCastCore(point1, point2, radius, direction, out hit, maxDistance, layerMask, queryTriggerInteraction, null);
+
+    internal static bool CapsuleCastForController(
+        Vector3 point1, Vector3 point2, float radius, Vector3 displacement, GameObject owner, out RaycastHit hit) =>
+        CapsuleCastCore(point1, point2, radius, displacement, out hit, displacement.Length(), ~0,
+            QueryTriggerInteraction.Ignore, owner);
+
+    private static bool CapsuleCastCore(
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 direction,
+        out RaycastHit hit,
+        float maxDistance,
+        int layerMask,
+        QueryTriggerInteraction queryTriggerInteraction,
+        GameObject? ignoredObject)
+    {
+        hit = default;
+        if (radius <= 0f || direction.LengthSquared() < 1e-12f || float.IsNaN(maxDistance) || maxDistance <= 0f ||
+            !TryGetWorld(out PhysicsSystem? world)) return false;
+
+        float distanceLimit = maxDistance;
+        bool hitTriggers = queryTriggerInteraction switch
+        {
+            QueryTriggerInteraction.Ignore => false,
+            QueryTriggerInteraction.Collide => true,
+            _ => QueriesHitTriggers
+        };
+        Vector3 unit = Vector3.Normalize(direction);
+        float segmentLength = Vector3.Distance(point1, point2);
+        int intervals = Math.Max(1, (int)MathF.Ceiling(segmentLength / MathF.Max(radius * 0.5f, 0.01f)));
+        float spacing = segmentLength / intervals;
+        // Inflate each sample so the union of samples encloses the continuous capsule, including the gaps between them.
+        float sampleRadius = MathF.Sqrt((radius * radius) + (spacing * spacing * 0.25f));
+        bool hitAnything = false;
+        float closest = distanceLimit;
+
+        foreach (Collider collider in world.Colliders)
+        {
+            GameObject? gameObject = collider.GameObject;
+            if (collider.IsDestroyed || !collider.IsActive || gameObject is null || !gameObject.ActiveInHierarchy ||
+                (collider.IsTrigger && !hitTriggers) || ReferenceEquals(gameObject, ignoredObject) ||
+                (layerMask & (1 << gameObject.Layer)) == 0 ||
+                (ignoredObject is not null && IgnoredLayers[ignoredObject.Layer, gameObject.Layer]))
+                continue;
+
+            ShapeInstance expanded = Inflate(ColliderGeometry.From(collider), sampleRadius);
+            for (int sample = 0; sample <= intervals; sample++)
+            {
+                // On horizontal/upward sweeps the lowest cap is already resting on the floor. Testing its sphere
+                // against an axis-expanded box would treat that tangency as a horizontal wall; the next overlapping
+                // sample still conservatively covers the capsule's side while the dedicated downward probe handles ground.
+                if (unit.Y >= -0.1f && sample == 0) continue;
+                Vector3 origin = Vector3.Lerp(point1, point2, sample / (float)intervals);
+                if (!ColliderGeometry.Raycast(expanded, origin, unit, closest, out float travelled,
+                    out Vector3 point, out Vector3 normal)) continue;
+                if (travelled > closest) continue;
+                closest = travelled;
+                hitAnything = true;
+                hit = new RaycastHit
+                {
+                    Collider = collider,
+                    Distance = travelled,
+                    Point = point - (normal * sampleRadius),
+                    Normal = normal,
+                    Origin = origin
+                };
+            }
+        }
+        return hitAnything;
+    }
+
     // ---- Volumes ----------------------------------------------------------------------------------------------
 
     /// <summary>

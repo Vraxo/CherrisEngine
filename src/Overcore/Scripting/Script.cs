@@ -82,6 +82,10 @@ public abstract class Script : Component
     /// <summary>Runs once per frame, after every <see cref="Update"/> and every coroutine has had its turn.</summary>
     public virtual void LateUpdate() { }
 
+    /// <summary>Runs when a CharacterController on this object touches a collider while moving.</summary>
+    /// <param name="hit">The controller's contact with the touched collider.</param>
+    public virtual void OnControllerColliderHit(ControllerColliderHit hit) { }
+
     /// <summary>Runs when this object's collider starts touching another's.</summary>
     /// <param name="collision">What was touched, and where.</param>
     public virtual void OnCollisionEnter(Collision collision) { }
