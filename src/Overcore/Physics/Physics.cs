@@ -495,6 +495,13 @@ public static class Physics
             _ => QueriesHitTriggers
         };
         Vector3 unit = Vector3.Normalize(direction);
+        bool boundedSweep = float.IsFinite(distanceLimit);
+        Vector3 sweepDisplacement = boundedSweep ? unit * distanceLimit : Vector3.Zero;
+        Vector3 radiusVector = new(radius);
+        Vector3 sweepMin = Vector3.Min(Vector3.Min(point1, point2),
+            Vector3.Min(point1 + sweepDisplacement, point2 + sweepDisplacement)) - radiusVector;
+        Vector3 sweepMax = Vector3.Max(Vector3.Max(point1, point2),
+            Vector3.Max(point1 + sweepDisplacement, point2 + sweepDisplacement)) + radiusVector;
         bool hitAnything = false;
         float closest = distanceLimit;
 
@@ -506,6 +513,12 @@ public static class Physics
                 (layerMask & (1 << gameObject.Layer)) == 0 ||
                 (ignoredObject is not null && IgnoredLayers[ignoredObject.Layer, gameObject.Layer]))
                 continue;
+
+            if (boundedSweep)
+            {
+                var colliderBounds = collider.Bounds;
+                if (!BoundsOverlap(sweepMin, sweepMax, colliderBounds.Min, colliderBounds.Max)) continue;
+            }
 
             ShapeInstance shape = ColliderGeometry.From(collider);
             if (!ColliderGeometry.CapsuleCast(shape, point1, point2, radius, unit, closest,
