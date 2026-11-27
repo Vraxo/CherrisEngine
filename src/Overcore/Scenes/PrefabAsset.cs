@@ -1,3 +1,5 @@
+using Overcore.Components;
+using Overcore.Rendering;
 using Overcore.Serialization;
 using Overcore.Utils;
 using System.Numerics;
@@ -332,15 +334,15 @@ public sealed class PrefabAsset : IEquatable<PrefabAsset>
 
         public override void LoadInitialAssets()
         {
-            _meshes["Cube"] = Components.Mesh.CreateCube();
-            _meshes["Plane"] = Components.Mesh.CreatePlane(20f);
+            _meshes["Cube"] = Mesh.CreateCube();
+            _meshes["Plane"] = Mesh.CreatePlane(20f);
         }
 
         public override ITexture GetTexture(string name) => null!;
 
         public override Skybox GetSkybox(string name) => null!;
 
-        public override Components.AudioClip GetAudioClip(string name) => null!;
+        public override AudioClip GetAudioClip(string name) => null!;
 
         public override void Dispose()
         {
