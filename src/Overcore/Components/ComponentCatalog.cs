@@ -46,6 +46,7 @@ public static class ComponentCatalog
         // the counterpart of the light that casts.
         new Entry("Shadows", typeof(Shadows)),
         new Entry("Rigid Body", typeof(RigidBody)),
+        new Entry("Character Controller", typeof(CharacterController)),
         new Entry("Box Collider", typeof(BoxCollider)),
         new Entry("Sphere Collider", typeof(SphereCollider)),
         new Entry("Capsule Collider", typeof(CapsuleCollider)),

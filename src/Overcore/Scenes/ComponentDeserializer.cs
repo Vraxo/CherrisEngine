@@ -34,6 +34,7 @@ public static class ComponentDeserializer
         // Dictionary<string, List<...>> and looks up "GameObjects", so a sibling mapping would fail the whole load.
         sceneLoader.RegisterComponentFactory("Shadows", props => CreateShadowsComponent(props));
         sceneLoader.RegisterComponentFactory("RigidBody", CreateAndPopulateComponent<RigidBody>);
+        sceneLoader.RegisterComponentFactory("CharacterController", CreateAndPopulateComponent<CharacterController>);
         sceneLoader.RegisterComponentFactory("BoxCollider", CreateAndPopulateComponent<BoxCollider>);
         sceneLoader.RegisterComponentFactory("SphereCollider", CreateAndPopulateComponent<SphereCollider>);
         sceneLoader.RegisterComponentFactory("CapsuleCollider", CreateAndPopulateComponent<CapsuleCollider>);

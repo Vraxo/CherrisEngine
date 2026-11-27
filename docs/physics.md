@@ -53,7 +53,44 @@ a moving platform, or a wall pulled out of the way therefore collides where it i
 Two fixed shapes are never tested against each other — that is what keeps a scene full of scenery cheap. Contacts,
 and therefore collision callbacks, need at least one moving body in the pair.
 
-## 2. Rigid bodies
+## 2. Character controller
+
+`CharacterController` is a kinematic, upright capsule for player and NPC locomotion. It does not add a `RigidBody`,
+receive forces, or run itself: scripts decide when and how far it moves. `Move(displacement)` takes a world-space
+translation and returns `CollisionFlags` (`Sides`, `Above`, `Below`); it does not apply gravity. `SimpleMove(speed)`
+takes world-space speed, applies gravity, ignores the supplied Y speed, and returns whether the last move was grounded.
+The component exposes `Height`, `Radius`, `Center`, `SlopeLimit`, `StepOffset`, `SkinWidth`, `MinMoveDistance`,
+`DetectCollisions`, `EnableOverlapRecovery`, `IsGrounded`, `Velocity`, and the last `CollisionFlags`.
+
+```csharp
+public class PlayerMotion : Script
+{
+    public float Speed { get; set; } = 5f;
+
+    public override void Update(float deltaTime)
+    {
+        CharacterController? controller = GameObject?.GetComponent<CharacterController>();
+        if (controller is null) return;
+        float x = (Input.IsKeyDown(Key.D) ? 1f : 0f) - (Input.IsKeyDown(Key.A) ? 1f : 0f);
+        float z = (Input.IsKeyDown(Key.W) ? 1f : 0f) - (Input.IsKeyDown(Key.S) ? 1f : 0f);
+        controller.SimpleMove(new Vector3(x, 0f, z) * Speed);
+    }
+
+    public override void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        Log($"Controller hit {hit.GameObject.Name} at {hit.Point}");
+    }
+}
+```
+
+Capsule sweeps use a conservatively overlapping set of sphere sweeps over the capsule axis; collider contacts are
+slid along their planes and a bounded step-up attempt handles small ledges. This is a first practical implementation,
+not a claim of bit-for-bit PhysX parity: the sphere-sampled sweep is conservative around box corners, there is no
+moving-platform carry, and initial-overlap recovery is opt-in. Unlike a rigid body, a character controller does not
+produce the fixed-step `OnCollision*` callbacks; contacts are delivered synchronously from `Move` through
+`OnControllerColliderHit`.
+
+## 3. Rigid bodies
 
 `RigidBody` takes its shape from the `Collider` on the same object, falling back to the object's mesh bounds when
 there is none.
@@ -74,7 +111,7 @@ there is none.
 A kinematic body follows its transform. A dynamic body writes its pose back to the transform after every step, so
 reading `Transform.WorldPosition` in `Update` gives the position the simulation settled on.
 
-## 3. Contacts and triggers
+## 4. Contacts and triggers
 
 ```csharp
 public class Ball : Script
@@ -113,7 +150,7 @@ touches is blocked.
 `ResetLayers` complete the set. Layers are the object's `GameObject.Layer`; `Layers` names them and
 `LayerMask.GetMask("Ground", "Water")` builds a mask for queries.
 
-## 4. Queries
+## 5. Queries
 
 ```csharp
 if (Physics.Raycast(origin, direction, out RaycastHit hit, 100f, LayerMask.GetMask("Ground")))
@@ -147,7 +184,7 @@ Bepu 2.4 has no general overlap query, so the volume queries test each collider'
 plenty fast for the scene sizes this engine targets, and it is why the queries do not need the simulation to be
 running.
 
-## 5. Script lifecycle
+## 6. Script lifecycle
 
 For each script, in this order:
 
@@ -166,7 +203,7 @@ A component on a switched-off object is not active in the hierarchy either, and 
 
 A script that throws is logged and suspended (`Script.IsSuspended`) rather than throwing every frame.
 
-## 6. Time, coroutines and `Invoke`
+## 7. Time, coroutines and `Invoke`
 
 `Time` is advanced by the frame loop, once per frame, so everything downstream moves at the same speed:
 
@@ -204,7 +241,7 @@ a stopped routine never runs again.
 Coroutines count time on the scene's own clock, which is scaled by `Time.TimeScale` and reset when the scene starts
 or restarts, so a paused game pauses its waits too.
 
-## 7. Instantiating, destroying and changing scenes
+## 8. Instantiating, destroying and changing scenes
 
 ```csharp
 GameObject clone = GameObject.Instantiate(prefab, position, rotation);
@@ -239,7 +276,7 @@ scenes.UnloadScene("Arena");                     // closes it and destroys what 
 `DontDestroyOnLoad` objects are lifted out of the old scene before it is unloaded and put into the new one after it
 starts. `OnActiveSceneChanged` announces every switch, and `Scene.Active` always names the scene that is running.
 
-## 8. Limits worth knowing
+## 9. Limits worth knowing
 
 - No continuous collision detection: a fast, small body can tunnel through a thin wall in one step. Use thicker
   colliders, or sweep with `Physics.SphereCast` yourself.
