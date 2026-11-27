@@ -1,6 +1,6 @@
 using AwesomeAssertions;
 using Overcore.Rendering.Headless;
-using EngineInput = Overcore.Input.Input;
+using EngineInput = global::Overcore.Input;
 using System.Diagnostics;
 using System.Numerics;
 using Xunit;
