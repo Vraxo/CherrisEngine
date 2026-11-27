@@ -265,7 +265,8 @@ public sealed class CharacterControllerTests
         (flags & CollisionFlags.Sides).Should().Be(CollisionFlags.Sides);
         firstActor.Transform.WorldPosition.X.Should().BeApproximately(0.92f, 0.1f);
         recorder.LastHit.Should().NotBeNull();
-        recorder.LastHit!.Value.Collider.Should().BeNull();
+        recorder.LastHit!.Value.Controller.Should().BeSameAs(firstController);
+        recorder.LastHit.Value.Collider.Should().BeNull();
         recorder.LastHit.Value.OtherController.Should().BeSameAs(secondController);
         recorder.LastHit.Value.GameObject.Should().BeSameAs(secondActor);
     }
