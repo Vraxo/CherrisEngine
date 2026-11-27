@@ -125,9 +125,9 @@ public sealed class CharacterController : Component
         }
         else
         {
-            if (EnableOverlapRecovery) RecoverOverlaps();
+            if (EnableOverlapRecovery) RecoverOverlaps(movementPath);
             Vector3 movementStart = Transform.WorldPosition;
-            triggerStartPosition = movementStart;
+            int recoveryPathCount = movementPath.Count;
 
             bool probeGround = motion.Y <= 0f || (supportMotion.Y > 0f && requestedMotion.Y <= 0f);
             CollisionFlags flags = MoveAndSlide(motion, contacts, movementPath, probeGround);
@@ -138,7 +138,8 @@ public sealed class CharacterController : Component
                 if (TryStep(movementStart, motion, contacts, out CollisionFlags steppedFlags, out List<MotionSegment> steppedPath))
                 {
                     flags = steppedFlags;
-                    movementPath = steppedPath;
+                    movementPath.RemoveRange(recoveryPathCount, movementPath.Count - recoveryPathCount);
+                    movementPath.AddRange(steppedPath);
                 }
                 else
                 {
@@ -514,7 +515,7 @@ public sealed class CharacterController : Component
         _supportRelativePosition = Transform.WorldPosition - support.Transform.WorldPosition;
     }
 
-    private void RecoverOverlaps()
+    private void RecoverOverlaps(List<MotionSegment> path)
     {
         // Resolve the deepest penetration a little at a time. The cap prevents a misplaced controller from being
         // teleported an arbitrary distance out of level geometry.
@@ -528,7 +529,9 @@ public sealed class CharacterController : Component
             float correctionLength = correction.Length();
             if (correctionLength < 1e-5f) return;
             float allowed = MathF.Min(correctionLength + 0.001f, 0.5f - recoveredDistance);
+            Vector3 correctionStart = Transform.WorldPosition;
             Transform.WorldPosition += correction * (allowed / correctionLength);
+            AddMotionSegment(path, correctionStart, Transform.WorldPosition);
             recoveredDistance += allowed;
         }
     }
