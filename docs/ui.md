@@ -51,6 +51,7 @@ The OpenTK UI renders over the resolved scene in the standalone runtime and in t
 - Add a `HorizontalLayoutGroup` or `VerticalLayoutGroup` to a parent to arrange its direct UI children. Groups support spacing, four-sided padding, start/center/end alignment on both axes, child-size control, and optional equal expansion into unused width or height. Each child's resolved `RectTransform` size supplies its preferred size; nested groups work by resolving each child container before laying out its descendants. A layout group does not arrange children without an enabled `RectTransform`.
 - Add `RectMask2D` to a UI parent to clip its descendants to that parent's rectangle. Nested masks intersect; the mask object's own graphic is not clipped by its own mask. Hit-testing uses the same clip region as drawing.
 - `Image.TextureName` names a project-relative texture asset; leave it blank for a solid rectangle. `UVMin` / `UVMax` select a region of a texture atlas, while `Color` and `Alpha` tint the sampled pixels. `SliceLeft`, `SliceTop`, `SliceRight`, and `SliceBottom` provide fractional source-region border metadata; nonzero borders render as a nine-slice whose corner/edge proportions follow the destination rectangle.
+- `Text.Wrap` defaults to true and wraps at word boundaries to the element width, splitting overlong words by Unicode text element when necessary. InputField values remain single-line and are clipped to their text rectangle.
 
 ## Progress checklist
 
@@ -62,13 +63,14 @@ The runtime implementation has not yet been validated by a .NET build in this wo
 - [x] Scene/prefab serialization and generic property bridge for UI components; regression tests cover UI properties including custom font selection.
 - [x] Project-relative TrueType font selection, a bundled Roboto Mono fallback, and shared native/headless glyph-atlas rendering.
 - [ ] Fuller Sprite asset/import metadata and editor-facing sprite selection/inspection.
-- [ ] Text wrapping, complete Unicode glyph coverage, and measured caret/layout behavior.
+- [x] Word wrapping, explicit newline preservation, and long-word breaking for text blocks; InputField stays single-line and clips to its element.
+- [ ] Complete Unicode glyph coverage and measured caret/layout behavior across font assets and backends.
 - [ ] Rounded/soft and texture-alpha masks beyond the existing rectangular clip masks.
 - [ ] Veldrid UI rendering/input parity; an initial image/slider/clipping/control-event pass exists, but text glyphs, InputField rendering, and backend parity verification remain.
 - [ ] Run all UI and editor-session tests plus a full build on a machine with the .NET SDK; verify native and headless renders manually.
 
 ## Current boundaries and next increments
 
-This is the foundation, not yet a full Unity uGUI clone. Rectangular clipping is supported, but there are no rounded/soft or texture-alpha masks, text does not wrap, Sprite texture import/selection metadata is still minimal, and Veldrid lacks glyph rendering plus full behavioral parity. The font, headless viewport, and initial Veldrid paths have source coverage but still need .NET build/test and manual render verification. `Clicked`, `ValueChanged`, and `EndEdit` delegates are runtime wiring and are not saved in YAML; attach listeners from a script's `Start` method. UI components and their serializable layout/style properties are supported by scene and prefab serialization.
+This is the foundation, not yet a full Unity uGUI clone. Rectangular clipping and word wrapping are supported, but there are no rounded/soft or texture-alpha masks, complete Unicode glyph coverage is unfinished, Sprite texture import/selection metadata is still minimal, and Veldrid lacks glyph rendering plus full behavioral parity. The font, headless viewport, and initial Veldrid paths have source coverage but still need .NET build/test and manual render verification. `Clicked`, `ValueChanged`, and `EndEdit` delegates are runtime wiring and are not saved in YAML; attach listeners from a script's `Start` method. UI components and their serializable layout/style properties are supported by scene and prefab serialization.
 
 Next UI increments should add Sprite import metadata and editor selection, implement the Veldrid UI/input path, and then close remaining behavior gaps such as text wrapping and non-rectangular masks. Those layers should build on the stable pixel-space `RectTransform.Resolve` contract rather than folding editor-specific behavior into the runtime components.

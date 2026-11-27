@@ -22,6 +22,9 @@ public sealed class Text : Component
 
     /// <summary>Additional pixels between glyph advances, before Canvas scaling.</summary>
     public float CharacterSpacing { get; set; }
+
+    /// <summary>Wrap lines to the element's width. InputField text remains single-line.</summary>
+    public bool Wrap { get; set; } = true;
 }
 
 public enum HorizontalTextAlignment

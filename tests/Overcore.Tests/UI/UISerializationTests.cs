@@ -50,6 +50,7 @@ public class UISerializationTests
             Content = "Continue",
             FontName = "Assets/Fonts/Display.ttf",
             FontSize = 30f,
+            Wrap = false,
             Color = new Vector3(0.9f, 0.8f, 0.7f),
             HorizontalAlignment = HorizontalTextAlignment.Center,
             VerticalAlignment = VerticalTextAlignment.Bottom
@@ -124,6 +125,7 @@ public class UISerializationTests
         text.Content.Should().Be("Continue");
         text.FontName.Should().Be("Assets/Fonts/Display.ttf");
         text.FontSize.Should().Be(30f);
+        text.Wrap.Should().BeFalse();
         text.HorizontalAlignment.Should().Be(HorizontalTextAlignment.Center);
         text.VerticalAlignment.Should().Be(VerticalTextAlignment.Bottom);
         loaded[1].GetComponent<Button>()!.Interactable.Should().BeFalse();

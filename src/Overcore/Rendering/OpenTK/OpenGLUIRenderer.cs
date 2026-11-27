@@ -177,14 +177,17 @@ internal sealed class OpenGLUIRenderer : IDisposable
 
             if (_fontSource is not null && (element.Text is not null || element.InputField is not null))
             {
-                UIBatch batch = GetBatch(batches, _fontSource.FontTextureHandle, element.ClipRect);
+                RectF textClip = element.ClipRect is { } inheritedClip
+                    ? inheritedClip.Intersect(element.Rect)
+                    : element.Rect;
+                UIBatch batch = GetBatch(batches, _fontSource.FontTextureHandle, textClip);
                 Text textStyle = element.Text ?? DefaultInputFieldText;
                 if (element.InputField is { } inputField)
                 {
                     string content = String.IsNullOrEmpty(inputField.Value) ? inputField.Placeholder : inputField.Value;
                     Vector3? color = String.IsNullOrEmpty(inputField.Value) ? inputField.PlaceholderColor : null;
                     int? caret = ReferenceEquals(_events.FocusedInputField, inputField) ? inputField.CaretPosition : null;
-                    AppendText(batch.Vertices, element, textStyle, width, height, content, color, caret);
+                    AppendText(batch.Vertices, element, textStyle, width, height, content, color, caret, forceSingleLine: true);
                 }
                 else
                 {
@@ -358,7 +361,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
     }
 
     private void AppendText(List<float> vertices, UIElement element, Text text, int viewportWidth, int viewportHeight,
-        string? contentOverride = null, Vector3? colorOverride = null, int? caretIndex = null)
+        string? contentOverride = null, Vector3? colorOverride = null, int? caretIndex = null, bool forceSingleLine = false)
     {
         string content = contentOverride ?? text.Content;
         if (_fontSource is null || (String.IsNullOrEmpty(content) && !caretIndex.HasValue) || text.FontSize <= 0f || text.Alpha <= 0f)
@@ -371,9 +374,11 @@ internal sealed class OpenGLUIRenderer : IDisposable
         float characterSpacing = text.CharacterSpacing * canvasScale;
         float lineSpacing = text.LineSpacing * canvasScale;
         float lineAdvance = text.FontSize * canvasScale + lineSpacing;
-        string[] lines = content.Replace("\r", String.Empty).Split('\n');
+        IReadOnlyList<string> lines = text.Wrap && !forceSingleLine
+            ? TextLayout.Wrap(content, element.Rect.Width, line => MeasureLine(line, text.FontName, glyphScale, characterSpacing))
+            : content.Replace("\r", String.Empty).Split('\n');
         float[] lineWidths = lines.Select(line => MeasureLine(line, text.FontName, glyphScale, characterSpacing)).ToArray();
-        float blockHeight = lines.Length == 0 ? 0f : text.FontSize * canvasScale + (lines.Length - 1) * lineAdvance;
+        float blockHeight = lines.Count == 0 ? 0f : text.FontSize * canvasScale + (lines.Count - 1) * lineAdvance;
         float verticalOffset = text.VerticalAlignment switch
         {
             VerticalTextAlignment.Middle => (element.Rect.Height - blockHeight) * 0.5f,
@@ -383,7 +388,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
         Vector3 color = Vector3.Clamp(colorOverride ?? text.Color, Vector3.Zero, Vector3.One);
         float alpha = Math.Clamp(text.Alpha, 0f, 1f);
 
-        for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        for (int lineIndex = 0; lineIndex < lines.Count; lineIndex++)
         {
             float horizontalOffset = text.HorizontalAlignment switch
             {
@@ -420,7 +425,7 @@ internal sealed class OpenGLUIRenderer : IDisposable
             }
         }
 
-        if (caretIndex is { } requestedCaret && lines.Length > 0)
+        if (caretIndex is { } requestedCaret && lines.Count > 0)
         {
             string firstLine = lines[0];
             int caret = Math.Clamp(requestedCaret, 0, firstLine.Length);
