@@ -83,12 +83,14 @@ public class PlayerMotion : Script
 }
 ```
 
-Capsule sweeps use a conservatively overlapping set of sphere sweeps over the capsule axis; collider contacts are
-slid along their planes and a bounded step-up attempt handles small ledges. This is a first practical implementation,
-not a claim of bit-for-bit PhysX parity: the sphere-sampled sweep is conservative around box corners, there is no
-moving-platform carry, and initial-overlap recovery is opt-in. Unlike a rigid body, a character controller does not
-produce the fixed-step `OnCollision*` callbacks; contacts are delivered synchronously from `Move` through
-`OnControllerColliderHit`.
+Capsule sweeps use conservative advancement against the geometric separation of the capsule and each collider; the
+box distance minimization is numerical, so contact tolerances can still differ from PhysX. Movement slides against
+contact planes, attempts a bounded step-up for small ledges, and resolves initial penetrations by pushing along the
+deepest contact normal with a per-move recovery limit. Moving platforms carry a grounded controller by the platform's
+translation and rotation. This is not a claim of bit-for-bit PhysX parity: the engine does not automatically push
+rigid bodies, though scripts can use the hit callback to apply forces. Unlike a rigid body, a character controller does
+not produce the fixed-step `OnCollision*` callbacks; contacts are delivered synchronously from `Move` through
+`OnControllerColliderHit`. Test coverage exists in source, but the .NET test suite has not been run in this environment.
 
 ## 3. Rigid bodies
 

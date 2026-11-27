@@ -10,6 +10,12 @@ namespace Overcore.Tests.World;
 
 public sealed class CharacterControllerTests
 {
+    private sealed class HitRecorder : Script
+    {
+        public ControllerColliderHit? LastHit { get; private set; }
+        public override void OnControllerColliderHit(ControllerColliderHit hit) => LastHit = hit;
+    }
+
     private static Scene StartScene(PhysicsSystem physics, AudioSystem audio, params GameObject[] objects)
     {
         Scene scene = new(string.Empty, [.. objects]);
@@ -38,6 +44,36 @@ public sealed class CharacterControllerTests
 
         hit.GameObject.Should().BeSameAs(wall);
         hit.Distance.Should().BeApproximately(3.5f, 0.03f);
+    }
+
+    [Fact]
+    public void CapsuleCastUsesRoundedBoxCornerSeparationRatherThanAnExpandedBox()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject block = new("Block");
+        block.AddComponent(new BoxCollider { Size = new Vector3(2f) });
+        _ = StartScene(physics, audio, block);
+
+        Physics.CapsuleCast(new Vector3(-5f, -0.5f, 1.4f), new Vector3(-5f, 0.5f, 1.4f), 0.5f,
+            Vector3.UnitX, out RaycastHit hit, maxDistance: 10f).Should().BeTrue();
+
+        hit.Distance.Should().BeApproximately(3.7f, 0.02f);
+        hit.Normal.X.Should().BeLessThan(-0.5f);
+        hit.Normal.Z.Should().BeGreaterThan(0.5f);
+    }
+
+    [Fact]
+    public void HorizontalCapsuleCastIgnoresAnExactlyTouchingFloor()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject floor = Floor();
+        floor.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        _ = StartScene(physics, audio, floor);
+
+        Physics.CapsuleCast(new Vector3(0f, 0.5f, 0f), new Vector3(0f, 1.5f, 0f), 0.5f,
+            Vector3.UnitX, out _, maxDistance: 2f).Should().BeFalse();
     }
 
     [Fact]
@@ -76,6 +112,26 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void ControllerHitCallbacksAreDeliveredToScriptsOnItsObject()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject wall = new("Wall");
+        wall.Transform.WorldPosition = new Vector3(2f, 1f, 0f);
+        wall.AddComponent(new BoxCollider { Size = new Vector3(1f, 2f, 4f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        HitRecorder recorder = actor.AddComponent(new HitRecorder());
+        _ = StartScene(physics, audio, wall, actor);
+
+        controller.Move(new Vector3(4f, 0f, 0f));
+
+        recorder.LastHit.Should().NotBeNull();
+        recorder.LastHit!.Value.GameObject.Should().BeSameAs(wall);
+        recorder.LastHit.Value.Normal.X.Should().BeLessThan(-0.9f);
+    }
+
+    [Fact]
     public void ControllerCanMoveHorizontallyWhileStandingOnGround()
     {
         using PhysicsSystem physics = new();
@@ -91,6 +147,64 @@ public sealed class CharacterControllerTests
         actor.Transform.WorldPosition.X.Should().BeApproximately(2f, 0.02f);
         (flags & CollisionFlags.Below).Should().Be(CollisionFlags.Below);
         controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ControllerStepsUpAHeightWithinItsStepOffset()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject floor = Floor();
+        floor.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject step = new("Step");
+        step.Transform.WorldPosition = new Vector3(0.8f, 0.1f, 0f);
+        step.AddComponent(new BoxCollider { Size = new Vector3(0.4f, 0.2f, 2f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0.3f });
+        _ = StartScene(physics, audio, floor, step, actor);
+
+        CollisionFlags flags = controller.Move(new Vector3(1f, 0f, 0f));
+
+        actor.Transform.WorldPosition.X.Should().BeApproximately(1f, 0.05f);
+        actor.Transform.WorldPosition.Y.Should().BeGreaterThan(0.15f);
+        (flags & CollisionFlags.Below).Should().Be(CollisionFlags.Below);
+    }
+
+    [Fact]
+    public void GroundedControllerIsCarriedByATranslatingPlatform()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject platform = Floor();
+        platform.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        _ = StartScene(physics, audio, platform, actor);
+
+        controller.Move(new Vector3(0.01f, 0f, 0f)).Should().Be(CollisionFlags.Below);
+        platform.Transform.WorldPosition += Vector3.UnitX;
+        controller.Move(Vector3.Zero);
+
+        actor.Transform.WorldPosition.X.Should().BeApproximately(1.01f, 0.02f);
+        controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OverlapRecoveryPushesAControllerOutOfSpawnPenetration()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject wall = new("Wall");
+        wall.Transform.WorldPosition = new Vector3(0f, 1.25f, 0f);
+        wall.AddComponent(new BoxCollider { Size = new Vector3(2f, 2.5f, 2f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = new Vector3(0.9f, 0f, 0f);
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        _ = StartScene(physics, audio, wall, actor);
+
+        controller.Move(new Vector3(0.1f, 0f, 0f));
+
+        actor.Transform.WorldPosition.X.Should().BeGreaterThan(1.4f);
     }
 
     [Fact]

@@ -44,8 +44,8 @@ public readonly struct ControllerColliderHit
 /// <remarks>
 /// <para><see cref="Move"/> consumes a world-space displacement and does not apply gravity. <see cref="SimpleMove"/>
 /// consumes a world-space speed, applies <see cref="Physics.Gravity"/>, and ignores its vertical input component.</para>
-/// <para>Capsule sweeps are conservatively approximated by overlapping sphere sweeps, which keeps the component
-/// independent of Bepu's body solver and works for the engine's box, sphere, and capsule colliders.</para>
+/// <para>Capsule sweeps use conservative advancement over capsule-to-collider separation, independent of Bepu's body
+/// solver and valid for the engine's box, sphere, and capsule colliders.</para>
 /// </remarks>
 public sealed class CharacterController : Component
 {
@@ -57,9 +57,20 @@ public sealed class CharacterController : Component
     private float _skinWidth = 0.08f;
     private float _minMoveDistance;
     private Vector3 _velocity;
+    private Collider? _supportCollider;
+    private Quaternion _supportRotation = Quaternion.Identity;
+    private Vector3 _supportRelativePosition;
 
     /// <summary>Total capsule height, including the rounded ends.</summary>
-    public float Height { get => _height; set => _height = MathF.Max(2f * _radius, value); }
+    public float Height
+    {
+        get => _height;
+        set
+        {
+            _height = MathF.Max(2f * _radius, value);
+            _stepOffset = MathF.Min(_stepOffset, _height);
+        }
+    }
     /// <summary>Capsule radius.</summary>
     public float Radius { get => _radius; set { _radius = MathF.Max(0.01f, value); _height = MathF.Max(_height, 2f * _radius); } }
     /// <summary>Capsule centre in local space. The default places the capsule's feet at the object origin.</summary>
@@ -67,7 +78,7 @@ public sealed class CharacterController : Component
     /// <summary>Maximum walkable slope in degrees, from 0 through 90.</summary>
     public float SlopeLimit { get => _slopeLimit; set => _slopeLimit = Math.Clamp(value, 0f, 90f); }
     /// <summary>Maximum vertical ledge height the controller can step onto.</summary>
-    public float StepOffset { get => _stepOffset; set => _stepOffset = MathF.Max(0f, value); }
+    public float StepOffset { get => _stepOffset; set => _stepOffset = Math.Clamp(value, 0f, Height); }
     /// <summary>Collision skin that prevents the capsule from being pressed exactly against surfaces.</summary>
     public float SkinWidth { get => _skinWidth; set => _skinWidth = MathF.Max(0.001f, value); }
     /// <summary>Displacements shorter than this are ignored.</summary>
@@ -75,7 +86,7 @@ public sealed class CharacterController : Component
     /// <summary>Whether movement is constrained by colliders.</summary>
     public bool DetectCollisions { get; set; } = true;
     /// <summary>Whether small initial overlaps are resolved before the controller moves.</summary>
-    public bool EnableOverlapRecovery { get; set; }
+    public bool EnableOverlapRecovery { get; set; } = true;
     /// <summary>True when the last movement touched a walkable surface below.</summary>
     public bool IsGrounded { get; private set; }
     /// <summary>World-space velocity estimated from the most recent explicit move.</summary>
@@ -86,7 +97,10 @@ public sealed class CharacterController : Component
     /// <summary>Moves by a world-space displacement; gravity is not applied.</summary>
     public CollisionFlags Move(Vector3 motion)
     {
-        if (motion.Length() <= MinMoveDistance)
+        Vector3 frameStart = Transform.WorldPosition;
+        Vector3 supportMotion = GetSupportMotion(frameStart);
+        motion += supportMotion;
+        if (motion.Length() <= MinMoveDistance && supportMotion.Length() <= MinMoveDistance)
         {
             _velocity = Vector3.Zero;
             CollisionFlags = ControllerCollisionFlags.None;
@@ -94,35 +108,40 @@ public sealed class CharacterController : Component
             return CollisionFlags;
         }
 
-        Vector3 start = Transform.WorldPosition;
         List<ControllerColliderHit> contacts = [];
+        _supportCollider = null;
 
         if (!DetectCollisions)
         {
-            Transform.WorldPosition = start + motion;
+            Transform.WorldPosition = frameStart + motion;
             CollisionFlags = ControllerCollisionFlags.None;
         }
         else
         {
-            if (EnableOverlapRecovery)
-            {
-                RecoverOverlaps();
-                start = Transform.WorldPosition;
-            }
+            if (EnableOverlapRecovery) RecoverOverlaps();
+            Vector3 movementStart = Transform.WorldPosition;
 
             CollisionFlags flags = MoveAndSlide(motion, contacts);
-            if (StepOffset > 0f && (flags & ControllerCollisionFlags.Sides) != 0 &&
-                TryStep(start, motion, contacts, out CollisionFlags steppedFlags))
+            if (StepOffset > 0f && (flags & ControllerCollisionFlags.Sides) != 0)
             {
-                flags = steppedFlags;
+                Collider? originalSupport = _supportCollider;
+                if (TryStep(movementStart, motion, contacts, out CollisionFlags steppedFlags))
+                {
+                    flags = steppedFlags;
+                }
+                else
+                {
+                    _supportCollider = originalSupport;
+                }
             }
 
             CollisionFlags = flags;
         }
 
         IsGrounded = (CollisionFlags & ControllerCollisionFlags.Below) != 0;
+        UpdateSupportPose();
         float dt = Time.DeltaTime;
-        _velocity = dt > 1e-6f ? (Transform.WorldPosition - start) / dt : Vector3.Zero;
+        _velocity = dt > 1e-6f ? (Transform.WorldPosition - frameStart) / dt : Vector3.Zero;
         foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => hit.Collider))
         {
             foreach (Script script in GameObject!.GetComponents<Script>().Where(script => script.IsActive && !script.IsSuspended))
@@ -177,6 +196,7 @@ public sealed class CharacterController : Component
 
             if (Vector3.Dot(hit.Normal, Vector3.UnitY) >= WalkableDot)
             {
+                _supportCollider = hit.Collider;
                 flags |= ControllerCollisionFlags.Below;
                 if (remaining.Y < 0f) remaining.Y = 0f;
             }
@@ -200,6 +220,7 @@ public sealed class CharacterController : Component
         if (Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out RaycastHit ground) &&
             Vector3.Dot(ground.Normal, Vector3.UnitY) >= WalkableDot)
         {
+            _supportCollider = ground.Collider;
             flags |= ControllerCollisionFlags.Below;
         }
         return flags;
@@ -231,6 +252,7 @@ public sealed class CharacterController : Component
         }
 
         Transform.WorldPosition += -Vector3.UnitY * MathF.Max(0f, landing.Distance - SkinWidth);
+        _supportCollider = landing.Collider;
         contacts.AddRange(stepContacts);
         flags = (stepFlags & ~ControllerCollisionFlags.Below) | ControllerCollisionFlags.Below;
         return true;
@@ -253,14 +275,52 @@ public sealed class CharacterController : Component
         upper = center + axis;
     }
 
+    private Vector3 GetSupportMotion(Vector3 controllerPosition)
+    {
+        Collider? support = _supportCollider;
+        if (support is null || !support.IsActive || support.IsDestroyed || support.GameObject is not { ActiveInHierarchy: true })
+        {
+            _supportCollider = null;
+            return Vector3.Zero;
+        }
+
+        Vector3 currentPlatformPosition = support.Transform.WorldPosition;
+        Quaternion currentPlatformRotation = support.Transform.WorldRotation;
+        Quaternion rotationDelta = Quaternion.Normalize(currentPlatformRotation * Quaternion.Inverse(_supportRotation));
+        Vector3 carriedPosition = currentPlatformPosition + Vector3.Transform(_supportRelativePosition, rotationDelta);
+        return carriedPosition - controllerPosition;
+    }
+
+    private void UpdateSupportPose()
+    {
+        Collider? support = _supportCollider;
+        if (!IsGrounded || support is null || !support.IsActive || support.IsDestroyed ||
+            support.GameObject is not { ActiveInHierarchy: true })
+        {
+            _supportCollider = null;
+            return;
+        }
+
+        _supportRotation = support.Transform.WorldRotation;
+        _supportRelativePosition = Transform.WorldPosition - _supportPosition;
+    }
+
     private void RecoverOverlaps()
     {
-        // Small bounded pushes remove spawn-time penetration without teleporting through surrounding geometry.
-        for (int iteration = 0; iteration < 4; iteration++)
+        // Resolve the deepest penetration a little at a time. The cap prevents a misplaced controller from being
+        // teleported an arbitrary distance out of level geometry.
+        float recoveredDistance = 0f;
+        for (int iteration = 0; iteration < 8 && recoveredDistance < 0.5f; iteration++)
         {
-            if (!Sweep(-Vector3.UnitY * (SkinWidth + 0.02f), out RaycastHit hit) || hit.Distance > SkinWidth)
-                return;
-            Transform.WorldPosition += hit.Normal * MathF.Max(0.001f, SkinWidth - hit.Distance);
+            GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
+            if (!Physics.TryGetCapsulePenetration(lower, upper, radius, GameObject!,
+                out Vector3 correction, out float depth)) return;
+
+            float correctionLength = correction.Length();
+            if (correctionLength < 1e-5f) return;
+            float allowed = MathF.Min(correctionLength + 0.001f, 0.5f - recoveredDistance);
+            Transform.WorldPosition += correction * (allowed / correctionLength);
+            recoveredDistance += allowed;
         }
     }
 

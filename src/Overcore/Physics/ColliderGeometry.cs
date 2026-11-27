@@ -47,8 +47,8 @@ internal readonly struct ShapeInstance
 }
 
 /// <summary>
-/// The shape arithmetic behind the physics queries: rays against boxes, spheres and capsules; spheres and boxes
-/// against the same; and the shape-against-shape tests trigger colliders use.
+/// The shape arithmetic behind physics queries: rays and swept capsules against boxes, spheres and capsules;
+/// sphere and box overlaps; and the shape-against-shape tests trigger colliders use.
 /// </summary>
 /// <remarks>
 /// Every test works from a <see cref="ShapeInstance"/>, so a query does not care whether the shape came from a
@@ -204,6 +204,75 @@ internal static class ColliderGeometry
             ShapeKind.Capsule => RaycastCapsule(shape, origin, direction, maxDistance, out distance, out point, out normal),
             _ => RaycastSphere(shape.Center, shape.Radius, origin, direction, maxDistance, out distance, out point, out normal)
         };
+    }
+
+    /// <summary>
+    /// Sweeps a capsule against a convex collider with conservative advancement over the geometric separation between
+    /// the capsule axis and the target shape. Unlike sphere-sampled casts, this preserves the capsule profile at box
+    /// corners and does not create gaps along its axis.
+    /// </summary>
+    public static bool CapsuleCast(
+        in ShapeInstance target,
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 direction,
+        float maxDistance,
+        out float distance,
+        out Vector3 point,
+        out Vector3 normal)
+    {
+        distance = 0f;
+        point = point1;
+        normal = -direction;
+        Vector3 axis = Vector3.Normalize(direction);
+        const float contactTolerance = 1e-4f;
+        const float minimumAdvance = 1e-5f;
+        float travelled = 0f;
+
+        for (int iteration = 0; iteration < 64; iteration++)
+        {
+            Vector3 offset = axis * travelled;
+            GetCapsuleSeparation(
+                target, point1 + offset, point2 + offset, radius, axis,
+                out float separation, out Vector3 contact, out Vector3 surfaceNormal);
+
+            float approachSpeed = -Vector3.Dot(axis, surfaceNormal);
+            bool initiallyOverlappingAndLeaving = travelled == 0f && separation < -contactTolerance && approachSpeed <= 0f;
+            if (initiallyOverlappingAndLeaving)
+            {
+                return false;
+            }
+
+            if (separation <= contactTolerance)
+            {
+                if (travelled > 0f || approachSpeed > 1e-5f || separation < -contactTolerance)
+                {
+                    distance = travelled;
+                    point = contact;
+                    normal = surfaceNormal;
+                    return travelled <= maxDistance;
+                }
+                return false;
+            }
+
+            if (approachSpeed <= 1e-6f)
+            {
+                return false;
+            }
+
+            // Separation is a 1-Lipschitz distance under unit translation, so advancing by no more than the
+            // current gap cannot tunnel past a feature whose normal changes (for example, a rounded box corner).
+            float advance = MathF.Max(separation, minimumAdvance);
+            travelled += advance;
+            if (travelled > maxDistance)
+            {
+                return false;
+            }
+        }
+
+        // Failure to converge is treated as a miss rather than inventing a contact at an arbitrary point.
+        return false;
     }
 
     /// <summary>True when a sphere overlaps the shape.</summary>
@@ -624,6 +693,181 @@ internal static class ColliderGeometry
 
         float t = Math.Clamp(Vector3.Dot(point - start, segment) / lengthSquared, 0.0f, 1.0f);
         return start + (segment * t);
+    }
+
+    public static float CapsuleSeparation(
+        in ShapeInstance target,
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        out Vector3 normal)
+    {
+        GetCapsuleSeparation(target, point1, point2, radius, Vector3.UnitY,
+            out float separation, out _, out normal);
+        return separation;
+    }
+
+    private static void GetCapsuleSeparation(
+        in ShapeInstance target,
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 movementDirection,
+        out float separation,
+        out Vector3 contactPoint,
+        out Vector3 normal)
+    {
+        switch (target.Kind)
+        {
+            case ShapeKind.Box:
+            {
+                ClosestSegmentBox(point1, point2, target, out Vector3 axisPoint, out Vector3 boxPoint);
+                Vector3 difference = axisPoint - boxPoint;
+                float distance = difference.Length();
+                if (distance > Epsilon)
+                {
+                    normal = difference / distance;
+                    separation = distance - radius;
+                    contactPoint = boxPoint;
+                    return;
+                }
+
+                // The capsule axis starts inside the box. Use the nearest face as a stable depenetration normal.
+                Vector3 local = ToLocal(target, axisPoint);
+                Vector3 clearance = target.HalfExtents - Vector3.Abs(local);
+                int faceAxis = clearance.X <= clearance.Y && clearance.X <= clearance.Z ? 0
+                    : clearance.Y <= clearance.Z ? 1 : 2;
+                float sign = faceAxis switch
+                {
+                    0 => local.X < 0f ? -1f : 1f,
+                    1 => local.Y < 0f ? -1f : 1f,
+                    _ => local.Z < 0f ? -1f : 1f
+                };
+                Vector3 localNormal = faceAxis switch
+                {
+                    0 => new Vector3(sign, 0f, 0f),
+                    1 => new Vector3(0f, sign, 0f),
+                    _ => new Vector3(0f, 0f, sign)
+                };
+                normal = Vector3.Normalize(Vector3.Transform(localNormal, target.Rotation));
+                float faceClearance = MathF.Max(0f, faceAxis switch
+                {
+                    0 => clearance.X,
+                    1 => clearance.Y,
+                    _ => clearance.Z
+                });
+                separation = -(radius + faceClearance);
+                contactPoint = axisPoint + (normal * faceClearance);
+                return;
+            }
+
+            case ShapeKind.Sphere:
+            {
+                Vector3 axisPoint = ClosestPointOnSegment(point1, point2, target.Center);
+                Vector3 difference = axisPoint - target.Center;
+                float distance = difference.Length();
+                normal = distance > Epsilon ? difference / distance : -movementDirection;
+                separation = distance - radius - target.Radius;
+                contactPoint = target.Center + (normal * target.Radius);
+                return;
+            }
+
+            default:
+            {
+                ClosestSegmentSegment(point1, point2, target.SegmentA, target.SegmentB,
+                    out Vector3 capsuleAxisPoint, out Vector3 targetAxisPoint);
+                Vector3 difference = capsuleAxisPoint - targetAxisPoint;
+                float distance = difference.Length();
+                normal = distance > Epsilon ? difference / distance : -movementDirection;
+                separation = distance - radius - target.Radius;
+                contactPoint = targetAxisPoint + (normal * target.Radius);
+                return;
+            }
+        }
+    }
+
+    private static void ClosestSegmentBox(
+        Vector3 start,
+        Vector3 end,
+        in ShapeInstance box,
+        out Vector3 segmentPoint,
+        out Vector3 boxPoint)
+    {
+        ShapeInstance shape = box;
+        float low = 0f;
+        float high = 1f;
+        for (int iteration = 0; iteration < 40; iteration++)
+        {
+            float left = low + ((high - low) / 3f);
+            float right = high - ((high - low) / 3f);
+            Vector3 leftPoint = Vector3.Lerp(start, end, left);
+            Vector3 rightPoint = Vector3.Lerp(start, end, right);
+            float leftDistance = Vector3.DistanceSquared(leftPoint, ClosestPoint(shape, leftPoint));
+            float rightDistance = Vector3.DistanceSquared(rightPoint, ClosestPoint(shape, rightPoint));
+            if (leftDistance < rightDistance) high = right;
+            else low = left;
+        }
+
+        segmentPoint = Vector3.Lerp(start, end, (low + high) * 0.5f);
+        boxPoint = ClosestPoint(shape, segmentPoint);
+    }
+
+    private static void ClosestSegmentSegment(
+        Vector3 a0,
+        Vector3 a1,
+        Vector3 b0,
+        Vector3 b1,
+        out Vector3 pointA,
+        out Vector3 pointB)
+    {
+        Vector3 d1 = a1 - a0;
+        Vector3 d2 = b1 - b0;
+        Vector3 between = a0 - b0;
+        float a = Vector3.Dot(d1, d1);
+        float e = Vector3.Dot(d2, d2);
+        float f = Vector3.Dot(d2, between);
+        float s;
+        float t;
+
+        if (a <= Epsilon && e <= Epsilon)
+        {
+            s = 0f;
+            t = 0f;
+        }
+        else if (a <= Epsilon)
+        {
+            s = 0f;
+            t = Math.Clamp(f / e, 0f, 1f);
+        }
+        else
+        {
+            float c = Vector3.Dot(d1, between);
+            if (e <= Epsilon)
+            {
+                t = 0f;
+                s = Math.Clamp(-c / a, 0f, 1f);
+            }
+            else
+            {
+                float b = Vector3.Dot(d1, d2);
+                float denominator = (a * e) - (b * b);
+                s = denominator > Epsilon ? Math.Clamp(((b * f) - (c * e)) / denominator, 0f, 1f) : 0f;
+                t = ((b * s) + f) / e;
+                if (t < 0f)
+                {
+                    t = 0f;
+                    s = Math.Clamp(-c / a, 0f, 1f);
+                }
+                else if (t > 1f)
+                {
+                    t = 1f;
+                    s = Math.Clamp((b - c) / a, 0f, 1f);
+                }
+            }
+        }
+
+        pointA = a0 + (d1 * s);
+        pointB = b0 + (d2 * t);
     }
 
     private static float DistanceToSegment(Vector3 start, Vector3 end, Vector3 point) =>
