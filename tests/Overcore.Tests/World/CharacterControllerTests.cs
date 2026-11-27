@@ -16,6 +16,22 @@ public sealed class CharacterControllerTests
         public override void OnControllerColliderHit(ControllerColliderHit hit) => LastHit = hit;
     }
 
+    private sealed class TriggerRecorder : Script
+    {
+        public int EnterCount { get; private set; }
+        public int StayCount { get; private set; }
+        public int ExitCount { get; private set; }
+        public int ControllerEnterCount { get; private set; }
+        public int ControllerStayCount { get; private set; }
+        public int ControllerExitCount { get; private set; }
+        public override void OnTriggerEnter(Collider other) => EnterCount++;
+        public override void OnTriggerStay(Collider other) => StayCount++;
+        public override void OnTriggerExit(Collider other) => ExitCount++;
+        public override void OnTriggerEnter(CharacterController other) => ControllerEnterCount++;
+        public override void OnTriggerStay(CharacterController other) => ControllerStayCount++;
+        public override void OnTriggerExit(CharacterController other) => ControllerExitCount++;
+    }
+
     private static Scene StartScene(PhysicsSystem physics, AudioSystem audio, params GameObject[] objects)
     {
         Scene scene = new(string.Empty, [.. objects]);
@@ -112,6 +128,69 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void UpwardMotionDoesNotGetMarkedGroundedByTheProbeBelow()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject floor = Floor();
+        floor.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        _ = StartScene(physics, audio, floor, actor);
+
+        controller.Move(new Vector3(0f, 0.05f, 0f));
+
+        controller.IsGrounded.Should().BeFalse();
+        (controller.CollisionFlags & CollisionFlags.Below).Should().Be(CollisionFlags.None);
+        actor.Transform.WorldPosition.Y.Should().BeApproximately(0.05f, 0.01f);
+    }
+
+    [Fact]
+    public void ControllerDispatchesTriggerEnterStayAndExitForOverlappingVolumes()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject triggerObject = new("Sensor");
+        triggerObject.Transform.WorldPosition = new Vector3(1f, 1f, 0f);
+        triggerObject.AddComponent(new BoxCollider { Size = new Vector3(1f, 2f, 2f), IsTrigger = true });
+        TriggerRecorder triggerRecorder = triggerObject.AddComponent(new TriggerRecorder());
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        TriggerRecorder recorder = actor.AddComponent(new TriggerRecorder());
+        _ = StartScene(physics, audio, triggerObject, actor);
+
+        controller.Move(Vector3.UnitX);
+        controller.Move(Vector3.Zero);
+        controller.Move(new Vector3(2f, 0f, 0f));
+
+        recorder.EnterCount.Should().Be(1);
+        recorder.StayCount.Should().Be(1);
+        recorder.ExitCount.Should().Be(1);
+        triggerRecorder.ControllerEnterCount.Should().Be(1);
+        triggerRecorder.ControllerStayCount.Should().Be(1);
+        triggerRecorder.ControllerExitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void ControllerReportsAnAboveCollisionWhenMovingIntoACeiling()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject ceiling = new("Ceiling");
+        ceiling.Transform.WorldPosition = new Vector3(0f, 3f, 0f);
+        ceiling.AddComponent(new BoxCollider { Size = new Vector3(10f, 1f, 10f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        _ = StartScene(physics, audio, ceiling, actor);
+
+        CollisionFlags flags = controller.Move(new Vector3(0f, 2f, 0f));
+
+        (flags & CollisionFlags.Above).Should().Be(CollisionFlags.Above);
+        actor.Transform.WorldPosition.Y.Should().BeLessThan(0.5f);
+        actor.Transform.WorldPosition.Y.Should().BeGreaterThan(0.3f);
+    }
+
+    [Fact]
     public void ControllerHitCallbacksAreDeliveredToScriptsOnItsObject()
     {
         using PhysicsSystem physics = new();
@@ -132,6 +211,21 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void ZeroDisplacementRefreshesGroundedState()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject floor = Floor();
+        floor.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        _ = StartScene(physics, audio, floor, actor);
+
+        (controller.Move(Vector3.Zero) & CollisionFlags.Below).Should().Be(CollisionFlags.Below);
+        controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
     public void ControllerCanMoveHorizontallyWhileStandingOnGround()
     {
         using PhysicsSystem physics = new();
@@ -147,6 +241,48 @@ public sealed class CharacterControllerTests
         actor.Transform.WorldPosition.X.Should().BeApproximately(2f, 0.02f);
         (flags & CollisionFlags.Below).Should().Be(CollisionFlags.Below);
         controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void FastMoveThroughATriggerStillDispatchesEnterAndExit()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject triggerObject = new("Thin Sensor");
+        triggerObject.Transform.WorldPosition = new Vector3(1f, 1f, 0f);
+        triggerObject.AddComponent(new BoxCollider { Size = new Vector3(0.2f, 2f, 2f), IsTrigger = true });
+        TriggerRecorder triggerRecorder = triggerObject.AddComponent(new TriggerRecorder());
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        TriggerRecorder actorRecorder = actor.AddComponent(new TriggerRecorder());
+        _ = StartScene(physics, audio, triggerObject, actor);
+
+        controller.Move(new Vector3(3f, 0f, 0f));
+
+        actorRecorder.EnterCount.Should().Be(1);
+        actorRecorder.ExitCount.Should().Be(1);
+        triggerRecorder.ControllerEnterCount.Should().Be(1);
+        triggerRecorder.ControllerExitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void ControllerDoesNotClimbASlopeSteeperThanItsSlopeLimit()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject ramp = new("Steep Ramp");
+        ramp.Transform.WorldRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 3f);
+        ramp.AddComponent(new BoxCollider { Size = new Vector3(8f, 0.2f, 4f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = new Vector3(0f, 0.7f, 0f);
+        CharacterController controller = actor.AddComponent(new CharacterController { SlopeLimit = 45f });
+        _ = StartScene(physics, audio, ramp, actor);
+
+        CollisionFlags flags = controller.Move(new Vector3(1f, 0f, 0f));
+
+        (flags & CollisionFlags.Sides).Should().Be(CollisionFlags.Sides);
+        actor.Transform.WorldPosition.X.Should().BeLessThan(0.3f);
+        actor.Transform.WorldPosition.Y.Should().BeApproximately(0.7f, 0.05f);
     }
 
     [Fact]
@@ -187,6 +323,26 @@ public sealed class CharacterControllerTests
 
         actor.Transform.WorldPosition.X.Should().BeApproximately(1.01f, 0.02f);
         controller.IsGrounded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GroundedControllerIsCarriedByPlatformRotation()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject platform = Floor();
+        platform.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = Vector3.UnitX;
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        _ = StartScene(physics, audio, platform, actor);
+
+        controller.Move(new Vector3(0.01f, 0f, 0f));
+        platform.Transform.WorldRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
+        controller.Move(Vector3.Zero);
+
+        MathF.Abs(actor.Transform.WorldPosition.X).Should().BeLessThan(0.05f);
+        MathF.Abs(actor.Transform.WorldPosition.Z).Should().BeGreaterThan(0.9f);
     }
 
     [Fact]

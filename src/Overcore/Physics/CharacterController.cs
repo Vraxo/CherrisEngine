@@ -49,6 +49,9 @@ public readonly struct ControllerColliderHit
 /// </remarks>
 public sealed class CharacterController : Component
 {
+    private enum TriggerPhase { Enter, Stay, Exit }
+    private readonly record struct MotionSegment(Vector3 Start, Vector3 End);
+
     private float _height = 2f;
     private float _radius = 0.5f;
     private Vector3 _center = new(0f, 1f, 0f);
@@ -60,6 +63,7 @@ public sealed class CharacterController : Component
     private Collider? _supportCollider;
     private Quaternion _supportRotation = Quaternion.Identity;
     private Vector3 _supportRelativePosition;
+    private readonly HashSet<Collider> _activeTriggers = [];
 
     /// <summary>Total capsule height, including the rounded ends.</summary>
     public float Height
@@ -98,39 +102,45 @@ public sealed class CharacterController : Component
     public CollisionFlags Move(Vector3 motion)
     {
         Vector3 frameStart = Transform.WorldPosition;
+        Vector3 requestedMotion = motion;
         Vector3 supportMotion = GetSupportMotion(frameStart);
         motion += supportMotion;
         if (motion.Length() <= MinMoveDistance && supportMotion.Length() <= MinMoveDistance)
         {
-            _velocity = Vector3.Zero;
-            CollisionFlags = ControllerCollisionFlags.None;
-            IsGrounded = false;
-            return CollisionFlags;
+            motion = Vector3.Zero;
         }
 
         List<ControllerColliderHit> contacts = [];
+        List<MotionSegment> movementPath = [];
+        Vector3 triggerStartPosition = frameStart;
         _supportCollider = null;
 
         if (!DetectCollisions)
         {
             Transform.WorldPosition = frameStart + motion;
+            AddMotionSegment(movementPath, frameStart, Transform.WorldPosition);
             CollisionFlags = ControllerCollisionFlags.None;
         }
         else
         {
             if (EnableOverlapRecovery) RecoverOverlaps();
             Vector3 movementStart = Transform.WorldPosition;
+            triggerStartPosition = movementStart;
 
-            CollisionFlags flags = MoveAndSlide(motion, contacts);
+            bool probeGround = motion.Y <= 0f || (supportMotion.Y > 0f && requestedMotion.Y <= 0f);
+            CollisionFlags flags = MoveAndSlide(motion, contacts, movementPath, probeGround);
             if (StepOffset > 0f && (flags & ControllerCollisionFlags.Sides) != 0)
             {
+                Vector3 normalMoveEnd = Transform.WorldPosition;
                 Collider? originalSupport = _supportCollider;
-                if (TryStep(movementStart, motion, contacts, out CollisionFlags steppedFlags))
+                if (TryStep(movementStart, motion, contacts, out CollisionFlags steppedFlags, out List<MotionSegment> steppedPath))
                 {
                     flags = steppedFlags;
+                    movementPath = steppedPath;
                 }
                 else
                 {
+                    Transform.WorldPosition = normalMoveEnd;
                     _supportCollider = originalSupport;
                 }
             }
@@ -140,6 +150,7 @@ public sealed class CharacterController : Component
 
         IsGrounded = (CollisionFlags & ControllerCollisionFlags.Below) != 0;
         UpdateSupportPose();
+        DispatchTriggerChanges(movementPath, triggerStartPosition);
         float dt = Time.DeltaTime;
         _velocity = dt > 1e-6f ? (Transform.WorldPosition - frameStart) / dt : Vector3.Zero;
         foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => hit.Collider))
@@ -168,7 +179,11 @@ public sealed class CharacterController : Component
         return IsGrounded;
     }
 
-    private CollisionFlags MoveAndSlide(Vector3 motion, List<ControllerColliderHit> contacts)
+    private CollisionFlags MoveAndSlide(
+        Vector3 motion,
+        List<ControllerColliderHit> contacts,
+        List<MotionSegment> path,
+        bool probeGround = true)
     {
         CollisionFlags flags = ControllerCollisionFlags.None;
         Vector3 remaining = motion;
@@ -176,7 +191,9 @@ public sealed class CharacterController : Component
         {
             if (!Sweep(remaining, out RaycastHit hit))
             {
+                Vector3 segmentStart = Transform.WorldPosition;
                 Transform.WorldPosition += remaining;
+                AddMotionSegment(path, segmentStart, Transform.WorldPosition);
                 break;
             }
 
@@ -191,33 +208,50 @@ public sealed class CharacterController : Component
 
             float travel = Math.Clamp(hit.Distance - SkinWidth, 0f, remaining.Length());
             Vector3 direction = Vector3.Normalize(remaining);
+            Vector3 segmentStart = Transform.WorldPosition;
             Transform.WorldPosition += direction * travel;
+            AddMotionSegment(path, segmentStart, Transform.WorldPosition);
             remaining -= direction * travel;
 
-            if (Vector3.Dot(hit.Normal, Vector3.UnitY) >= WalkableDot)
+            float verticalNormal = Vector3.Dot(hit.Normal, Vector3.UnitY);
+            if (verticalNormal >= WalkableDot && remaining.Y <= 0f)
             {
                 _supportCollider = hit.Collider;
                 flags |= ControllerCollisionFlags.Below;
                 if (remaining.Y < 0f) remaining.Y = 0f;
             }
-            else if (Vector3.Dot(hit.Normal, Vector3.UnitY) <= -0.5f)
+            else if (verticalNormal < -1e-4f && remaining.Y > 0f)
             {
                 flags |= ControllerCollisionFlags.Above;
-                if (remaining.Y > 0f) remaining.Y = 0f;
+                remaining.Y = 0f;
             }
             else
             {
                 flags |= ControllerCollisionFlags.Sides;
             }
 
-            // Slide along the contact plane instead of stopping dead at a wall.
-            remaining = Vector3.Dot(remaining, hit.Normal) < 0f
-                ? remaining - (hit.Normal * Vector3.Dot(remaining, hit.Normal))
-                : remaining;
+            // Slide along the contact plane instead of stopping dead at a wall. A steep uphill slope is not
+            // walkable: remove its inward horizontal component rather than letting the plane projection climb it.
+            if (Vector3.Dot(remaining, hit.Normal) < 0f)
+            {
+                Vector3 slide = remaining - (hit.Normal * Vector3.Dot(remaining, hit.Normal));
+                if (verticalNormal > 0f && verticalNormal < WalkableDot && slide.Y > 1e-5f)
+                {
+                    slide.Y = 0f;
+                    Vector3 horizontalNormal = new(hit.Normal.X, 0f, hit.Normal.Z);
+                    if (horizontalNormal.LengthSquared() > 1e-8f)
+                    {
+                        horizontalNormal = Vector3.Normalize(horizontalNormal);
+                        float intoSlope = Vector3.Dot(slide, horizontalNormal);
+                        if (intoSlope < 0f) slide -= horizontalNormal * intoSlope;
+                    }
+                }
+                remaining = slide;
+            }
         }
 
         // A short downward probe provides stable grounding when the caller's requested motion is horizontal.
-        if (Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out RaycastHit ground) &&
+        if (probeGround && Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out RaycastHit ground) &&
             Vector3.Dot(ground.Normal, Vector3.UnitY) >= WalkableDot)
         {
             _supportCollider = ground.Collider;
@@ -226,17 +260,26 @@ public sealed class CharacterController : Component
         return flags;
     }
 
-    private bool TryStep(Vector3 start, Vector3 motion, List<ControllerColliderHit> contacts, out CollisionFlags flags)
+    private bool TryStep(
+        Vector3 start,
+        Vector3 motion,
+        List<ControllerColliderHit> contacts,
+        out CollisionFlags flags,
+        out List<MotionSegment> acceptedPath)
     {
         flags = ControllerCollisionFlags.None;
+        acceptedPath = [];
         Vector3 horizontal = new(motion.X, 0f, motion.Z);
         if (horizontal.LengthSquared() < 1e-8f) return false;
 
         Transform.WorldPosition = start;
         if (Sweep(Vector3.UnitY * StepOffset, out _)) return false;
+        List<MotionSegment> stepPath = [];
+        Vector3 stepStart = Transform.WorldPosition;
         Transform.WorldPosition += Vector3.UnitY * StepOffset;
+        AddMotionSegment(stepPath, stepStart, Transform.WorldPosition);
         List<ControllerColliderHit> stepContacts = [];
-        CollisionFlags stepFlags = MoveAndSlide(horizontal, stepContacts);
+        CollisionFlags stepFlags = MoveAndSlide(horizontal, stepContacts, stepPath);
         if ((stepFlags & ControllerCollisionFlags.Sides) != 0)
         {
             Transform.WorldPosition = start;
@@ -251,11 +294,19 @@ public sealed class CharacterController : Component
             return false;
         }
 
+        Vector3 landingStart = Transform.WorldPosition;
         Transform.WorldPosition += -Vector3.UnitY * MathF.Max(0f, landing.Distance - SkinWidth);
+        AddMotionSegment(stepPath, landingStart, Transform.WorldPosition);
         _supportCollider = landing.Collider;
         contacts.AddRange(stepContacts);
         flags = (stepFlags & ~ControllerCollisionFlags.Below) | ControllerCollisionFlags.Below;
+        acceptedPath = stepPath;
         return true;
+    }
+
+    private static void AddMotionSegment(List<MotionSegment> path, Vector3 start, Vector3 end)
+    {
+        if (Vector3.DistanceSquared(start, end) > 1e-12f) path.Add(new MotionSegment(start, end));
     }
 
     private bool Sweep(Vector3 motion, out RaycastHit hit)
@@ -273,6 +324,137 @@ public sealed class CharacterController : Component
         Vector3 axis = Vector3.UnitY * MathF.Max(0f, height * 0.5f - radius);
         lower = center - axis;
         upper = center + axis;
+    }
+
+    public override void OnDisable()
+    {
+        ClearTriggerContacts();
+        _supportCollider = null;
+        base.OnDisable();
+    }
+
+    public override void OnDestroy()
+    {
+        ClearTriggerContacts();
+        _supportCollider = null;
+        base.OnDestroy();
+    }
+
+    private void ClearTriggerContacts()
+    {
+        foreach (Collider trigger in _activeTriggers) NotifyTrigger(trigger, TriggerPhase.Exit);
+        _activeTriggers.Clear();
+    }
+
+    private void DispatchTriggerChanges(List<MotionSegment> path, Vector3 startPosition)
+    {
+        if (!DetectCollisions)
+        {
+            ClearTriggerContacts();
+            return;
+        }
+
+        GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
+        Vector3 finalPosition = Transform.WorldPosition;
+        HashSet<Collider> current = Physics.OverlapTriggersForController(lower, upper, radius, GameObject!).ToHashSet();
+        Vector3 startOffset = startPosition - finalPosition;
+        HashSet<Collider> initial = Physics.OverlapTriggersForController(
+            lower + startOffset, upper + startOffset, radius, GameObject!).ToHashSet();
+        HashSet<Collider> candidates = Physics.ControllerTriggerColliders(GameObject!).ToHashSet();
+        candidates.UnionWith(_activeTriggers);
+
+        foreach (Collider trigger in candidates)
+        {
+            bool wasOverlapping = _activeTriggers.Contains(trigger);
+            bool startedOverlapping = initial.Contains(trigger);
+            bool isOverlapping = current.Contains(trigger);
+            bool crossedDuringMove = false;
+            if (!startedOverlapping && !isOverlapping)
+            {
+                foreach (MotionSegment segment in path)
+                {
+                    Vector3 displacement = segment.End - segment.Start;
+                    Vector3 offset = segment.Start - finalPosition;
+                    if (!Physics.CapsuleCastTriggerForController(
+                        trigger, lower + offset, upper + offset, radius, displacement, GameObject!)) continue;
+                    crossedDuringMove = true;
+                    break;
+                }
+            }
+
+            if (startedOverlapping)
+            {
+                if (!wasOverlapping) NotifyTrigger(trigger, TriggerPhase.Enter);
+                else if (isOverlapping) NotifyTrigger(trigger, TriggerPhase.Stay);
+                if (!isOverlapping) NotifyTrigger(trigger, TriggerPhase.Exit);
+            }
+            else if (crossedDuringMove)
+            {
+                NotifyTrigger(trigger, TriggerPhase.Enter);
+                if (!isOverlapping) NotifyTrigger(trigger, TriggerPhase.Exit);
+            }
+            else if (isOverlapping)
+            {
+                NotifyTrigger(trigger, TriggerPhase.Enter);
+            }
+            else if (wasOverlapping)
+            {
+                NotifyTrigger(trigger, TriggerPhase.Exit);
+            }
+        }
+
+        _activeTriggers.Clear();
+        _activeTriggers.UnionWith(current);
+    }
+
+    private void NotifyTrigger(Collider trigger, TriggerPhase phase)
+    {
+        foreach (Script script in GameObject!.GetComponents<Script>().Where(script => script.IsActive && !script.IsSuspended))
+        {
+            try
+            {
+                switch (phase)
+                {
+                    case TriggerPhase.Enter:
+                        script.OnTriggerEnter(trigger);
+                        break;
+                    case TriggerPhase.Stay:
+                        script.OnTriggerStay(trigger);
+                        break;
+                    default:
+                        script.OnTriggerExit(trigger);
+                        break;
+                }
+            }
+            catch (Exception exception)
+            {
+                Logger.Warning($"Controller trigger callback on '{GameObject.Name}' failed: {exception.Message}");
+            }
+        }
+
+        if (trigger.GameObject is not { } triggerObject) return;
+        foreach (Script script in triggerObject.GetComponents<Script>().Where(script => script.IsActive && !script.IsSuspended))
+        {
+            try
+            {
+                switch (phase)
+                {
+                    case TriggerPhase.Enter:
+                        script.OnTriggerEnter(this);
+                        break;
+                    case TriggerPhase.Stay:
+                        script.OnTriggerStay(this);
+                        break;
+                    default:
+                        script.OnTriggerExit(this);
+                        break;
+                }
+            }
+            catch (Exception exception)
+            {
+                Logger.Warning($"Trigger callback on '{triggerObject.Name}' for controller '{GameObject.Name}' failed: {exception.Message}");
+            }
+        }
     }
 
     private Vector3 GetSupportMotion(Vector3 controllerPosition)
@@ -302,7 +484,7 @@ public sealed class CharacterController : Component
         }
 
         _supportRotation = support.Transform.WorldRotation;
-        _supportRelativePosition = Transform.WorldPosition - _supportPosition;
+        _supportRelativePosition = Transform.WorldPosition - support.Transform.WorldPosition;
     }
 
     private void RecoverOverlaps()
@@ -314,7 +496,7 @@ public sealed class CharacterController : Component
         {
             GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
             if (!Physics.TryGetCapsulePenetration(lower, upper, radius, GameObject!,
-                out Vector3 correction, out float depth)) return;
+                out Vector3 correction, out _)) return;
 
             float correctionLength = correction.Length();
             if (correctionLength < 1e-5f) return;

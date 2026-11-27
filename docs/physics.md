@@ -88,9 +88,13 @@ box distance minimization is numerical, so contact tolerances can still differ f
 contact planes, attempts a bounded step-up for small ledges, and resolves initial penetrations by pushing along the
 deepest contact normal with a per-move recovery limit. Moving platforms carry a grounded controller by the platform's
 translation and rotation. This is not a claim of bit-for-bit PhysX parity: the engine does not automatically push
-rigid bodies, though scripts can use the hit callback to apply forces. Unlike a rigid body, a character controller does
-not produce the fixed-step `OnCollision*` callbacks; contacts are delivered synchronously from `Move` through
-`OnControllerColliderHit`. Test coverage exists in source, but the .NET test suite has not been run in this environment.
+rigid bodies, though scripts can use the hit callback to apply forces. Trigger overlaps are checked at the end of each
+`Move`, and capsule sweeps along the controller's resolved movement segments detect triggers crossed entirely within
+one move. Enter/Stay/Exit are delivered to scripts on both objects;
+the trigger object's callback takes the `CharacterController` component because the controller is not itself a
+`Collider`. Unlike a rigid body, a character controller does not produce the fixed-step
+`OnCollision*` callbacks; contacts are delivered synchronously from `Move` through `OnControllerColliderHit`. Test
+coverage exists in source, but the .NET test suite has not been run in this environment.
 
 ## 3. Rigid bodies
 

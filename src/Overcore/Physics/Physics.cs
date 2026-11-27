@@ -367,6 +367,59 @@ public static class Physics
         CapsuleCastCore(point1, point2, radius, displacement, out hit, displacement.Length(), ~0,
             QueryTriggerInteraction.Ignore, owner);
 
+    internal static Collider[] ControllerTriggerColliders(GameObject owner)
+    {
+        if (!TryGetWorld(out PhysicsSystem? world)) return [];
+        return [.. world.Colliders.Where(collider =>
+            collider.IsTrigger && !collider.IsDestroyed && collider.IsActive &&
+            collider.GameObject is { ActiveInHierarchy: true } gameObject &&
+            !ReferenceEquals(gameObject, owner) && !IgnoredLayers[owner.Layer, gameObject.Layer])];
+    }
+
+    internal static bool CapsuleCastTriggerForController(
+        Collider trigger,
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 displacement,
+        GameObject owner)
+    {
+        float distance = displacement.Length();
+        if (distance <= 1e-6f || trigger.IsDestroyed || !trigger.IsActive ||
+            trigger.GameObject is not { ActiveInHierarchy: true } triggerObject ||
+            ReferenceEquals(triggerObject, owner) || IgnoredLayers[owner.Layer, triggerObject.Layer]) return false;
+
+        return ColliderGeometry.CapsuleCast(
+            ColliderGeometry.From(trigger), point1, point2, radius, displacement / distance, distance,
+            out _, out _, out _);
+    }
+
+    internal static Collider[] OverlapTriggersForController(
+        Vector3 point1, Vector3 point2, float radius, GameObject owner)
+    {
+        if (!TryGetWorld(out PhysicsSystem? world)) return [];
+
+        ShapeInstance controllerShape = new()
+        {
+            Kind = ShapeKind.Capsule,
+            Center = (point1 + point2) * 0.5f,
+            Radius = radius,
+            SegmentA = point1,
+            SegmentB = point2
+        };
+        List<Collider> overlaps = [];
+        foreach (Collider collider in world.Colliders)
+        {
+            GameObject? gameObject = collider.GameObject;
+            if (!collider.IsTrigger || collider.IsDestroyed || !collider.IsActive || gameObject is null ||
+                !gameObject.ActiveInHierarchy || ReferenceEquals(gameObject, owner) ||
+                IgnoredLayers[owner.Layer, gameObject.Layer]) continue;
+
+            if (ColliderGeometry.Overlaps(controllerShape, ColliderGeometry.From(collider))) overlaps.Add(collider);
+        }
+        return [.. overlaps];
+    }
+
     internal static bool TryGetCapsulePenetration(
         Vector3 point1, Vector3 point2, float radius, GameObject owner, out Vector3 correction, out float depth)
     {

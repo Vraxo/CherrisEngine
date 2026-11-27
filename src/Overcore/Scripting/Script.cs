@@ -102,13 +102,25 @@ public abstract class Script : Component
     /// <param name="other">The trigger that was entered.</param>
     public virtual void OnTriggerEnter(Collider other) { }
 
+    /// <summary>Runs on a trigger object's scripts when a CharacterController enters it.</summary>
+    /// <param name="other">The character controller that entered the trigger.</param>
+    public virtual void OnTriggerEnter(CharacterController other) { }
+
     /// <summary>Runs every fixed step the overlap lasts.</summary>
     /// <param name="other">The trigger being overlapped.</param>
     public virtual void OnTriggerStay(Collider other) { }
 
+    /// <summary>Runs on a trigger object's scripts every step a CharacterController remains inside it.</summary>
+    /// <param name="other">The character controller inside the trigger.</param>
+    public virtual void OnTriggerStay(CharacterController other) { }
+
     /// <summary>Runs when the overlap ends.</summary>
     /// <param name="other">The trigger that was left.</param>
     public virtual void OnTriggerExit(Collider other) { }
+
+    /// <summary>Runs on a trigger object's scripts when a CharacterController leaves it.</summary>
+    /// <param name="other">The character controller that left the trigger.</param>
+    public virtual void OnTriggerExit(CharacterController other) { }
 
     // ---- Object helpers, the ones a MonoBehaviour inherits in Unity -------------------------------------------
 
