@@ -2,6 +2,7 @@ using Overcore;
 using Overcore.Components;
 using Overcore.Core;
 using Overcore.Core.Logging;
+using Overcore.Rendering.OpenTK;
 using Overcore.RenderingInterface;
 using Overcore.Serialization;
 using OvercoreEditor.Core;
@@ -142,6 +143,11 @@ public class Editor : Engine
     {
         base.Update(deltaTime);
         _editorAppLogic?.UpdateEditorLogic(deltaTime);
+
+        if (Renderer is OpenTKRenderer openTKRenderer)
+        {
+            openTKRenderer.UIInputEnabled = State == EditorState.Playing;
+        }
 
         bool shouldStepPhysics = State == EditorState.Playing;
         SceneManager.Update(deltaTime, shouldStepPhysics);

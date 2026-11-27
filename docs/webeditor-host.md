@@ -34,13 +34,16 @@ scene.
 ## Launcher and projects
 
 The launcher mirrors the ImGui editor's (`src/OvercoreEditor/Projects/ProjectSelector.cs`), because a project
-folder is the same thing to both front ends:
+folder is the same thing to both front ends. Both use the shared active editor theme for surfaces, accents, controls,
+typography, and corner metrics; the web launcher reflows its sidebar and sample cards for narrow windows.
 
 - **Projects** — recent projects with a search box, a ready/missing badge per entry, Open and Remove.
   **Open folder…** uses the window's native folder dialog (`ShowOpenFolderAsync`); the path field works
   without it.
-- **New project** — name plus location, with a live preview of the folder that will be created. A new
-  project gets `project.yaml` and an empty start scene, exactly like the ImGui editor's.
+- **New project** — name, template, and location, with a live preview of the folder that will be created. Choose
+  Blank project, 3D starter, or UI showcase. Samples are copied into a new folder; the bundled sources stay untouched.
+- **Built-in samples** — each sample has a Create copy action that preselects it on the New project page; the new
+  project is opened after its files have been copied.
 - **Skip: demo scene** — opens the built-in scene (camera, light, floor, cube) without a project. The cube
   spins once you press Play; an edited scene does not run.
 
@@ -58,11 +61,12 @@ lives in the engine library and is unit-tested (`tests/Overcore.Tests/Projects/`
 3. On the render thread, `EditorSession.LoadContent` points `ProjectFiles` at the project root (this is
    what makes scene-relative asset paths and a packaged `Assets.pak` resolve), loads the start scene with
    the engine's `SceneLoader`, and opens it.
-4. A scene with no camera gets a default one — a brand-new project's start scene is empty, and the renderer
+4. A scene with no camera gets a default one — a blank project's start scene is empty, and the renderer
    needs a camera to draw anything. The reason lands in the log.
-5. **The file is opened as it is, empty included.** A new project's `Main.yaml` is `GameObjects: []`, so the
+5. **The file is opened as it is, empty included.** A blank project's `Main.yaml` is `GameObjects: []`, so the
    session opens with that one scene and the camera from step 4 in it; nothing is invented on top of the file.
-   Only a file that does not parse as a scene at all falls back to the demo scene.
+   Starter projects open their copied scene files as authored. Only a file that does not parse as a scene at all
+   falls back to the demo scene.
 6. Whatever step 4 or 5 had to do is stated in the hierarchy panel, in a notice above the search field:
    `Main.yaml has no objects yet. The editor added a camera so the viewport can draw.` The hierarchy shows the
    session and the content browser's tiles preview the file, so the two can honestly differ — this is where

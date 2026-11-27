@@ -1,4 +1,4 @@
-﻿using Overcore.RenderingInterface;
+using Overcore.RenderingInterface;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -120,7 +120,7 @@ public class OpenTKGameWindow : IGameWindow
 
         if (Input.IsMouseButtonDown(MouseButton.Right))
         {
-            // Optional: You could still have special handling here if needed, 
+            // Optional: You could still have special handling here if needed,
             // but the general delta is now set above.
         }
 
@@ -132,7 +132,10 @@ public class OpenTKGameWindow : IGameWindow
         bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, true);
 
-        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
+        bool pointerOverViewport = IsViewportActive?.Invoke() ?? false;
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left
+            && wantCapture
+            && !pointerOverViewport)
         {
             return;
         }
@@ -150,7 +153,12 @@ public class OpenTKGameWindow : IGameWindow
         bool wantCapture = ImGui.GetIO().WantCaptureMouse;
         _imGuiController?.MouseButton(e.Button, false);
 
-        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left && wantCapture)
+        bool pointerOverViewport = IsViewportActive?.Invoke() ?? false;
+        bool wasForwarded = Input.IsMouseButtonDown(MapButton(e.Button));
+        if (e.Button == global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton.Left
+            && wantCapture
+            && !pointerOverViewport
+            && !wasForwarded)
         {
             return;
         }
@@ -161,7 +169,7 @@ public class OpenTKGameWindow : IGameWindow
     private void OnKeyDown(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, true);
-        if (ImGui.GetIO().WantCaptureKeyboard)
+        if (ImGui.GetIO().WantCaptureKeyboard && !(IsViewportActive?.Invoke() ?? false))
         {
             return;
         }
@@ -172,7 +180,7 @@ public class OpenTKGameWindow : IGameWindow
     private void OnKeyUp(KeyboardKeyEventArgs e)
     {
         _imGuiController?.KeyEvent(e.Key, e.IsRepeat, false);
-        if (ImGui.GetIO().WantCaptureKeyboard)
+        if (ImGui.GetIO().WantCaptureKeyboard && !(IsViewportActive?.Invoke() ?? false))
         {
             return;
         }
@@ -183,12 +191,16 @@ public class OpenTKGameWindow : IGameWindow
     private void OnTextInput(TextInputEventArgs e)
     {
         _imGuiController?.PressChar((char)e.Unicode);
+        if (!ImGui.GetIO().WantCaptureKeyboard || (IsViewportActive?.Invoke() ?? false))
+        {
+            Input.AddTextInput((int)e.Unicode);
+        }
     }
 
     private void OnMouseWheel(MouseWheelEventArgs e)
     {
         // Fix: MouseScroll is a static method, so it must be called on the type ImGuiController.
-        ImGuiController.MouseScroll(new Vector2(e.OffsetX, e.OffsetY));
+        _imGuiController?.MouseWheel(new Vector2(e.OffsetX, e.OffsetY));
 
         bool ignoreImGui = IsViewportActive?.Invoke() ?? false;
 
@@ -236,6 +248,12 @@ public class OpenTKGameWindow : IGameWindow
             OpenTKKey.LeftControl => Key.ControlLeft,
             OpenTKKey.RightControl => Key.ControlRight,
             OpenTKKey.Escape => Key.Escape,
+            OpenTKKey.Enter => Key.Enter,
+            OpenTKKey.Tab => Key.Tab,
+            OpenTKKey.Backspace => Key.BackSpace,
+            OpenTKKey.Delete => Key.Delete,
+            OpenTKKey.Home => Key.Home,
+            OpenTKKey.End => Key.End,
             OpenTKKey.F12 => Key.F12,
             OpenTKKey.Up => Key.Up,
             OpenTKKey.Down => Key.Down,

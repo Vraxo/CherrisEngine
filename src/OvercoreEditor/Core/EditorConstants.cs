@@ -1,10 +1,11 @@
-﻿namespace OvercoreEditor;
+namespace OvercoreEditor;
 
 public static class EditorConstants
 {
     public static class DragDropPayloads
     {
         public const string Texture = "ASSET_PATH_TEXTURE";
+        public const string Sprite = "ASSET_PATH_SPRITE";
         public const string Prefab = "ASSET_PATH_PREFAB";
         public const string Mesh = "ASSET_PATH_MESH";
         public const string GameObjectId = "GAMEOBJECT_ID";

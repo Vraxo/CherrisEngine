@@ -80,6 +80,59 @@ public static class ProjectWorkspace
         return root;
     }
 
+    /// <summary>Creates a project by copying a built-in template into a new, user-owned folder.</summary>
+    /// <remarks>The template source is never edited; the destination must not already exist.</remarks>
+    public static string CreateFromTemplate(string location, string name, string templateId)
+    {
+        ProjectTemplate template = ProjectTemplateCatalog.Find(templateId)
+            ?? throw new ArgumentException("Choose one of the available project templates.", nameof(templateId));
+        if (template.IsBlank) return Create(location, name);
+
+        string root = GetNewProjectPath(location, name);
+        if (Directory.Exists(root) || File.Exists(root))
+        {
+            throw new IOException("A file or folder with that name already exists. Choose another name or location.");
+        }
+
+        string source = ProjectTemplateCatalog.GetSourceDirectory(template);
+        string parent = Path.GetDirectoryName(root)!;
+        string staging = Path.Combine(parent, $".overcore-template-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(staging);
+        try
+        {
+            foreach (string directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(Path.Combine(staging, Path.GetRelativePath(source, directory)));
+            }
+            foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(staging, Path.GetRelativePath(source, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target, overwrite: false);
+            }
+
+            ProjectConfig project = ProjectConfig.Load(staging);
+            project.Name = name;
+            project.RootPath = staging;
+            project.Save();
+            project.CreateStartSceneIfNeeded();
+
+            // Same-volume directory move is atomic: if another process claimed the target after validation, fail
+            // rather than merging into or deleting that user's folder.
+            Directory.Move(staging, root);
+            return root;
+        }
+        catch
+        {
+            if (Directory.Exists(staging))
+            {
+                try { Directory.Delete(staging, recursive: true); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
+            throw;
+        }
+    }
+
     /// <summary>
     /// Name to show for a project folder. Prefers the name in <c>project.yaml</c> and falls back to the
     /// folder name, so a broken descriptor still produces a usable entry in the launcher.

@@ -30,6 +30,7 @@ public sealed class HeadlessBackend : IRenderingInterface
 
     private NativeWindow? _contextWindow;
     private HeadlessGameWindow? _headlessWindow;
+    private ImGuiController? _fontController;
     private bool _disposed;
 
     /// <param name="ownGraphicsContext">
@@ -136,8 +137,9 @@ public sealed class HeadlessBackend : IRenderingInterface
 
         _headlessWindow = new HeadlessGameWindow(width, height) { TargetFrameRate = TargetFrameRate };
         GameWindow = _headlessWindow;
-        Renderer = new OpenTKRenderer();
         ResourceManager = new OpenTKResourceManager();
+        _fontController = new ImGuiController(width, height, startFrame: false);
+        Renderer = new OpenTKRenderer(_fontController, ResourceManager, renderImGui: false);
 
         if (startWithMouseLocked)
         {
@@ -176,6 +178,7 @@ public sealed class HeadlessBackend : IRenderingInterface
         _disposed = true;
 
         Renderer?.Dispose();
+        _fontController?.Dispose();
         ResourceManager?.Dispose();
         _headlessWindow?.Dispose();
         _contextWindow?.Dispose();

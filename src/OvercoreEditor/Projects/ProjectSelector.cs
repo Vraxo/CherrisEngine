@@ -1,5 +1,7 @@
 using ImGuiNET;
 using NativeFileDialogNET;
+using Overcore.Projects;
+using Overcore.UI;
 using System.Numerics;
 
 namespace OvercoreEditor.UI;
@@ -7,15 +9,11 @@ namespace OvercoreEditor.UI;
 /// <summary>The project launcher. Its colors and spacing are scoped to this window.</summary>
 public class ProjectSelector
 {
-    private static readonly Vector4 Background = new(0.055f, 0.060f, 0.075f, 1f);
-    private static readonly Vector4 Sidebar = new(0.075f, 0.080f, 0.100f, 1f);
-    private static readonly Vector4 Surface = new(0.105f, 0.110f, 0.135f, 1f);
-    private static readonly Vector4 Border = new(0.18f, 0.19f, 0.23f, 1f);
-    private static readonly Vector4 Muted = new(0.62f, 0.64f, 0.70f, 1f);
-    private static readonly Vector4 Accent = new(0.95f, 0.38f, 0.42f, 1f);
-    private static readonly Vector4 AccentHover = new(1.00f, 0.47f, 0.50f, 1f);
+    private static EditorTheme ActiveTheme => EditorThemes.Catalog.Active;
+    private static Vector4 Role(string role) => ActiveTheme[role].ToVector4();
 
     private string _newProjectName = "MyGame";
+    private string _selectedTemplateId = ProjectTemplateCatalog.BlankId;
     private string _openPath = string.Empty;
     private string _location = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
     private string _search = string.Empty;
@@ -35,23 +33,27 @@ public class ProjectSelector
 
     public void Draw()
     {
+        EditorThemes.Initialize();
+        EditorTheme theme = ActiveTheme;
+        float radius = MathF.Max(0f, theme.Metrics.CornerRadius);
+        float verticalFramePadding = MathF.Max(2f, (theme.Metrics.ControlHeight - theme.Typography.BodyPixels) * 0.5f);
         var viewport = ImGui.GetMainViewport();
         ImGui.SetNextWindowPos(viewport.Pos);
         ImGui.SetNextWindowSize(viewport.Size);
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, Background);
-        // Unframed child windows should blend into the full-window background;
-        // individual cards override this color in BeginCard.
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Background);
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.94f, 0.94f, 0.96f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Muted);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, new Vector4(0.075f, 0.08f, 0.10f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, new Vector4(0.14f, 0.15f, 0.18f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, new Vector4(0.16f, 0.17f, 0.21f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, Role(ThemeRoles.Background));
+        // Unframed child windows use the same editor background; cards below use the panel/recessed roles.
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Role(ThemeRoles.Background));
+        ImGui.PushStyleColor(ImGuiCol.Text, Role(ThemeRoles.Foreground));
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Role(ThemeRoles.AccentGray));
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Role(ThemeRoles.Input));
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, Role(ThemeRoles.InputOutline));
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Role(ThemeRoles.Primary));
+        ImGui.PushStyleColor(ImGuiCol.Border, Role(ThemeRoles.InputOutline));
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 6);
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(12, 9));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(10, 10));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, radius);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(10f, verticalFramePadding));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8f, 8f));
         ImGui.PushStyleVar(ImGuiStyleVar.ButtonTextAlign, new Vector2(0.5f, 0.5f));
         ImGui.Begin("Project Selector", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize |
             ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings);
@@ -78,12 +80,12 @@ public class ProjectSelector
         ImGui.EndChild();
         ImGui.End();
         ImGui.PopStyleVar(6);
-        ImGui.PopStyleColor(7);
+        ImGui.PopStyleColor(8);
     }
 
     private void DrawSidebar()
     {
-        BeginCard("Navigation", new Vector2(236, 0), Sidebar);
+        BeginCard("Navigation", new Vector2(236, 0), Role(ThemeRoles.Panel));
         DrawBrand();
         Space(26);
         Caption("WORKSPACE");
@@ -113,8 +115,8 @@ public class ProjectSelector
 
     private static void DrawBrand()
     {
-        ImGui.PushStyleColor(ImGuiCol.Text, Accent);
-        ImGui.SetWindowFontScale(1.5f);
+        ImGui.PushStyleColor(ImGuiCol.Text, Role(ThemeRoles.Primary));
+        ImGui.SetWindowFontScale(MathF.Max(1f, ActiveTheme.Typography.LargePixels / ActiveTheme.Typography.BodyPixels));
         ImGui.TextUnformatted("OVERCORE");
         ImGui.SetWindowFontScale(1f);
         ImGui.PopStyleColor();
@@ -131,7 +133,7 @@ public class ProjectSelector
         Space(24);
         Caption(_showCreate ? "WORKSPACE  /  NEW PROJECT" : "WORKSPACE  /  PROJECTS");
         Space(8);
-        ImGui.SetWindowFontScale(1.65f);
+        ImGui.SetWindowFontScale(MathF.Max(1.2f, ActiveTheme.Typography.LargePixels / ActiveTheme.Typography.BodyPixels * 1.35f));
         ImGui.TextUnformatted(_showCreate ? "Make something new." : "Welcome back.");
         ImGui.SetWindowFontScale(1f);
         MutedText(_showCreate ? "Give your next idea a place to live." : "Pick up where you left off, or start a new project.");
@@ -139,8 +141,8 @@ public class ProjectSelector
 
         if (!string.IsNullOrEmpty(_error))
         {
-            BeginCard("Error", new Vector2(0, 105), new Vector4(0.20f, 0.09f, 0.11f, 1f));
-            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.66f, 0.66f, 1f));
+            BeginCard("Error", new Vector2(0, 105), Role(ThemeRoles.Notifications));
+            ImGui.PushStyleColor(ImGuiCol.Text, Role(ThemeRoles.Error));
             ImGui.TextUnformatted("Could not complete that action");
             ImGui.PushTextWrapPos(0);
             ImGui.TextUnformatted(_error);
@@ -165,7 +167,7 @@ public class ProjectSelector
 
         var matches = LauncherPresentation.FilterRecent(_recent, _search);
         float listHeight = Math.Clamp(ImGui.GetWindowHeight() * 0.35f, 170f, 340f);
-        BeginCard("RecentProjects", new Vector2(0, listHeight), Sidebar);
+        BeginCard("RecentProjects", new Vector2(0, listHeight), Role(ThemeRoles.Recessed));
         if (matches.Count == 0)
         {
             Space(20);
@@ -176,13 +178,35 @@ public class ProjectSelector
         EndCard();
         Space(16);
 
-        BeginCard("OpenExisting", new Vector2(0, 270), Surface);
+        BeginCard("OpenExisting", new Vector2(0, 270), Role(ThemeRoles.Panel));
         Caption("HAVE A PROJECT ALREADY?");
         ImGui.TextUnformatted("Open a project folder");
         MutedText("Select the folder containing project.yaml.");
         DrawPathInput("##OpenPath", ref _openPath);
         if (PrimaryButton("Open project", new Vector2(160, 38))) Open(_openPath);
         EndCard();
+        Space(16);
+
+        BeginCard("BuiltInSamples", new Vector2(0, 300), Role(ThemeRoles.Panel));
+        Caption("BUILT-IN SAMPLES");
+        MutedText("Create and open your own copy; the bundled example stays unchanged.");
+        foreach (ProjectTemplate template in ProjectTemplateCatalog.Templates.Where(template => !template.IsBlank))
+        {
+            ImGui.PushID(template.Id);
+            Space(8);
+            ImGui.TextUnformatted(template.Name);
+            MutedText(template.Description);
+            if (SecondaryButton("Create copy…", new Vector2(145, 30))) StartFromTemplate(template);
+            ImGui.PopID();
+        }
+        EndCard();
+    }
+
+    private void StartFromTemplate(ProjectTemplate template)
+    {
+        _selectedTemplateId = template.Id;
+        _newProjectName = template.Name;
+        SetPage(true);
     }
 
     private void DrawRecentProject(string path)
@@ -192,7 +216,7 @@ public class ProjectSelector
         // Leave room for two text lines, their spacing, the padded buttons and card padding.
         float contentHeight = ImGui.GetTextLineHeight() * 2 + ImGui.GetStyle().ItemSpacing.Y * 2
             + LauncherPresentation.ButtonHeight(30, ImGui.GetFrameHeight());
-        BeginCard("ProjectRow", new Vector2(0, Math.Max(125, contentHeight + 32)), Surface);
+        BeginCard("ProjectRow", new Vector2(0, Math.Max(125, contentHeight + 32)), Role(ThemeRoles.Recessed));
         ImGui.TextUnformatted(LauncherPresentation.ProjectName(path));
         ImGui.SameLine();
         ImGui.PushStyleColor(ImGuiCol.Text, exists ? new Vector4(0.51f, 0.78f, 0.68f, 1f) : new Vector4(0.96f, 0.65f, 0.42f, 1f));
@@ -217,7 +241,7 @@ public class ProjectSelector
 
     private void DrawCreate()
     {
-        BeginCard("CreateProject", new Vector2(0, 445), Surface);
+        BeginCard("CreateProject", new Vector2(0, 520), Role(ThemeRoles.Panel));
         Caption("PROJECT DETAILS");
         ImGui.TextUnformatted("Set up your workspace");
         MutedText("We'll create a new folder and a starter scene for you.");
@@ -225,6 +249,21 @@ public class ProjectSelector
         ImGui.TextUnformatted("Project name");
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("##ProjectName", "MyGame", ref _newProjectName, 100);
+        Space(8);
+        ImGui.TextUnformatted("Template");
+        ProjectTemplate selectedTemplate = ProjectTemplateCatalog.Find(_selectedTemplateId)
+            ?? ProjectTemplateCatalog.Templates[0];
+        if (ImGui.BeginCombo("##ProjectTemplate", selectedTemplate.Name))
+        {
+            foreach (ProjectTemplate template in ProjectTemplateCatalog.Templates)
+            {
+                bool selected = template.Id == selectedTemplate.Id;
+                if (ImGui.Selectable(template.Name, selected)) _selectedTemplateId = template.Id;
+                if (selected) ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        MutedText(selectedTemplate.Description);
         Space(4);
         ImGui.TextUnformatted("Location");
         DrawPathInput("##ProjectLocation", ref _location);
@@ -247,7 +286,7 @@ public class ProjectSelector
         }
         Space(12);
         if (PrimaryButton("Create project", new Vector2(175, 40)))
-            TryAction(() => Open(ProjectLauncher.CreateProject(_location, _newProjectName)));
+            TryAction(() => Open(ProjectWorkspace.CreateFromTemplate(_location, _newProjectName, _selectedTemplateId)));
         ImGui.SameLine();
         if (SecondaryButton("Cancel", new Vector2(100, 40))) SetPage(false);
         EndCard();
@@ -281,11 +320,15 @@ public class ProjectSelector
 
     private static void BeginCard(string id, Vector2 size, Vector4 background)
     {
+        EditorTheme theme = ActiveTheme;
+        float radius = MathF.Max(0f, theme.Metrics.CornerRadius);
+        float horizontalPadding = MathF.Max(12f, theme.Metrics.ControlHeight * 0.72f);
+        float verticalPadding = MathF.Max(10f, theme.Metrics.ControlHeight * 0.64f);
         ImGui.PushStyleColor(ImGuiCol.ChildBg, background);
-        ImGui.PushStyleColor(ImGuiCol.Border, Border);
-        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 9);
-        ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, 1);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16, 14));
+        ImGui.PushStyleColor(ImGuiCol.Border, Role(ThemeRoles.InputOutline));
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, radius);
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, MathF.Max(0f, theme.Metrics.BorderWidth));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(horizontalPadding, verticalPadding));
         ImGui.BeginChild(id, size, true);
     }
 
@@ -298,20 +341,25 @@ public class ProjectSelector
 
     private static bool NavigationButton(string label, bool selected, Vector2 size)
     {
-        ImGui.PushStyleColor(ImGuiCol.Button, selected ? new Vector4(0.29f, 0.14f, 0.18f, 1f) : Sidebar);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.25f, 0.18f, 0.21f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.36f, 0.18f, 0.22f, 1f));
+        EditorTheme theme = ActiveTheme;
+        ImGui.PushStyleColor(ImGuiCol.Button, selected
+            ? theme[ThemeRoles.SelectInactive].ToVector4()
+            : theme[ThemeRoles.Panel].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, theme[ThemeRoles.Hover].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, theme[ThemeRoles.Header].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.Text, theme[selected ? ThemeRoles.ForegroundHover : ThemeRoles.Foreground].ToVector4());
         bool clicked = DrawButton(label, size);
-        ImGui.PopStyleColor(3);
+        ImGui.PopStyleColor(4);
         return clicked;
     }
 
     private static bool PrimaryButton(string label, Vector2 size)
     {
-        ImGui.PushStyleColor(ImGuiCol.Button, Accent);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.79f, 0.27f, 0.32f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.09f, 0.055f, 0.07f, 1f));
+        EditorTheme theme = ActiveTheme;
+        ImGui.PushStyleColor(ImGuiCol.Button, theme[ThemeRoles.Primary].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, theme[ThemeRoles.PrimaryHover].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, theme[ThemeRoles.PrimaryPress].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.Text, theme[ThemeRoles.ForegroundHover].ToVector4());
         bool clicked = DrawButton(label, size);
         ImGui.PopStyleColor(4);
         return clicked;
@@ -319,11 +367,13 @@ public class ProjectSelector
 
     private static bool SecondaryButton(string label, Vector2 size)
     {
-        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.17f, 0.18f, 0.22f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.24f, 0.25f, 0.30f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.13f, 0.14f, 0.17f, 1f));
+        EditorTheme theme = ActiveTheme;
+        ImGui.PushStyleColor(ImGuiCol.Button, theme[ThemeRoles.Secondary].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, theme[ThemeRoles.Hover].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, theme[ThemeRoles.Header].ToVector4());
+        ImGui.PushStyleColor(ImGuiCol.Text, theme[ThemeRoles.ForegroundHover].ToVector4());
         bool clicked = DrawButton(label, size);
-        ImGui.PopStyleColor(3);
+        ImGui.PopStyleColor(4);
         return clicked;
     }
 
@@ -335,16 +385,12 @@ public class ProjectSelector
 
     private static void Caption(string text)
     {
-        ImGui.PushStyleColor(ImGuiCol.Text, Muted);
-        ImGui.TextUnformatted(text);
-        ImGui.PopStyleColor();
+        ImGui.TextDisabled(text);
     }
 
     private static void MutedText(string text)
     {
-        ImGui.PushStyleColor(ImGuiCol.Text, Muted);
-        ImGui.TextUnformatted(text);
-        ImGui.PopStyleColor();
+        ImGui.TextDisabled(text);
     }
 
     private static void Space(float height) => ImGui.Dummy(new Vector2(0, height));

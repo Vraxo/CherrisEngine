@@ -1,4 +1,4 @@
-﻿using Overcore.Core;
+using Overcore.Core;
 using Overcore.Core.Logging;
 using Overcore.Utils;
 using ImGuiNET;
@@ -169,6 +169,11 @@ public class ContentBrowserPanel : IDisposable
 
     private static string? GetPayloadType(string path)
     {
+        if (path.EndsWith(".sprite.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return EditorConstants.DragDropPayloads.Sprite;
+        }
+
         string ext = Path.GetExtension(path).ToLowerInvariant();
 
         if (EditorTextureManager.ImageExtensions.Contains(ext))

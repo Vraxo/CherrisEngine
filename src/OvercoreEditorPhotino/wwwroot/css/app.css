@@ -318,9 +318,10 @@ body {
 }
 
 .launcher-nav-item {
-    padding: 10px 12px;
-    border: 1px solid transparent;
-    border-radius: 7px;
+    min-height: var(--theme-control-height);
+    padding: 9px 12px;
+    border: var(--theme-border-width) solid transparent;
+    border-radius: var(--theme-radius);
     background: transparent;
     color: var(--text);
     font: inherit;
@@ -329,13 +330,15 @@ body {
 }
 
 .launcher-nav-item:hover {
-    background: rgba(0, 112, 224, 0.08);
+    background: var(--theme-hover);
+    color: var(--theme-foreground-hover);
 }
 
 .launcher-nav-item.active {
     border-color: var(--border);
-    background: rgba(0, 112, 224, 0.14);
-    box-shadow: inset 2px 0 0 var(--accent);
+    background: var(--theme-select-inactive);
+    box-shadow: inset 3px 0 0 var(--accent);
+    color: var(--theme-foreground-hover);
 }
 
 .launcher-nav-footer {
@@ -375,9 +378,9 @@ body {
 .launcher-card {
     margin-top: 18px;
     padding: 16px;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 9px;
+    background: var(--theme-panel);
+    border: var(--theme-border-width) solid var(--border);
+    border-radius: var(--theme-radius);
 }
 
 .launcher-card-header {
@@ -400,10 +403,11 @@ body {
 
 .launcher-input {
     width: 100%;
+    min-height: var(--theme-control-height);
     margin: 6px 0;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    padding: 5px 10px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
     background: var(--theme-input);
     color: var(--text);
     font: inherit;
@@ -528,6 +532,84 @@ body {
 
 .launcher-link:hover {
     text-decoration: underline;
+}
+
+.launcher :focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+    .launcher {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .launcher-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 16px;
+        padding: 12px 14px;
+        border-right: 0;
+        border-bottom: var(--theme-border-width) solid var(--border);
+    }
+
+    .launcher-nav-items {
+        flex-direction: row;
+        gap: 6px;
+    }
+
+    .launcher-nav-item {
+        white-space: nowrap;
+    }
+
+    .launcher-nav-footer {
+        display: none;
+    }
+
+    .launcher-main {
+        padding: 20px 14px 32px;
+    }
+
+    .launcher-row-path {
+        overflow: visible;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (max-width: 520px) {
+    .launcher-nav {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .launcher-nav-items {
+        width: 100%;
+    }
+
+    .launcher-nav-item {
+        flex: 1;
+        text-align: center;
+    }
+
+    .launcher-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .launcher-row-actions {
+        justify-content: flex-end;
+    }
+
+    .launcher-field {
+        flex-wrap: wrap;
+    }
+
+    .launcher-field .launcher-input {
+        flex: 1 1 100%;
+    }
 }
 
 /* FButtonStyle, UE5's default: Secondary fill, Input outline, ForegroundHover text — the same surface .imgui-button

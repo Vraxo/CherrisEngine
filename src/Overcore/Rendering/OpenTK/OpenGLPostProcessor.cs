@@ -1,4 +1,4 @@
-﻿using Overcore.Core.Logging;
+using Overcore.Core.Logging;
 using OpenTK.Graphics.OpenGL4;
 
 namespace Overcore.Rendering.OpenTK;
@@ -21,6 +21,8 @@ internal sealed class OpenGLPostProcessor : IDisposable
     private int _height = 1;
 
     public int FinalSceneTexture => _compositeFbo?.ColorTexture ?? 0;
+
+    public int CompositeFramebuffer => _compositeFbo?.Handle ?? 0;
 
     public OpenGLPostProcessor()
     {

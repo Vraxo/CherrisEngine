@@ -63,6 +63,16 @@ public class ViewportProtocolTests
     }
 
     [Fact]
+    public void TryReadCommand_ReadsTextInput()
+    {
+        RecordingSink sink = new();
+
+        ViewportProtocol.TryReadCommand("""{"type":"textInput","text":"héllo 🌍"}""", sink).Should().BeTrue();
+
+        sink.TextInputs.Should().Equal("héllo 🌍");
+    }
+
+    [Fact]
     public void TryReadCommand_ReadsMouseAndWheel()
     {
         RecordingSink sink = new();
@@ -162,6 +172,8 @@ public class ViewportProtocolTests
 
         public void KeyChanged(string code, bool isDown) => Calls.Add($"key:{code}:{isDown}");
 
+        public void TextInput(string text) => Calls.Add($"text:{text}");
+
         public void MouseButtonChanged(int button, bool isDown) =>
             Calls.Add($"button:{button}:{(isDown ? "down" : "up")}");
 
@@ -184,6 +196,7 @@ public class ViewportProtocolTests
     {
         public List<(int Width, int Height)> Resizes { get; } = [];
         public List<(string Code, bool Down)> Keys { get; } = [];
+        public List<string> TextInputs { get; } = [];
         public List<(int Button, bool Down)> Buttons { get; } = [];
         public List<(float X, float Y)> Moves { get; } = [];
         public List<(float X, float Y)> Positions { get; } = [];
@@ -194,12 +207,14 @@ public class ViewportProtocolTests
         public int FocusLosses { get; private set; }
 
         public int Calls =>
-            Resizes.Count + Keys.Count + Buttons.Count + Moves.Count +
+            Resizes.Count + Keys.Count + TextInputs.Count + Buttons.Count + Moves.Count +
             Positions.Count + Wheels.Count + Locks.Count + Looks.Count + PageLogs.Count + FocusLosses;
 
         public void Resize(int width, int height) => Resizes.Add((width, height));
 
         public void KeyChanged(string code, bool isDown) => Keys.Add((code, isDown));
+
+        public void TextInput(string text) => TextInputs.Add(text);
 
         public void MouseButtonChanged(int button, bool isDown) => Buttons.Add((button, isDown));
 

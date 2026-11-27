@@ -1,0 +1,3 @@
+Name: UI Showcase
+StartScene: Scenes/Main.yaml
+PackAssets: false

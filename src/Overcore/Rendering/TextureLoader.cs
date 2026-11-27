@@ -1,4 +1,4 @@
-﻿using StbImageSharp;
+using Overcore.Core;
 using Veldrid;
 
 namespace Overcore;
@@ -7,47 +7,30 @@ public static class TextureLoader
 {
     public static Texture LoadTextureFromFile(GraphicsDevice gd, string path)
     {
-        if (!File.Exists(path))
+        string assetPath = !Path.IsPathRooted(path) && File.Exists(path) ? Path.GetFullPath(path) : path;
+        ImageData? image = ImageLoader.LoadFromFile(assetPath);
+        if (image is null)
         {
-            Console.WriteLine($"[TextureLoader] Error: Texture file not found at '{path}'");
-            return null;
-        }
-
-        ImageResult imageResult;
-        try
-        {
-            // Load the image from file and flip it vertically.
-            // Most image formats store data top-to-bottom, but GPUs expect it bottom-to-top.
-            StbImage.stbi_set_flip_vertically_on_load(1);
-            using (var stream = File.OpenRead(path))
-            {
-                imageResult = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[TextureLoader] Error loading texture: {e.Message}");
+            Console.WriteLine($"[TextureLoader] Error: Texture file not found or could not be decoded at '{path}'");
             return null;
         }
 
         ResourceFactory factory = gd.ResourceFactory;
-
-        uint mipLevels = (uint)Math.Floor(Math.Log(Math.Max(imageResult.Width, imageResult.Height), 2)) + 1;
+        uint mipLevels = (uint)Math.Floor(Math.Log(Math.Max(image.Value.Width, image.Value.Height), 2)) + 1;
 
         Veldrid.Texture veldridTexture = factory.CreateTexture(TextureDescription.Texture2D(
-            (uint)imageResult.Width,
-            (uint)imageResult.Height,
+            (uint)image.Value.Width,
+            (uint)image.Value.Height,
             mipLevels,
             1,
-            PixelFormat.R8_G8_B8_A8_UNorm, // Revert to UNorm to match previous brightness
+            PixelFormat.R8_G8_B8_A8_UNorm,
             TextureUsage.Sampled | TextureUsage.GenerateMipmaps));
 
-        // Copy the pixel data to the Veldrid texture.
         gd.UpdateTexture(
             veldridTexture,
-            imageResult.Data,
+            image.Value.Data,
             0, 0, 0,
-            (uint)imageResult.Width, (uint)imageResult.Height, 1,
+            (uint)image.Value.Width, (uint)image.Value.Height, 1,
             0, 0);
 
         CommandList cl = factory.CreateCommandList();
@@ -55,7 +38,7 @@ public static class TextureLoader
         cl.GenerateMipmaps(veldridTexture);
         cl.End();
         gd.SubmitCommands(cl);
-        gd.WaitForIdle(); // Ensure the GPU has finished generating before the texture is used.
+        gd.WaitForIdle();
         cl.Dispose();
 
         TextureView textureView = factory.CreateTextureView(veldridTexture);

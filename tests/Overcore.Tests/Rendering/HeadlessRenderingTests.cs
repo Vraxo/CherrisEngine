@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Overcore.Rendering.Headless;
+using EngineInput = global::Overcore.Input;
 using System.Diagnostics;
 using System.Numerics;
 using Xunit;
@@ -75,8 +76,8 @@ public class HeadlessRenderingTests
         HeadlessInput.PressKey(Key.W);
         window.ProcessEvents();
 
-        Input.IsKeyDown(Key.W).Should().BeTrue();
-        Input.WasKeyPressed(Key.W).Should().BeTrue();
+        EngineInput.IsKeyDown(Key.W).Should().BeTrue();
+        EngineInput.WasKeyPressed(Key.W).Should().BeTrue();
     }
 
     [Fact]
@@ -89,13 +90,13 @@ public class HeadlessRenderingTests
 
         window.ProcessEvents();
 
-        Input.IsKeyDown(Key.W).Should().BeTrue();
-        Input.WasKeyPressed(Key.W).Should().BeFalse();
+        EngineInput.IsKeyDown(Key.W).Should().BeTrue();
+        EngineInput.WasKeyPressed(Key.W).Should().BeFalse();
 
         HeadlessInput.ReleaseKey(Key.W);
         window.ProcessEvents();
 
-        Input.IsKeyDown(Key.W).Should().BeFalse();
+        EngineInput.IsKeyDown(Key.W).Should().BeFalse();
     }
 
     [Fact]
@@ -107,11 +108,11 @@ public class HeadlessRenderingTests
         HeadlessInput.MoveMouse(-4, 2);
         window.ProcessEvents();
 
-        Input.MouseDelta.Should().Be(new Vector2(6, 7));
+        EngineInput.MouseDelta.Should().Be(new Vector2(6, 7));
 
         window.ProcessEvents();
 
-        Input.MouseDelta.Should().Be(Vector2.Zero);
+        EngineInput.MouseDelta.Should().Be(Vector2.Zero);
     }
 
     [Fact]
@@ -123,11 +124,11 @@ public class HeadlessRenderingTests
         HeadlessInput.AddMouseWheel(0, 2);
         window.ProcessEvents();
 
-        Input.MouseWheelDelta.Should().Be(new Vector2(0, 3));
+        EngineInput.MouseWheelDelta.Should().Be(new Vector2(0, 3));
 
         window.ProcessEvents();
 
-        Input.MouseWheelDelta.Should().Be(Vector2.Zero);
+        EngineInput.MouseWheelDelta.Should().Be(Vector2.Zero);
     }
 
     [Fact]
@@ -138,7 +139,7 @@ public class HeadlessRenderingTests
         HeadlessInput.SetMousePosition(120.5f, 64f);
         window.ProcessEvents();
 
-        Input.MousePosition.Should().Be(new Vector2(120.5f, 64f));
+        EngineInput.MousePosition.Should().Be(new Vector2(120.5f, 64f));
     }
 
     [Fact]
@@ -151,13 +152,13 @@ public class HeadlessRenderingTests
         HeadlessInput.SetMouseLocked(true);
         window.ProcessEvents();
 
-        Input.IsMouseLocked.Should().BeTrue();
+        EngineInput.IsMouseLocked.Should().BeTrue();
         reported.Should().Be(true);
 
         HeadlessInput.SetMouseLocked(false);
         window.ProcessEvents();
 
-        Input.IsMouseLocked.Should().BeFalse();
+        EngineInput.IsMouseLocked.Should().BeFalse();
         reported.Should().Be(false);
     }
 
@@ -168,11 +169,11 @@ public class HeadlessRenderingTests
         bool? reported = null;
         window.MouseLockChanged += locked => reported = locked;
 
-        Input.IsMouseLocked = true;
+        EngineInput.IsMouseLocked = true;
 
         reported.Should().Be(true);
 
-        Input.IsMouseLocked = false;
+        EngineInput.IsMouseLocked = false;
         reported.Should().Be(false);
     }
 
@@ -183,12 +184,12 @@ public class HeadlessRenderingTests
 
         HeadlessInput.PressKey(Key.A);
         window.ProcessEvents();
-        Input.IsKeyDown(Key.A).Should().BeTrue();
+        EngineInput.IsKeyDown(Key.A).Should().BeTrue();
 
         HeadlessInput.Reset();
         window.ProcessEvents();
 
-        Input.IsKeyDown(Key.A).Should().BeFalse();
+        EngineInput.IsKeyDown(Key.A).Should().BeFalse();
     }
 
     [Fact]

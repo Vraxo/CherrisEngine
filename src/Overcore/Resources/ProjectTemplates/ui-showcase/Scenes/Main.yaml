@@ -1,0 +1,138 @@
+GameObjects:
+- Id: 11111111-1111-4111-8111-111111111111
+  Name: Canvas
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    Canvas:
+      ReferenceWidth: 1280
+      ReferenceHeight: 720
+      ScaleMode: ScaleWithScreenSize
+    RectTransform:
+      AnchorMin: [0, 0]
+      AnchorMax: [1, 1]
+      SizeDelta: [0, 0]
+      Pivot: [0, 0]
+- Id: 22222222-2222-4222-8222-222222222222
+  Name: Heading
+  Parent: 11111111-1111-4111-8111-111111111111
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    RectTransform:
+      AnchorMin: [0.08, 0.08]
+      AnchorMax: [0.08, 0.08]
+      AnchoredPosition: [0, 0]
+      SizeDelta: [900, 58]
+      Pivot: [0, 0]
+    Text:
+      Content: "Overcore UI Showcase"
+      FontSize: 38
+      Color: [0.93, 0.96, 1]
+      Wrap: false
+      RaycastTarget: false
+- Id: 33333333-3333-4333-8333-333333333333
+  Name: Arabic Text
+  Parent: 11111111-1111-4111-8111-111111111111
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    RectTransform:
+      AnchorMin: [0.08, 0.22]
+      AnchorMax: [0.08, 0.22]
+      AnchoredPosition: [0, 0]
+      SizeDelta: [1000, 72]
+      Pivot: [0, 0]
+    Text:
+      Content: "Arabic / فارسی: مرحبا بالعالم — سلام دنیا"
+      FontSize: 28
+      Color: [0.74, 0.82, 1]
+      Direction: Auto
+      Wrap: false
+      RaycastTarget: false
+- Id: 44444444-4444-4444-8444-444444444444
+  Name: Demo Button
+  Parent: 11111111-1111-4111-8111-111111111111
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    RectTransform:
+      AnchorMin: [0.5, 0.48]
+      AnchorMax: [0.5, 0.48]
+      AnchoredPosition: [0, 0]
+      SizeDelta: [300, 68]
+      Pivot: [0.5, 0.5]
+    Image:
+      Color: [0.34, 0.48, 0.82]
+      RaycastTarget: true
+    Button: {}
+- Id: 55555555-5555-4555-8555-555555555555
+  Name: Button Label
+  Parent: 44444444-4444-4444-8444-444444444444
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    RectTransform:
+      AnchorMin: [0, 0]
+      AnchorMax: [1, 1]
+      AnchoredPosition: [0, 0]
+      SizeDelta: [0, 0]
+      Pivot: [0.5, 0.5]
+    Text:
+      Content: "Hover / click me"
+      FontSize: 22
+      HorizontalAlignment: Center
+      VerticalAlignment: Middle
+      Color: [1, 1, 1]
+      Wrap: false
+      RaycastTarget: false
+- Id: 66666666-6666-4666-8666-666666666666
+  Name: Name Input
+  Parent: 11111111-1111-4111-8111-111111111111
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    RectTransform:
+      AnchorMin: [0.5, 0.64]
+      AnchorMax: [0.5, 0.64]
+      AnchoredPosition: [0, 0]
+      SizeDelta: [420, 60]
+      Pivot: [0.5, 0.5]
+    Image:
+      Color: [0.13, 0.15, 0.21]
+    InputField:
+      Value: ""
+      Placeholder: "Click here and type — Arabic works too"
+      MaxLength: 80
+- Id: 77777777-7777-4777-8777-777777777777
+  Name: Input Hint
+  Parent: 11111111-1111-4111-8111-111111111111
+  Components:
+    Transform:
+      Position: [0, 0, 0]
+      Rotation: [0, 0, 0]
+      Scale: [1, 1, 1]
+    RectTransform:
+      AnchorMin: [0.08, 0.79]
+      AnchorMax: [0.08, 0.79]
+      AnchoredPosition: [0, 0]
+      SizeDelta: [900, 46]
+      Pivot: [0, 0]
+    Text:
+      Content: "Resize the viewport to see the Canvas scale with the window."
+      FontSize: 18
+      Color: [0.62, 0.67, 0.76]
+      Wrap: false
+      RaycastTarget: false
