@@ -367,6 +367,62 @@ public static class Physics
         CapsuleCastCore(point1, point2, radius, displacement, out hit, displacement.Length(), ~0,
             QueryTriggerInteraction.Ignore, owner);
 
+    internal static bool CapsuleCastAgainstControllers(
+        Vector3 point1,
+        Vector3 point2,
+        float radius,
+        Vector3 displacement,
+        GameObject owner,
+        out CharacterController? hitController,
+        out float hitDistance,
+        out Vector3 hitPoint,
+        out Vector3 hitNormal)
+    {
+        hitController = null;
+        hitDistance = 0f;
+        hitPoint = point1;
+        hitNormal = Vector3.Zero;
+        float distance = displacement.Length();
+        if (distance <= 1e-6f || !TryGetWorld(out PhysicsSystem? world)) return false;
+
+        Vector3 direction = displacement / distance;
+        Vector3 radiusVector = new(radius);
+        Vector3 sweepMin = Vector3.Min(Vector3.Min(point1, point2),
+            Vector3.Min(point1 + displacement, point2 + displacement)) - radiusVector;
+        Vector3 sweepMax = Vector3.Max(Vector3.Max(point1, point2),
+            Vector3.Max(point1 + displacement, point2 + displacement)) + radiusVector;
+        float closest = distance;
+        foreach (CharacterController candidate in world.CharacterControllers)
+        {
+            if (ReferenceEquals(candidate.GameObject, owner) || !candidate.IsActive || !candidate.DetectCollisions ||
+                candidate.GameObject is not { ActiveInHierarchy: true } candidateObject ||
+                IgnoredLayers[owner.Layer, candidateObject.Layer]) continue;
+
+            candidate.GetCapsule(out Vector3 candidateLower, out Vector3 candidateUpper, out float candidateRadius);
+            ShapeInstance target = new()
+            {
+                Kind = ShapeKind.Capsule,
+                Center = (candidateLower + candidateUpper) * 0.5f,
+                Radius = candidateRadius,
+                SegmentA = candidateLower,
+                SegmentB = candidateUpper
+            };
+            Vector3 targetMin = Vector3.Min(candidateLower, candidateUpper) - new Vector3(candidateRadius);
+            Vector3 targetMax = Vector3.Max(candidateLower, candidateUpper) + new Vector3(candidateRadius);
+            if (!BoundsOverlap(sweepMin, sweepMax, targetMin, targetMax)) continue;
+            if (!ColliderGeometry.CapsuleCast(target, point1, point2, radius, direction, closest,
+                out float travelled, out Vector3 point, out Vector3 normal) || travelled > closest) continue;
+
+            closest = travelled;
+            hitController = candidate;
+            hitDistance = travelled;
+            hitPoint = point;
+            hitNormal = normal;
+        }
+
+        return hitController is not null;
+    }
+
     internal static Collider[] ControllerTriggerColliders(GameObject owner)
     {
         if (!TryGetWorld(out PhysicsSystem? world)) return [];

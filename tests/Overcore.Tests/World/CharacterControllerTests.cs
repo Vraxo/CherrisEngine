@@ -248,6 +248,29 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void CharacterControllersBlockEachOtherAndReportTheOtherController()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject firstActor = new("First player");
+        CharacterController firstController = firstActor.AddComponent(new CharacterController { StepOffset = 0f });
+        HitRecorder recorder = firstActor.AddComponent(new HitRecorder());
+        GameObject secondActor = new("Second player");
+        CharacterController secondController = secondActor.AddComponent(new CharacterController { StepOffset = 0f });
+        secondActor.Transform.WorldPosition = new Vector3(2f, 0f, 0f);
+        _ = StartScene(physics, audio, firstActor, secondActor);
+
+        CollisionFlags flags = firstController.Move(new Vector3(3f, 0f, 0f));
+
+        (flags & CollisionFlags.Sides).Should().Be(CollisionFlags.Sides);
+        firstActor.Transform.WorldPosition.X.Should().BeApproximately(0.92f, 0.1f);
+        recorder.LastHit.Should().NotBeNull();
+        recorder.LastHit!.Value.Collider.Should().BeNull();
+        recorder.LastHit.Value.OtherController.Should().BeSameAs(secondController);
+        recorder.LastHit.Value.GameObject.Should().BeSameAs(secondActor);
+    }
+
+    [Fact]
     public void ZeroDisplacementRefreshesGroundedState()
     {
         using PhysicsSystem physics = new();

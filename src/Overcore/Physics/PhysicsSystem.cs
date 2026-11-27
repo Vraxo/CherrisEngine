@@ -64,6 +64,8 @@ public partial class PhysicsSystem : IDisposable
     /// <summary>Every collider the world knows about, fixed or held by a body.</summary>
     public IReadOnlyList<Collider> Colliders => _colliders;
 
+    internal IReadOnlyList<CharacterController> CharacterControllers => _characterControllers;
+
     internal SimulationState Settings { get; }
 
     /// <summary>The pool shapes and buffers come from, for a body that has to give one back.</summary>
@@ -78,6 +80,7 @@ public partial class PhysicsSystem : IDisposable
     private readonly Dictionary<int, TypedIndex> _staticShapes = [];
     private readonly List<Collider> _colliders = [];
     private readonly List<Collider> _triggers = [];
+    private readonly List<CharacterController> _characterControllers = [];
 
     private readonly ContactBuffers _contacts = new();
     // Swapped at the end of every step, so yesterday's pairs become the ones to compare against.
@@ -142,6 +145,14 @@ public partial class PhysicsSystem : IDisposable
         DispatchTriggers();
         _contacts.Clear();
     }
+
+    internal void RegisterCharacterController(CharacterController controller)
+    {
+        if (!_characterControllers.Contains(controller)) _characterControllers.Add(controller);
+    }
+
+    internal void UnregisterCharacterController(CharacterController controller) =>
+        _characterControllers.Remove(controller);
 
     /// <summary>
     /// Adds a collider to the world. One without a <see cref="RigidBody"/> becomes a fixed shape here; one with a
@@ -820,6 +831,7 @@ public partial class PhysicsSystem : IDisposable
         FixedStep = null;
         _colliders.Clear();
         _triggers.Clear();
+        _characterControllers.Clear();
         _bodyColliders.Clear();
         _staticColliders.Clear();
         _staticShapes.Clear();

@@ -25,14 +25,19 @@ public readonly struct ControllerColliderHit
 {
     /// <summary>The controller that made the contact.</summary>
     public CharacterController Controller { get; init; }
-    /// <summary>The collider the controller touched.</summary>
-    public Collider Collider { get; init; }
-    /// <summary>The object the touched collider belongs to.</summary>
-    public GameObject GameObject => Collider.GameObject!;
+    /// <summary>The collider the controller touched, or null when it hit another character controller.</summary>
+    public Collider? Collider { get; init; }
+    /// <summary>The other controller when the contact was controller-to-controller.</summary>
+    public CharacterController? OtherController { get; init; }
+    /// <summary>The object the touched shape belongs to.</summary>
+    public GameObject GameObject => Collider?.GameObject ?? OtherController?.GameObject
+        ?? throw new InvalidOperationException("The controller hit has no target object.");
     /// <summary>The touched object's transform.</summary>
-    public Transform Transform => Collider.Transform;
+    public Transform Transform => Collider?.Transform ?? OtherController?.Transform
+        ?? throw new InvalidOperationException("The controller hit has no target transform.");
     /// <summary>The rigid body attached to the touched collider, if any.</summary>
-    public RigidBody? RigidBody => Collider.AttachedRigidBody;
+    public RigidBody? RigidBody =>
+        Collider?.AttachedRigidBody ?? OtherController?.GameObject?.GetComponent<RigidBody>();
     /// <summary>The world-space point of contact.</summary>
     public Vector3 Point { get; init; }
     /// <summary>The contact normal, pointing away from the surface.</summary>
@@ -57,6 +62,8 @@ public sealed class CharacterController : Component
 {
     private enum TriggerPhase { Enter, Stay, Exit }
     private readonly record struct MotionSegment(Vector3 Start, Vector3 End);
+    private readonly record struct SweepHit(
+        Collider? Collider, CharacterController? OtherController, float Distance, Vector3 Point, Vector3 Normal);
 
     private float _height = 2f;
     private float _radius = 0.5f;
@@ -73,6 +80,7 @@ public sealed class CharacterController : Component
     private readonly HashSet<Collider> _activeTriggers = [];
     private readonly Queue<(Collider Trigger, TriggerPhase Phase)> _pendingTriggerEvents = [];
     private bool _dispatchingTriggerEvents;
+    private PhysicsSystem? _registeredWorld;
 
     /// <summary>Total capsule height, including the rounded ends.</summary>
     public float Height
@@ -160,7 +168,7 @@ public sealed class CharacterController : Component
         DispatchTriggerChanges(movementPath, triggerStartPosition);
         float dt = Time.DeltaTime;
         _velocity = dt > 1e-6f ? (Transform.WorldPosition - frameStart) / dt : Vector3.Zero;
-        foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => hit.Collider))
+        foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => (hit.Collider, hit.OtherController)))
         {
             foreach (Script script in GameObject!.GetComponents<Script>()
                 .Where(script => script.IsActive && !script.IsSuspended).ToArray())
@@ -200,7 +208,7 @@ public sealed class CharacterController : Component
         float distanceTravelled = initialDistanceTravelled;
         for (int iteration = 0; iteration < 5 && remaining.LengthSquared() > 1e-8f; iteration++)
         {
-            if (!Sweep(remaining, out RaycastHit hit))
+            if (!Sweep(remaining, out SweepHit hit))
             {
                 Vector3 segmentStart = Transform.WorldPosition;
                 Transform.WorldPosition += remaining;
@@ -214,6 +222,7 @@ public sealed class CharacterController : Component
             {
                 Controller = this,
                 Collider = hit.Collider,
+                OtherController = hit.OtherController,
                 Point = hit.Point,
                 Normal = hit.Normal,
                 MoveDirection = direction,
@@ -264,7 +273,7 @@ public sealed class CharacterController : Component
         }
 
         // A short downward probe provides stable grounding when the caller's requested motion is horizontal.
-        if (probeGround && Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out RaycastHit ground) &&
+        if (probeGround && Sweep(-Vector3.UnitY * (SkinWidth + 0.03f), out SweepHit ground) &&
             Vector3.Dot(ground.Normal, Vector3.UnitY) >= WalkableDot)
         {
             _supportCollider = ground.Collider;
@@ -301,7 +310,7 @@ public sealed class CharacterController : Component
         }
 
         float downDistance = StepOffset + MathF.Max(0f, -motion.Y) + SkinWidth + 0.03f;
-        if (!Sweep(-Vector3.UnitY * downDistance, out RaycastHit landing) ||
+        if (!Sweep(-Vector3.UnitY * downDistance, out SweepHit landing) ||
             Vector3.Dot(landing.Normal, Vector3.UnitY) < WalkableDot)
         {
             Transform.WorldPosition = start;
@@ -323,13 +332,32 @@ public sealed class CharacterController : Component
         if (Vector3.DistanceSquared(start, end) > 1e-12f) path.Add(new MotionSegment(start, end));
     }
 
-    private bool Sweep(Vector3 motion, out RaycastHit hit)
+    private bool Sweep(Vector3 motion, out SweepHit hit)
     {
         GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
-        return Physics.CapsuleCastForController(lower, upper, radius, motion, GameObject!, out hit);
+        bool colliderHit = Physics.CapsuleCastForController(
+            lower, upper, radius, motion, GameObject!, out RaycastHit colliderResult);
+        bool controllerHit = Physics.CapsuleCastAgainstControllers(
+            lower, upper, radius, motion, GameObject!, out CharacterController? otherController,
+            out float controllerDistance, out Vector3 controllerPoint, out Vector3 controllerNormal);
+
+        if (controllerHit && (!colliderHit || controllerDistance < colliderResult.Distance))
+        {
+            hit = new SweepHit(null, otherController, controllerDistance, controllerPoint, controllerNormal);
+            return true;
+        }
+        if (colliderHit)
+        {
+            hit = new SweepHit(colliderResult.Collider, null, colliderResult.Distance,
+                colliderResult.Point, colliderResult.Normal);
+            return true;
+        }
+
+        hit = default;
+        return false;
     }
 
-    private void GetCapsule(out Vector3 lower, out Vector3 upper, out float radius)
+    internal void GetCapsule(out Vector3 lower, out Vector3 upper, out float radius)
     {
         Vector3 scale = Vector3.Abs(Transform.LossyScale);
         Vector3 center = Transform.WorldPosition + Vector3.Transform(Center * scale, Transform.WorldRotation);
@@ -340,8 +368,17 @@ public sealed class CharacterController : Component
         upper = center + axis;
     }
 
+    public override void OnEnable()
+    {
+        _registeredWorld = PhysicsSystem.Active;
+        _registeredWorld?.RegisterCharacterController(this);
+        base.OnEnable();
+    }
+
     public override void OnDisable()
     {
+        _registeredWorld?.UnregisterCharacterController(this);
+        _registeredWorld = null;
         ClearTriggerContacts();
         _supportCollider = null;
         base.OnDisable();
@@ -349,6 +386,8 @@ public sealed class CharacterController : Component
 
     public override void OnDestroy()
     {
+        _registeredWorld?.UnregisterCharacterController(this);
+        _registeredWorld = null;
         ClearTriggerContacts();
         _supportCollider = null;
         base.OnDestroy();

@@ -91,8 +91,10 @@ controller by the platform's translation and rotation. This is not a claim of bi
 rigid bodies, though scripts can use the hit callback to apply forces. Trigger overlaps are checked at the end of each
 `Move`, and capsule sweeps along the controller's resolved movement segments detect triggers crossed entirely within
 one move. Enter/Stay/Exit are delivered to scripts on both objects;
-the trigger object's callback takes the `CharacterController` component because the controller is not itself a
-`Collider`. Unlike a rigid body, a character controller does not produce the fixed-step
+the trigger object's callback takes the `CharacterController` component because this component is not itself a
+`Collider`. Controller capsules do block one another when both have collision detection enabled, but the component is
+not returned by `GetComponent<Collider>()` and does not join ordinary collider-pair callbacks; controller contacts use
+`ControllerColliderHit.OtherController`. Unlike a rigid body, it does not produce the fixed-step
 `OnCollision*` callbacks; contacts are delivered synchronously from `Move` through `OnControllerColliderHit`. Test
 coverage exists in source, but the .NET test suite has not been run in this environment.
 
