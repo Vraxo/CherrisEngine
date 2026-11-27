@@ -446,12 +446,19 @@ public static class Physics
         if (!TryGetWorld(out PhysicsSystem? world)) return false;
 
         Vector3 deepestNormal = Vector3.Zero;
+        Vector3 radiusVector = new(radius);
+        Vector3 capsuleMin = Vector3.Min(point1, point2) - radiusVector;
+        Vector3 capsuleMax = Vector3.Max(point1, point2) + radiusVector;
         foreach (Collider collider in world.Colliders)
         {
             GameObject? gameObject = collider.GameObject;
             if (collider.IsDestroyed || !collider.IsActive || gameObject is null || !gameObject.ActiveInHierarchy ||
                 collider.IsTrigger || ReferenceEquals(gameObject, owner) ||
-                IgnoredLayers[owner.Layer, gameObject.Layer]) continue;
+                IgnoredLayers[owner.Layer, gameObject.Layer] ||
+                collider.AttachedRigidBody is { IsStatic: false }) continue;
+
+            var colliderBounds = collider.Bounds;
+            if (!BoundsOverlap(capsuleMin, capsuleMax, colliderBounds.Min, colliderBounds.Max)) continue;
 
             float separation = ColliderGeometry.CapsuleSeparation(
                 ColliderGeometry.From(collider), point1, point2, radius, out Vector3 normal);

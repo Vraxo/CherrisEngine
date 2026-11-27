@@ -85,9 +85,9 @@ public class PlayerMotion : Script
 
 Capsule sweeps use conservative advancement against the geometric separation of the capsule and each collider; the
 box distance minimization is numerical, so contact tolerances can still differ from PhysX. Movement slides against
-contact planes, attempts a bounded step-up for small ledges, and resolves initial penetrations by pushing along the
-deepest contact normal with a per-move recovery limit. Moving platforms carry a grounded controller by the platform's
-translation and rotation. This is not a claim of bit-for-bit PhysX parity: the engine does not automatically push
+contact planes, attempts a step-up only while supported, and resolves initial penetrations against static, non-trigger
+geometry by pushing along the deepest contact normal with a per-move recovery limit. Moving platforms carry a grounded
+controller by the platform's translation and rotation. This is not a claim of bit-for-bit PhysX parity: the engine does not automatically push
 rigid bodies, though scripts can use the hit callback to apply forces. Trigger overlaps are checked at the end of each
 `Move`, and capsule sweeps along the controller's resolved movement segments detect triggers crossed entirely within
 one move. Enter/Stay/Exit are delivered to scripts on both objects;

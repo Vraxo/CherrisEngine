@@ -104,13 +104,9 @@ public sealed class CharacterController : Component
     public CollisionFlags Move(Vector3 motion)
     {
         Vector3 frameStart = Transform.WorldPosition;
-        Vector3 requestedMotion = motion;
+        Vector3 requestedMotion = motion.Length() < MinMoveDistance ? Vector3.Zero : motion;
         Vector3 supportMotion = GetSupportMotion(frameStart);
-        motion += supportMotion;
-        if (motion.Length() <= MinMoveDistance && supportMotion.Length() <= MinMoveDistance)
-        {
-            motion = Vector3.Zero;
-        }
+        motion = requestedMotion + supportMotion;
 
         List<ControllerColliderHit> contacts = [];
         List<MotionSegment> movementPath = [];

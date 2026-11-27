@@ -375,6 +375,24 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void MinMoveDistanceIgnoresSmallInputWithoutSuppressingPlatformCarry()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject platform = Floor();
+        platform.AddComponent(new BoxCollider { Size = new Vector3(20f, 1f, 20f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { MinMoveDistance = 0.1f });
+        _ = StartScene(physics, audio, platform, actor);
+        controller.Move(Vector3.Zero).Should().Be(CollisionFlags.Below);
+
+        platform.Transform.WorldPosition += new Vector3(0.2f, 0f, 0f);
+        controller.Move(new Vector3(0.05f, 0f, 0f));
+
+        actor.Transform.WorldPosition.X.Should().BeApproximately(0.2f, 0.02f);
+    }
+
+    [Fact]
     public void GroundedControllerIsCarriedByPlatformRotation()
     {
         using PhysicsSystem physics = new();
@@ -410,6 +428,24 @@ public sealed class CharacterControllerTests
         controller.Move(new Vector3(0.1f, 0f, 0f));
 
         actor.Transform.WorldPosition.X.Should().BeGreaterThan(1.4f);
+    }
+
+    [Fact]
+    public void OverlapRecoveryDoesNotDepenetrateFromDynamicRigidBodies()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject movingBox = new("Dynamic obstacle");
+        movingBox.Transform.WorldPosition = new Vector3(0f, 1f, 0f);
+        movingBox.AddComponent(new BoxCollider { Size = new Vector3(2f) });
+        movingBox.AddComponent(new RigidBody { UseGravity = false });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        _ = StartScene(physics, audio, movingBox, actor);
+
+        controller.Move(Vector3.Zero);
+
+        actor.Transform.WorldPosition.Should().Be(Vector3.Zero);
     }
 
     [Fact]
