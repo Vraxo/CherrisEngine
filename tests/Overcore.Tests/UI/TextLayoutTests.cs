@@ -27,7 +27,7 @@ public class TextLayoutTests
     {
         IReadOnlyList<string> lines = TextLayout.Wrap("e\u0301x", 1f, text => text.Length);
 
-        lines.Should().Equal("e\\u0301", "x");
+        lines.Should().Equal("e\u0301", "x");
     }
 
     [Fact]
