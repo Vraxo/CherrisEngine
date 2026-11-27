@@ -29,6 +29,17 @@ public static class ComponentCatalog
     public static IReadOnlyList<Entry> BuiltIn { get; } =
     [
         new Entry("Camera", typeof(Camera)),
+        new Entry("Canvas", typeof(Canvas)),
+        new Entry("Rect Transform", typeof(RectTransform)),
+        new Entry("Rect Mask 2D", typeof(RectMask2D)),
+        new Entry("Horizontal Layout Group", typeof(HorizontalLayoutGroup)),
+        new Entry("Vertical Layout Group", typeof(VerticalLayoutGroup)),
+        new Entry("Image", typeof(Image)),
+        new Entry("Text", typeof(Text)),
+        new Entry("Button", typeof(Button)),
+        new Entry("Toggle", typeof(Toggle)),
+        new Entry("Slider", typeof(Slider)),
+        new Entry("Input Field", typeof(InputField)),
         new Entry("Light", typeof(Light)),
 
         // The scene's shadow settings. Ordering it beside the light is deliberate: a scene has one of these, and it is

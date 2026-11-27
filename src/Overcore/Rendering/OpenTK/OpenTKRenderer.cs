@@ -1,5 +1,6 @@
-﻿using Overcore.Components;
+using Overcore.Components;
 using Overcore.Core;
+using Overcore.Rendering;
 using Overcore.Rendering.Shadows;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -17,15 +18,21 @@ public class OpenTKRenderer : IRenderer, IDisposable
     private readonly OpenGLGizmoRenderer _gizmoRenderer;
     private readonly OpenGLGridRenderer _gridRenderer;
     private readonly OpenGLShadowRenderer _shadowRenderer;
+    private readonly OpenGLUIRenderer _uiRenderer;
     private Vector2i _viewportSize = new(1, 1);
     private bool _viewportConfiguredThisFrame;
+    private System.Numerics.Vector2 _viewportScreenOrigin;
+
+    /// <summary>Whether pointer events should reach UI controls in a non-standalone editor preview.</summary>
+    public bool UIInputEnabled { get; set; }
+
     public bool ShowGrid { get; set; } = true;
     public bool ShowPhysicsColliders { get; set; } = true;
     /// <param name="imGuiController">
     /// Controller for the in-engine ImGui UI, or null for hosts that draw their own UI and only need
     /// the off-screen scene pass (see <c>Overcore.Rendering.Headless</c>).
     /// </param>
-    public OpenTKRenderer(ImGuiController? imGuiController = null)
+    public OpenTKRenderer(ImGuiController? imGuiController = null, IResourceManager? resourceManager = null)
     {
         _imGuiController = imGuiController;
         _sceneRenderer = new OpenGLSceneRenderer();
@@ -35,6 +42,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _gizmoRenderer = new OpenGLGizmoRenderer(_debugRenderer);
         _gridRenderer = new OpenGLGridRenderer();
         _shadowRenderer = new OpenGLShadowRenderer();
+        _uiRenderer = new OpenGLUIRenderer(_imGuiController, resourceManager);
         GL.FrontFace(FrontFaceDirection.Cw);
     }
     public IntPtr GetSceneTextureHandle()
@@ -50,7 +58,11 @@ public class OpenTKRenderer : IRenderer, IDisposable
             _postProcessor.OnResize(_viewportSize.X, _viewportSize.Y);
         }
         _viewportConfiguredThisFrame = true;
+        _viewportScreenOrigin = System.Numerics.Vector2.Zero;
     }
+
+    /// <summary>Sets the viewport's top-left point in window coordinates for local UI pointer mapping.</summary>
+    public void SetViewportPosition(System.Numerics.Vector2 screenOrigin) => _viewportScreenOrigin = screenOrigin;
 
     [Obsolete]
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
@@ -71,12 +83,26 @@ public class OpenTKRenderer : IRenderer, IDisposable
             RenderScenePass(mainCamera, skybox, gameObjects, lights, selectedObject, exposure, isRuntimeMode);
             sceneRendered = true;
         }
-        if (isRuntimeMode && sceneRendered)
+        // Composite UI into the post-processed scene texture before it is shown or captured. This keeps the same
+        // image in the standalone runtime, native editor viewport and headless/web editor viewport paths.
+        System.Numerics.Vector2 pointerPosition = Input.MousePosition;
+        if (!isRuntimeMode && _imGuiController is not null)
+        {
+            pointerPosition -= _viewportScreenOrigin;
+        }
+
+        _uiRenderer.Render(gameObjects, _viewportSize.X, _viewportSize.Y,
+            _postProcessor.CompositeFramebuffer, clearTarget: !sceneRendered,
+            pointerPosition: pointerPosition, inputEnabled: isRuntimeMode || UIInputEnabled);
+
+        if (isRuntimeMode)
         {
             _postProcessor.BlitToScreen();
         }
-        bool shouldClearScreen = !isRuntimeMode || !sceneRendered;
-        RenderUIPass((int)windowWidth, (int)windowHeight, shouldClearScreen);
+
+        // Runtime already blitted either the scene or the cleared UI canvas to the window; editor mode clears the
+        // native window behind its ImGui panels while the game view remains in the off-screen texture.
+        RenderUIPass((int)windowWidth, (int)windowHeight, clearScreen: !isRuntimeMode);
         _viewportConfiguredThisFrame = false;
     }
 
@@ -170,6 +196,7 @@ public class OpenTKRenderer : IRenderer, IDisposable
         _postProcessor.Dispose();
         _debugRenderer.Dispose();
         _gridRenderer.Dispose();
+        _uiRenderer.Dispose();
     }
     private static Matrix4 ToOpenTKMatrix(System.Numerics.Matrix4x4 m)
     {

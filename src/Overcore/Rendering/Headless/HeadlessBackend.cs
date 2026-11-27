@@ -136,8 +136,8 @@ public sealed class HeadlessBackend : IRenderingInterface
 
         _headlessWindow = new HeadlessGameWindow(width, height) { TargetFrameRate = TargetFrameRate };
         GameWindow = _headlessWindow;
-        Renderer = new OpenTKRenderer();
         ResourceManager = new OpenTKResourceManager();
+        Renderer = new OpenTKRenderer(resourceManager: ResourceManager);
 
         if (startWithMouseLocked)
         {

@@ -1,4 +1,4 @@
-﻿using Overcore.RenderingInterface;
+using Overcore.RenderingInterface;
 
 namespace Overcore.Rendering.OpenTK;
 
@@ -20,8 +20,8 @@ public class OpenTKBackend : IRenderingInterface
         UIController = _imGuiController;
         window.SetImGuiController(_imGuiController);
 
-        Renderer = new OpenTKRenderer(_imGuiController);
         ResourceManager = new OpenTKResourceManager();
+        Renderer = new OpenTKRenderer(_imGuiController, ResourceManager);
     }
 
     public void Dispose()

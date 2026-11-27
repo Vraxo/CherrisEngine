@@ -1,4 +1,4 @@
-﻿using Overcore.Utils;
+using Overcore.Utils;
 using ImGuiNET;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -9,6 +9,9 @@ namespace Overcore.Rendering.OpenTK;
 
 public class ImGuiController : IUIController
 {
+    internal readonly record struct UIGlyph(float AdvanceX, float X0, float Y0, float X1, float Y1,
+        float U0, float V0, float U1, float V1);
+
     private bool _frameBegun;
 
     private int _vertexArray;
@@ -59,6 +62,18 @@ public class ImGuiController : IUIController
 
         ImGui.NewFrame();
         _frameBegun = true;
+    }
+
+    internal int FontTextureHandle => _fontTexture;
+
+    internal float FontPixelSize => ImGui.GetIO().Fonts.Fonts[0].FontSize;
+
+    internal bool TryGetGlyph(char codepoint, out UIGlyph glyph)
+    {
+        ImFontGlyphPtr source = ImGui.GetIO().Fonts.Fonts[0].FindGlyph(codepoint);
+        glyph = new UIGlyph(source.AdvanceX, source.X0, source.Y0, source.X1, source.Y1,
+            source.U0, source.V0, source.U1, source.V1);
+        return source.AdvanceX > 0f;
     }
 
     public void WindowResized(int width, int height)

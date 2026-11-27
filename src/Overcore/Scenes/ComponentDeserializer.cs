@@ -16,6 +16,17 @@ public static class ComponentDeserializer
     {
         sceneLoader.RegisterComponentFactory("MeshRenderer", props => CreateMeshRendererComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Camera", CreateAndPopulateComponent<Camera>);
+        sceneLoader.RegisterComponentFactory("Canvas", CreateAndPopulateComponent<Canvas>);
+        sceneLoader.RegisterComponentFactory("RectTransform", CreateAndPopulateComponent<RectTransform>);
+        sceneLoader.RegisterComponentFactory("RectMask2D", CreateAndPopulateComponent<RectMask2D>);
+        sceneLoader.RegisterComponentFactory("HorizontalLayoutGroup", CreateAndPopulateComponent<HorizontalLayoutGroup>);
+        sceneLoader.RegisterComponentFactory("VerticalLayoutGroup", CreateAndPopulateComponent<VerticalLayoutGroup>);
+        sceneLoader.RegisterComponentFactory("Image", CreateAndPopulateComponent<Image>);
+        sceneLoader.RegisterComponentFactory("Text", CreateAndPopulateComponent<Text>);
+        sceneLoader.RegisterComponentFactory("Button", CreateAndPopulateComponent<Button>);
+        sceneLoader.RegisterComponentFactory("Toggle", CreateAndPopulateComponent<Toggle>);
+        sceneLoader.RegisterComponentFactory("Slider", CreateAndPopulateComponent<Slider>);
+        sceneLoader.RegisterComponentFactory("InputField", CreateAndPopulateComponent<InputField>);
         sceneLoader.RegisterComponentFactory("Skybox", props => CreateSkyboxComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("Light", CreateAndPopulateComponent<Light>);
 

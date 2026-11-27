@@ -28,6 +28,7 @@ public static class HeadlessInput
         MouseMove,
         MousePosition,
         MouseWheel,
+        TextInput,
         MouseLocked,
         Reset
     }
@@ -38,7 +39,8 @@ public static class HeadlessInput
         MouseButton Button,
         float X,
         float Y,
-        bool State);
+        bool State,
+        string? Text);
 
     private static readonly ConcurrentQueue<Command> Pending = new();
 
@@ -50,6 +52,13 @@ public static class HeadlessInput
 
     /// <summary>Reports a key state change without deciding up or down at the call site.</summary>
     public static void SetKey(Key key, bool isDown) => Enqueue(CommandKind.Key, key, default, 0, 0, isDown);
+
+    /// <summary>Queues text input from a keyboard or browser before the next render-thread frame.</summary>
+    public static void TypeText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        Pending.Enqueue(new Command(CommandKind.TextInput, default, default, 0, 0, false, text));
+    }
 
     /// <summary>Reports a mouse button going down.</summary>
     public static void PressMouseButton(MouseButton button) =>
@@ -125,6 +134,10 @@ public static class HeadlessInput
                     Input.SetMouseWheelDelta(Input.MouseWheelDelta + new Vector2(command.X, command.Y));
                     break;
 
+                case CommandKind.TextInput:
+                    Input.AddTextInput(command.Text);
+                    break;
+
                 case CommandKind.MouseLocked:
                     Input.IsMouseLocked = command.State;
                     break;
@@ -138,6 +151,6 @@ public static class HeadlessInput
 
     private static void Enqueue(CommandKind kind, Key key, MouseButton button, float x, float y, bool state)
     {
-        Pending.Enqueue(new Command(kind, key, button, x, y, state));
+        Pending.Enqueue(new Command(kind, key, button, x, y, state, null));
     }
 }

@@ -110,6 +110,10 @@ public static class ViewportProtocol
                     sink.KeyChanged(ReadString(root, "code") ?? string.Empty, ReadBool(root, "down"));
                     return true;
 
+                case "textInput":
+                    sink.TextInput(ReadString(root, "text") ?? string.Empty);
+                    return true;
+
                 case "mouseButton":
                     // A press carries where it happened, so a click that arrives before any move still picks
                     // where it landed. The position goes in first: the press is what triggers the pick.

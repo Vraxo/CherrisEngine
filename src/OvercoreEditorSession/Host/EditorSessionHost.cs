@@ -467,6 +467,9 @@ public sealed class EditorSessionHost : IViewportSink, IViewportInputSink, IScen
     }
 
     /// <inheritdoc />
+    public void TextInput(string text) => HeadlessInput.TypeText(text);
+
+    /// <inheritdoc />
     public void MouseButtonChanged(int button, bool isDown)
     {
         if (BrowserKeyMap.TryMapMouseButton(button, out MouseButton mapped))

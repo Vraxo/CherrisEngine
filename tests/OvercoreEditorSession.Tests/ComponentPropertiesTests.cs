@@ -41,6 +41,69 @@ public class ComponentPropertiesTests
     }
 
     [Fact]
+    public void ReadAndApply_ExposeUiLayoutAndGraphicPropertiesToTheGenericInspector()
+    {
+        RectTransform rect = new();
+        string[] rectProperties = ComponentProperties.Read(rect).Select(property => property.Name).ToArray();
+        foreach (string propertyName in new[]
+        {
+            nameof(RectTransform.AnchorMin), nameof(RectTransform.AnchorMax), nameof(RectTransform.AnchoredPosition),
+            nameof(RectTransform.SizeDelta), nameof(RectTransform.Pivot)
+        })
+        {
+            rectProperties.Should().Contain(propertyName);
+        }
+        ComponentProperties.TryApply(rect, nameof(RectTransform.AnchorMin), "0.25, 0.5", out _).Should().BeTrue();
+        rect.AnchorMin.Should().Be(new Vector2(0.25f, 0.5f));
+
+        Image image = new();
+        string[] imageProperties = ComponentProperties.Read(image).Select(property => property.Name).ToArray();
+        foreach (string propertyName in new[]
+        {
+            nameof(Image.TextureName), nameof(Image.UVMin), nameof(Image.UVMax), nameof(Image.SliceLeft),
+            nameof(Image.SliceTop), nameof(Image.SliceRight), nameof(Image.SliceBottom), nameof(Image.Color)
+        })
+        {
+            imageProperties.Should().Contain(propertyName);
+        }
+        ComponentProperties.TryApply(image, nameof(Image.SliceLeft), "0.15", out _).Should().BeTrue();
+        image.SliceLeft.Should().Be(0.15f);
+    }
+
+    [Fact]
+    public void ReadAndApply_ExposeTheRemainingUiControlsToTheGenericInspector()
+    {
+        Canvas canvas = new();
+        ComponentProperties.Read(canvas).Select(property => property.Name).Should().Contain(nameof(Canvas.ScaleMode));
+        ComponentProperties.TryApply(canvas, nameof(Canvas.ScaleMode), nameof(CanvasScaleMode.ConstantPixelSize), out _).Should().BeTrue();
+        canvas.ScaleMode.Should().Be(CanvasScaleMode.ConstantPixelSize);
+
+        Text text = new();
+        ComponentProperties.TryApply(text, nameof(Text.Content), "Ready", out _).Should().BeTrue();
+        text.Content.Should().Be("Ready");
+
+        Button button = new();
+        ComponentProperties.TryApply(button, nameof(Button.Interactable), "false", out _).Should().BeTrue();
+        button.Interactable.Should().BeFalse();
+
+        Toggle toggle = new();
+        ComponentProperties.TryApply(toggle, nameof(Toggle.IsOn), "true", out _).Should().BeTrue();
+        toggle.IsOn.Should().BeTrue();
+
+        Slider slider = new();
+        ComponentProperties.TryApply(slider, nameof(Slider.Direction), nameof(SliderDirection.Vertical), out _).Should().BeTrue();
+        slider.Direction.Should().Be(SliderDirection.Vertical);
+
+        InputField inputField = new();
+        ComponentProperties.TryApply(inputField, nameof(InputField.Placeholder), "Enter name", out _).Should().BeTrue();
+        inputField.Placeholder.Should().Be("Enter name");
+
+        HorizontalLayoutGroup layout = new();
+        ComponentProperties.TryApply(layout, nameof(HorizontalLayoutGroup.Spacing), "12", out _).Should().BeTrue();
+        layout.Spacing.Should().Be(12f);
+    }
+
+    [Fact]
     public void Read_SkipsWhatTheInspectorCannotEdit()
     {
         // Component.GameObject is [HideInInspector]; Camera's matrices are computed, so they have no setter.
