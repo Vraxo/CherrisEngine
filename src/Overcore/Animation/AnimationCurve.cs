@@ -89,6 +89,24 @@ public class AnimationCurve
         Axis = axis;
     }
 
+    /// <summary>Creates a standalone scalar curve (used by VFX, UI, or gameplay curves not bound to a glTF bone).</summary>
+    public AnimationCurve()
+        : this(string.Empty, AnimationProperty.LocalScale, AnimationAxis.X)
+    {
+    }
+
+    /// <summary>Creates a linear two-key scalar curve from <paramref name="valueStart"/> to <paramref name="valueEnd"/>.</summary>
+    public static AnimationCurve Linear(float timeStart, float valueStart, float timeEnd, float valueEnd)
+    {
+        AnimationCurve curve = new()
+        {
+            Interpolation = AnimationInterpolation.Linear
+        };
+        curve.AddKey(timeStart, valueStart);
+        curve.AddKey(timeEnd, valueEnd);
+        return curve;
+    }
+
     /// <summary>Hierarchy path from the clip's root, <c>"Hips/Spine"</c>, or empty for the root.</summary>
     public string BonePath { get; }
 
@@ -113,6 +131,9 @@ public class AnimationCurve
     public float EndTime => _keys.Count == 0 ? 0f : _keys[^1].Time;
 
     public void AddKey(float time, float value) => AddKey(new AnimationKey(time, value));
+
+    /// <summary>Evaluates the curve at <paramref name="time"/> using its own <see cref="Interpolation"/> mode.</summary>
+    public float Evaluate(float time) => Evaluate(time, Interpolation);
 
     /// <summary>Adds a key, keeping the list sorted if the time is not past the last one.</summary>
     public void AddKey(AnimationKey key)

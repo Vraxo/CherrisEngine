@@ -971,7 +971,7 @@ public class ParticleSystem : Component, IDisposable
             case ParticleShapeType.Circle:
             {
                 float angle = NextFloat01() * MathF.Tau;
-                float r = radius * MathF.Sqrt(MathF.Lerp(minRadiusFraction * minRadiusFraction, 1f, NextFloat01()));
+                float r = radius * MathF.Sqrt(float.Lerp(minRadiusFraction * minRadiusFraction, 1f, NextFloat01()));
                 Vector3 radial = new(MathF.Cos(angle), 0f, MathF.Sin(angle));
                 return (radial * r, radial.LengthSquared() > 1e-6f ? Vector3.Normalize(radial) : Vector3.UnitX);
             }
@@ -982,7 +982,7 @@ public class ParticleSystem : Component, IDisposable
                 // Base disc lies on XZ, cone emits upward along +Y (matching default scene up so a newly added
                 // ParticleSystem fountains upward immediately without rotating its Transform).
                 float theta = NextFloat01() * MathF.Tau;
-                float u = MathF.Sqrt(MathF.Lerp(minRadiusFraction * minRadiusFraction, 1f, NextFloat01()));
+                float u = MathF.Sqrt(float.Lerp(minRadiusFraction * minRadiusFraction, 1f, NextFloat01()));
                 Vector2 disc = new(MathF.Cos(theta) * u, MathF.Sin(theta) * u);
                 Vector3 basePos = new(disc.X * radius, 0f, disc.Y * radius);
 
