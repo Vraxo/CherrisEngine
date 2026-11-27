@@ -220,6 +220,7 @@ jobs:
           debug.vert debug.frag
           grid.vert grid.frag
           skybox.vert skybox.frag
+          particle.vert particle.frag
           PAIRS
 
           if [ "$failed" -ne 0 ]; then

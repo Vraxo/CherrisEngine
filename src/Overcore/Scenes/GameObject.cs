@@ -1,4 +1,5 @@
-﻿using Overcore.Components;
+using Overcore.Components;
+using Overcore.Serialization;
 using System.Numerics;
 
 namespace Overcore.Core;
@@ -357,9 +358,38 @@ public class GameObject
         }
     }
 
+    /// <summary>Clones a prefab asset into the active scene — Unity's <c>Instantiate(prefab)</c>.</summary>
+    public static GameObject? Instantiate(PrefabAsset prefab)
+    {
+        ArgumentNullException.ThrowIfNull(prefab);
+        return prefab.Instantiate();
+    }
+
+    /// <summary>Clones a prefab asset at a world position and rotation.</summary>
+    public static GameObject? Instantiate(PrefabAsset prefab, Vector3 position, Quaternion rotation, Transform? parent = null)
+    {
+        ArgumentNullException.ThrowIfNull(prefab);
+        return prefab.Instantiate(position, rotation, parent);
+    }
+
+    /// <summary>Clones a prefab asset under <paramref name="parent"/>.</summary>
+    public static GameObject? Instantiate(PrefabAsset prefab, Transform parent, bool worldPositionStays = false)
+    {
+        ArgumentNullException.ThrowIfNull(prefab);
+        return prefab.Instantiate(parent, worldPositionStays);
+    }
+
     /// <summary>Copies an object and everything under it. Components are copied by value, runtime state and all cleared.</summary>
     /// <param name="source">The object to copy.</param>
     private static GameObject CloneHierarchy(GameObject source)
+    {
+        Dictionary<GameObject, GameObject> map = [];
+        GameObject clone = CloneHierarchyNode(source, map);
+        ObjectReferenceResolver.RemapClonedHierarchy(map);
+        return clone;
+    }
+
+    private static GameObject CloneHierarchyNode(GameObject source, Dictionary<GameObject, GameObject> map)
     {
         GameObject clone = new(source.Name)
         {
@@ -367,6 +397,8 @@ public class GameObject
             Layer = source.Layer,
             PrefabSource = source.PrefabSource
         };
+
+        map[source] = clone;
 
         clone.SetActiveWithoutNotification(source.ActiveSelf);
         clone.Transform.Position = source.Transform.Position;
@@ -380,7 +412,7 @@ public class GameObject
 
         foreach (Transform child in source.Transform.Children)
         {
-            GameObject childClone = CloneHierarchy(child.GameObject);
+            GameObject childClone = CloneHierarchyNode(child.GameObject, map);
             childClone.Transform.Parent = clone.Transform;
         }
 

@@ -52,7 +52,11 @@ public static class ComponentCatalog
         new Entry("Capsule Collider", typeof(CapsuleCollider)),
         new Entry("Audio Source", typeof(AudioSource)),
         new Entry("Audio Listener", typeof(AudioListener)),
-        new Entry("Skinned Mesh", typeof(SkinnedMesh))
+        new Entry("Skinned Mesh", typeof(SkinnedMesh)),
+        new Entry("Particle System", typeof(ParticleSystem)),
+        new Entry("Nav Mesh Surface", typeof(NavMeshSurface)),
+        new Entry("Nav Mesh Agent", typeof(NavMeshAgent)),
+        new Entry("Nav Mesh Obstacle", typeof(NavMeshObstacle))
     ];
 
     /// <summary>

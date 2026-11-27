@@ -45,7 +45,62 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
         {
             dirty |= SpriteMetadataInspector.Draw(_editor, _textures, image);
         }
+        else if (component is ParticleSystem particleSystem)
+        {
+            DrawParticleSystemControls(particleSystem);
+        }
+        else if (component is NavMeshSurface navMeshSurface)
+        {
+            DrawNavMeshSurfaceControls(navMeshSurface);
+        }
         return dirty;
+    }
+
+    private static void DrawParticleSystemControls(ParticleSystem ps)
+    {
+        ImGui.Spacing();
+        if (ImGui.Button("Play"))
+        {
+            ps.Play();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Pause"))
+        {
+            ps.Pause();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Restart"))
+        {
+            ps.Stop(ParticleStopBehavior.StopEmittingAndClear);
+            ps.Play();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Clear"))
+        {
+            ps.Clear();
+        }
+        ImGui.SameLine();
+        ImGui.TextDisabled($"Alive: {ps.ParticleCount}/{ps.MaxParticles}");
+    }
+
+    private static void DrawNavMeshSurfaceControls(NavMeshSurface surface)
+    {
+        ImGui.Spacing();
+        if (ImGui.Button("Bake NavMesh"))
+        {
+            surface.BuildNavMesh();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Clear NavMesh"))
+        {
+            surface.RemoveData();
+        }
+
+        if (surface.NavMeshData is { } data)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"Polys: {data.Polygons.Count}, Verts: {data.Vertices.Length}");
+        }
     }
 
     private bool DrawPropertyRow(Component component, PropertyInfo prop)
@@ -80,9 +135,7 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             return false;
         }
 
-        object? defaultValue = GetDefaultValue(component.GetType(), prop.Name);
-
-        if (defaultValue == null)
+        if (!TryGetDefaultValue(component.GetType(), prop.Name, out object? defaultValue))
         {
             return false;
         }
@@ -91,16 +144,24 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
         return true;
     }
 
-    private static object? GetDefaultValue(Type componentType, string propertyName)
+    private static bool TryGetDefaultValue(Type componentType, string propertyName, out object? defaultValue)
     {
+        defaultValue = null;
         try
         {
             object? instance = Activator.CreateInstance(componentType);
-            return componentType.GetProperty(propertyName)?.GetValue(instance);
+            PropertyInfo? prop = componentType.GetProperty(propertyName);
+            if (prop is null)
+            {
+                return false;
+            }
+
+            defaultValue = prop.GetValue(instance);
+            return true;
         }
         catch
         {
-            return null;
+            return false;
         }
     }
 

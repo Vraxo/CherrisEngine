@@ -1,4 +1,4 @@
-﻿using Overcore.Animation;
+using Overcore.Animation;
 using Overcore.Components;
 using Overcore.Core.Logging;
 using Overcore.Core.Physics;
@@ -288,11 +288,132 @@ public class Scene : IDisposable
         }
 
         AdvanceCoroutines(CoroutinePhase.Update, deltaTime);
+        AdvanceNavigation(deltaTime);
         AdvanceAnimation(deltaTime);
+        AdvanceParticles(deltaTime);
         AdvanceLateUpdate();
         AdvanceCoroutines(CoroutinePhase.EndOfFrame, 0.0f);
 
         PendingDestruction.Flush(deltaTime);
+    }
+
+    private void AdvanceNavigation(float deltaTime)
+    {
+        // Only advance NavMesh obstacles & agents when the scene has been started (play mode / runtime).
+        if (_physicsSystem is null || deltaTime <= 0f)
+        {
+            return;
+        }
+
+        List<NavMeshSurface> surfaces = [];
+        List<NavMeshObstacle> obstacles = [];
+        List<NavMeshAgent> agents = [];
+
+        int count = GameObjects.Count;
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject go = GameObjects[index];
+            if (!go.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (NavMeshSurface surface in go.GetComponents<NavMeshSurface>())
+            {
+                if (!surface.IsDestroyed && surface.Enabled)
+                {
+                    surfaces.Add(surface);
+                }
+            }
+
+            foreach (NavMeshObstacle obstacle in go.GetComponents<NavMeshObstacle>())
+            {
+                if (!obstacle.IsDestroyed)
+                {
+                    obstacles.Add(obstacle);
+                }
+            }
+
+            foreach (NavMeshAgent agent in go.GetComponents<NavMeshAgent>())
+            {
+                if (!agent.IsDestroyed && agent.Enabled)
+                {
+                    agents.Add(agent);
+                }
+            }
+        }
+
+        // If any carving obstacle moved beyond its threshold, rebuild active surfaces so agents replan cleanly.
+        bool anyCarveDirty = false;
+        foreach (NavMeshObstacle obstacle in obstacles)
+        {
+            if (obstacle.PollCarveDirty(deltaTime))
+            {
+                anyCarveDirty = true;
+            }
+        }
+
+        if (anyCarveDirty)
+        {
+            foreach (NavMeshSurface surface in surfaces)
+            {
+                try
+                {
+                    surface.BuildNavMesh(GameObjects);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in NavMeshSurface.BuildNavMesh() on '{surface.GameObject?.Name}': {ex.Message}");
+                }
+            }
+        }
+
+        foreach (NavMeshAgent agent in agents)
+        {
+            try
+            {
+                agent.Step(deltaTime, agents, obstacles);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"[Scene] Exception in NavMeshAgent.Step() on '{agent.GameObject?.Name}': {ex.Message}");
+            }
+        }
+    }
+
+    private void AdvanceParticles(float deltaTime)
+    {
+        if (deltaTime <= 0f)
+        {
+            return;
+        }
+
+        int count = GameObjects.Count;
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject go = GameObjects[index];
+            if (!go.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (ParticleSystem ps in go.GetComponents<ParticleSystem>().ToList())
+            {
+                if (ps.IsDestroyed || !ps.Enabled)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    ps.Step(deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in ParticleSystem.Step() on '{go.Name}': {ex.Message}");
+                }
+            }
+        }
     }
 
     private void TickUpdate(GameObject gameObject, Script script, float deltaTime)

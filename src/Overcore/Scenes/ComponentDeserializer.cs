@@ -12,6 +12,11 @@ namespace Overcore.Serialization;
 
 public static class ComponentDeserializer
 {
+    public static void EnsureRegistered(SceneLoader sceneLoader, IResourceManager resourceManager)
+    {
+        RegisterFactories(sceneLoader, resourceManager);
+    }
+
     public static void RegisterFactories(SceneLoader sceneLoader, IResourceManager resourceManager)
     {
         sceneLoader.RegisterComponentFactory("MeshRenderer", props => CreateMeshRendererComponent(props, resourceManager));
@@ -41,6 +46,10 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("LanguageScript", _ => new LanguageScript());
         sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
+        sceneLoader.RegisterComponentFactory("ParticleSystem", props => CreateParticleSystemComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("NavMeshSurface", CreateAndPopulateComponent<NavMeshSurface>);
+        sceneLoader.RegisterComponentFactory("NavMeshAgent", CreateAndPopulateComponent<NavMeshAgent>);
+        sceneLoader.RegisterComponentFactory("NavMeshObstacle", CreateAndPopulateComponent<NavMeshObstacle>);
     }
 
     private static MeshRenderer? CreateMeshRendererComponent(object properties, IResourceManager resourceManager)
@@ -97,6 +106,52 @@ public static class ComponentDeserializer
         }
 
         return audioSource;
+    }
+
+    private static ParticleSystem CreateParticleSystemComponent(object properties, IResourceManager resourceManager)
+    {
+        ParticleSystem ps = new();
+
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return ps;
+        }
+
+        PopulateComponentProperties(ps, propsDict, "Bursts");
+
+        if (!string.IsNullOrWhiteSpace(ps.TextureName) && resourceManager is not null)
+        {
+            ps.Texture = resourceManager.GetTexture(ps.TextureName);
+        }
+
+        if (propsDict.TryGetValue("Bursts", out var burstsObj) && burstsObj is List<object> burstList)
+        {
+            List<ParticleBurst> bursts = [];
+            foreach (object item in burstList)
+            {
+                if (item is Dictionary<object, object> bDict)
+                {
+                    float time = GetFloat(bDict, "Time", 0f);
+                    int minCount = bDict.TryGetValue("MinCount", out var minObj)
+                        ? Convert.ToInt32(minObj, CultureInfo.InvariantCulture)
+                        : 10;
+                    int maxCount = bDict.TryGetValue("MaxCount", out var maxObj)
+                        ? Convert.ToInt32(maxObj, CultureInfo.InvariantCulture)
+                        : minCount;
+                    int cycleCount = bDict.TryGetValue("CycleCount", out var cycObj)
+                        ? Convert.ToInt32(cycObj, CultureInfo.InvariantCulture)
+                        : 1;
+                    float repeatInterval = GetFloat(bDict, "RepeatInterval", 0.01f);
+                    float probability = GetFloat(bDict, "Probability", 1f);
+
+                    bursts.Add(new ParticleBurst(time, minCount, maxCount, cycleCount, repeatInterval, probability));
+                }
+            }
+
+            ps.SetBursts(bursts);
+        }
+
+        return ps;
     }
 
     private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)
@@ -180,7 +235,9 @@ public static class ComponentDeserializer
             }
 
             var propertyInfo = componentType.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-            if (propertyInfo is null || !IsPropertyDeserializable(propertyInfo))
+            if (propertyInfo is null
+                || !IsPropertyDeserializable(propertyInfo)
+                || ObjectReferenceResolver.IsReferenceType(propertyInfo.PropertyType))
             {
                 continue;
             }
@@ -198,8 +255,13 @@ public static class ComponentDeserializer
 
     private static bool IsPropertyDeserializable(PropertyInfo propertyInfo)
     {
-        return propertyInfo.CanWrite && !propertyInfo.IsDefined(typeof(HideInInspectorAttribute), false);
+        return propertyInfo.CanWrite
+            && propertyInfo.GetIndexParameters().Length == 0
+            && !propertyInfo.IsDefined(typeof(HideInInspectorAttribute), false);
     }
+
+    internal static bool TryConvertPropertyValue(object yamlValue, Type targetType, out object? convertedValue) =>
+        TryConvertValue(yamlValue, targetType, out convertedValue);
 
     private static bool TryConvertValue(object yamlValue, Type targetType, out object? convertedValue)
     {
@@ -210,9 +272,14 @@ public static class ComponentDeserializer
             {
                 return TryConvertFromList(list, targetType, out convertedValue);
             }
+            if (targetType == typeof(LayerMask))
+            {
+                convertedValue = new LayerMask(Convert.ToInt32(yamlValue, CultureInfo.InvariantCulture));
+                return true;
+            }
             if (targetType.IsEnum)
             {
-                convertedValue = Enum.Parse(targetType, (string)yamlValue, true);
+                convertedValue = Enum.Parse(targetType, yamlValue.ToString()!, true);
                 return true;
             }
             convertedValue = Convert.ChangeType(yamlValue, targetType, CultureInfo.InvariantCulture);
@@ -235,6 +302,11 @@ public static class ComponentDeserializer
         if (targetType == typeof(Vector3) && list.Count == 3)
         {
             convertedValue = new Vector3(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2]));
+            return true;
+        }
+        if (targetType == typeof(Vector4) && list.Count == 4)
+        {
+            convertedValue = new Vector4(ToSingle(list[0]), ToSingle(list[1]), ToSingle(list[2]), ToSingle(list[3]));
             return true;
         }
 

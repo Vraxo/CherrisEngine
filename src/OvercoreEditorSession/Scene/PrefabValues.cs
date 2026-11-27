@@ -1,8 +1,10 @@
 using Overcore;
 using Overcore.Components;
 using Overcore.Core;
+using Overcore.Serialization;
 using System.Globalization;
 using System.Numerics;
+using System.Reflection;
 
 namespace OvercoreEditorSession;
 
@@ -13,6 +15,8 @@ namespace OvercoreEditorSession;
 /// </summary>
 public static class PrefabValues
 {
+    private const string PrefabLinkPrefix = "prefablink:";
+
     /// <summary>Every value the editor can override on an object, as text, keyed by path.</summary>
     /// <param name="gameObject">The object to read.</param>
     /// <returns>Name, the three Transform rows, each first-per-type component's switch and properties.</returns>
@@ -25,6 +29,8 @@ public static class PrefabValues
             [PrefabPaths.Transform(TransformField.Rotation)] = TransformRow.Format(RotationDegrees(gameObject)),
             [PrefabPaths.Transform(TransformField.Scale)] = TransformRow.Format(gameObject.Transform.Scale)
         };
+
+        string? ownAssetGuid = gameObject.PrefabSource?.AssetGuid;
 
         // The first component of a type is the one the editor's rows edit (the same convention every command
         // follows), so it is the one an override can name.
@@ -43,7 +49,11 @@ public static class PrefabValues
 
             foreach (PropertySnapshot property in ComponentProperties.Read(component))
             {
-                values[PrefabPaths.Property(typeName, property.Name)] = property.Text;
+                string propText = property.Kind == PropertyKind.ObjectReference
+                    ? NormalizePrefabReferenceToken(gameObject, component, property.Name, property.Text, ownAssetGuid)
+                    : property.Text;
+
+                values[PrefabPaths.Property(typeName, property.Name)] = propText;
             }
         }
 
@@ -101,8 +111,106 @@ public static class PrefabValues
         }
 
         string propertyName = path[(typeName.Length + 1)..];
+        string resolvedText = ExpandPrefabReferenceToken(gameObject, text);
 
-        return ComponentProperties.TryApply(component, propertyName, text, out error);
+        return ComponentProperties.TryApply(component, propertyName, resolvedText, out error);
+    }
+
+    private static string NormalizePrefabReferenceToken(
+        GameObject owner,
+        Component component,
+        string propertyName,
+        string rawToken,
+        string? ownAssetGuid)
+    {
+        if (string.IsNullOrWhiteSpace(ownAssetGuid)
+            || !rawToken.StartsWith(ObjectReferenceResolver.ObjectPrefix, StringComparison.Ordinal))
+        {
+            return rawToken;
+        }
+
+        PropertyInfo? prop = component.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        object? liveValue = prop?.GetValue(component);
+        GameObject? targetGo = liveValue switch
+        {
+            GameObject go => go,
+            Transform t => t.GameObject,
+            Component c => c.GameObject,
+            _ => null
+        };
+
+        if (targetGo?.PrefabSource is not { } targetSource
+            || !String.Equals(targetSource.AssetGuid, ownAssetGuid, StringComparison.Ordinal)
+            || !SharesPrefabInstanceSubtree(owner, targetGo, ownAssetGuid))
+        {
+            return rawToken;
+        }
+
+        string rest = rawToken[ObjectReferenceResolver.ObjectPrefix.Length..];
+        int colon = rest.IndexOf(':');
+        string suffix = colon >= 0 ? rest[colon..] : string.Empty;
+        return $"{PrefabLinkPrefix}{targetSource.FileId.ToString(CultureInfo.InvariantCulture)}{suffix}";
+    }
+
+    private static string ExpandPrefabReferenceToken(GameObject owner, string text)
+    {
+        if (!text.StartsWith(PrefabLinkPrefix, StringComparison.Ordinal)
+            || owner.PrefabSource is not { } ownSource)
+        {
+            return text;
+        }
+
+        string rest = text[PrefabLinkPrefix.Length..];
+        int colon = rest.IndexOf(':');
+        string idText = colon >= 0 ? rest[..colon] : rest;
+        string suffix = colon >= 0 ? rest[colon..] : string.Empty;
+
+        if (!Int32.TryParse(idText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fileId))
+        {
+            return text;
+        }
+
+        GameObject root = FindPrefabInstanceRoot(owner, ownSource.AssetGuid);
+        GameObject? match = FindInSubtreeByFileId(root, ownSource.AssetGuid, fileId);
+        return match is not null
+            ? $"{ObjectReferenceResolver.ObjectPrefix}{match.Id:D}{suffix}"
+            : string.Empty;
+    }
+
+    private static bool SharesPrefabInstanceSubtree(GameObject a, GameObject b, string assetGuid) =>
+        ReferenceEquals(FindPrefabInstanceRoot(a, assetGuid), FindPrefabInstanceRoot(b, assetGuid));
+
+    private static GameObject FindPrefabInstanceRoot(GameObject node, string assetGuid)
+    {
+        GameObject current = node;
+        while (current.Transform.Parent?.GameObject is { } parent
+               && parent.PrefabSource is { } parentSource
+               && String.Equals(parentSource.AssetGuid, assetGuid, StringComparison.Ordinal))
+        {
+            current = parent;
+        }
+
+        return current;
+    }
+
+    private static GameObject? FindInSubtreeByFileId(GameObject root, string assetGuid, int fileId)
+    {
+        if (root.PrefabSource is { } source
+            && String.Equals(source.AssetGuid, assetGuid, StringComparison.Ordinal)
+            && source.FileId == fileId)
+        {
+            return root;
+        }
+
+        foreach (Transform child in root.Transform.Children)
+        {
+            if (FindInSubtreeByFileId(child.GameObject, assetGuid, fileId) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The rotation as the Euler degrees the inspector shows.</summary>
