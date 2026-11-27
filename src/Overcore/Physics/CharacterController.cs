@@ -211,9 +211,9 @@ public sealed class CharacterController : Component
         {
             if (!Sweep(remaining, out SweepHit hit))
             {
-                Vector3 segmentStart = Transform.WorldPosition;
+                Vector3 freeSegmentStart = Transform.WorldPosition;
                 Transform.WorldPosition += remaining;
-                AddMotionSegment(path, segmentStart, Transform.WorldPosition);
+                AddMotionSegment(path, freeSegmentStart, Transform.WorldPosition);
                 break;
             }
 
