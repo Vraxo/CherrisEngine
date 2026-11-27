@@ -73,6 +73,7 @@ public sealed class CharacterController : Collider
     private float _minMoveDistance;
     private Vector3 _velocity;
     private float _simpleMoveVerticalVelocity;
+    private bool _detectCollisions = true;
     private Collider? _supportCollider;
     private Quaternion _supportRotation = Quaternion.Identity;
     private Vector3 _supportRelativePosition;
@@ -120,8 +121,17 @@ public sealed class CharacterController : Collider
     public float SkinWidth { get => _skinWidth; set => _skinWidth = MathF.Max(0.001f, value); }
     /// <summary>Displacements shorter than this are ignored.</summary>
     public float MinMoveDistance { get => _minMoveDistance; set => _minMoveDistance = MathF.Max(0f, value); }
-    /// <summary>Whether movement is constrained by colliders.</summary>
-    public bool DetectCollisions { get; set; } = true;
+    /// <summary>Whether incoming rigid bodies and other controllers are blocked by this controller.</summary>
+    public bool DetectCollisions
+    {
+        get => _detectCollisions;
+        set
+        {
+            if (_detectCollisions == value) return;
+            _detectCollisions = value;
+            RefreshShape();
+        }
+    }
     /// <summary>Whether small initial overlaps are resolved before the controller moves.</summary>
     public bool EnableOverlapRecovery { get; set; } = true;
     /// <summary>True when the last movement touched a walkable surface below.</summary>
@@ -144,40 +154,31 @@ public sealed class CharacterController : Collider
         Vector3 triggerStartPosition = frameStart;
         _supportCollider = null;
 
-        if (!DetectCollisions)
-        {
-            Transform.WorldPosition = frameStart + motion;
-            AddMotionSegment(movementPath, frameStart, Transform.WorldPosition);
-            CollisionFlags = ControllerCollisionFlags.None;
-        }
-        else
-        {
-            if (EnableOverlapRecovery) RecoverOverlaps(movementPath);
-            Vector3 movementStart = Transform.WorldPosition;
-            int recoveryPathCount = movementPath.Count;
+        if (EnableOverlapRecovery) RecoverOverlaps(movementPath);
+        Vector3 movementStart = Transform.WorldPosition;
+        int recoveryPathCount = movementPath.Count;
 
-            bool probeGround = motion.Y <= 0f || (supportMotion.Y > 0f && requestedMotion.Y <= 0f);
-            CollisionFlags flags = MoveAndSlide(motion, contacts, movementPath, probeGround);
-            if (StepOffset > 0f && motion.Y <= 0f &&
-                (flags & ControllerCollisionFlags.Sides) != 0 && (flags & ControllerCollisionFlags.Below) != 0)
+        bool probeGround = motion.Y <= 0f || (supportMotion.Y > 0f && requestedMotion.Y <= 0f);
+        CollisionFlags flags = MoveAndSlide(motion, contacts, movementPath, probeGround);
+        if (StepOffset > 0f && motion.Y <= 0f &&
+            (flags & ControllerCollisionFlags.Sides) != 0 && (flags & ControllerCollisionFlags.Below) != 0)
+        {
+            Vector3 normalMoveEnd = Transform.WorldPosition;
+            Collider? originalSupport = _supportCollider;
+            if (TryStep(movementStart, motion, contacts, out CollisionFlags steppedFlags, out List<MotionSegment> steppedPath))
             {
-                Vector3 normalMoveEnd = Transform.WorldPosition;
-                Collider? originalSupport = _supportCollider;
-                if (TryStep(movementStart, motion, contacts, out CollisionFlags steppedFlags, out List<MotionSegment> steppedPath))
-                {
-                    flags = steppedFlags;
-                    movementPath.RemoveRange(recoveryPathCount, movementPath.Count - recoveryPathCount);
-                    movementPath.AddRange(steppedPath);
-                }
-                else
-                {
-                    Transform.WorldPosition = normalMoveEnd;
-                    _supportCollider = originalSupport;
-                }
+                flags = steppedFlags;
+                movementPath.RemoveRange(recoveryPathCount, movementPath.Count - recoveryPathCount);
+                movementPath.AddRange(steppedPath);
             }
-
-            CollisionFlags = flags;
+            else
+            {
+                Transform.WorldPosition = normalMoveEnd;
+                _supportCollider = originalSupport;
+            }
         }
+
+        CollisionFlags = flags;
 
         IsGrounded = (CollisionFlags & ControllerCollisionFlags.Below) != 0;
         UpdateSupportPose();
@@ -363,6 +364,13 @@ public sealed class CharacterController : Collider
         return false;
     }
 
+    /// <summary>Returns the controller's capsule pose, kept upright along world Y regardless of object rotation.</summary>
+    public override void GetWorldPose(out Vector3 center, out Quaternion rotation, out Vector3 scale)
+    {
+        base.GetWorldPose(out center, out _, out scale);
+        rotation = Quaternion.Identity;
+    }
+
     internal override string ShapeName => "Character controller";
 
     internal override TypedIndex AddBepuShape(Shapes shapes, Vector3 scale)
@@ -431,12 +439,6 @@ public sealed class CharacterController : Collider
 
     private void DispatchTriggerChanges(List<MotionSegment> path, Vector3 startPosition)
     {
-        if (!DetectCollisions)
-        {
-            ClearTriggerContacts();
-            return;
-        }
-
         GetCapsule(out Vector3 lower, out Vector3 upper, out float radius);
         Vector3 finalPosition = Transform.WorldPosition;
         HashSet<Collider> current = Physics.OverlapTriggersForController(lower, upper, radius, GameObject!).ToHashSet();

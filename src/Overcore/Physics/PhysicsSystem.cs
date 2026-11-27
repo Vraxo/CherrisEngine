@@ -178,8 +178,8 @@ public partial class PhysicsSystem : IDisposable
             return;
         }
 
-        // Controllers stay queryable, but their motion is constrained by Move rather than Bepu's static solver.
-        if (!collider.IsTrigger && collider is not CharacterController)
+        // Controller motion is constrained by Move, but its static solver shape still blocks incoming rigid bodies.
+        if (!collider.IsTrigger && (collider is not CharacterController controller || controller.DetectCollisions))
         {
             AddStaticShape(collider);
         }
@@ -571,8 +571,10 @@ public partial class PhysicsSystem : IDisposable
     {
         Vector3 relativeVelocity = VelocityOf(pair.A) - VelocityOf(pair.B);
 
-        Notify(pair.A, pair.B, pair.ContactsForA(), relativeVelocity, phase);
-        Notify(pair.B, pair.A, pair.ContactsForB(), -relativeVelocity, phase);
+        if (pair.A is not CharacterController)
+            Notify(pair.A, pair.B, pair.ContactsForA(), relativeVelocity, phase);
+        if (pair.B is not CharacterController)
+            Notify(pair.B, pair.A, pair.ContactsForB(), -relativeVelocity, phase);
     }
 
     private void NotifyTrigger(TriggerPair pair, CollisionPhase phase)

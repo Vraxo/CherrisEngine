@@ -102,7 +102,7 @@ public abstract class Collider : Component
     /// <param name="center">Receives the world centre, with <see cref="Center"/> applied.</param>
     /// <param name="rotation">Receives the world rotation.</param>
     /// <param name="scale">Receives the world scale.</param>
-    public void GetWorldPose(out Vector3 center, out Quaternion rotation, out Vector3 scale)
+    public virtual void GetWorldPose(out Vector3 center, out Quaternion rotation, out Vector3 scale)
     {
         Transform transform = Transform;
         transform.GetWorldTransform(out Vector3 position, out rotation, out scale);

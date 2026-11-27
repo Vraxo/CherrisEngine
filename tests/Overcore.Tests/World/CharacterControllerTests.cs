@@ -147,6 +147,46 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void DisablingDetectCollisionsDoesNotDisableThisControllersMovementChecks()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject wall = new("Wall");
+        wall.Transform.WorldPosition = new Vector3(2f, 1f, 0f);
+        wall.AddComponent(new BoxCollider { Size = new Vector3(1f, 2f, 4f) });
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController
+        {
+            StepOffset = 0f,
+            DetectCollisions = false
+        });
+        _ = StartScene(physics, audio, wall, actor);
+
+        CollisionFlags flags = controller.Move(new Vector3(4f, 0f, 0f));
+
+        (flags & CollisionFlags.Sides).Should().Be(CollisionFlags.Sides);
+        actor.Transform.WorldPosition.X.Should().BeLessThan(1.2f);
+    }
+
+    [Fact]
+    public void ControllerWithDetectCollisionsDisabledDoesNotBlockOtherControllers()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject movingActor = new("Moving player");
+        CharacterController movingController = movingActor.AddComponent(new CharacterController { StepOffset = 0f });
+        GameObject disabledActor = new("Nonblocking player");
+        disabledActor.Transform.WorldPosition = new Vector3(2f, 0f, 0f);
+        disabledActor.AddComponent(new CharacterController { StepOffset = 0f, DetectCollisions = false });
+        _ = StartScene(physics, audio, movingActor, disabledActor);
+
+        CollisionFlags flags = movingController.Move(new Vector3(3f, 0f, 0f));
+
+        flags.Should().Be(CollisionFlags.None);
+        movingActor.Transform.WorldPosition.X.Should().BeApproximately(3f, 0.01f);
+    }
+
+    [Fact]
     public void UpwardMotionDoesNotGetMarkedGroundedByTheProbeBelow()
     {
         using PhysicsSystem physics = new();
@@ -213,6 +253,18 @@ public sealed class CharacterControllerTests
         triggerRecorder.ControllerExitCount.Should().Be(1);
         actorRecorder.Events.Should().Equal("Enter", "Exit");
         triggerRecorder.Events.Should().Equal("Enter", "Exit");
+    }
+
+    [Fact]
+    public void ControllerCapsulePoseRemainsUprightWhenItsTransformIsRotated()
+    {
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        actor.Transform.WorldRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f);
+
+        controller.GetWorldPose(out _, out Quaternion rotation, out _);
+
+        rotation.Should().Be(Quaternion.Identity);
     }
 
     [Fact]

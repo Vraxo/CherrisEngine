@@ -60,7 +60,9 @@ receive forces, or run itself: scripts decide when and how far it moves. `Move(d
 translation and returns `CollisionFlags` (`Sides`, `Above`, `Below`); it does not apply gravity. `SimpleMove(speed)`
 takes world-space speed, applies gravity, ignores the supplied Y speed, and returns whether the last move was grounded.
 The component exposes `Height`, `Radius`, `Center`, `SlopeLimit`, `StepOffset`, `SkinWidth`, `MinMoveDistance`,
-`DetectCollisions`, `EnableOverlapRecovery`, `IsGrounded`, `Velocity`, and the last `CollisionFlags`.
+`DetectCollisions`, `EnableOverlapRecovery`, `IsGrounded`, `Velocity`, and the last `CollisionFlags`. `DetectCollisions`
+controls whether incoming rigid bodies and other controllers are blocked by this controller; it does not disable this
+controller's own `Move` collision checks.
 
 ```csharp
 public class PlayerMotion : Script
@@ -87,15 +89,16 @@ Capsule sweeps use conservative advancement against the geometric separation of 
 box distance minimization is numerical, so contact tolerances can still differ from PhysX. Movement slides against
 contact planes, attempts a step-up only while supported, and resolves initial penetrations against static, non-trigger
 geometry by pushing along the deepest contact normal with a per-move recovery limit. Moving platforms carry a grounded
-controller by the platform's translation and rotation. This is not a claim of bit-for-bit PhysX parity: the engine does not automatically push
-rigid bodies, though scripts can use the hit callback to apply forces. Trigger overlaps are checked at the end of each
+controller by the platform's translation and rotation. This is not a claim of bit-for-bit PhysX parity: movement does not automatically impart velocity to rigid bodies,
+though their solver contacts are blocked by the controller's static capsule when `DetectCollisions` is enabled and
+scripts can use the hit callback to apply forces. Trigger overlaps are checked at the end of each
 `Move`, and capsule sweeps along the controller's resolved movement segments detect triggers crossed entirely within
 one move. Enter/Stay/Exit are delivered to scripts on both objects;
 The controller is also a `Collider`, so ordinary collider queries and trigger callbacks receive it as a collider.
 Controller capsules block one another when both have collision detection enabled; their movement contacts are handled
 by the controller sweeps rather than the rigid-body contact solver, and are exposed through
-`ControllerColliderHit.OtherController`. Unlike a rigid body, the controller does not produce fixed-step
-`OnCollision*` callbacks; contacts are delivered synchronously from `Move` through `OnControllerColliderHit`. Test
+`ControllerColliderHit.OtherController`. The controller itself does not receive fixed-step `OnCollision*` callbacks;
+its movement contacts are delivered synchronously from `Move` through `OnControllerColliderHit`. Test
 coverage exists in source, but the .NET test suite has not been run in this environment.
 
 ## 3. Rigid bodies
