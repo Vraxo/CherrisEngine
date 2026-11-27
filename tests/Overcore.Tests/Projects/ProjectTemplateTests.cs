@@ -50,9 +50,9 @@ public sealed class ProjectTemplateTests : IDisposable
         objects.SelectMany(gameObject => gameObject.GetComponents<Overcore.Components.Text>())
             .Select(text => text.Content).Should().Contain(text => text.Contains("مرحبا", StringComparison.Ordinal));
         objects.Select(gameObject => gameObject.GetComponent<Overcore.Components.Button>())
-            .Should().Contain(button => button is not null);
+            .Should().Contain(button => button != null);
         objects.Select(gameObject => gameObject.GetComponent<Overcore.Components.InputField>())
-            .Should().Contain(field => field is not null);
+            .Should().Contain(field => field != null);
         ProjectWorkspace.Validate(projectPath).Should().Be(projectPath);
     }
 
