@@ -89,9 +89,9 @@ public class GameWindow : IGameWindow
     {
         Input.FrameStarted();
         InputSnapshot inputSnapshot = SdlWindow.PumpEvents();
-        foreach (char character in inputSnapshot.KeyCharPresses)
+        if (inputSnapshot.KeyCharPresses.Count > 0)
         {
-            Input.AddTextInput(character);
+            Input.AddTextInput(new string(inputSnapshot.KeyCharPresses.ToArray()));
         }
 
         if (Input.WasKeyPressed(Key.Escape))

@@ -62,6 +62,8 @@ The runtime implementation has not yet been validated by a .NET build in this wo
 - [x] Scene/prefab serialization and generic property bridge for UI components; regression tests cover UI properties including custom font selection.
 - [x] Project-relative TrueType font selection, a bundled Roboto Mono fallback, and shared native/headless glyph-atlas rendering.
 - [ ] Fuller Sprite asset/import metadata and editor-facing sprite selection/inspection.
+- [ ] Text wrapping, complete Unicode glyph coverage, and measured caret/layout behavior.
+- [ ] Rounded/soft and texture-alpha masks beyond the existing rectangular clip masks.
 - [ ] Veldrid UI rendering/input parity; an initial image/slider/clipping/control-event pass exists, but text glyphs, InputField rendering, and backend parity verification remain.
 - [ ] Run all UI and editor-session tests plus a full build on a machine with the .NET SDK; verify native and headless renders manually.
 
