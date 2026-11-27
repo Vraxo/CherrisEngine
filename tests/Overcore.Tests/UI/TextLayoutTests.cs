@@ -23,6 +23,14 @@ public class TextLayoutTests
     }
 
     [Fact]
+    public void Wrap_TreatsInvalidMeasurementsAsOverWidth()
+    {
+        IReadOnlyList<string> lines = TextLayout.Wrap("abc", 1f, _ => float.NaN);
+
+        lines.Should().Equal("a", "b", "c");
+    }
+
+    [Fact]
     public void Wrap_LeavesContentUnwrappedWhenWidthIsInvalid()
     {
         IReadOnlyList<string> lines = TextLayout.Wrap("a long line\nnext", float.NaN, text => text.Length);

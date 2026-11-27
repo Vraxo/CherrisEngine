@@ -13,6 +13,11 @@ public static class TextLayout
         {
             return content.Replace("\r", String.Empty).Split('\n');
         }
+        float SafeMeasure(string text)
+        {
+            float width = measure(text);
+            return float.IsFinite(width) ? MathF.Max(0f, width) : float.PositiveInfinity;
+        }
 
         List<string> result = [];
         foreach (string paragraph in content.Replace("\r", String.Empty).Split('\n'))
@@ -27,7 +32,7 @@ public static class TextLayout
             foreach (string word in paragraph.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
             {
                 string candidate = line.Length == 0 ? word : $"{line} {word}";
-                if (measure(candidate) <= maxWidth)
+                if (SafeMeasure(candidate) <= maxWidth)
                 {
                     line = candidate;
                     continue;
@@ -39,7 +44,7 @@ public static class TextLayout
                     line = String.Empty;
                 }
 
-                foreach (string chunk in SplitLongWord(word, maxWidth, measure))
+                foreach (string chunk in SplitLongWord(word, maxWidth, SafeMeasure))
                 {
                     if (line.Length > 0)
                     {

@@ -99,6 +99,7 @@ public partial class VeldridRenderer : IRenderer
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
         List<GameObject> sceneObjects = [.. gameObjects];
+        _uiRenderer.Prepare(sceneObjects, (int)windowWidth, (int)windowHeight);
         if (mainCamera is null)
         {
             CommandList uiOnly = _graphicsManager.CommandList;

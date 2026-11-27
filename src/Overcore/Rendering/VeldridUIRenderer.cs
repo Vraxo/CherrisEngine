@@ -23,6 +23,12 @@ internal sealed class VeldridUIRenderer : IDisposable
     private readonly GraphicsDevice _device;
     private readonly IResourceManager _resources;
     private readonly UIEventSystem _events = new();
+    private readonly VeldridFontAtlas _fontAtlas;
+    private readonly Dictionary<string, ITexture> _resolvedTextures = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<UIElement>? _preparedElements;
+    private ITexture? _whiteTexture;
+    private int _preparedWidth;
+    private int _preparedHeight;
     private readonly ResourceLayout _textureLayout;
     private readonly Sampler _sampler;
     private DeviceBuffer _vertices;
@@ -32,11 +38,13 @@ internal sealed class VeldridUIRenderer : IDisposable
     private bool _disposed;
 
     private static readonly Vector3 FocusOutlineColor = new(0.45f, 0.76f, 1f);
+    private static readonly Text DefaultInputText = new() { FontSize = 24f, Wrap = false };
 
     public VeldridUIRenderer(GraphicsDevice device, IResourceManager resources)
     {
         _device = device;
         _resources = resources;
+        _fontAtlas = new VeldridFontAtlas(device);
         ResourceFactory factory = device.ResourceFactory;
         _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
@@ -73,6 +81,29 @@ internal sealed class VeldridUIRenderer : IDisposable
         });
     }
 
+    public void Prepare(IEnumerable<GameObject> gameObjects, int width, int height)
+    {
+        width = Math.Max(1, width);
+        height = Math.Max(1, height);
+        _preparedWidth = width;
+        _preparedHeight = height;
+        _preparedElements = CanvasLayout.Build(gameObjects, width, height);
+        bool needsWhite = false;
+        foreach (UIElement element in _preparedElements)
+        {
+            if (element.Image is { } image)
+            {
+                _ = GetImageTexture(image);
+                needsWhite |= String.IsNullOrWhiteSpace(image.TextureName);
+            }
+            needsWhite |= element.Slider is not null || element.Button is not null || element.Toggle is not null
+                || element.InputField is not null;
+            Text? textStyle = element.Text ?? (element.InputField is not null ? DefaultInputText : null);
+            _fontAtlas.EnsureFont(textStyle?.FontName);
+        }
+        if (needsWhite) _ = GetWhiteTexture();
+    }
+
     public void Render(CommandList commandList, IEnumerable<GameObject> gameObjects, int width, int height)
     {
         if (_disposed || _pipeline is null)
@@ -82,7 +113,10 @@ internal sealed class VeldridUIRenderer : IDisposable
 
         width = Math.Max(1, width);
         height = Math.Max(1, height);
-        IReadOnlyList<UIElement> elements = CanvasLayout.Build(gameObjects, width, height);
+        IReadOnlyList<UIElement> elements = _preparedElements ?? CanvasLayout.Build(gameObjects, width, height);
+        _preparedElements = null;
+        width = _preparedWidth > 0 ? _preparedWidth : width;
+        height = _preparedHeight > 0 ? _preparedHeight : height;
         _events.Update(elements, Input.MousePosition,
             Input.WasMouseButtonPressed(global::Overcore.MouseButton.Left),
             Input.IsMouseButtonDown(global::Overcore.MouseButton.Left),
@@ -130,6 +164,30 @@ internal sealed class VeldridUIRenderer : IDisposable
             {
                 Batch batch = GetBatch(batches, GetWhiteTexture(), element.ClipRect);
                 AppendSlider(batch.Vertices, element.Rect, slider, width, height);
+            }
+
+            if (element.Text is not null || element.InputField is not null)
+            {
+                Text style = element.Text ?? DefaultInputText;
+                string? content = null;
+                Vector3? color = null;
+                int? caret = null;
+                bool singleLine = false;
+                if (element.InputField is { } inputField)
+                {
+                    content = String.IsNullOrEmpty(inputField.Value) ? inputField.Placeholder : inputField.Value;
+                    color = String.IsNullOrEmpty(inputField.Value) ? inputField.PlaceholderColor : null;
+                    caret = ReferenceEquals(_events.FocusedInputField, inputField) ? inputField.CaretPosition : null;
+                    singleLine = true;
+                }
+                RectF textClip = element.ClipRect is { } inherited ? inherited.Intersect(element.Rect) : element.Rect;
+                Batch textBatch = GetBatch(batches, _fontAtlas.Texture, textClip);
+                RectF? caretRect = AppendText(textBatch.Vertices, element, style, width, height, content, color, caret, singleLine);
+                if (caretRect is { } caretBounds)
+                {
+                    Batch caretBatch = GetBatch(batches, GetWhiteTexture(), textClip);
+                    AppendSolid(caretBatch.Vertices, caretBounds, width, height, color ?? style.Color);
+                }
             }
 
             if (_events.FocusedControl is { } focused &&
@@ -191,21 +249,33 @@ internal sealed class VeldridUIRenderer : IDisposable
         {
             return GetWhiteTexture();
         }
+        if (_resolvedTextures.TryGetValue(image.TextureName, out ITexture cached))
+        {
+            return cached;
+        }
+
+        ITexture texture;
         try
         {
-            return _resources.GetTexture(image.TextureName);
+            texture = _resources.GetTexture(image.TextureName);
         }
         catch
         {
-            return GetWhiteTexture();
+            texture = GetWhiteTexture();
         }
+        if (!ReferenceEquals(texture, GetWhiteTexture()))
+        {
+            _resolvedTextures[image.TextureName] = texture;
+        }
+        return texture;
     }
 
     private ITexture GetWhiteTexture()
     {
+        if (_whiteTexture is not null) return _whiteTexture;
         try
         {
-            return _resources.GetTexture("White");
+            return _whiteTexture = _resources.GetTexture("White");
         }
         catch
         {
@@ -225,6 +295,94 @@ internal sealed class VeldridUIRenderer : IDisposable
         Batch batch = new(texture, clip);
         batches.Add(batch);
         return batch;
+    }
+
+    private RectF? AppendText(List<Vertex> vertices, UIElement element, Text text, int width, int height,
+        string? contentOverride, Vector3? colorOverride, int? caretIndex, bool forceSingleLine)
+    {
+        string content = contentOverride ?? text.Content;
+        if ((String.IsNullOrEmpty(content) && !caretIndex.HasValue) || !float.IsFinite(text.FontSize)
+            || text.FontSize <= 0f || !float.IsFinite(text.Alpha) || text.Alpha <= 0f)
+        {
+            return null;
+        }
+
+        float canvasScale = element.Canvas.GetScale(width, height);
+        float glyphScale = text.FontSize * canvasScale / MathF.Max(1f, _fontAtlas.GetFontPixelSize(text.FontName));
+        float characterSpacing = float.IsFinite(text.CharacterSpacing) ? text.CharacterSpacing * canvasScale : 0f;
+        float lineSpacing = float.IsFinite(text.LineSpacing) ? text.LineSpacing * canvasScale : 0f;
+        float lineAdvance = text.FontSize * canvasScale + lineSpacing;
+        IReadOnlyList<string> lines = text.Wrap && !forceSingleLine
+            ? TextLayout.Wrap(content, element.Rect.Width, line => MeasureLine(line, text.FontName, glyphScale, characterSpacing))
+            : content.Replace("\r", String.Empty).Split('\n');
+        float[] lineWidths = lines.Select(line => MeasureLine(line, text.FontName, glyphScale, characterSpacing)).ToArray();
+        float blockHeight = lines.Count == 0 ? 0f : text.FontSize * canvasScale + (lines.Count - 1) * lineAdvance;
+        float verticalOffset = text.VerticalAlignment switch
+        {
+            VerticalTextAlignment.Middle => (element.Rect.Height - blockHeight) * 0.5f,
+            VerticalTextAlignment.Bottom => element.Rect.Height - blockHeight,
+            _ => 0f
+        };
+        Vector3 color = Vector3.Clamp(colorOverride ?? text.Color, Vector3.Zero, Vector3.One);
+        float alpha = Math.Clamp(text.Alpha, 0f, 1f);
+
+        for (int lineIndex = 0; lineIndex < lines.Count; lineIndex++)
+        {
+            float horizontalOffset = text.HorizontalAlignment switch
+            {
+                HorizontalTextAlignment.Center => (element.Rect.Width - lineWidths[lineIndex]) * 0.5f,
+                HorizontalTextAlignment.Right => element.Rect.Width - lineWidths[lineIndex],
+                _ => 0f
+            };
+            float cursorX = element.Rect.X + horizontalOffset;
+            float lineTop = element.Rect.Y + verticalOffset + lineIndex * lineAdvance;
+            string line = lines[lineIndex];
+            for (int index = 0; index < line.Length; index++)
+            {
+                if (_fontAtlas.TryGetGlyph(text.FontName, line[index], out VeldridFontAtlas.Glyph glyph))
+                {
+                    float x0 = cursorX + glyph.X0 * glyphScale;
+                    float y0 = lineTop + glyph.Y0 * glyphScale;
+                    float x1 = cursorX + glyph.X1 * glyphScale;
+                    float y1 = lineTop + glyph.Y1 * glyphScale;
+                    if (x1 > x0 && y1 > y0)
+                    {
+                        AppendQuad(vertices, new RectF(x0, y0, x1 - x0, y1 - y0),
+                            glyph.U0, glyph.V0, glyph.U1, glyph.V1, width, height, new Vector4(color, alpha));
+                    }
+                    cursorX += glyph.AdvanceX * glyphScale;
+                }
+                if (index < line.Length - 1) cursorX += characterSpacing;
+            }
+        }
+
+        if (caretIndex is not { } requestedCaret || lines.Count == 0) return null;
+        string firstLine = lines[0];
+        int caret = Math.Clamp(requestedCaret, 0, firstLine.Length);
+        float caretOffset = text.HorizontalAlignment switch
+        {
+            HorizontalTextAlignment.Center => (element.Rect.Width - lineWidths[0]) * 0.5f,
+            HorizontalTextAlignment.Right => element.Rect.Width - lineWidths[0],
+            _ => 0f
+        };
+        float caretX = element.Rect.X + caretOffset + MeasureLine(firstLine[..caret], text.FontName, glyphScale, characterSpacing);
+        if (caret > 0 && caret < firstLine.Length) caretX += characterSpacing;
+        return new RectF(caretX, element.Rect.Y + verticalOffset, MathF.Max(1f, canvasScale), text.FontSize * canvasScale);
+    }
+
+    private float MeasureLine(string line, string? fontName, float glyphScale, float characterSpacing)
+    {
+        float width = 0f;
+        int visibleCharacters = 0;
+        foreach (char character in line)
+        {
+            if (_fontAtlas.TryGetGlyph(fontName, character, out VeldridFontAtlas.Glyph glyph))
+            {
+                width += glyph.AdvanceX * glyphScale;
+                visibleCharacters++;
+            }
+        }
+        return width + Math.Max(0, visibleCharacters - 1) * characterSpacing;
     }
 
     private static void AppendSlider(List<Vertex> vertices, RectF rect, Slider slider, int width, int height)
@@ -342,5 +500,6 @@ internal sealed class VeldridUIRenderer : IDisposable
         _textureLayout.Dispose();
         _sampler.Dispose();
         _vertices.Dispose();
+        _fontAtlas.Dispose();
     }
 }

@@ -262,6 +262,7 @@ void main()
 
     public void Render()
     {
+        ImGui.SetCurrentContext(_imguiContext);
         if (!_frameBegun)
         {
             return;
@@ -274,6 +275,7 @@ void main()
 
     public void Update(float deltaSeconds)
     {
+        ImGui.SetCurrentContext(_imguiContext);
         if (_frameBegun)
         {
             ImGui.Render();
@@ -293,6 +295,7 @@ void main()
 
     private void SetPerFrameImGuiData(float deltaSeconds)
     {
+        ImGui.SetCurrentContext(_imguiContext);
         ImGuiIOPtr io = ImGui.GetIO();
 
         io.DisplaySize = new(
@@ -305,6 +308,7 @@ void main()
 
     public void MouseMove(Vector2 newPosition)
     {
+        ImGui.SetCurrentContext(_imguiContext);
         ImGuiIOPtr io = ImGui.GetIO();
         io.AddMousePosEvent(newPosition.X, newPosition.Y);
     }
@@ -315,20 +319,30 @@ void main()
         io.AddMouseWheelEvent(offset.X, offset.Y);
     }
 
+    public void MouseWheel(Vector2 offset)
+    {
+        ImGui.SetCurrentContext(_imguiContext);
+        ImGuiIOPtr io = ImGui.GetIO();
+        io.AddMouseWheelEvent(offset.X, offset.Y);
+    }
+
     public void MouseButton(global::OpenTK.Windowing.GraphicsLibraryFramework.MouseButton button, bool down)
     {
+        ImGui.SetCurrentContext(_imguiContext);
         ImGuiIOPtr io = ImGui.GetIO();
         io.AddMouseButtonEvent((int)button, down);
     }
 
     public void PressChar(char keyChar)
     {
+        ImGui.SetCurrentContext(_imguiContext);
         ImGuiIOPtr io = ImGui.GetIO();
         io.AddInputCharacter(keyChar);
     }
 
     public void KeyEvent(Keys key, bool isRepeat, bool down)
     {
+        ImGui.SetCurrentContext(_imguiContext);
         ImGuiIOPtr io = ImGui.GetIO();
 
         if (s_KeyMap.TryGetValue(key, out ImGuiKey imguikey))
