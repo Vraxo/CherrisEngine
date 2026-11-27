@@ -64,7 +64,8 @@ The runtime implementation has not yet been validated by a .NET build in this wo
 - [x] Scene/prefab serialization and generic property bridge for UI components; regression tests cover UI properties including custom font selection.
 - [x] Project-relative TrueType font selection, a bundled Roboto Mono fallback, and shared native/headless glyph-atlas rendering.
 - [x] Project-authored `.sprite.json` metadata with validated atlas rects, pivots, pixels-per-unit, borders, cached loading, scene serialization, Image rendering integration, and Content Browser drag/drop.
-- [ ] Sprite sidecar creation/import workflow and dedicated metadata inspection UI.
+- [x] Editor creation of full-texture Sprite sidecars and editable inspection of rect, pivot, pixels-per-unit, and borders.
+- [ ] Visual atlas slicing/import workflow for creating multiple sprite rects from a texture preview.
 - [x] Word wrapping, explicit newline preservation, and long-word breaking for text blocks; InputField stays single-line and clips to its element.
 - [ ] Complete Unicode glyph coverage and measured caret/layout behavior across font assets and backends.
 - [ ] Rounded/soft and texture-alpha masks beyond the existing rectangular clip masks.
@@ -73,6 +74,6 @@ The runtime implementation has not yet been validated by a .NET build in this wo
 
 ## Current boundaries and next increments
 
-This is the foundation, not yet a full Unity uGUI clone. Rectangular clipping and word wrapping are supported, but there are no rounded/soft or texture-alpha masks, complete Unicode glyph coverage is unfinished, Sprite metadata currently relies on hand-authored sidecars without editor import/picker tooling, and Veldrid parity has not yet been validated across runtime paths. The font, headless viewport, and initial Veldrid paths have source coverage but still need .NET build/test and manual render verification. `Clicked`, `ValueChanged`, and `EndEdit` delegates are runtime wiring and are not saved in YAML; attach listeners from a script's `Start` method. UI components and their serializable layout/style properties are supported by scene and prefab serialization.
+This is the foundation, not yet a full Unity uGUI clone. Rectangular clipping and word wrapping are supported, but there are no rounded/soft or texture-alpha masks, complete Unicode glyph coverage is unfinished, Sprite creation starts from a full-texture rect (there is no visual atlas slicing wizard yet), and Veldrid parity has not yet been validated across runtime paths. The font, headless viewport, and initial Veldrid paths have source coverage but still need .NET build/test and manual render verification. `Clicked`, `ValueChanged`, and `EndEdit` delegates are runtime wiring and are not saved in YAML; attach listeners from a script's `Start` method. UI components and their serializable layout/style properties are supported by scene and prefab serialization.
 
-Next UI increments should add Sprite import metadata and editor selection, implement the Veldrid UI/input path, and then close remaining behavior gaps such as text wrapping and non-rectangular masks. Those layers should build on the stable pixel-space `RectTransform.Resolve` contract rather than folding editor-specific behavior into the runtime components.
+Next UI increments should add visual atlas slicing/import, complete Unicode-aware glyph and caret handling, advanced mask modes, and automated/manual cross-backend verification. Those layers should build on the stable pixel-space `RectTransform.Resolve` contract rather than folding editor-specific behavior into the runtime components.

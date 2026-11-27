@@ -1,4 +1,4 @@
-﻿using Overcore.Components;
+using Overcore.Components;
 using Overcore.Utils;
 using OvercoreEditor.Undo;
 using ImGuiNET;
@@ -10,6 +10,7 @@ namespace OvercoreEditor.Inspectors;
 
 public sealed class DefaultInspector(Editor editor, EditorTextureManager textures, HistoryManager history)
 {
+    private readonly Editor _editor = editor;
     private readonly EditorTextureManager _textures = textures;
     private readonly HistoryManager _history = history;
     private readonly PropertyDrawer _propertyDrawer = new PropertyDrawer(editor, textures, history);
@@ -40,6 +41,10 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
         }
 
         ImGui.EndTable();
+        if (component is Image image)
+        {
+            dirty |= SpriteMetadataInspector.Draw(_editor, image);
+        }
         return dirty;
     }
 
