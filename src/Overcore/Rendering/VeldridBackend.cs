@@ -1,4 +1,4 @@
-﻿using Overcore.Rendering;
+using Overcore.Rendering;
 using Overcore.RenderingInterface;
 using Veldrid;
 using Veldrid.StartupUtilities;
@@ -34,7 +34,7 @@ public class VeldridBackend : IRenderingInterface
 
         GameWindow = window;
         ResourceManager = new ResourceManager(_graphicsDevice);
-        Renderer = new VeldridRenderer(_graphicsManager, _graphicsDevice);
+        Renderer = new VeldridRenderer(_graphicsManager, _graphicsDevice, ResourceManager);
     }
 
     public void Dispose()

@@ -838,6 +838,7 @@ public sealed class EditorSession : Engine, IDisposable
         }
 
         (int width, int height) = _sink.ViewportSize;
+        renderer.UIInputEnabled = _play.State == EditorPlayState.Playing;
 
         // The viewport's own options are the UI's to change and the renderer's to draw: the toggle is read here,
         // before this frame is drawn, so the picture and the tick in the menu agree.

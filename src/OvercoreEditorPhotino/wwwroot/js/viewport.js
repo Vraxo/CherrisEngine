@@ -436,6 +436,11 @@ void main() {
                     event.preventDefault();
                 }
 
+                const altGraph = event.getModifierState?.('AltGraph') ?? false;
+                if ((!event.ctrlKey && !event.metaKey && !event.altKey || altGraph) && Array.from(event.key).length === 1) {
+                    send({ type: 'textInput', text: event.key });
+                }
+
                 if (event.repeat) {
                     return;
                 }

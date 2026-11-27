@@ -13,6 +13,9 @@ public interface IViewportInputSink
     /// <summary>A <c>KeyboardEvent.code</c> was pressed or released.</summary>
     void KeyChanged(string code, bool isDown);
 
+    /// <summary>Printable text from the focused viewport canvas.</summary>
+    void TextInput(string text) { }
+
     /// <summary>A <c>MouseEvent.button</c> index was pressed or released.</summary>
     void MouseButtonChanged(int button, bool isDown);
 

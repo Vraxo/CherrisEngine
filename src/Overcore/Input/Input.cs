@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+using System.Numerics;
+using System.Text;
 
 namespace Overcore;
 
@@ -9,9 +10,14 @@ public static class Input
 
     private static readonly HashSet<MouseButton> _pressedMouseButtons = new();
     private static readonly HashSet<MouseButton> _justPressedMouseButtons = new();
+    private static readonly HashSet<MouseButton> _justReleasedMouseButtons = new();
 
     private static bool _isMouseLocked;
+    private static string _textInput = String.Empty;
     public static event Action<bool> OnLockStateChanged;
+
+    /// <summary>Text characters received during the current input frame.</summary>
+    public static string TextInput => _textInput;
 
     public static bool IsMouseLocked
     {
@@ -33,6 +39,8 @@ public static class Input
     {
         _justPressedKeys.Clear();
         _justPressedMouseButtons.Clear();
+        _justReleasedMouseButtons.Clear();
+        _textInput = String.Empty;
         MouseDelta = Vector2.Zero; // Always reset delta at the start of a frame.
         MouseWheelDelta = Vector2.Zero;
     }
@@ -43,6 +51,8 @@ public static class Input
         _justPressedKeys.Clear();
         _pressedMouseButtons.Clear();
         _justPressedMouseButtons.Clear();
+        _justReleasedMouseButtons.Clear();
+        _textInput = String.Empty;
     }
 
     internal static void SetKeyState(Key key, bool isDown)
@@ -62,6 +72,30 @@ public static class Input
         }
     }
 
+    internal static void AddTextInput(int unicode)
+    {
+        if (Rune.TryCreate(unicode, out Rune rune) && !Rune.IsControl(rune))
+        {
+            _textInput += rune.ToString();
+        }
+    }
+
+    internal static void AddTextInput(string? text)
+    {
+        if (String.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        foreach (Rune rune in text.EnumerateRunes())
+        {
+            if (!Rune.IsControl(rune))
+            {
+                _textInput += rune.ToString();
+            }
+        }
+    }
+
     internal static void SetMouseButtonState(MouseButton button, bool isDown)
     {
         if (isDown)
@@ -71,9 +105,9 @@ public static class Input
                 _justPressedMouseButtons.Add(button);
             }
         }
-        else
+        else if (_pressedMouseButtons.Remove(button))
         {
-            _pressedMouseButtons.Remove(button);
+            _justReleasedMouseButtons.Add(button);
         }
     }
 
@@ -85,4 +119,5 @@ public static class Input
     public static bool WasKeyPressed(Key key) => _justPressedKeys.Contains(key);
     public static bool IsMouseButtonDown(MouseButton button) => _pressedMouseButtons.Contains(button);
     public static bool WasMouseButtonPressed(MouseButton button) => _justPressedMouseButtons.Contains(button);
+    public static bool WasMouseButtonReleased(MouseButton button) => _justReleasedMouseButtons.Contains(button);
 }

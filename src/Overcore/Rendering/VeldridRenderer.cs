@@ -1,4 +1,4 @@
-﻿using Overcore.Components;
+using Overcore.Components;
 using Overcore.Core.Logging;
 using Overcore.Rendering;
 using System.Numerics;
@@ -14,16 +14,19 @@ public partial class VeldridRenderer : IRenderer
     private ResolveRenderer _resolveRenderer;
     private FinalPassRenderer _finalPassRenderer;
     private BloomRenderer _bloomRenderer;
+    private VeldridUIRenderer _uiRenderer;
+    private readonly IResourceManager _resourceManager;
     private Sampler _sampler;
     private readonly Snapshotter _snapshotter;
     private bool _snapshotRequested;
     private string _snapshotPath;
     public bool ShowGrid { get; set; }
     public bool ShowPhysicsColliders { get; set; }
-    public VeldridRenderer(VeldridGraphicsManager graphicsManager, GraphicsDevice graphicsDevice)
+    public VeldridRenderer(VeldridGraphicsManager graphicsManager, GraphicsDevice graphicsDevice, IResourceManager resourceManager)
     {
         _graphicsManager = graphicsManager;
         _graphicsDevice = graphicsDevice;
+        _resourceManager = resourceManager;
         _snapshotter = new Snapshotter(_graphicsDevice);
         CreateResources();
     }
@@ -64,6 +67,7 @@ public partial class VeldridRenderer : IRenderer
         _resolveRenderer = new ResolveRenderer(_graphicsDevice);
         _finalPassRenderer = new FinalPassRenderer(_graphicsDevice);
         _bloomRenderer = new BloomRenderer(_graphicsDevice);
+        _uiRenderer = new VeldridUIRenderer(_graphicsDevice, _resourceManager);
         OnWindowResized();
     }
     /// <summary>
@@ -94,8 +98,18 @@ public partial class VeldridRenderer : IRenderer
     }
     public void RenderFrame(Camera mainCamera, Skybox skybox, IEnumerable<GameObject> gameObjects, IEnumerable<Light> lights, GameObject selectedObject, float windowWidth, float windowHeight, float exposure)
     {
+        List<GameObject> sceneObjects = [.. gameObjects];
+        _uiRenderer.Prepare(sceneObjects, (int)windowWidth, (int)windowHeight);
         if (mainCamera is null)
         {
+            CommandList uiOnly = _graphicsManager.CommandList;
+            uiOnly.Begin();
+            uiOnly.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+            uiOnly.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
+            uiOnly.ClearColorTarget(0, RgbaFloat.Black);
+            _uiRenderer.Render(uiOnly, sceneObjects, (int)windowWidth, (int)windowHeight);
+            uiOnly.End();
+            _graphicsDevice.SubmitCommands(uiOnly);
             return;
         }
 
@@ -113,7 +127,7 @@ public partial class VeldridRenderer : IRenderer
             _skyboxRenderer.Render(cl, skybox, view, projection);
         }
 
-        _sceneRenderer.Render(cl, view, projection, gameObjects, GetOrCreateBackendData);
+        _sceneRenderer.Render(cl, view, projection, sceneObjects, GetOrCreateBackendData);
         if (selectedObject?.GetComponent<MeshRenderer>() is not null)
         {
             _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
@@ -133,6 +147,7 @@ public partial class VeldridRenderer : IRenderer
         cl.SetViewport(0, new Viewport(0, 0, windowWidth, windowHeight, 0, 1));
         _finalPassRenderer.Render(cl, _graphicsManager.FinalColorView, exposure);
         _finalPassRenderer.RenderBloom(cl, _graphicsManager.BloomColorView);
+        _uiRenderer.Render(cl, sceneObjects, (int)windowWidth, (int)windowHeight);
         if (_snapshotRequested && _snapshotter is not null)
         {
             _snapshotter.RecordCopyCommand(cl, _graphicsManager.FinalColorTarget);
@@ -148,6 +163,7 @@ public partial class VeldridRenderer : IRenderer
         _skyboxRenderer.SetFramebuffer(_graphicsManager.MsaaFramebuffer);
         _resolveRenderer.SetFramebuffer(_graphicsManager.FinalFramebuffer);
         _finalPassRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
+        _uiRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempFramebuffer);
     }
     public void Dispose()
@@ -157,6 +173,7 @@ public partial class VeldridRenderer : IRenderer
         _resolveRenderer.Dispose();
         _finalPassRenderer.Dispose();
         _bloomRenderer.Dispose();
+        _uiRenderer.Dispose();
         _sampler.Dispose();
         _snapshotter.Dispose();
         _graphicsManager.Dispose();

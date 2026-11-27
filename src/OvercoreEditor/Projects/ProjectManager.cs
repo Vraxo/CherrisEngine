@@ -1,4 +1,5 @@
-﻿using Overcore.Core.Logging;
+using Overcore.Core.Logging;
+using Overcore.Rendering.UI;
 using Overcore.Utils;
 
 namespace OvercoreEditor.Core;
@@ -17,6 +18,7 @@ public class ProjectManager
 
         CurrentProject = Project.Load(projectRoot);
         ProjectFiles.ProjectRoot = projectRoot;
+        RoundedRectClip.ClearAlphaMaskCache();
         ProjectPersistence.SetLastProject(projectRoot);
 
         Logger.Info($"[Editor] Loaded project: {CurrentProject.Name}");

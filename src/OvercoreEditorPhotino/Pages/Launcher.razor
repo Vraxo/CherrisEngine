@@ -145,6 +145,28 @@
                         }
                     </div>
                 </section>
+
+                <section class="launcher-card">
+                    <div class="launcher-card-header">
+                        <span>Built-in samples</span>
+                    </div>
+                    <p class="launcher-muted">Create a copy to explore; the bundled examples are never modified.</p>
+                    @foreach (ProjectTemplate template in ProjectTemplateCatalog.Templates.Where(template => !template.IsBlank))
+                    {
+                        <div class="launcher-row">
+                            <div class="launcher-row-text">
+                                <span class="launcher-row-title">@template.Name</span>
+                                <span class="launcher-row-path">@template.Description</span>
+                            </div>
+                            <button type="button"
+                                    class="editor-button primary"
+                                    disabled="@_busy"
+                                    @onclick="() => StartFromTemplate(template)">
+                                Create copy…
+                            </button>
+                        </div>
+                    }
+                </section>
             }
             else
             {
@@ -153,11 +175,22 @@
                         <span>Project details</span>
                     </div>
                     <p class="launcher-muted">
-                        A new folder is created with <code>project.yaml</code> and an empty start scene.
+                        @(_selectedTemplateId == ProjectTemplateCatalog.BlankId
+                            ? "A new folder is created with project.yaml and an empty start scene."
+                            : "A fresh copy of the selected sample is created; its bundled source remains unchanged.")
                     </p>
 
                     <label class="launcher-label" for="project-name">Project name</label>
                     <input id="project-name" class="launcher-input" @bind="_newProjectName" @bind:event="oninput" />
+
+                    <label class="launcher-label" for="project-template">Template</label>
+                    <select id="project-template" class="launcher-input" @bind="_selectedTemplateId">
+                        @foreach (ProjectTemplate template in ProjectTemplateCatalog.Templates)
+                        {
+                            <option value="@template.Id">@template.Name</option>
+                        }
+                    </select>
+                    <p class="launcher-muted">@(ProjectTemplateCatalog.Find(_selectedTemplateId)?.Description ?? "Choose a project template.")</p>
 
                     <label class="launcher-label" for="project-location">Location</label>
                     <div class="launcher-field">
@@ -204,6 +237,7 @@
     private string _search = string.Empty;
     private string _openPath = string.Empty;
     private string _newProjectName = "MyGame";
+    private string _selectedTemplateId = ProjectTemplateCatalog.BlankId;
     private string _location = DefaultLocation();
     private string? _error;
     private bool _busy;
@@ -297,6 +331,13 @@
         _error = null;
     }
 
+    private void StartFromTemplate(ProjectTemplate template)
+    {
+        _selectedTemplateId = template.Id;
+        _newProjectName = template.Name;
+        SetTab(LauncherTab.NewProject);
+    }
+
     private void RefreshRecent()
     {
         _recent = Host.RecentProjects;
@@ -360,7 +401,7 @@
 
         try
         {
-            root = ProjectWorkspace.Create(_location, _newProjectName);
+            root = ProjectWorkspace.CreateFromTemplate(_location, _newProjectName, _selectedTemplateId);
         }
         catch (Exception exception)
         {

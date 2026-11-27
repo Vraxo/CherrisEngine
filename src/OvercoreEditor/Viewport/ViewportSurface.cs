@@ -1,4 +1,4 @@
-﻿using Overcore.Rendering.OpenTK;
+using Overcore.Rendering.OpenTK;
 using ImGuiNET;
 using System.Numerics;
 
@@ -25,6 +25,10 @@ public class ViewportSurface
             _currentSize = availableSize;
             renderer.SetViewportSize(_currentSize);
         }
+
+        // The runtime UI is resolved in viewport-local pixels, while the native editor's mouse state is
+        // window-local. Keep the current viewport origin even when docking moves it without resizing.
+        renderer.SetViewportPosition(ImGui.GetCursorScreenPos());
 
         IntPtr textureHandle = renderer.GetSceneTextureHandle();
 
