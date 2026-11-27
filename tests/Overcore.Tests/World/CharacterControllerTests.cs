@@ -16,6 +16,12 @@ public sealed class CharacterControllerTests
         public override void OnControllerColliderHit(ControllerColliderHit hit) => LastHit = hit;
     }
 
+    private sealed class DisableControllerOnTrigger : Script
+    {
+        public CharacterController? Controller { get; set; }
+        public override void OnTriggerEnter(Collider other) => Controller!.Enabled = false;
+    }
+
     private sealed class TriggerRecorder : Script
     {
         public int EnterCount { get; private set; }
@@ -168,6 +174,29 @@ public sealed class CharacterControllerTests
         recorder.ExitCount.Should().Be(1);
         triggerRecorder.ControllerEnterCount.Should().Be(1);
         triggerRecorder.ControllerStayCount.Should().Be(1);
+        triggerRecorder.ControllerExitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void DisablingControllerDuringTriggerEnterQueuesExitAfterEnterDispatchCompletes()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject triggerObject = new("Sensor");
+        triggerObject.AddComponent(new BoxCollider { Size = new Vector3(2f, 2f, 2f), IsTrigger = true });
+        TriggerRecorder triggerRecorder = triggerObject.AddComponent(new TriggerRecorder());
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0f });
+        TriggerRecorder actorRecorder = actor.AddComponent(new TriggerRecorder());
+        actor.AddComponent(new DisableControllerOnTrigger { Controller = controller });
+        _ = StartScene(physics, audio, triggerObject, actor);
+
+        controller.Move(Vector3.Zero);
+
+        controller.Enabled.Should().BeFalse();
+        actorRecorder.EnterCount.Should().Be(1);
+        actorRecorder.ExitCount.Should().Be(1);
+        triggerRecorder.ControllerEnterCount.Should().Be(1);
         triggerRecorder.ControllerExitCount.Should().Be(1);
     }
 

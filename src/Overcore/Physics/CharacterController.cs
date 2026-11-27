@@ -64,6 +64,8 @@ public sealed class CharacterController : Component
     private Quaternion _supportRotation = Quaternion.Identity;
     private Vector3 _supportRelativePosition;
     private readonly HashSet<Collider> _activeTriggers = [];
+    private readonly Queue<(Collider Trigger, TriggerPhase Phase)> _pendingTriggerEvents = [];
+    private bool _dispatchingTriggerEvents;
 
     /// <summary>Total capsule height, including the rounded ends.</summary>
     public float Height
@@ -155,7 +157,8 @@ public sealed class CharacterController : Component
         _velocity = dt > 1e-6f ? (Transform.WorldPosition - frameStart) / dt : Vector3.Zero;
         foreach (ControllerColliderHit contact in contacts.DistinctBy(hit => hit.Collider))
         {
-            foreach (Script script in GameObject!.GetComponents<Script>().Where(script => script.IsActive && !script.IsSuspended))
+            foreach (Script script in GameObject!.GetComponents<Script>()
+                .Where(script => script.IsActive && !script.IsSuspended).ToArray())
             {
                 try { script.OnControllerColliderHit(contact); }
                 catch (Exception exception) { Logger.Warning($"Controller collision callback on '{GameObject.Name}' failed: {exception.Message}"); }
@@ -342,8 +345,9 @@ public sealed class CharacterController : Component
 
     private void ClearTriggerContacts()
     {
-        foreach (Collider trigger in _activeTriggers) NotifyTrigger(trigger, TriggerPhase.Exit);
+        Collider[] active = [.. _activeTriggers];
         _activeTriggers.Clear();
+        foreach (Collider trigger in active) DispatchTriggerEvent(trigger, TriggerPhase.Exit);
     }
 
     private void DispatchTriggerChanges(List<MotionSegment> path, Vector3 startPosition)
@@ -363,6 +367,7 @@ public sealed class CharacterController : Component
         HashSet<Collider> candidates = Physics.ControllerTriggerColliders(GameObject!).ToHashSet();
         candidates.UnionWith(_activeTriggers);
 
+        List<(Collider Trigger, TriggerPhase Phase)> transitions = [];
         foreach (Collider trigger in candidates)
         {
             bool wasOverlapping = _activeTriggers.Contains(trigger);
@@ -384,32 +389,53 @@ public sealed class CharacterController : Component
 
             if (startedOverlapping)
             {
-                if (!wasOverlapping) NotifyTrigger(trigger, TriggerPhase.Enter);
-                else if (isOverlapping) NotifyTrigger(trigger, TriggerPhase.Stay);
-                if (!isOverlapping) NotifyTrigger(trigger, TriggerPhase.Exit);
+                if (!wasOverlapping) transitions.Add((trigger, TriggerPhase.Enter));
+                else if (isOverlapping) transitions.Add((trigger, TriggerPhase.Stay));
+                if (!isOverlapping) transitions.Add((trigger, TriggerPhase.Exit));
             }
             else if (crossedDuringMove)
             {
-                NotifyTrigger(trigger, TriggerPhase.Enter);
-                if (!isOverlapping) NotifyTrigger(trigger, TriggerPhase.Exit);
+                transitions.Add((trigger, TriggerPhase.Enter));
+                if (!isOverlapping) transitions.Add((trigger, TriggerPhase.Exit));
             }
             else if (isOverlapping)
             {
-                NotifyTrigger(trigger, TriggerPhase.Enter);
+                transitions.Add((trigger, TriggerPhase.Enter));
             }
             else if (wasOverlapping)
             {
-                NotifyTrigger(trigger, TriggerPhase.Exit);
+                transitions.Add((trigger, TriggerPhase.Exit));
             }
         }
 
         _activeTriggers.Clear();
         _activeTriggers.UnionWith(current);
+        foreach ((Collider trigger, TriggerPhase phase) in transitions) DispatchTriggerEvent(trigger, phase);
+    }
+
+    private void DispatchTriggerEvent(Collider trigger, TriggerPhase phase)
+    {
+        _pendingTriggerEvents.Enqueue((trigger, phase));
+        if (_dispatchingTriggerEvents) return;
+
+        _dispatchingTriggerEvents = true;
+        try
+        {
+            while (_pendingTriggerEvents.TryDequeue(out var next))
+            {
+                NotifyTrigger(next.Trigger, next.Phase);
+            }
+        }
+        finally
+        {
+            _dispatchingTriggerEvents = false;
+        }
     }
 
     private void NotifyTrigger(Collider trigger, TriggerPhase phase)
     {
-        foreach (Script script in GameObject!.GetComponents<Script>().Where(script => script.IsActive && !script.IsSuspended))
+        foreach (Script script in GameObject!.GetComponents<Script>()
+            .Where(script => script.IsActive && !script.IsSuspended).ToArray())
         {
             try
             {
@@ -433,7 +459,8 @@ public sealed class CharacterController : Component
         }
 
         if (trigger.GameObject is not { } triggerObject) return;
-        foreach (Script script in triggerObject.GetComponents<Script>().Where(script => script.IsActive && !script.IsSuspended))
+        foreach (Script script in triggerObject.GetComponents<Script>()
+            .Where(script => script.IsActive && !script.IsSuspended).ToArray())
         {
             try
             {
