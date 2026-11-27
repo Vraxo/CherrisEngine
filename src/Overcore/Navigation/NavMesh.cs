@@ -816,7 +816,8 @@ public static class NavMesh
 
                     if (TryIntersectSegmentsXZ(startOnMesh, targetPosition, v0, v1, out float tRay, out float tEdge))
                     {
-                        if (tRay >= tCurrent - 1e-4f && tRay < bestExitT && poly.Neighbors[edge] != prevPoly)
+                        bool differentNeighbor = prevPoly < 0 || poly.Neighbors[edge] != prevPoly;
+                        if (tRay >= tCurrent - 1e-4f && tRay < bestExitT && differentNeighbor)
                         {
                             bestExitT = tRay;
                             exitEdge = edge;
