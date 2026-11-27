@@ -317,8 +317,8 @@ public static class ArabicTextLayout
             if (clusters[index].Direction != DirectionClass.Neutral) { index++; continue; }
             int start = index;
             while (index < clusters.Count && clusters[index].Direction == DirectionClass.Neutral) index++;
-            bool before = paragraphRtl;
-            bool after = paragraphRtl;
+            DirectionClass before = paragraphRtl ? DirectionClass.Right : DirectionClass.Left;
+            DirectionClass after = before;
             for (int scan = start - 1; scan >= 0; scan--)
             {
                 if (TryGetResolvedDirection(clusters[scan], out before)) break;
@@ -327,19 +327,20 @@ public static class ArabicTextLayout
             {
                 if (TryGetResolvedDirection(clusters[scan], out after)) break;
             }
-            bool resolved = before == after ? before : paragraphRtl;
+            bool resolvedRtl = before == after
+                ? before == DirectionClass.Right
+                : paragraphRtl;
             for (int scan = start; scan < index; scan++)
             {
-                clusters[scan].Direction = resolved ? DirectionClass.Right : DirectionClass.Left;
+                clusters[scan].Direction = resolvedRtl ? DirectionClass.Right : DirectionClass.Left;
             }
         }
     }
 
-    private static bool TryGetResolvedDirection(Cluster cluster, out bool rtl)
+    private static bool TryGetResolvedDirection(Cluster cluster, out DirectionClass direction)
     {
-        // European/Arabic-Indic digit clusters remain left-to-right when resolving adjacent neutrals.
-        rtl = cluster.Direction == DirectionClass.Right;
-        return cluster.Direction != DirectionClass.Neutral;
+        direction = cluster.Direction;
+        return direction != DirectionClass.Neutral;
     }
 
     private static void ShapeArabicClusters(List<Cluster> clusters)

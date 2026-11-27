@@ -45,7 +45,9 @@ public sealed class RoundedRectClip
 
     public bool Contains(Vector2 point)
     {
-        if (!Rect.Contains(point)) return false;
+        const float edgeTolerance = 0.0001f;
+        if (Rect.IsEmpty || point.X < Rect.X - edgeTolerance || point.X > Rect.Right + edgeTolerance
+            || point.Y < Rect.Y - edgeTolerance || point.Y > Rect.Bottom + edgeTolerance) return false;
         if (Radius > 0f)
         {
             for (int index = 0; index < _polygon.Length; index++)

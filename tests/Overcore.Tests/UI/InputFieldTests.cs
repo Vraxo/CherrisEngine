@@ -106,6 +106,8 @@ public class InputFieldTests
         HeadlessInput.PressKey(Key.BackSpace);
         window.ProcessEvents();
         events.Update(elements, new Vector2(30f, 30f), pointerPressed: false, pointerDown: false);
+        HeadlessInput.ReleaseKey(Key.BackSpace);
+        window.ProcessEvents();
         HeadlessInput.PressKey(Key.BackSpace);
         window.ProcessEvents();
         events.Update(elements, new Vector2(30f, 30f), pointerPressed: false, pointerDown: false);

@@ -31,6 +31,7 @@ public class CanvasLayoutTests
         (GameObject canvasObject, GameObject element) = CreateUiTree();
         Canvas canvas = canvasObject.GetComponent<Canvas>()!;
         canvas.MatchWidthOrHeight = 0f;
+        canvas.ScaleMode = CanvasScaleMode.ScaleWithScreenSize;
 
         RectTransform rect = element.GetComponent<RectTransform>()!;
         rect.AnchorMin = new Vector2(0.1f, 0.2f);

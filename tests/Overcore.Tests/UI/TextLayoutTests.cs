@@ -25,7 +25,7 @@ public class TextLayoutTests
     [Fact]
     public void Wrap_DoesNotSplitCombiningSequences()
     {
-        IReadOnlyList<string> lines = TextLayout.Wrap("e\\u0301x", 1f, text => text.Length);
+        IReadOnlyList<string> lines = TextLayout.Wrap("e\u0301x", 1f, text => text.Length);
 
         lines.Should().Equal("e\\u0301", "x");
     }
