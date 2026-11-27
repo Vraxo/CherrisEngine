@@ -1046,6 +1046,17 @@ public class ParticleSystem : Component, IDisposable
         return Vector4.Lerp(start, end, t);
     }
 
+    /// <summary>Computes a live particle's world-space position based on <see cref="SimulationSpace"/>.</summary>
+    public Vector3 GetParticleWorldPosition(in Particle particle)
+    {
+        if (SimulationSpace == ParticleSimulationSpace.World || GameObject is null)
+        {
+            return particle.Position;
+        }
+
+        return Vector3.Transform(particle.Position, GameObject.Transform.GetModelMatrix());
+    }
+
     private void ApplyStopAction()
     {
         if (GameObject is null)

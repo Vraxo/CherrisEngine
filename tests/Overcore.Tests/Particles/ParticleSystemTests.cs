@@ -128,8 +128,8 @@ public class ParticleSystemTests
         Particle p = ps.Particles[0];
 
         p.Position.X.Should().BeGreaterThan(1.5f, "constant +X force accelerates the particle");
-        p.Size.Should().BeApproximately(4.0f, 0.25f, "startSize 2.0 * curve(0.5)=2.0 -> ~4.0");
-        p.Color.W.Should().BeApproximately(0.5f, 0.1f, "alpha fades linearly from 1 to 0");
+        ps.EvaluateParticleSize(in p).Should().BeApproximately(4.0f, 0.25f, "startSize 2.0 * curve(0.5)=2.0 -> ~4.0");
+        ps.EvaluateParticleColor(in p).W.Should().BeApproximately(0.5f, 0.1f, "alpha fades linearly from 1 to 0");
         p.Rotation.Should().BeApproximately(MathF.PI * 0.5f, 0.1f, "90 deg/s over 1s = pi/2 radians");
     }
 

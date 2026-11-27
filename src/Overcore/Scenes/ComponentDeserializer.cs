@@ -184,7 +184,7 @@ public static class ComponentDeserializer
             : null;
     }
 
-    private static T CreateAndPopulateComponent<T>(object properties) where T : Component, new()
+    public static T CreateAndPopulateComponent<T>(object properties) where T : Component, new()
     {
         var component = new T();
         PopulateComponentProperties(component, properties as Dictionary<object, object>);

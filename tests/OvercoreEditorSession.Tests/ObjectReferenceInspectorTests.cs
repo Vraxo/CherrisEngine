@@ -65,8 +65,9 @@ public class ObjectReferenceInspectorTests
         holder.SpawnPrefab!.AssetPath.Should().Be("Assets/Prefabs/Bullet.prefab");
 
         // Reset to default sets object reference back to null.
-        ComponentProperties.CanReset(holder, nameof(ReferenceHolder.LinkedLight)).Should().BeTrue();
-        ComponentProperties.TryReset(holder, nameof(ReferenceHolder.LinkedLight), out _).Should().BeTrue();
+        PropertySnapshot assignedLightSnap = ComponentProperties.Read(holder, nameof(ReferenceHolder.LinkedLight))!;
+        assignedLightSnap.CanReset.Should().BeTrue();
+        ComponentProperties.TryApply(holder, nameof(ReferenceHolder.LinkedLight), assignedLightSnap.DefaultText!, out _).Should().BeTrue();
         holder.LinkedLight.Should().BeNull();
     }
 
@@ -78,7 +79,7 @@ public class ObjectReferenceInspectorTests
 
         IReadOnlyList<PropertySnapshot> props = ComponentProperties.Read(holder);
         props.Single(p => p.Name == nameof(ReferenceHolder.Tint)).Kind.Should().Be(PropertyKind.Vector4);
-        props.Single(p => p.Name == nameof(ReferenceHolder.Mask)).Kind.Should().Be(PropertyKind.Number);
+        props.Single(p => p.Name == nameof(ReferenceHolder.Mask)).Kind.Should().Be(PropertyKind.Integer);
 
         ComponentProperties.TryApply(holder, nameof(ReferenceHolder.Tint), "0.1, 0.2, 0.3, 0.8", out _).Should().BeTrue();
         holder.Tint.Should().Be(new Vector4(0.1f, 0.2f, 0.3f, 0.8f));
@@ -91,7 +92,7 @@ public class ObjectReferenceInspectorTests
     public void BuiltInCatalog_RegistersParticleSystemAndNavigationComponents()
     {
         IReadOnlyList<ComponentCatalog.Entry> entries = ComponentCatalog.BuiltIn;
-        entries.Select(e => e.Type).Should().Contain([
+        entries.Select(e => e.ComponentType).Should().Contain([
             typeof(ParticleSystem),
             typeof(NavMeshSurface),
             typeof(NavMeshAgent),
