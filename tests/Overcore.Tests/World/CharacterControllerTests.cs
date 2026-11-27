@@ -30,12 +30,13 @@ public sealed class CharacterControllerTests
         public int ControllerEnterCount { get; private set; }
         public int ControllerStayCount { get; private set; }
         public int ControllerExitCount { get; private set; }
-        public override void OnTriggerEnter(Collider other) => EnterCount++;
-        public override void OnTriggerStay(Collider other) => StayCount++;
-        public override void OnTriggerExit(Collider other) => ExitCount++;
-        public override void OnTriggerEnter(CharacterController other) => ControllerEnterCount++;
-        public override void OnTriggerStay(CharacterController other) => ControllerStayCount++;
-        public override void OnTriggerExit(CharacterController other) => ControllerExitCount++;
+        public List<string> Events { get; } = [];
+        public override void OnTriggerEnter(Collider other) { EnterCount++; Events.Add("Enter"); }
+        public override void OnTriggerStay(Collider other) { StayCount++; Events.Add("Stay"); }
+        public override void OnTriggerExit(Collider other) { ExitCount++; Events.Add("Exit"); }
+        public override void OnTriggerEnter(CharacterController other) { ControllerEnterCount++; Events.Add("Enter"); }
+        public override void OnTriggerStay(CharacterController other) { ControllerStayCount++; Events.Add("Stay"); }
+        public override void OnTriggerExit(CharacterController other) { ControllerExitCount++; Events.Add("Exit"); }
     }
 
     private static Scene StartScene(PhysicsSystem physics, AudioSystem audio, params GameObject[] objects)
@@ -198,6 +199,8 @@ public sealed class CharacterControllerTests
         actorRecorder.ExitCount.Should().Be(1);
         triggerRecorder.ControllerEnterCount.Should().Be(1);
         triggerRecorder.ControllerExitCount.Should().Be(1);
+        actorRecorder.Events.Should().Equal("Enter", "Exit");
+        triggerRecorder.Events.Should().Equal("Enter", "Exit");
     }
 
     [Fact]

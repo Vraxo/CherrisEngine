@@ -190,11 +190,12 @@ public sealed class CharacterController : Component
         Vector3 motion,
         List<ControllerColliderHit> contacts,
         List<MotionSegment> path,
-        bool probeGround = true)
+        bool probeGround = true,
+        float initialDistanceTravelled = 0f)
     {
         CollisionFlags flags = ControllerCollisionFlags.None;
         Vector3 remaining = motion;
-        float distanceTravelled = 0f;
+        float distanceTravelled = initialDistanceTravelled;
         for (int iteration = 0; iteration < 5 && remaining.LengthSquared() > 1e-8f; iteration++)
         {
             if (!Sweep(remaining, out RaycastHit hit))
@@ -289,7 +290,8 @@ public sealed class CharacterController : Component
         Transform.WorldPosition += Vector3.UnitY * StepOffset;
         AddMotionSegment(stepPath, stepStart, Transform.WorldPosition);
         List<ControllerColliderHit> stepContacts = [];
-        CollisionFlags stepFlags = MoveAndSlide(horizontal, stepContacts, stepPath);
+        CollisionFlags stepFlags = MoveAndSlide(
+            horizontal, stepContacts, stepPath, initialDistanceTravelled: StepOffset);
         if ((stepFlags & ControllerCollisionFlags.Sides) != 0)
         {
             Transform.WorldPosition = start;
