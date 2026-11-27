@@ -23,10 +23,16 @@ public enum CollisionFlags
 /// <summary>A character controller's contact with a collider during a call to <see cref="CharacterController.Move"/>.</summary>
 public readonly struct ControllerColliderHit
 {
+    /// <summary>The controller that made the contact.</summary>
+    public CharacterController Controller { get; init; }
     /// <summary>The collider the controller touched.</summary>
     public Collider Collider { get; init; }
     /// <summary>The object the touched collider belongs to.</summary>
     public GameObject GameObject => Collider.GameObject!;
+    /// <summary>The touched object's transform.</summary>
+    public Transform Transform => Collider.Transform;
+    /// <summary>The rigid body attached to the touched collider, if any.</summary>
+    public RigidBody? RigidBody => Collider.AttachedRigidBody;
     /// <summary>The world-space point of contact.</summary>
     public Vector3 Point { get; init; }
     /// <summary>The contact normal, pointing away from the surface.</summary>
@@ -188,6 +194,7 @@ public sealed class CharacterController : Component
     {
         CollisionFlags flags = ControllerCollisionFlags.None;
         Vector3 remaining = motion;
+        float distanceTravelled = 0f;
         for (int iteration = 0; iteration < 5 && remaining.LengthSquared() > 1e-8f; iteration++)
         {
             if (!Sweep(remaining, out RaycastHit hit))
@@ -198,20 +205,22 @@ public sealed class CharacterController : Component
                 break;
             }
 
+            float travel = Math.Clamp(hit.Distance - SkinWidth, 0f, remaining.Length());
+            Vector3 direction = Vector3.Normalize(remaining);
             contacts.Add(new ControllerColliderHit
             {
+                Controller = this,
                 Collider = hit.Collider,
                 Point = hit.Point,
                 Normal = hit.Normal,
-                MoveDirection = Vector3.Normalize(remaining),
-                MoveLength = remaining.Length()
+                MoveDirection = direction,
+                MoveLength = distanceTravelled + travel
             });
 
-            float travel = Math.Clamp(hit.Distance - SkinWidth, 0f, remaining.Length());
-            Vector3 direction = Vector3.Normalize(remaining);
             Vector3 segmentStart = Transform.WorldPosition;
             Transform.WorldPosition += direction * travel;
             AddMotionSegment(path, segmentStart, Transform.WorldPosition);
+            distanceTravelled += travel;
             remaining -= direction * travel;
 
             float verticalNormal = Vector3.Dot(hit.Normal, Vector3.UnitY);

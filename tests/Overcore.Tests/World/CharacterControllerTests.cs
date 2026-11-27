@@ -236,7 +236,12 @@ public sealed class CharacterControllerTests
 
         recorder.LastHit.Should().NotBeNull();
         recorder.LastHit!.Value.GameObject.Should().BeSameAs(wall);
+        recorder.LastHit.Value.Controller.Should().BeSameAs(controller);
+        recorder.LastHit.Value.Transform.Should().BeSameAs(wall.Transform);
+        recorder.LastHit.Value.RigidBody.Should().BeNull();
         recorder.LastHit.Value.Normal.X.Should().BeLessThan(-0.9f);
+        recorder.LastHit.Value.MoveDirection.X.Should().BeApproximately(1f, 0.001f);
+        recorder.LastHit.Value.MoveLength.Should().BeApproximately(0.92f, 0.1f);
     }
 
     [Fact]
