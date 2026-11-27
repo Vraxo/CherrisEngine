@@ -118,6 +118,7 @@ public sealed class CharacterController : Component
     /// <summary>Moves by a world-space displacement; gravity is not applied.</summary>
     public CollisionFlags Move(Vector3 motion)
     {
+        RegisterWithActiveWorld();
         Vector3 frameStart = Transform.WorldPosition;
         Vector3 requestedMotion = motion.Length() < MinMoveDistance ? Vector3.Zero : motion;
         Vector3 supportMotion = GetSupportMotion(frameStart);
@@ -370,9 +371,18 @@ public sealed class CharacterController : Component
 
     public override void OnEnable()
     {
-        _registeredWorld = PhysicsSystem.Active;
-        _registeredWorld?.RegisterCharacterController(this);
+        RegisterWithActiveWorld();
         base.OnEnable();
+    }
+
+    private void RegisterWithActiveWorld()
+    {
+        PhysicsSystem? activeWorld = IsActive ? PhysicsSystem.Active : null;
+        if (ReferenceEquals(activeWorld, _registeredWorld)) return;
+
+        _registeredWorld?.UnregisterCharacterController(this);
+        _registeredWorld = activeWorld;
+        _registeredWorld?.RegisterCharacterController(this);
     }
 
     public override void OnDisable()
