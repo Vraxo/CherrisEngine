@@ -488,6 +488,26 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void ExplicitMoveDoesNotResetSimpleMoveGravityVelocity()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject actor = new("Player");
+        CharacterController controller = actor.AddComponent(new CharacterController());
+        _ = StartScene(physics, audio, actor);
+
+        Time.Advance(0.1f);
+        controller.SimpleMove(Vector3.Zero);
+        float firstFallPosition = actor.Transform.WorldPosition.Y;
+        Time.Advance(0.1f);
+        controller.Move(Vector3.Zero);
+        Time.Advance(0.1f);
+        controller.SimpleMove(Vector3.Zero);
+
+        actor.Transform.WorldPosition.Y.Should().BeLessThan(firstFallPosition - 0.15f);
+    }
+
+    [Fact]
     public void ControllerCanBeAddedFromTheBuiltInComponentCatalog()
     {
         ComponentCatalog.Find("Character Controller")!.ComponentType.Should().Be(typeof(CharacterController));

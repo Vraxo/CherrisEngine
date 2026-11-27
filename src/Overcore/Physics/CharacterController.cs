@@ -66,6 +66,7 @@ public sealed class CharacterController : Component
     private float _skinWidth = 0.08f;
     private float _minMoveDistance;
     private Vector3 _velocity;
+    private float _simpleMoveVerticalVelocity;
     private Collider? _supportCollider;
     private Quaternion _supportRotation = Quaternion.Identity;
     private Vector3 _supportRelativePosition;
@@ -176,12 +177,13 @@ public sealed class CharacterController : Component
     public bool SimpleMove(Vector3 speed)
     {
         float deltaTime = MathF.Max(Time.DeltaTime, 0f);
-        _velocity.Y += Physics.Gravity.Y * deltaTime;
-        Vector3 motion = new(speed.X * deltaTime, _velocity.Y * deltaTime, speed.Z * deltaTime);
+        _simpleMoveVerticalVelocity += Physics.Gravity.Y * deltaTime;
+        Vector3 motion = new(speed.X * deltaTime, _simpleMoveVerticalVelocity * deltaTime, speed.Z * deltaTime);
         CollisionFlags result = Move(motion);
-        if ((result & ControllerCollisionFlags.Below) != 0)
+        if (((result & ControllerCollisionFlags.Below) != 0 && _simpleMoveVerticalVelocity < 0f) ||
+            ((result & ControllerCollisionFlags.Above) != 0 && _simpleMoveVerticalVelocity > 0f))
         {
-            _velocity.Y = 0f;
+            _simpleMoveVerticalVelocity = 0f;
         }
         return IsGrounded;
     }
