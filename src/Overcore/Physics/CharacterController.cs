@@ -131,7 +131,8 @@ public sealed class CharacterController : Component
 
             bool probeGround = motion.Y <= 0f || (supportMotion.Y > 0f && requestedMotion.Y <= 0f);
             CollisionFlags flags = MoveAndSlide(motion, contacts, movementPath, probeGround);
-            if (StepOffset > 0f && (flags & ControllerCollisionFlags.Sides) != 0)
+            if (StepOffset > 0f && motion.Y <= 0f &&
+                (flags & ControllerCollisionFlags.Sides) != 0 && (flags & ControllerCollisionFlags.Below) != 0)
             {
                 Vector3 normalMoveEnd = Transform.WorldPosition;
                 Collider? originalSupport = _supportCollider;

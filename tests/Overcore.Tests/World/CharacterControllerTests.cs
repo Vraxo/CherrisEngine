@@ -315,6 +315,26 @@ public sealed class CharacterControllerTests
     }
 
     [Fact]
+    public void ControllerDoesNotStepOntoAnObstacleWhileAirborne()
+    {
+        using PhysicsSystem physics = new();
+        using AudioSystem audio = new();
+        GameObject step = new("Floating Step");
+        step.Transform.WorldPosition = new Vector3(0.8f, 5.1f, 0f);
+        step.AddComponent(new BoxCollider { Size = new Vector3(0.4f, 0.2f, 2f) });
+        GameObject actor = new("Player");
+        actor.Transform.WorldPosition = new Vector3(0f, 5f, 0f);
+        CharacterController controller = actor.AddComponent(new CharacterController { StepOffset = 0.3f });
+        _ = StartScene(physics, audio, step, actor);
+
+        CollisionFlags flags = controller.Move(new Vector3(1f, 0f, 0f));
+
+        (flags & CollisionFlags.Sides).Should().Be(CollisionFlags.Sides);
+        actor.Transform.WorldPosition.X.Should().BeLessThan(0.3f);
+        actor.Transform.WorldPosition.Y.Should().BeApproximately(5f, 0.02f);
+    }
+
+    [Fact]
     public void ControllerStepsUpAHeightWithinItsStepOffset()
     {
         using PhysicsSystem physics = new();
