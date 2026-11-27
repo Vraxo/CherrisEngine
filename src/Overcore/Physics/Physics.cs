@@ -389,6 +389,14 @@ public static class Physics
             trigger.GameObject is not { ActiveInHierarchy: true } triggerObject ||
             ReferenceEquals(triggerObject, owner) || IgnoredLayers[owner.Layer, triggerObject.Layer]) return false;
 
+        Vector3 radiusVector = new(radius);
+        Vector3 sweepMin = Vector3.Min(Vector3.Min(point1, point2),
+            Vector3.Min(point1 + displacement, point2 + displacement)) - radiusVector;
+        Vector3 sweepMax = Vector3.Max(Vector3.Max(point1, point2),
+            Vector3.Max(point1 + displacement, point2 + displacement)) + radiusVector;
+        var triggerBounds = trigger.Bounds;
+        if (!BoundsOverlap(sweepMin, sweepMax, triggerBounds.Min, triggerBounds.Max)) return false;
+
         return ColliderGeometry.CapsuleCast(
             ColliderGeometry.From(trigger), point1, point2, radius, displacement / distance, distance,
             out _, out _, out _);
@@ -407,6 +415,9 @@ public static class Physics
             SegmentA = point1,
             SegmentB = point2
         };
+        Vector3 radiusVector = new(radius);
+        Vector3 controllerMin = Vector3.Min(point1, point2) - radiusVector;
+        Vector3 controllerMax = Vector3.Max(point1, point2) + radiusVector;
         List<Collider> overlaps = [];
         foreach (Collider collider in world.Colliders)
         {
@@ -415,10 +426,17 @@ public static class Physics
                 !gameObject.ActiveInHierarchy || ReferenceEquals(gameObject, owner) ||
                 IgnoredLayers[owner.Layer, gameObject.Layer]) continue;
 
+            var triggerBounds = collider.Bounds;
+            if (!BoundsOverlap(controllerMin, controllerMax, triggerBounds.Min, triggerBounds.Max)) continue;
             if (ColliderGeometry.Overlaps(controllerShape, ColliderGeometry.From(collider))) overlaps.Add(collider);
         }
         return [.. overlaps];
     }
+
+    private static bool BoundsOverlap(Vector3 minA, Vector3 maxA, Vector3 minB, Vector3 maxB) =>
+        minA.X <= maxB.X && maxA.X >= minB.X &&
+        minA.Y <= maxB.Y && maxA.Y >= minB.Y &&
+        minA.Z <= maxB.Z && maxA.Z >= minB.Z;
 
     internal static bool TryGetCapsulePenetration(
         Vector3 point1, Vector3 point2, float radius, GameObject owner, out Vector3 correction, out float depth)
