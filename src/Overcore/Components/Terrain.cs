@@ -1,4 +1,5 @@
 using Overcore.Core;
+using Overcore.Rendering;
 using Overcore.Terrain;
 using Overcore.Utils;
 using System.Numerics;
@@ -70,6 +71,33 @@ public class Terrain : Component
     /// <summary>The mesh the ground currently draws with, or null before its first build.</summary>
     [HideInInspector]
     public Mesh? Mesh { get; private set; }
+
+    private readonly List<ITexture?> _layerTextures = [];
+
+    /// <summary>
+    /// The resolved texture of one layer, by layer index, or null when the layer names no texture or none
+    /// has resolved it yet. Layers name their textures in the data; resolution is a loading concern (the
+    /// scene factory resolves them through the resource manager), and a renderer that finds null paints
+    /// the layer's tint alone.
+    /// </summary>
+    public ITexture? GetLayerTexture(int layerIndex) =>
+        layerIndex >= 0 && layerIndex < _layerTextures.Count ? _layerTextures[layerIndex] : null;
+
+    /// <summary>Records the resolved texture of one layer. See <see cref="GetLayerTexture"/>.</summary>
+    public void SetLayerTexture(int layerIndex, ITexture? texture)
+    {
+        if (layerIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(layerIndex));
+        }
+
+        while (_layerTextures.Count <= layerIndex)
+        {
+            _layerTextures.Add(null);
+        }
+
+        _layerTextures[layerIndex] = texture;
+    }
 
     /// <inheritdoc />
     public override void Awake()

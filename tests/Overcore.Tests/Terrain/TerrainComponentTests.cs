@@ -106,6 +106,48 @@ public class TerrainComponentTests
         loaded.GetComponent<TerrainCollider>().Should().NotBeNull();
     }
 
+    private sealed class StubTexture(string name) : Overcore.Rendering.ITexture
+    {
+        public string Name { get; } = name;
+        public object GetBackendHandle() => Name;
+        public void Dispose() { }
+    }
+
+    private sealed class StubResources : Overcore.Rendering.IResourceManager
+    {
+        public Dictionary<string, StubTexture> Textures { get; } = [];
+        public void LoadInitialAssets() { }
+        public Overcore.Components.Mesh GetMesh(string name) => null!;
+        public Overcore.Rendering.ITexture GetTexture(string name) =>
+            Textures.TryGetValue(name, out StubTexture? texture) ? texture : Textures[name] = new StubTexture(name);
+        public Overcore.Components.Skybox GetSkybox(string name) => null!;
+        public AudioClip GetAudioClip(string name) => null!;
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public void SceneYaml_LoadResolvesEachLayersTexture()
+    {
+        GameObject ground = new("Ground");
+        Overcore.Components.Terrain terrain = ground.AddComponent<Overcore.Components.Terrain>();
+        TerrainData data = new(5, new Vector3(4f, 2f, 4f));
+        data.Layers[0].TextureName = "Textures/grass.png";
+        data.AddLayer(new TerrainLayer("Rock", "Textures/rock.png", Vector3.One));
+        terrain.TerrainData = data;
+
+        string yaml = new SceneSerializer().SerializeSceneToString([ground]);
+
+        StubResources resources = new();
+        SceneLoader loader = new(resources);
+        ComponentDeserializer.RegisterFactories(loader, resources);
+        GameObject loaded = loader.LoadSceneFromYaml(yaml).Single();
+
+        Overcore.Components.Terrain loadedTerrain = loaded.GetComponent<Overcore.Components.Terrain>()!;
+        ((StubTexture)loadedTerrain.GetLayerTexture(0)!).Name.Should().Be("Textures/grass.png");
+        ((StubTexture)loadedTerrain.GetLayerTexture(1)!).Name.Should().Be("Textures/rock.png");
+        loadedTerrain.GetLayerTexture(2).Should().BeNull("there is no third layer to resolve");
+    }
+
     [Fact]
     public void ComponentCatalog_OffersTerrain()
     {

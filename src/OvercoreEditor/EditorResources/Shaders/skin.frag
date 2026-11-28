@@ -70,6 +70,47 @@ uniform Material uMaterial;
 // to the surface, and the depth pass reads the same value for the same material.
 uniform float uAlphaCutoff;
 
+// ---------------------------------------------------------------- terrain
+//
+// A terrain fragment blends up to four layer textures by the weights its alphamap (the control texture)
+// paints, each layer tinted and tiled by its own repeat over the whole ground. Four separate samplers
+// rather than an array: GLSL 330 indexes a sampler array only by a constant expression, and a layer's
+// identity here is fixed at compile time. Layers past the fourth, and terrains on a backend without this
+// branch, fall back to the layer tints the mesher bakes into the vertex colours — the same blend, minus
+// the texture detail. uTerrainTints[0] with a literal index is the same constant-expression rule, obeyed.
+uniform int uTerrainEnabled;
+uniform sampler2D uTerrainAlphamap;
+uniform sampler2D uTerrainLayer0;
+uniform sampler2D uTerrainLayer1;
+uniform sampler2D uTerrainLayer2;
+uniform sampler2D uTerrainLayer3;
+uniform vec3 uTerrainTints[4];
+uniform vec2 uTerrainRepeats[4];
+uniform int uTerrainLayerCount;
+
+vec3 TerrainAlbedo(vec2 uv)
+{
+    vec4 weights = texture(uTerrainAlphamap, uv);
+    vec3 blended = texture(uTerrainLayer0, uv * uTerrainRepeats[0]).rgb * uTerrainTints[0] * weights.r;
+
+    if (uTerrainLayerCount > 1)
+    {
+        blended += texture(uTerrainLayer1, uv * uTerrainRepeats[1]).rgb * uTerrainTints[1] * weights.g;
+    }
+
+    if (uTerrainLayerCount > 2)
+    {
+        blended += texture(uTerrainLayer2, uv * uTerrainRepeats[2]).rgb * uTerrainTints[2] * weights.b;
+    }
+
+    if (uTerrainLayerCount > 3)
+    {
+        blended += texture(uTerrainLayer3, uv * uTerrainRepeats[3]).rgb * uTerrainTints[3] * weights.a;
+    }
+
+    return blended;
+}
+
 uniform DirLight uDirLight;
 uniform bool uHasDirLight;
 
@@ -222,6 +263,13 @@ void main()
     }
 
     vec3 albedo = diffuse.rgb * fsin_Color.rgb;
+    if (uTerrainEnabled == 1)
+    {
+        // The ground's own blend replaces the material's texture and the vertex tint alike: the tints are
+        // in the terrain uniforms, per layer, where the weights that blend them also live.
+        albedo = TerrainAlbedo(fsin_TexCoord);
+    }
+
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(uViewPos - FragPos);
 

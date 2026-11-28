@@ -244,6 +244,15 @@ public static class ComponentDeserializer
         if (resourceManager is not null)
         {
             terrain.Material = new Material(resourceManager.GetTexture(textureName), textureName);
+
+            // Each layer's own texture beside the material's, for the renderer's splat blending.
+            for (int layer = 0; layer < data.Layers.Count; layer++)
+            {
+                if (!string.IsNullOrWhiteSpace(data.Layers[layer].TextureName))
+                {
+                    terrain.SetLayerTexture(layer, resourceManager.GetTexture(data.Layers[layer].TextureName));
+                }
+            }
         }
 
         return terrain;

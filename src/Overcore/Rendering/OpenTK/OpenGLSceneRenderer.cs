@@ -2,9 +2,11 @@ using Overcore.Animation;
 using Overcore.Components;
 using Overcore.Core;
 using Overcore.Rendering.Shadows;
+using Overcore.Terrain;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
+using TerrainComponent = Overcore.Components.Terrain;
 
 namespace Overcore.Rendering.OpenTK;
 
@@ -116,6 +118,24 @@ internal class OpenGLSceneRenderer : IDisposable
 
         private readonly ShadowUniforms _shadow;
 
+        /// <summary>The terrain splat-blend's uniforms: four layers, their tints and repeats, and the alphamap that blends them.</summary>
+        private struct TerrainUniforms
+        {
+            public int Enabled;
+            public int Alphamap;
+            public int[] Layers;
+            public int[] Tints;
+            public int[] Repeats;
+            public int Count;
+        }
+
+        private readonly TerrainUniforms _terrain;
+
+        /// <summary>The alphamap's texture unit, past the shadow map's; the four layer textures follow it.</summary>
+        private const int TerrainAlphamapUnit = 3;
+
+        private const int TerrainLayerUnit = 4;
+
         /// <summary>One cascade's four matrices, uploaded as one array. Shared, because it is per frame.</summary>
         private readonly float[] _shadowMatrixScratch = new float[MaxShadowCascades * 16];
 
@@ -183,6 +203,16 @@ internal class OpenGLSceneRenderer : IDisposable
                 CameraForward = Location("uCameraForward")
             };
 
+            _terrain = new TerrainUniforms
+            {
+                Enabled = Location("uTerrainEnabled"),
+                Alphamap = Location("uTerrainAlphamap"),
+                Count = Location("uTerrainLayerCount"),
+                Layers = [Location("uTerrainLayer0"), Location("uTerrainLayer1"), Location("uTerrainLayer2"), Location("uTerrainLayer3")],
+                Tints = [Location("uTerrainTints[0]"), Location("uTerrainTints[1]"), Location("uTerrainTints[2]"), Location("uTerrainTints[3]")],
+                Repeats = [Location("uTerrainRepeats[0]"), Location("uTerrainRepeats[1]"), Location("uTerrainRepeats[2]"), Location("uTerrainRepeats[3]")]
+            };
+
             _numSpotLights = Location("uNumSpotLights");
             for (int i = 0; i < MaxSpotLights; i++)
             {
@@ -214,6 +244,43 @@ internal class OpenGLSceneRenderer : IDisposable
 
             var viewPos = view.Inverted().Row3.Xyz;
             GL.Uniform3(_matrices.ViewPosition, viewPos.X, viewPos.Y, viewPos.Z);
+
+            // The terrain samplers keep their units for the program's life; what is bound to them changes per draw.
+            GL.Uniform1(_terrain.Alphamap, TerrainAlphamapUnit);
+            for (int layer = 0; layer < _terrain.Layers.Length; layer++)
+            {
+                GL.Uniform1(_terrain.Layers[layer], TerrainLayerUnit + layer);
+            }
+        }
+
+        /// <summary>
+        /// Names the ground a draw is about to paint, or clears the last one's name: the terrain branch is
+        /// per object, so a non-terrain draw through the same program must be told there is no terrain,
+        /// or it would blend the previous object's layers.
+        /// </summary>
+        /// <param name="data">The terrain's data, or null for an ordinary object.</param>
+        public void UploadTerrain(TerrainData? data)
+        {
+            GL.Uniform1(_terrain.Enabled, data is null ? 0 : 1);
+            if (data is null)
+            {
+                return;
+            }
+
+            // The terrain's UVs run 0..1 over the whole ground whatever the material says, so the tiling
+            // the material upload just set is put back to one for this draw.
+            GL.Uniform2(_material.Tiling, 1f, 1f);
+            GL.Uniform1(_terrain.Count, Math.Min(data.Layers.Count, 4));
+
+            for (int layer = 0; layer < 4; layer++)
+            {
+                TerrainLayer current = layer < data.Layers.Count ? data.Layers[layer] : new TerrainLayer();
+                GL.Uniform3(_terrain.Tints[layer], current.Tint.X, current.Tint.Y, current.Tint.Z);
+                GL.Uniform2(
+                    _terrain.Repeats[layer],
+                    data.Size.X / MathF.Max(current.TileSize.X, 0.01f),
+                    data.Size.Z / MathF.Max(current.TileSize.Y, 0.01f));
+            }
         }
 
         public void UploadMaterial(Material material, Matrix4 model)
@@ -553,7 +620,7 @@ internal class OpenGLSceneRenderer : IDisposable
     }
 
     /// <summary>Uploads an object's material and model, then draws its bound vertex array.</summary>
-    private static void DrawBound(
+    private void DrawBound(
         Program program,
         GameObject go,
         MeshRenderer renderer,
@@ -579,6 +646,33 @@ internal class OpenGLSceneRenderer : IDisposable
         }
 
         program.UploadMaterial(material, ToOpenTKMatrix(go.Transform.GetModelMatrix()));
+
+        // A terrain draws through its own branch of the same shader: its alphamap on its unit, its layers'
+        // textures on theirs, and the layer tints and repeats as uniforms. An ordinary object clears the
+        // branch, because the program outlives the draw and would otherwise keep the last terrain's ground.
+        TerrainComponent? terrain = go.GetComponent<TerrainComponent>();
+        program.UploadTerrain(terrain?.TerrainData);
+        if (terrain is not null)
+        {
+            GL.ActiveTexture(TextureUnit.Texture3);
+            GL.BindTexture(TextureTarget.Texture2D, GetAlphamapTexture(terrain));
+
+            for (int layer = 0; layer < 4; layer++)
+            {
+                TextureUnit unit = (TextureUnit)((int)TextureUnit.Texture4 + layer);
+                GL.ActiveTexture(unit);
+                if (terrain.GetLayerTexture(layer) is OpenTKTexture layerTexture)
+                {
+                    layerTexture.Bind(unit);
+                }
+                else
+                {
+                    WhiteTexture.Bind(unit);
+                }
+            }
+
+            GL.ActiveTexture(TextureUnit.Texture0);
+        }
 
         // Per object, because it is per object's choice: a renderer with ReceiveShadows off keeps the shadow pass's
         // texture bound but drives the receiver's first branch, so its fragments are never darkened.
@@ -638,6 +732,53 @@ internal class OpenGLSceneRenderer : IDisposable
         }
     }
 
+    /// <summary>Alphamap textures by terrain, with the data version each was uploaded from.</summary>
+    private readonly Dictionary<TerrainComponent, (int Texture, int Version)> _alphamapTextures = [];
+
+    /// <summary>
+    /// The GL texture holding a terrain's alphamap, its first four layers in RGBA. Uploaded when the
+    /// paint changes and only then: the data's <see cref="TerrainData.AlphamapVersion"/> is the receipt.
+    /// </summary>
+    private int GetAlphamapTexture(TerrainComponent terrain)
+    {
+        TerrainData data = terrain.TerrainData;
+        if (_alphamapTextures.TryGetValue(terrain, out (int Texture, int Version) cached)
+            && cached.Version == data.AlphamapVersion)
+        {
+            return cached.Texture;
+        }
+
+        int resolution = data.AlphamapResolution;
+        int layers = data.Layers.Count;
+        float[] weights = data.GetAlphamap();
+        byte[] pixels = new byte[resolution * resolution * 4];
+        for (int pixel = 0; pixel < resolution * resolution; pixel++)
+        {
+            for (int channel = 0; channel < 4; channel++)
+            {
+                float weight = channel < layers ? weights[(pixel * layers) + channel] : 0f;
+                pixels[(pixel * 4) + channel] = (byte)Math.Clamp((int)(weight * 255f), 0, 255);
+            }
+        }
+
+        int handle = cached.Texture;
+        if (handle == 0)
+        {
+            handle = GL.GenTexture();
+        }
+
+        GL.BindTexture(TextureTarget.Texture2D, handle);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, resolution, resolution, 0,
+            PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+        _alphamapTextures[terrain] = (handle, data.AlphamapVersion);
+        return handle;
+    }
+
     /// <summary>The one white pixel a textureless material samples, created on first need inside a GL context.</summary>
     private static OpenTKTexture? _whiteTexture;
 
@@ -662,6 +803,13 @@ internal class OpenGLSceneRenderer : IDisposable
         // The white pixel is shared between renderers; it is deleted with this one and recreated on next use.
         _whiteTexture?.Dispose();
         _whiteTexture = null;
+
+        foreach ((int texture, int _) in _alphamapTextures.Values)
+        {
+            GL.DeleteTexture(texture);
+        }
+
+        _alphamapTextures.Clear();
     }
 }
 
