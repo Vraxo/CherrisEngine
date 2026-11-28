@@ -663,7 +663,7 @@ internal class OpenGLSceneRenderer : IDisposable
         {
             GL.ActiveTexture(TextureUnit.Texture3);
             GL.BindTexture(TextureTarget.Texture2D, GetAlphamapTexture(terrain, 0));
-            GL.ActiveTexture((TextureUnit)TerrainAlphamap2Unit);
+            GL.ActiveTexture(TextureUnit.Texture12);
             GL.BindTexture(TextureTarget.Texture2D, GetAlphamapTexture(terrain, 4));
 
             for (int layer = 0; layer < 8; layer++)
