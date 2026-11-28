@@ -34,19 +34,19 @@ fresh terrain is fully painted with. A layer is a name, a texture name (project-
 the terrain loads), a tint, and a tile size.
 
 On the OpenGL path the ground is drawn by a terrain branch of the lit shader (`scene.frag`, and its
-identical copy `skin.frag`): the alphamap is uploaded as an RGBA texture — the first four layers in R,
-G, B, A — whenever the paint changes, each layer's texture is sampled at its own repeat
+identical copy `skin.frag`): the alphamap is uploaded as two RGBA textures — layers 0–3 in the first,
+4–7 in the second — whenever the paint changes, each layer's texture is sampled at its own repeat
 (`Size / TileSize` across the whole ground), tinted, and blended by the alphamap weights:
 
 ```
 albedo = Σ texture(layerᵢ, uv · repeatᵢ) · tintᵢ · weightᵢ
 ```
 
-Four separate samplers rather than an array, because GLSL 330 indexes a sampler array only by a
-constant expression. The mesher also blends the tints into vertex colours, which is the same blend
-without texture detail; that is what layers past the fourth, unresolved textures, and the Veldrid
-backend (which does not take the terrain branch yet) draw with, so no ground is ever black for want of
-a texture.
+Separate samplers rather than an array, because GLSL 330 indexes a sampler array only by a constant
+expression. The mesher also blends the tints into vertex colours, which is the same blend without
+texture detail; that is what layers past the eighth, unresolved textures, and the Veldrid backend
+(which does not take the terrain branch yet) draw with, so no ground is ever black for want of a
+texture.
 
 `Terrain.Paint(center, radius, strength, layerIndex)` and `TerrainBrush.ApplyPaint` raise one layer's
 weight toward one at the stroke's centre and scale the others down, keeping every pixel summing to one.
@@ -170,5 +170,5 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 ## Not yet
 
 Grass detail, tree colliders, neighbour stitching between separate terrains, heightmap LOD beyond
-chunking, splat blending on the Veldrid backend, and layers past the fourth in the shader's blend are
+chunking, splat blending on the Veldrid backend, and layers past the eighth in the shader's blend are
 future increments. The data model does not need to change for any of them.

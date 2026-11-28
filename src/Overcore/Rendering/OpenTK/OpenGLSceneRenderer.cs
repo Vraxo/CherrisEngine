@@ -6,6 +6,7 @@ using Overcore.Terrain;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
 using System.Diagnostics;
+using System.Linq;
 using TerrainComponent = Overcore.Components.Terrain;
 
 namespace Overcore.Rendering.OpenTK;
@@ -118,11 +119,12 @@ internal class OpenGLSceneRenderer : IDisposable
 
         private readonly ShadowUniforms _shadow;
 
-        /// <summary>The terrain splat-blend's uniforms: four layers, their tints and repeats, and the alphamap that blends them.</summary>
+        /// <summary>The terrain splat-blend's uniforms: eight layers, their tints and repeats, and the two alphamaps that blend them.</summary>
         private struct TerrainUniforms
         {
             public int Enabled;
             public int Alphamap;
+            public int Alphamap2;
             public int[] Layers;
             public int[] Tints;
             public int[] Repeats;
@@ -131,10 +133,13 @@ internal class OpenGLSceneRenderer : IDisposable
 
         private readonly TerrainUniforms _terrain;
 
-        /// <summary>The alphamap's texture unit, past the shadow map's; the four layer textures follow it.</summary>
+        /// <summary>The first alphamap's texture unit, past the shadow map's; the eight layer textures follow it.</summary>
         private const int TerrainAlphamapUnit = 3;
 
         private const int TerrainLayerUnit = 4;
+
+        /// <summary>The second alphamap's unit, past the layer textures: layers four to seven ride in it.</summary>
+        private const int TerrainAlphamap2Unit = 12;
 
         /// <summary>One cascade's four matrices, uploaded as one array. Shared, because it is per frame.</summary>
         private readonly float[] _shadowMatrixScratch = new float[MaxShadowCascades * 16];
@@ -207,10 +212,11 @@ internal class OpenGLSceneRenderer : IDisposable
             {
                 Enabled = Location("uTerrainEnabled"),
                 Alphamap = Location("uTerrainAlphamap"),
+                Alphamap2 = Location("uTerrainAlphamap2"),
                 Count = Location("uTerrainLayerCount"),
-                Layers = [Location("uTerrainLayer0"), Location("uTerrainLayer1"), Location("uTerrainLayer2"), Location("uTerrainLayer3")],
-                Tints = [Location("uTerrainTints[0]"), Location("uTerrainTints[1]"), Location("uTerrainTints[2]"), Location("uTerrainTints[3]")],
-                Repeats = [Location("uTerrainRepeats[0]"), Location("uTerrainRepeats[1]"), Location("uTerrainRepeats[2]"), Location("uTerrainRepeats[3]")]
+                Layers = [.. Enumerable.Range(0, 8).Select(layer => Location($"uTerrainLayer{layer}"))],
+                Tints = [.. Enumerable.Range(0, 8).Select(layer => Location($"uTerrainTints[{layer}]"))],
+                Repeats = [.. Enumerable.Range(0, 8).Select(layer => Location($"uTerrainRepeats[{layer}]"))]
             };
 
             _numSpotLights = Location("uNumSpotLights");
@@ -247,6 +253,7 @@ internal class OpenGLSceneRenderer : IDisposable
 
             // The terrain samplers keep their units for the program's life; what is bound to them changes per draw.
             GL.Uniform1(_terrain.Alphamap, TerrainAlphamapUnit);
+            GL.Uniform1(_terrain.Alphamap2, TerrainAlphamap2Unit);
             for (int layer = 0; layer < _terrain.Layers.Length; layer++)
             {
                 GL.Uniform1(_terrain.Layers[layer], TerrainLayerUnit + layer);
@@ -270,9 +277,9 @@ internal class OpenGLSceneRenderer : IDisposable
             // The terrain's UVs run 0..1 over the whole ground whatever the material says, so the tiling
             // the material upload just set is put back to one for this draw.
             GL.Uniform2(_material.Tiling, 1f, 1f);
-            GL.Uniform1(_terrain.Count, Math.Min(data.Layers.Count, 4));
+            GL.Uniform1(_terrain.Count, Math.Min(data.Layers.Count, 8));
 
-            for (int layer = 0; layer < 4; layer++)
+            for (int layer = 0; layer < 8; layer++)
             {
                 TerrainLayer current = layer < data.Layers.Count ? data.Layers[layer] : new TerrainLayer();
                 GL.Uniform3(_terrain.Tints[layer], current.Tint.X, current.Tint.Y, current.Tint.Z);
@@ -655,9 +662,11 @@ internal class OpenGLSceneRenderer : IDisposable
         if (terrain is not null)
         {
             GL.ActiveTexture(TextureUnit.Texture3);
-            GL.BindTexture(TextureTarget.Texture2D, GetAlphamapTexture(terrain));
+            GL.BindTexture(TextureTarget.Texture2D, GetAlphamapTexture(terrain, 0));
+            GL.ActiveTexture((TextureUnit)TerrainAlphamap2Unit);
+            GL.BindTexture(TextureTarget.Texture2D, GetAlphamapTexture(terrain, 4));
 
-            for (int layer = 0; layer < 4; layer++)
+            for (int layer = 0; layer < 8; layer++)
             {
                 TextureUnit unit = (TextureUnit)((int)TextureUnit.Texture4 + layer);
                 GL.ActiveTexture(unit);
@@ -732,17 +741,18 @@ internal class OpenGLSceneRenderer : IDisposable
         }
     }
 
-    /// <summary>Alphamap textures by terrain, with the data version each was uploaded from.</summary>
-    private readonly Dictionary<TerrainComponent, (int Texture, int Version)> _alphamapTextures = [];
+    /// <summary>Alphamap textures by terrain and layer offset, with the data version each was uploaded from.</summary>
+    private readonly Dictionary<(TerrainComponent Terrain, int Offset), (int Texture, int Version)> _alphamapTextures = [];
 
     /// <summary>
-    /// The GL texture holding a terrain's alphamap, its first four layers in RGBA. Uploaded when the
+    /// The GL texture holding four of a terrain's alphamap layers in RGBA, starting at
+    /// <paramref name="layerOffset"/>: the shader's eight layers ride in two of these. Uploaded when the
     /// paint changes and only then: the data's <see cref="TerrainData.AlphamapVersion"/> is the receipt.
     /// </summary>
-    private int GetAlphamapTexture(TerrainComponent terrain)
+    private int GetAlphamapTexture(TerrainComponent terrain, int layerOffset)
     {
         TerrainData data = terrain.TerrainData;
-        if (_alphamapTextures.TryGetValue(terrain, out (int Texture, int Version) cached)
+        if (_alphamapTextures.TryGetValue((terrain, layerOffset), out (int Texture, int Version) cached)
             && cached.Version == data.AlphamapVersion)
         {
             return cached.Texture;
@@ -756,7 +766,8 @@ internal class OpenGLSceneRenderer : IDisposable
         {
             for (int channel = 0; channel < 4; channel++)
             {
-                float weight = channel < layers ? weights[(pixel * layers) + channel] : 0f;
+                int layer = layerOffset + channel;
+                float weight = layer < layers ? weights[(pixel * layers) + layer] : 0f;
                 pixels[(pixel * 4) + channel] = (byte)Math.Clamp((int)(weight * 255f), 0, 255);
             }
         }
@@ -775,7 +786,7 @@ internal class OpenGLSceneRenderer : IDisposable
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
 
-        _alphamapTextures[terrain] = (handle, data.AlphamapVersion);
+        _alphamapTextures[(terrain, layerOffset)] = (handle, data.AlphamapVersion);
         return handle;
     }
 

@@ -72,25 +72,33 @@ uniform float uAlphaCutoff;
 
 // ---------------------------------------------------------------- terrain
 //
-// A terrain fragment blends up to four layer textures by the weights its alphamap (the control texture)
-// paints, each layer tinted and tiled by its own repeat over the whole ground. Four separate samplers
-// rather than an array: GLSL 330 indexes a sampler array only by a constant expression, and a layer's
-// identity here is fixed at compile time. Layers past the fourth, and terrains on a backend without this
-// branch, fall back to the layer tints the mesher bakes into the vertex colours — the same blend, minus
-// the texture detail. uTerrainTints[0] with a literal index is the same constant-expression rule, obeyed.
+// A terrain fragment blends up to eight layer textures by the weights its alphamaps (the control
+// textures) paint, each layer tinted and tiled by its own repeat over the whole ground. Eight separate
+// samplers rather than an array: GLSL 330 indexes a sampler array only by a constant expression, and a
+// layer's identity here is fixed at compile time. Two alphamaps because one RGBA texture names only
+// four weights: the second carries layers four to seven. Layers past the eighth, and terrains on a
+// backend without this branch, fall back to the layer tints the mesher bakes into the vertex colours —
+// the same blend, minus the texture detail. uTerrainTints[0] with a literal index is the same
+// constant-expression rule, obeyed.
 uniform int uTerrainEnabled;
 uniform sampler2D uTerrainAlphamap;
+uniform sampler2D uTerrainAlphamap2;
 uniform sampler2D uTerrainLayer0;
 uniform sampler2D uTerrainLayer1;
 uniform sampler2D uTerrainLayer2;
 uniform sampler2D uTerrainLayer3;
-uniform vec3 uTerrainTints[4];
-uniform vec2 uTerrainRepeats[4];
+uniform sampler2D uTerrainLayer4;
+uniform sampler2D uTerrainLayer5;
+uniform sampler2D uTerrainLayer6;
+uniform sampler2D uTerrainLayer7;
+uniform vec3 uTerrainTints[8];
+uniform vec2 uTerrainRepeats[8];
 uniform int uTerrainLayerCount;
 
 vec3 TerrainAlbedo(vec2 uv)
 {
     vec4 weights = texture(uTerrainAlphamap, uv);
+    vec4 weights2 = texture(uTerrainAlphamap2, uv);
     vec3 blended = texture(uTerrainLayer0, uv * uTerrainRepeats[0]).rgb * uTerrainTints[0] * weights.r;
 
     if (uTerrainLayerCount > 1)
@@ -106,6 +114,26 @@ vec3 TerrainAlbedo(vec2 uv)
     if (uTerrainLayerCount > 3)
     {
         blended += texture(uTerrainLayer3, uv * uTerrainRepeats[3]).rgb * uTerrainTints[3] * weights.a;
+    }
+
+    if (uTerrainLayerCount > 4)
+    {
+        blended += texture(uTerrainLayer4, uv * uTerrainRepeats[4]).rgb * uTerrainTints[4] * weights2.r;
+    }
+
+    if (uTerrainLayerCount > 5)
+    {
+        blended += texture(uTerrainLayer5, uv * uTerrainRepeats[5]).rgb * uTerrainTints[5] * weights2.g;
+    }
+
+    if (uTerrainLayerCount > 6)
+    {
+        blended += texture(uTerrainLayer6, uv * uTerrainRepeats[6]).rgb * uTerrainTints[6] * weights2.b;
+    }
+
+    if (uTerrainLayerCount > 7)
+    {
+        blended += texture(uTerrainLayer7, uv * uTerrainRepeats[7]).rgb * uTerrainTints[7] * weights2.a;
     }
 
     return blended;

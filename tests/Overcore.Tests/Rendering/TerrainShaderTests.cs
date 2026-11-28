@@ -4,8 +4,8 @@ using Xunit;
 namespace Overcore.Tests.Rendering;
 
 /// <summary>
-/// The terrain splat blend in the lit shaders: four layers and an alphamap, in both fragment programs —
-/// which are one shader written twice, and stay that way.
+/// The terrain splat blend in the lit shaders: eight layers and two alphamaps, in both fragment
+/// programs — which are one shader written twice, and stay that way.
 /// </summary>
 /// <remarks>
 /// Read from the repository rather than the build output, for the reason <see cref="ShadowShaderTests"/>
@@ -47,16 +47,20 @@ public class TerrainShaderTests
     [Theory]
     [InlineData("scene.frag")]
     [InlineData("skin.frag")]
-    public void TheFragmentShaderBlendsFourTerrainLayersByTheAlphamap(string shader)
+    public void TheFragmentShaderBlendsEightTerrainLayersByTheAlphamaps(string shader)
     {
         string source = Code(shader);
 
         source.Should().Contain("uniform int uTerrainEnabled;");
         source.Should().Contain("uniform sampler2D uTerrainAlphamap;");
+        source.Should().Contain("uniform sampler2D uTerrainAlphamap2;");
         source.Should().Contain("uniform sampler2D uTerrainLayer0;");
         source.Should().Contain("uniform sampler2D uTerrainLayer3;");
-        source.Should().Contain("uniform vec3 uTerrainTints[4];");
-        source.Should().Contain("uniform vec2 uTerrainRepeats[4];");
+        source.Should().Contain("uniform sampler2D uTerrainLayer7;");
+        source.Should().Contain("uniform vec3 uTerrainTints[8];");
+        source.Should().Contain("uniform vec2 uTerrainRepeats[8];");
+        source.Should().Contain("uTerrainLayer7").And.Contain("weights2.a",
+            "the second alphamap carries layers four to seven, its alpha channel the eighth layer");
         source.Should().Contain("vec3 TerrainAlbedo(vec2 uv)");
         source.Should().Contain("albedo = TerrainAlbedo(fsin_TexCoord);");
     }
