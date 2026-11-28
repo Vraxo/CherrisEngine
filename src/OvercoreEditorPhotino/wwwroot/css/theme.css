@@ -1,0 +1,280 @@
+/* Roboto — the Unreal Engine 5 editor font (FStarshipCoreStyle::FStyleFonts uses "Roboto" and
+   "Roboto Mono"). Bundled from @fontsource/roboto and @fontsource/roboto-mono (SIL OFL 1.1, see
+   fonts/Roboto-OFL.txt) with the unicode-ranges those packages ship, so each subset loads only when the
+   UI needs it. The regular weight is latin + latin-ext + cyrillic + greek, matching the coverage the ImGui
+   editor loads from EditorResources/Fonts/Roboto-Regular.TTF. */
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-cyrillic-400-normal.woff2") format("woff2");
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-greek-400-normal.woff2") format("woff2");
+    unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-latin-ext-400-normal.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+        U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-latin-400-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: "Roboto";
+    font-style: normal;
+    font-display: swap;
+    font-weight: var(--theme-font-weight-bold);
+    src: url("../fonts/roboto-latin-700-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: "Roboto Mono";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/roboto-mono-latin-400-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Inter — Unity's editor font (Editor Foundations: "Inter as the primary font family on every platform",
+   with Verdana / Lucida Grande as the documented fallbacks). Same subsets and licence handling as Roboto. */
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-cyrillic-400-normal.woff2") format("woff2");
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-greek-400-normal.woff2") format("woff2");
+    unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-latin-ext-400-normal.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+        U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("../fonts/inter-latin-400-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-display: swap;
+    font-weight: 600;
+    src: url("../fonts/inter-latin-600-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+        U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+    color-scheme: dark;
+
+    /* ------------------------------------------------------------------------------------
+       Unreal Engine 5 editor palette ("Starship") — exact sRGB values.
+
+       From Engine/Source/Runtime/SlateCore/Private/Styling/StyleColors.cpp
+       (USlateThemeManager::InitalizeDefaults, the built-in dark theme). The engine writes each color as
+       COLOR("#RRGGBBAA") = FLinearColor::FromSRGBColor(FColor::FromHex(...)), so the hex below is the color
+       you see on screen and is used verbatim here.
+
+       These are the fallback values for the default theme, Unreal Engine 5: the stylesheet has to work
+       before Blazor starts and without JavaScript. The editor applies whichever theme is selected at runtime
+       by setting the same custom properties on the document root (wwwroot/js/theme.js), so every rule below
+       reads roles, never a particular editor's numbers. Kept in sync with Overcore.UI.Ue5Colors by
+       tests/OvercoreEditorSession.Tests.Ue5PaletteTests.cs, which parses this file.
+       ------------------------------------------------------------------------------------ */
+
+    --theme-black: #000000;
+    --theme-title: #151515;
+    --theme-background: #151515;
+    --theme-window-border: #0f0f0f;
+    --theme-foldout: #0f0f0f;
+    --theme-input: #0f0f0f;
+    --theme-input-outline: #383838;
+    --theme-recessed: #1a1a1a;
+    --theme-panel: #242424;
+    --theme-header: #2f2f2f;
+    --theme-dropdown: #383838;
+    --theme-dropdown-outline: #4c4c4c;
+    --theme-hover: #575757;
+    --theme-hover-2: #808080;
+    --theme-white: #ffffff;
+    --theme-white-25: #ffffff40;
+    --theme-highlight: #0070e0;
+    --theme-primary: #0070e0;
+    --theme-primary-hover: #0e86ff;
+    --theme-primary-press: #0050a0;
+    --theme-secondary: #383838;
+    --theme-foreground: #c0c0c0;
+    --theme-foreground-hover: #ffffff;
+    --theme-foreground-inverted: #0f0f0f;
+    --theme-foreground-header: #c8c8c8;
+    --theme-select: #0070e0;
+    --theme-select-inactive: #40576f;
+    --theme-select-parent: #2c323a;
+    --theme-select-hover: #242424;
+    --theme-notifications: #464b50;
+    --theme-accent-blue: #26bbff;
+    --theme-accent-purple: #a139bf;
+    --theme-accent-pink: #ff729c;
+    --theme-accent-red: #ff4040;
+    --theme-accent-orange: #fe9b07;
+    --theme-accent-yellow: #ffdc1a;
+    --theme-accent-green: #8bc24a;
+    --theme-accent-brown: #804d39;
+    --theme-accent-black: #242424;
+    --theme-accent-gray: #808080;
+    --theme-accent-white: #ffffff;
+    --theme-accent-folder: #b68f55;
+    --theme-warning: #ffb800;
+    --theme-error: #ef3535;
+    --theme-success: #1fe44b;
+    /* StarshipCoreStyle's SelectionColor: the engine's drag/drop and selector blue. */
+    --theme-selection: #18a0fb;
+    /* SelectionColor_Pressed: the style set stores it linear (0.701, 0.225, 0.003); this is that
+       value sRGB-encoded, which is what a pressed toolbar button looks like on screen. */
+    --theme-selection-pressed: #da820a;
+    /* A hovered dock tab: Panel at 80% over Background, the way Slate blends it. */
+    --theme-tab-hover: #212121;
+
+    /* Type and dimensions: see Overcore.UI.ThemeTypography and ThemeMetrics. */
+    --theme-font-ui: "Roboto", "Segoe UI", system-ui, sans-serif;
+    --theme-font-mono: "Roboto Mono", "Cascadia Mono", ui-monospace, monospace;
+    --theme-font-size: 13px;
+    --theme-font-small: 11px;
+    --theme-font-large: 19px;
+    --theme-radius: 4px;
+    --theme-border-width: 1px;
+    --theme-control-height: 22px;
+    --theme-scrollbar-width: 8px;
+    /* Bold weight: Roboto ships 700, Inter 600. */
+    --theme-font-weight-bold: 700;
+
+    /* Launcher surfaces reuse the palette so both windows match. */
+    --surface: var(--theme-background);
+    --surface-raised: var(--theme-panel);
+    --border: var(--theme-input-outline);
+    --text: var(--theme-foreground);
+    --text-muted: var(--theme-accent-gray);
+    --accent: var(--theme-primary);
+    --ok: var(--theme-success);
+    --warn: var(--theme-warning);
+    --bad: var(--theme-error);
+
+    /* Vector axis letters: X red, Y green, Z blue in every theme, the same values the ImGui inspector
+       draws them in (TransformInspector.DrawVector3Control), so a vector reads the same in both windows. */
+    --axis-x: #cc3333;
+    --axis-y: #33cc33;
+    --axis-z: #334ccc;
+    --axis-w: #b28c33;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    background: var(--surface);
+    color: var(--text);
+    /* FStyleFonts: Normal 10pt, Small 8pt, Large 14pt. 10pt is 13.33px at 96 DPI; the UI stays on 13px so
+       Roboto sits on the pixel grid. Keep in step with Overcore.UI.Ue5Typography. */
+    font-family: var(--theme-font-ui);
+    font-size: var(--theme-font-size);
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+}
+
+/* Editable text selects into Highlight with ForegroundHover text, as SEditableText does. */
+::selection {
+    background: var(--theme-primary);
+    color: var(--theme-foreground-hover);
+}
+
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.app-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border);
+}
+
+.app-title {
+    font-size: var(--theme-font-large);
+    font-weight: var(--theme-font-weight-bold);
+    letter-spacing: 0.01em;
+}
+
+.app-badge {
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-size: var(--theme-font-small);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.app-content {
+    flex: 1;
+    min-height: 0;
+}
+

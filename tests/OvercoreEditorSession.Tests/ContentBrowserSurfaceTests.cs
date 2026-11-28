@@ -45,24 +45,40 @@ public class ContentBrowserSurfaceTests
     private static string Rule(string selector) =>
         Regex.Match(Stylesheet(), @"(?m)^\." + Regex.Escape(selector) + @"\s*\{([^}]*)\}") is { Success: true } match
             ? match.Groups[1].Value
-            : throw new InvalidOperationException($"No .{selector} rule in app.css.");
+            : throw new InvalidOperationException($"No .{selector} rule in the stylesheets.");
 
     private static string Stylesheet()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            string candidate = Path.Combine(
-                directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
-
-            if (File.Exists(candidate))
+            string cssDirectory = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css");
+            if (Directory.Exists(cssDirectory) && File.Exists(Path.Combine(cssDirectory, "theme.css")))
             {
-                return File.ReadAllText(candidate);
+                string[] files =
+                [
+                    "theme.css",
+                    "launcher.css",
+                    "editor-chrome.css",
+                    "widgets.css",
+                    "hierarchy.css",
+                    "inspector.css",
+                    "console.css",
+                    "content-browser.css",
+                    "viewport.css",
+                    "status.css",
+                    "states.css",
+                    "scrollbars.css"
+                ];
+
+                string css = string.Join("\n", files.Select(name => File.ReadAllText(Path.Combine(cssDirectory, name))));
+
+                return css;
             }
 
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("app.css not found above '" + AppContext.BaseDirectory + "'.");
+        throw new FileNotFoundException("stylesheets not found above '" + AppContext.BaseDirectory + "'.");
     }
 }

@@ -13,7 +13,7 @@ public class MenuStyleTests
     [Fact]
     public void Menus_UseTheDarkSurfaceAndGreyHover()
     {
-        string css = File.ReadAllText(FindStylesheet());
+        string css = FindStylesheet();
 
         Match popup = Regex.Match(css, @"(?m)^\.menu-popup\s*\{([^}]*)\}");
         popup.Success.Should().BeTrue();
@@ -49,7 +49,7 @@ public class MenuStyleTests
     [Fact]
     public void Menus_DoNotUseTheBluePrimaryHover()
     {
-        string css = File.ReadAllText(FindStylesheet());
+        string css = FindStylesheet();
 
         Match hover = Regex.Match(css, @"(?m)^\.menu-item:hover:not\(:disabled\)\s*\{([^}]*)\}");
         hover.Success.Should().BeTrue();
@@ -61,14 +61,32 @@ public class MenuStyleTests
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            string candidate = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
-            if (File.Exists(candidate))
+            string cssDirectory = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css");
+            if (Directory.Exists(cssDirectory) && File.Exists(Path.Combine(cssDirectory, "theme.css")))
             {
-                return candidate;
+                string[] files =
+                [
+                    "theme.css",
+                    "launcher.css",
+                    "editor-chrome.css",
+                    "widgets.css",
+                    "hierarchy.css",
+                    "inspector.css",
+                    "console.css",
+                    "content-browser.css",
+                    "viewport.css",
+                    "status.css",
+                    "states.css",
+                    "scrollbars.css"
+                ];
+
+                string css = string.Join("\n", files.Select(name => File.ReadAllText(Path.Combine(cssDirectory, name))));
+
+                return css;
             }
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("app.css not found above '" + AppContext.BaseDirectory + "'.");
+        throw new FileNotFoundException("stylesheets not found above '" + AppContext.BaseDirectory + "'.");
     }
 }

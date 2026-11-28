@@ -8,7 +8,7 @@ public class CheckboxStyleTests
     [Fact]
     public void Checkboxes_UseTheSameDarkStyleAndKeepAccessibleStates()
     {
-        string css = File.ReadAllText(FindStylesheet());
+        string css = FindStylesheet();
         string[] selectors =
         [
             ".inspector-section-toggle",
@@ -34,14 +34,32 @@ public class CheckboxStyleTests
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            string candidate = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
-            if (File.Exists(candidate))
+            string cssDirectory = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css");
+            if (Directory.Exists(cssDirectory) && File.Exists(Path.Combine(cssDirectory, "theme.css")))
             {
-                return candidate;
+                string[] files =
+                [
+                    "theme.css",
+                    "launcher.css",
+                    "editor-chrome.css",
+                    "widgets.css",
+                    "hierarchy.css",
+                    "inspector.css",
+                    "console.css",
+                    "content-browser.css",
+                    "viewport.css",
+                    "status.css",
+                    "states.css",
+                    "scrollbars.css"
+                ];
+
+                string css = string.Join("\n", files.Select(name => File.ReadAllText(Path.Combine(cssDirectory, name))));
+
+                return css;
             }
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("app.css not found above '" + AppContext.BaseDirectory + "'.");
+        throw new FileNotFoundException("stylesheets not found above '" + AppContext.BaseDirectory + "'.");
     }
 }

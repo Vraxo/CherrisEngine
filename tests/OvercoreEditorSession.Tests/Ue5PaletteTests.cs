@@ -62,7 +62,7 @@ public class Ue5PaletteTests
     [Fact]
     public void Stylesheet_MatchesTheDefaultTheme()
     {
-        string stylesheet = File.ReadAllText(FindStylesheet());
+        string stylesheet = FindStylesheet();
         EditorTheme theme = Ue5StarshipTheme.Create();
         IReadOnlyDictionary<string, string> expected = theme.ToCssVariables();
 
@@ -80,7 +80,7 @@ public class Ue5PaletteTests
     [Fact]
     public void Stylesheet_ReadsRolesRatherThanOneEditorsNumbers()
     {
-        string stylesheet = File.ReadAllText(FindStylesheet());
+        string stylesheet = FindStylesheet();
 
         // No rule may hardcode a palette value: everything goes through a --theme-* variable, which is what
         // lets a theme swap at runtime.
@@ -92,20 +92,34 @@ public class Ue5PaletteTests
     private static string FindStylesheet()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
-
         while (directory is not null)
         {
-            string candidate = Path.Combine(
-                directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
-
-            if (File.Exists(candidate))
+            string cssDirectory = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css");
+            if (Directory.Exists(cssDirectory) && File.Exists(Path.Combine(cssDirectory, "theme.css")))
             {
-                return candidate;
-            }
+                string[] files =
+                [
+                    "theme.css",
+                    "launcher.css",
+                    "editor-chrome.css",
+                    "widgets.css",
+                    "hierarchy.css",
+                    "inspector.css",
+                    "console.css",
+                    "content-browser.css",
+                    "viewport.css",
+                    "status.css",
+                    "states.css",
+                    "scrollbars.css"
+                ];
 
+                string css = string.Join("\n", files.Select(name => File.ReadAllText(Path.Combine(cssDirectory, name))));
+
+                return css;
+            }
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("app.css not found above '" + AppContext.BaseDirectory + "'.");
+        throw new FileNotFoundException("stylesheets not found above '" + AppContext.BaseDirectory + "'.");
     }
 }

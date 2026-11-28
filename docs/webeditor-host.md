@@ -128,7 +128,7 @@ pinning tricks. The package's root namespace is still `Photino.Blazor`.
 | `Launcher` / `Editor` pages | main | Project picker and editor shell; they only call `EditorHostService` and read what it publishes. |
 | `HeadlessBackend` hidden window | main, before the loop starts | Creates the GLFW window/context. OpenTK only allows GLFW init on the process' main thread. |
 | `EditorSession` | background ("Overcore Engine") | Makes the context current, runs the engine, captures the previous frame from `OnDrawUI` and publishes it. |
-| `EditorHostService` | main, then any | One session at a time: validates the project, prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics, recent projects and failures. |
+| `EditorHostService` | main, then any | One session at a time: validates the project, prepares the context on the main thread, starts the render thread, exposes URL, log, diagnostics, recent projects and failures. Split by concern across partials — `EditorHostService.Editing.cs` (commands and undo), `.ProjectFiles.cs` (projects, recent list, creating files) and `.Logging.cs` (console log, environment report) — with the session, transport and state in the main file. |
 | `EditorSessionHost` | any | One session: the graphics context, the render thread, the listener, the viewport size, the active client and input translation into `HeadlessInput`. `Start()` is for a host with a message loop on its main thread, `Run()` for one without. |
 | `WebEditorServer` | thread pool | Serves `wwwroot` and upgrades `/ws` to a WebSocket. |
 | `ViewerConnection` | thread pool | Per-client greeting, frame sending, command receiving. |
@@ -212,7 +212,12 @@ renders.
 ### Editor layout
 
 `Pages/Editor.razor` replicates the ImGui editor's dock layout rather than inventing its own one; the
-chrome is deliberately the same so muscle memory carries over:
+chrome is deliberately the same so muscle memory carries over. Every component here is split the same way:
+the markup stays in the `.razor` file and the state, handlers and host calls live in a sibling `.razor.cs`
+code-behind, so a panel's view and its behaviour can be read apart. The stylesheets are split by concern too,
+in `wwwroot/css/` — `theme.css`, `launcher.css`, `editor-chrome.css`, `widgets.css`, `hierarchy.css`,
+`inspector.css`, `console.css`, `content-browser.css`, `viewport.css`, `status.css`, `states.css` and
+`scrollbars.css`, linked in that order by `index.html`:
 
 | ImGui (`src/OvercoreEditor`) | PhotinoX editor |
 | :--- | :--- |
@@ -311,7 +316,7 @@ over the canvas. The overlay is now `pointer-events: none`, has an explicit `[hi
 `display` as well, so a message surface can never become a shield. Dialogs, menus and text fields keep their own
 pointer events (`isEditorChrome`), so a dialog over the viewport does not start a look.
 
-`wwwroot/js/viewport.js` and `wwwroot/css/app.css` are loaded with a version query in `index.html`; bump it when
+`wwwroot/js/viewport.js` and the `wwwroot/css/*.css` stylesheets are loaded with a version query in `index.html`; bump it when
 either changes. The editor serves `wwwroot` from its build output, so a webview that holds an old copy would
 otherwise keep running yesterday's input code — and the console shows one line per session, `A look drag reached the
 render thread`, when a drag reaches the engine at all, plus `page: first right press landed on …` naming the element

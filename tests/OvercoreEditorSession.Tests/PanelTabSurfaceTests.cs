@@ -88,17 +88,33 @@ public class PanelTabSurfaceTests
 
         return bodies.Count > 0
             ? string.Join("\n", bodies)
-            : throw new InvalidOperationException($"No {selector} rule in app.css.");
+            : throw new InvalidOperationException($"No {selector} rule in the stylesheets.");
     }
 
+    // A panel is its markup plus its code-behind: the split moved the handlers into .razor.cs, and the
+    // anatomy these tests pin lives on both sides of the divide.
     private static string ReadPanel(string name) =>
-        Read("src", "OvercoreEditorPhotino", "Components", name + ".razor");
+        Read("src", "OvercoreEditorPhotino", "Components", name + ".razor") +
+        Read("src", "OvercoreEditorPhotino", "Components", name + ".razor.cs");
 
     private static string ReadEditor() =>
-        Read("src", "OvercoreEditorPhotino", "Pages", "Editor.razor");
+        Read("src", "OvercoreEditorPhotino", "Pages", "Editor.razor") +
+        Read("src", "OvercoreEditorPhotino", "Pages", "Editor.razor.cs");
 
     private static string Stylesheet() =>
-        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "theme.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "launcher.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "editor-chrome.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "widgets.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "hierarchy.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "inspector.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "console.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "content-browser.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "viewport.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "status.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "states.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "scrollbars.css");
+
 
     private static string Read(params string[] parts)
     {

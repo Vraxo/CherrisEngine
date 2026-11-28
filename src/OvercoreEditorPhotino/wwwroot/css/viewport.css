@@ -1,0 +1,139 @@
+/* ---- viewport ---- */
+
+.viewport-toolbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-bottom: var(--theme-border-width) solid var(--theme-recessed);
+    background: var(--theme-panel);
+}
+
+.viewport-toolbar .imgui-button {
+    padding: 2px 8px;
+}
+
+.viewport-panel .panel-body,
+.viewport-body {
+    padding: 0;
+    overflow: hidden;
+}
+
+.viewport-frame {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: var(--theme-black);
+    overflow: hidden;
+}
+
+#viewport-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    outline: none;
+}
+
+.viewport-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    white-space: pre-line;
+    line-height: 1.5;
+    color: var(--theme-foreground);
+    background: rgba(0, 0, 0, 0.85);
+    /* A message surface, not a shield: whatever it says, the pointer belongs to the viewport under it. */
+    pointer-events: none;
+}
+
+/* `display: flex` above outranks the user agent's `[hidden] { display: none }`, so without this the overlay is a
+   permanent 85%-black pane over the canvas — dimming the picture and taking every mouse event with it, while the
+   keyboard keeps working because those listeners are on the window. */
+.viewport-overlay[hidden] {
+    display: none;
+}
+
+
+/* ---- UE5 details: focus rectangles (FocusRectangle brush), chevrons, search field ---- */
+
+/* Slate paints a 1px Primary rectangle inside the focused widget instead of a browser ring. */
+.imgui-input:focus-visible,
+.imgui-button:focus-visible,
+.editor-button:focus-visible,
+.panel-tab:focus-visible,
+.menubar-button:focus-visible,
+.menu-item:focus-visible,
+.tree-row:focus-visible {
+    outline: 1px solid var(--theme-primary);
+    outline-offset: -1px;
+}
+
+.imgui-input:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* SSearchBox draws its magnifier inside the text box. */
+.search-field {
+    position: relative;
+}
+
+.search-field .imgui-input {
+    padding-left: 30px;
+}
+
+/* SSearchBox's arrows are Icon16x16, drawn inside the text box's 8px padding. */
+.search-icon {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    color: var(--theme-accent-gray);
+    pointer-events: none;
+}
+
+/* Inspector foldouts use a Font Awesome chevron in the tight 10px arrow slot. Collapsed points right;
+   expanded points down without adding any padding around the glyph. */
+.fold-chevron {
+    width: 1em;
+    font-size: 10px;
+    line-height: 1;
+    transform: rotate(-90deg);
+    transition: transform 90ms ease-out;
+}
+
+.fold-chevron.expanded {
+    transform: rotate(0deg);
+}
+
+/* SimpleButton: unpainted normally, Dropdown on hover *and* while pressed, Foreground when
+   disabled — the engine's SimpleButton has no separate pressed fill. */
+.imgui-button.flat {
+    border-color: transparent;
+    background: transparent;
+    color: var(--theme-foreground);
+}
+
+.imgui-button.flat:hover:not(:disabled),
+.imgui-button.flat:active:not(:disabled) {
+    background: var(--theme-dropdown);
+    color: var(--theme-foreground-hover);
+}
+
+.imgui-button.flat:disabled {
+    border-color: transparent;
+    background: transparent;
+    color: var(--theme-foreground);
+}
+
+/* Folder icons carry the engine's AccentFolder tint. */
+.cb-glyph.folder {
+    color: var(--theme-accent-folder);
+}
+

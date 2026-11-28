@@ -1,0 +1,190 @@
+using System.Globalization;
+using System.Numerics;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Routing;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.Extensions.Logging;
+using Microsoft.JSInterop;
+using Overcore.Projects;
+using OvercoreEditorPhotino;
+using OvercoreEditorPhotino.Components;
+using OvercoreEditorPhotino.Shared;
+using OvercoreEditorPhotino.Services;
+using OvercoreEditorSession;
+using Overcore.UI;
+
+namespace OvercoreEditorPhotino.Components;
+
+/// <summary>
+/// Code-behind for <see cref="MenuBar"/>: the open/closed menu state and the commands each item sends.
+/// The markup lives in <c>MenuBar.razor</c>; this file holds the state and handlers.
+/// </summary>
+public partial class MenuBar
+{
+    private string? _openMenu;
+    private bool _newSceneOpen;
+    private string _newSceneName = SceneTemplate.DefaultName;
+
+    private string SessionTitle => Host.SessionName ?? "Overcore Editor";
+
+    /// <summary>
+    /// A scene is a file in a project and is opened by the running session, so both have to be there before the
+    /// menu item can do anything.
+    /// </summary>
+    private bool CanMakeScene => Host.HasProject && Host.State == EditorSessionState.Running;
+
+    /// <summary>
+    /// A reload compiles the project's <c>Scripts/</c> folder inside the running session, which is the only place the
+    /// scene and its component factories live — so the session has to be up.
+    /// </summary>
+    private bool CanReloadScripts => Host.State == EditorSessionState.Running;
+
+    private string ReloadScriptsTitle => CanReloadScripts
+        ? "Compile the project's Scripts folder again, so new and changed types are in the Add Component menu. A " +
+            "component that is already attached keeps the code it was created with until its scene is opened again."
+        : "The render session has to be running before its scripts can be compiled";
+
+    private string NewSceneTitle => CanMakeScene
+        ? "Create a scene file in this project and open it"
+        : Host.HasProject
+            ? "The render session has to be running before it can open a new scene"
+            : "Open a project first: a scene is a file inside one";
+
+    /// <summary>The file a typed name becomes, said before anything is written.</summary>
+    private string ScenePathHint(string typed) =>
+        ProjectFileName.TryPreview(Host.ProjectRoot, typed, SceneTemplate.Extension, out string path)
+            ? $"Saves to {ProjectFileName.Describe(path, Host.ProjectRoot)}"
+            : "Type a name to see the file it becomes.";
+
+    private bool IsOpen(string menu) => _openMenu == menu;
+
+    private void Toggle(string menu)
+    {
+        _openMenu = IsOpen(menu) ? null : menu;
+    }
+
+    private void CloseMenus()
+    {
+        _openMenu = null;
+    }
+
+    /// <summary>
+    /// Asks the session to compile again. What came of it is in the console, where every other compile reports too:
+    /// the count on success, and one line per error.
+    /// </summary>
+    private void ReloadScripts()
+    {
+        CloseMenus();
+        Host.ReloadScripts();
+    }
+
+    private void OpenLauncher()
+    {
+        LeaveSession();
+        Nav.NavigateTo("/");
+    }
+
+    private void NewProject()
+    {
+        LeaveSession();
+        Nav.NavigateTo("/?tab=new");
+    }
+
+    // The launcher bounces back into the editor while a session is live, so picking a project has to end
+    // this one first. Nothing in the web editor holds unsaved edits, so there is nothing to prompt about.
+    private void LeaveSession()
+    {
+        CloseMenus();
+
+        if (Host.State is not EditorSessionState.Idle)
+        {
+            Host.CloseSession();
+        }
+    }
+
+    private void OpenNewSceneDialog()
+    {
+        CloseMenus();
+
+        // The dialog opens on a name the project does not already use, so the common case is one keystroke.
+        _newSceneName = Host.ProjectRoot is string root
+            ? ProjectFileName.Available(root, SceneTemplate.DefaultName, SceneTemplate.Extension)
+            : SceneTemplate.DefaultName;
+
+        _newSceneOpen = true;
+    }
+
+    private void CloseNewScene() => _newSceneOpen = false;
+
+    /// <summary>Creates the scene and opens it, or says why not — the dialog stays open until it works.</summary>
+    private string? CreateScene(string name) =>
+        Host.TryCreateScene(name, out string? error) ? null : error ?? "The scene could not be created.";
+
+    private string UndoTitle => Host.UndoLabel is { } label ? "Undo " + label : "Nothing to undo";
+
+    private string RedoTitle => Host.RedoLabel is { } label ? "Redo " + label : "Nothing to redo";
+
+    private void Undo()
+    {
+        CloseMenus();
+        Host.Undo();
+    }
+
+    private void Redo()
+    {
+        CloseMenus();
+        Host.Redo();
+    }
+
+    private async Task SelectTheme(string id)
+    {
+        CloseMenus();
+
+        try
+        {
+            await Themes.SelectAsync(JS, id);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; the selection is already saved.
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ReloadThemes()
+    {
+        CloseMenus();
+
+        try
+        {
+            await Themes.ReloadAsync(JS);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; nothing to apply.
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ResetLayout()
+    {
+        CloseMenus();
+
+        try
+        {
+            await JS.InvokeVoidAsync("overcoreDock.reset");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The window is closing; there is nothing left to reset.
+        }
+    }
+
+    private void Exit()
+    {
+        CloseMenus();
+        Host.CloseRequested?.Invoke();
+    }
+}

@@ -73,7 +73,7 @@ public class Ue5TypographyTests
     public void Stylesheet_LoadsRobotoAndUsesTheEngineSizes()
     {
         string stylesheet = File.ReadAllText(
-            Path.Combine(FindRepositoryRoot(), "src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css"));
+            Path.Combine(FindRepositoryRoot(), "src", "OvercoreEditorPhotino", "wwwroot", "css", "theme.css"));
 
         // One @font-face per shipped file: four Roboto subsets at 400, latin at 700, mono, and the same
         // five for Inter, which the Unity theme asks for.

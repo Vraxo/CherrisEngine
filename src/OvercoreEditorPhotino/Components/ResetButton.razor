@@ -12,28 +12,3 @@
               stroke-linecap="round" stroke-linejoin="round" />
     </svg>
 </button>
-
-@code {
-    /// <summary>
-    /// True when the value differs from the default. That is the only time the button works, and the only time it
-    /// is drawn at full strength.
-    /// </summary>
-    [Parameter]
-    public bool CanReset { get; set; }
-
-    /// <summary>What resetting would restore, as the row shows it, for the tooltip. Null when there is none.</summary>
-    [Parameter]
-    public string? Default { get; set; }
-
-    /// <summary>The row this button belongs to, so a screen reader reads "Position: reset to 0, 0, 0".</summary>
-    [Parameter]
-    public string? Label { get; set; }
-
-    /// <summary>The edit to queue. It only runs while <see cref="CanReset"/> is true, because the button is disabled otherwise.</summary>
-    [Parameter]
-    public EventCallback OnReset { get; set; }
-
-    private string Title => CanReset
-        ? "Reset to " + (Default ?? "the default")
-        : "Already at " + (Default ?? "the default");
-}

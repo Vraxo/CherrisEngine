@@ -1,0 +1,72 @@
+/* ---- starting / failure states ---- */
+
+.editor-starting {
+    margin: 32px;
+    color: var(--theme-accent-gray);
+}
+
+.editor-error {
+    margin: 24px;
+    padding: 18px 20px;
+    border: var(--theme-border-width) solid var(--theme-error);
+    border-radius: 4px;
+    background: rgba(239, 53, 53, 0.08);
+    overflow: auto;
+}
+
+.editor-error h2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+}
+
+.editor-error p {
+    margin: 0 0 6px;
+    line-height: 1.5;
+}
+
+.editor-error-hint {
+    color: var(--theme-accent-gray);
+}
+
+.editor-error h3 {
+    margin: 16px 0 6px;
+    font-size: calc(var(--theme-font-size) - 1px);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--theme-accent-gray);
+    font-weight: var(--theme-font-weight-bold);
+}
+
+.editor-error-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0 4px;
+}
+
+.editor-error-confirm {
+    color: var(--theme-success);
+}
+
+.editor-error-detail,
+.editor-log {
+    max-height: 240px;
+    overflow: auto;
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    color: var(--theme-foreground);
+    font-family: var(--theme-font-mono);
+    font-size: calc(var(--theme-font-size) - 1px);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.editor-error code {
+    font-family: var(--theme-font-mono);
+    color: var(--theme-foreground-hover);
+}
+

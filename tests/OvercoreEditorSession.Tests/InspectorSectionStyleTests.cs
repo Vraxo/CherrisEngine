@@ -9,21 +9,7 @@ public class InspectorSectionStyleTests
     [Fact]
     public void Headers_ShareTheComponentBackground()
     {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        string? path = null;
-        while (directory is not null)
-        {
-            string candidate = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
-            if (File.Exists(candidate))
-            {
-                path = candidate;
-                break;
-            }
-            directory = directory.Parent;
-        }
-
-        path.Should().NotBeNull();
-        string css = File.ReadAllText(path!);
+        string css = ReadStylesheet();
         Match section = Regex.Match(css, @"(?m)^\.inspector-section\s*\{([^}]*)\}");
         Match header = Regex.Match(css, @"(?m)^\.inspector-section-header\s*\{([^}]*)\}");
         section.Success.Should().BeTrue();
@@ -42,5 +28,39 @@ public class InspectorSectionStyleTests
         css.Should().Contain("width: var(--inspector-fold-width)");
         css.Should().Contain("width: var(--inspector-icon-width)");
         css.Should().NotContain(".inspector-section-header:hover", "hover must not add a darker header band");
+    }
+
+    private static string ReadStylesheet()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            string cssDirectory = Path.Combine(directory.FullName, "src", "OvercoreEditorPhotino", "wwwroot", "css");
+            if (Directory.Exists(cssDirectory) && File.Exists(Path.Combine(cssDirectory, "theme.css")))
+            {
+                string[] files =
+                [
+                    "theme.css",
+                    "launcher.css",
+                    "editor-chrome.css",
+                    "widgets.css",
+                    "hierarchy.css",
+                    "inspector.css",
+                    "console.css",
+                    "content-browser.css",
+                    "viewport.css",
+                    "status.css",
+                    "states.css",
+                    "scrollbars.css"
+                ];
+
+                string css = string.Join("\n", files.Select(name => File.ReadAllText(Path.Combine(cssDirectory, name))));
+
+                return css;
+            }
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("stylesheets not found above '" + AppContext.BaseDirectory + "'.");
     }
 }

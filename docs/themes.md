@@ -115,5 +115,5 @@ The variables are the 48 color roles as `--theme-<role>` (e.g. `--theme-panel`, 
 
 Roles are the contract between the two front ends, so adding one touches, in order: `ThemeRoles` (constant and
 `All`), both themes in `src/Overcore/UI/Themes`, the mapping in `ImGuiTheme` if ImGui has an equivalent, the
-stylesheet default in `app.css`, and both shipped JSON files. `ThemeCatalogTests` fails until every theme fills
+stylesheet default in `wwwroot/css/theme.css`, and both shipped JSON files. `ThemeCatalogTests` fails until every theme fills
 the new role, which is the point — a role with no value in a theme is a bug, not a fallback.

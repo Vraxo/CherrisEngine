@@ -1,0 +1,503 @@
+/* ============================================================================
+   Editor — the ImGui editor's chrome and dock layout, in the UE5 palette:
+
+     menubar
+     transport toolbar (play-pause / stop / restart)
+     +----------------+-------------------------------+----------------+
+     | Hierarchy (20%)| Viewport (72%)                | Inspector (24%)|
+     |                +-------------------------------+                |
+     |                | Content Browser | Console (28%)|                |
+     +----------------+-------------------------------+----------------+
+     status strip
+
+   Each rule names the engine widget whose brushes it reproduces, so the colors are traceable back to
+   StarshipCoreStyle.cpp instead of being picked by eye.
+   ========================================================================== */
+
+.editor-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--theme-background);
+    color: var(--theme-foreground);
+}
+
+/* ---- top chrome (WindowMenuBar + transport toolbar) ---- */
+
+/* The menu bar and the transport strip are one piece of chrome and share one rhythm: the theme's control
+   height rows on the window background, 4px of air, and the same near-black seam under each strip. */
+.menubar,
+.editor-toolbar-strip {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    background: var(--theme-background);
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    font-size: var(--theme-font-size);
+    user-select: none;
+}
+
+.menubar {
+    position: relative;
+    gap: 2px;
+    z-index: 30;
+}
+
+.menubar-brand {
+    display: inline-flex;
+    align-items: center;
+    height: var(--theme-control-height);
+    padding: 0 8px;
+    margin-right: 6px;
+    border: none;
+    border-radius: var(--theme-radius);
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    font-weight: var(--theme-font-weight-bold);
+    letter-spacing: 0.01em;
+    cursor: default;
+}
+
+/* Hover and an open menu title share the grey lift — the way Unity's held title stays filled — not the
+   selection blue the UE5 style set paints a SubMenuOpen title with. */
+.menubar-brand:hover,
+.menubar-button:hover,
+.menubar-button.open {
+    background: var(--theme-hover);
+    color: var(--theme-foreground-hover);
+}
+
+.menubar-item {
+    position: relative;
+}
+
+/* MenuButton normal padding is FMargin(0, 2); the horizontal 8px is the spacing SMenuBar
+   leaves between titles, which the engine does not express as padding. The height is the theme's, so a
+   menu title and a transport chip are the same row. */
+.menubar-button {
+    display: inline-flex;
+    align-items: center;
+    height: var(--theme-control-height);
+    padding: 0 8px;
+    border: none;
+    border-radius: var(--theme-radius);
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    cursor: default;
+}
+
+.menubar-spacer {
+    flex: 1;
+}
+
+.menubar-session {
+    padding-right: 8px;
+    color: var(--theme-accent-gray);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 40%;
+}
+
+.menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+/* Unity-style context menu: the darkest surface (Background, #141414 sampled from Unity's Project menu) with a
+   DropdownOutline border, rather than UE5's lighter Menu.Background. Dialogs keep Dropdown so a dialog opened
+   from a menu reads as a step up from it. */
+.menu-popup {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    min-width: 210px;
+    padding: 4px 0;
+    background: var(--theme-background);
+    border: var(--theme-border-width) solid var(--theme-dropdown-outline);
+    border-radius: 0;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+    font-size: var(--theme-font-size);
+}
+
+.viewport-toolbar .menu-popup {
+    top: calc(100% + 2px);
+}
+
+/* The content browser's menu hangs at the pointer rather than under a button. Its position comes from the click,
+   clamped by the component to the window, so nothing here has to measure the menu. */
+.cb-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+}
+
+/* Unity-style menu item: Foreground text on the dark menu surface, a mid-grey Header bar on hover
+   (#3c3c3c sampled; Unity's Header is exactly that), and muted AccentGray when disabled. The rows are
+   tight, the way a desktop menu packs its list — one click target per line, no wasted height. */
+.menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    width: 100%;
+    padding: 3px 12px;
+    border: none;
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    text-align: left;
+    cursor: default;
+}
+
+.menu-item:hover:not(:disabled) {
+    background: var(--theme-header);
+    color: var(--theme-foreground-hover);
+}
+
+.menu-item:disabled {
+    color: var(--theme-accent-gray);
+    cursor: default;
+}
+
+/* The theme menu is a radio group: the applied theme reads as plain text, the rest as muted. */
+.menu-item[aria-checked="true"] {
+    color: var(--theme-white);
+}
+
+/* Shortcuts sit at the item's own size and brightness, like Unity's ("Alt+Ctrl+C" reads as part of the item);
+   on a disabled item they mute with it. */
+.menu-shortcut {
+    color: var(--theme-foreground);
+}
+
+.menu-item:disabled .menu-shortcut {
+    color: var(--theme-accent-gray);
+}
+
+/* ---- modal dialog (New Scene) ---- */
+
+/* The scrim only takes the clicks that dismiss the dialog; it paints nothing, so no colour has to be invented for
+   it — the same choice the menu scrim makes. */
+.dialog-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+}
+
+/* Menu.Background + Menu.Outline: dialogs keep the lighter Dropdown surface, a step up from the dark menus. */
+.dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: min(460px, calc(100vw - 48px));
+    padding: 14px 16px 16px;
+    background: var(--theme-dropdown);
+    border: var(--theme-border-width) solid var(--theme-dropdown-outline);
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-size);
+    user-select: none;
+}
+
+/* WindowTitle / header text. */
+.dialog-title {
+    margin: 0 0 2px;
+    font-size: var(--theme-font-size);
+    font-weight: var(--theme-font-weight-bold);
+    color: var(--theme-foreground-header);
+}
+
+.dialog-text {
+    margin: 0 0 4px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
+    line-height: 1.45;
+}
+
+/* The choice row (Lua / C#) reuses .editor-button, with the primary fill on the one that is chosen, so a dialog
+   never grows a second button style. */
+.dialog-choices {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 2px;
+}
+
+.dialog-label {
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-small);
+}
+
+/* The engine's Input style: Input fill, InputOutline border. */
+.dialog-input {
+    width: 100%;
+    padding: 4px 6px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: 0;
+    background: var(--theme-input);
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+}
+
+.dialog-input:focus {
+    outline: none;
+    border-color: var(--theme-primary);
+    color: var(--theme-foreground-hover);
+}
+
+.dialog-hint {
+    margin: 0;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
+    overflow-wrap: anywhere;
+}
+
+.dialog-error {
+    margin: 0;
+    color: var(--theme-error);
+    font-size: var(--theme-font-small);
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+/* A hairline visible on the dark menu surface (DropdownOutline; #373737 sampled from Unity's menu). */
+.menu-separator {
+    height: 1px;
+    margin: 3px 12px;
+    background: var(--theme-dropdown-outline);
+}
+
+/* ---- transport toolbar ---- */
+
+/* Unity's transport: three flat rounded chips centred on the shared top-strip rhythm (#505050 faces and
+   #cccccc glyphs sampled from Unity's editor). Play/pause, stop and restart stay the honest controls
+   they were. */
+.editor-toolbar-strip {
+    justify-content: center;
+}
+
+.transport {
+    display: flex;
+    /* The chips sit almost shoulder to shoulder in Unity; the seam between them is their outlines. */
+    gap: 1px;
+}
+
+.transport-button {
+    display: inline-flex;
+}
+
+/* The chip: Unity's raised button grey (#505050 sampled) — Secondary three parts to Panel one — in the
+   sampled 1.41:1 rectangle at the theme's control height, outlined in the near-black that also frames
+   the editor's fields. */
+.transport-button button {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 31px;
+    height: var(--theme-control-height);
+    padding: 0;
+    border: var(--theme-border-width) solid var(--theme-window-border);
+    border-radius: var(--theme-radius);
+    background: color-mix(in srgb, var(--theme-secondary) 75%, var(--theme-panel));
+    color: var(--theme-foreground);
+    cursor: default;
+}
+
+/* Hover lifts the face to the theme's hover grey; pressing lifts it once more, the way Unity's flat
+   buttons lighten under the pointer instead of turning a selection colour. */
+.transport-button button:hover:not(:disabled) {
+    background: var(--theme-hover);
+}
+
+.transport-button button:active:not(:disabled) {
+    background: color-mix(in srgb, var(--theme-hover) 80%, var(--theme-foreground));
+}
+
+/* A disabled chip keeps its outline and sits at the lighter stripe grey (#323232 sampled), its glyph dimmed
+   to Foreground halfway to Panel (#858585 sampled), so "nothing to do" reads at a glance. */
+.transport-button button:disabled {
+    background: color-mix(in srgb, var(--theme-recessed) 50%, var(--theme-panel));
+    color: color-mix(in srgb, var(--theme-foreground) 50%, var(--theme-panel));
+    cursor: default;
+}
+
+/* Toolbar icons are Icon16x16. */
+.transport-button svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    stroke: none;
+}
+
+/* ---- dockspace ---- */
+
+.dockspace {
+    --dock-left: 20%;
+    --dock-right: 24%;
+    --dock-bottom: 28%;
+
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: var(--dock-left) 3px minmax(0, 1fr) 3px var(--dock-right);
+    grid-template-rows: minmax(0, 1fr);
+    padding: 3px;
+    gap: 0;
+    /* Docking.Background / DockingEmptyBg are the window background. */
+    background: var(--theme-background);
+}
+
+.dock-middle {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 3px var(--dock-bottom);
+    min-width: 0;
+    min-height: 0;
+}
+
+.dock-pane {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.dock-splitter {
+    background: transparent;
+    transition: background 90ms linear;
+}
+
+.dock-splitter-x {
+    cursor: col-resize;
+}
+
+.dock-splitter-y {
+    cursor: row-resize;
+}
+
+/* SelectionColor is the engine's drag/selector affordance. */
+.dock-splitter:hover,
+.dockspace.is-dragging .dock-splitter {
+    background: var(--theme-selection);
+}
+
+body.dock-dragging-x,
+body.dock-dragging-x * {
+    cursor: col-resize !important;
+    user-select: none;
+}
+
+body.dock-dragging-y,
+body.dock-dragging-y * {
+    cursor: row-resize !important;
+    user-select: none;
+}
+
+/* ---- panel chrome (SDockTab + its content area) ---- */
+
+/* Docking.Border: a Panel fill with a 4px radius. */
+.panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--theme-panel);
+    border: var(--theme-border-width) solid var(--theme-window-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* The tab well is the window background. There is deliberately no divider line under the tab text: the
+   active tab paints the panel's own surface, so tab and panel read as one piece (sampled from Unity's
+   docked window tabs: #141414 well, #333333 face = the panel below it). */
+.panel-tabstrip {
+    display: flex;
+    align-items: stretch;
+    min-height: 28px;
+    background: var(--theme-background);
+    user-select: none;
+}
+
+.panel-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    border: none;
+    border-radius: var(--theme-radius) var(--theme-radius) 0 0;
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    cursor: default;
+}
+
+/* Only the tabs that switch panels are controls; they lift to the dock-tab hover role. */
+button.panel-tab:hover {
+    background: var(--theme-tab-hover);
+    color: var(--theme-foreground-hover);
+}
+
+/* The active tab sits on the panel's own surface, so its face flows into the panel below with no seam. */
+.panel-tab.active,
+.panel-tab.active:hover {
+    background: var(--theme-panel);
+    color: var(--theme-foreground-hover);
+}
+
+/* A panel with a single tab (Hierarchy, Inspector) shows a label, not a control. */
+span.panel-tab {
+    cursor: default;
+}
+
+/* Tab icons are chrome — the reference's inspector dot and bulb — and read at the label's brightness. */
+.panel-tab-icon {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.panel-tab-spacer {
+    flex: 1;
+}
+
+.panel-tab-meta {
+    align-self: center;
+    padding: 0 10px;
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
+}
+
+.panel-body {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 8px;
+    overflow: auto;
+}
+
+.panel-body.nopad {
+    padding: 0;
+    overflow: hidden;
+}
+
+.panel-empty {
+    margin: 8px 2px;
+    color: var(--theme-accent-gray);
+}
+

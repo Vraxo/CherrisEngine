@@ -13,7 +13,8 @@ public class PrefabSurfaceTests
     [Fact]
     public void TheContextMenu_OffersCreatingAPrefab()
     {
-        string markup = Read("src", "OvercoreEditorPhotino", "Components", "HierarchyPanel.razor");
+        string markup = Read("src", "OvercoreEditorPhotino", "Components", "HierarchyPanel.razor") +
+            Read("src", "OvercoreEditorPhotino", "Components", "HierarchyPanel.razor.cs");
 
         markup.Should().Contain("<span>Create Prefab</span>", "the row menu saves the row as a prefab");
         markup.Should().Contain("Host.CreatePrefab(",
@@ -38,7 +39,8 @@ public class PrefabSurfaceTests
     [Fact]
     public void TheContentBrowser_InstantiatesAPrefab()
     {
-        string markup = Read("src", "OvercoreEditorPhotino", "Components", "ContentBrowserPanel.razor");
+        string markup = Read("src", "OvercoreEditorPhotino", "Components", "ContentBrowserPanel.razor") +
+            Read("src", "OvercoreEditorPhotino", "Components", "ContentBrowserPanel.razor.cs");
 
         markup.Should().Contain("<span>Instantiate in Scene</span>");
         markup.Should().Contain("Host.InstantiatePrefab(", "the item adds one to the scene for real");
@@ -49,7 +51,7 @@ public class PrefabSurfaceTests
     [Fact]
     public void Commands_ExistForBothDirections()
     {
-        string commands = Read("src", "OvercoreEditorSession", "Host", "EditorCommands.cs");
+        string commands = Read("src", "OvercoreEditorSession", "Host", "Commands", "PrefabCommands.cs");
 
         commands.Should().Contain("class CreatePrefabFromSelectionCommand(Guid objectId, string assetPath)");
         commands.Should().Contain("class InstantiatePrefabCommand(string assetPath)");
@@ -59,7 +61,7 @@ public class PrefabSurfaceTests
     [Fact]
     public void TheInspector_MarksOverriddenValuesInPlace()
     {
-        string markup = Read("src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor");
+        string markup = ReadInspector();
 
         markup.Should().Contain("PrefabPaths.Name", "the name row knows what it is called in the diff");
         markup.Should().Contain("PrefabPaths.Transform(row.Field)", "so do the transform rows");
@@ -74,7 +76,7 @@ public class PrefabSurfaceTests
     [Fact]
     public void TheInspector_HasTheOverridesDropdown()
     {
-        string markup = Read("src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor");
+        string markup = ReadInspector();
 
         markup.Should().Contain("class=\"imgui-button inspector-overrides\"", "the object row carries Unity's dropdown");
         markup.Should().Contain("node.Overrides.Count", "its count is what has drifted");
@@ -125,11 +127,27 @@ public class PrefabSurfaceTests
 
         return bodies.Count > 0
             ? string.Join("\n", bodies)
-            : throw new InvalidOperationException($"No .{selector} rule in app.css.");
+            : throw new InvalidOperationException($"No .{selector} rule in the stylesheets.");
     }
 
+    private static string ReadInspector() =>
+        Read("src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor") +
+        Read("src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor.cs");
+
     private static string Stylesheet() =>
-        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "theme.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "launcher.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "editor-chrome.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "widgets.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "hierarchy.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "inspector.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "console.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "content-browser.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "viewport.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "status.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "states.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "scrollbars.css");
+
 
     private static string Read(params string[] parts)
     {

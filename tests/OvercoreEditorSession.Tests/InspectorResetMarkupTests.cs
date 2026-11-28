@@ -56,7 +56,12 @@ public class InspectorResetMarkupTests
 
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate);
+                // The panel is split into markup (.razor) and code-behind (.razor.cs): the reset
+                // display helpers live in the latter, the buttons in the former.
+                string codeBehind = Path.Combine(
+                    directory.FullName, "src", "OvercoreEditorPhotino", "Components", "InspectorPanel.razor.cs");
+
+                return File.ReadAllText(candidate) + "\n" + File.ReadAllText(codeBehind);
             }
 
             directory = directory.Parent;
