@@ -22,6 +22,12 @@ public class Editor : Engine
     public EditorState State => PlayModeManager.State;
     public IReadOnlyList<Type> AvailableScriptTypes => ScriptManager.AvailableScriptTypes;
     public bool IsViewportHovered { get; set; }
+
+    /// <summary>
+    /// The terrain sculpting brush: edited in the inspector, stroked with in the viewport, and held here
+    /// because those two panels meet only on the editor.
+    /// </summary>
+    public UI.Viewport.TerrainBrushSettings TerrainBrush { get; } = new();
     public bool StartWithNewProject { get; }
 
     private EditorAppLogic? _editorAppLogic;

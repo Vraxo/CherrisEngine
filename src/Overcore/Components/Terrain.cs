@@ -128,6 +128,44 @@ public class Terrain : Component
         }
     }
 
+    /// <summary>
+    /// True when a world ray meets this terrain's ground, with where it met it and the normalised place
+    /// of the meeting — the question an editor's brush asks every frame, answered with the same arithmetic
+    /// a physics raycast uses, so the ground you sculpt is the ground you collide with.
+    /// </summary>
+    /// <param name="ray">The ray, in world space.</param>
+    /// <param name="worldPoint">Receives where the ray met the surface, in world space.</param>
+    /// <param name="uv">Receives the meeting's normalised place across the terrain, for a brush stroke.</param>
+    /// <returns>True when the ray met the ground.</returns>
+    public bool TryHit(Ray ray, out Vector3 worldPoint, out Vector2 uv)
+    {
+        worldPoint = Vector3.Zero;
+        uv = Vector2.Zero;
+
+        if (GameObject is null)
+        {
+            return false;
+        }
+
+        Matrix4x4 world = Transform.GetModelMatrix();
+        if (!Matrix4x4.Invert(world, out Matrix4x4 inverse))
+        {
+            return false;
+        }
+
+        Vector3 localOrigin = Vector3.Transform(ray.Origin, inverse);
+        Vector3 localDirection = Vector3.TransformNormal(ray.Direction, inverse);
+
+        if (!TerrainRaycast.TryHitLocal(_data, localOrigin, localDirection, out Vector3 localPoint, out float _))
+        {
+            return false;
+        }
+
+        worldPoint = Vector3.Transform(localPoint, world);
+        uv = new Vector2(localPoint.X / _data.Size.X, localPoint.Z / _data.Size.Z);
+        return true;
+    }
+
     /// <summary>One sculpting stroke against the ground, mesh rebuilt after it. See <see cref="TerrainBrush"/>.</summary>
     /// <param name="center">The stroke's centre, normalised across the terrain.</param>
     /// <param name="radius">The stroke's radius, normalised.</param>

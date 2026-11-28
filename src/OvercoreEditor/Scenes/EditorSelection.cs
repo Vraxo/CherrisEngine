@@ -1,4 +1,4 @@
-﻿using Overcore;
+using Overcore;
 using Overcore.Components;
 using Overcore.Core;
 using System.Numerics;
@@ -22,6 +22,14 @@ public class EditorSelection
             ? null
             : FindClosestIntersection(ray.Value);
     }
+
+    /// <summary>
+    /// The world ray through a viewport point, for tools that need the ray itself rather than the object
+    /// it selects: a terrain brush asks where on the ground the mouse points, which is a question about
+    /// the ray, not about selection.
+    /// </summary>
+    public Ray? CreateViewportRay(Vector2 mousePos, Vector2 viewportPos, Vector2 viewportSize) =>
+        CreateRayFromViewport(mousePos, viewportPos, viewportSize);
 
     private GameObject? FindClosestIntersection(Ray ray)
     {

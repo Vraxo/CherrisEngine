@@ -39,6 +39,24 @@ from the first layer's texture, falling back to white.
 weight toward one at the stroke's centre and scale the others down, keeping every pixel summing to one.
 `GetDominantLayer(u, v)` answers which layer a place wears.
 
+## Sculpting in the editor
+
+Select the terrain, open its inspector, and tick **Sculpt in Viewport**. The viewport mouse now belongs
+to the brush (object picking and the transform gizmo stand down while it is armed): a ring shows the
+brush's size on the ground, and dragging sculpts — Raise and Lower are rates, so a held brush keeps
+working, while Flatten, Smooth and Paint pull toward their target at the brush strength. Pick the mode,
+size (metres) and strength beside the arming checkbox; Flatten adds its target height, Paint adds the
+layer to paint with. The layer list below edits tints and adds layers, armed or not.
+
+Each stroke — mouse-down to mouse-up — is **one undo step**: `TerrainStrokeCommand` holds the heights
+and alphamap from before and after the stroke and restores them wholesale, rebuilding the mesh, so
+Ctrl+Z is the stroke never having happened. A stroke that changed nothing leaves no history.
+
+Picking is `Terrain.TryHit`, the world-space form of `TerrainRaycast.TryHitLocal` — a 2D grid DDA with
+exact triangle tests in the terrain's own metres. The physics raycast in `ColliderGeometry` uses the
+same local walk, so the ground an editor sculpts is the ground play mode collides with; edit mode needs
+it because there is no physics world to ask there.
+
 ## Sculpting from a script
 
 ```csharp

@@ -1,4 +1,4 @@
-﻿using Overcore.Rendering.OpenTK;
+using Overcore.Rendering.OpenTK;
 using OvercoreEditor.Undo;
 using ImGuiNET;
 using System.Numerics;
@@ -11,6 +11,7 @@ public class ViewportPanel
     private readonly GizmoController _gizmoController;
     private readonly SceneTabsController _tabsController;
     private readonly ViewportToolbar _toolbar;
+    private readonly TerrainBrushTool _terrainBrushTool;
 
     public ViewportPanel(Editor editor, HistoryManager history)
     {
@@ -18,6 +19,7 @@ public class ViewportPanel
         _gizmoController = new GizmoController(editor, history);
         _tabsController = new SceneTabsController(editor);
         _toolbar = new ViewportToolbar(editor);
+        _terrainBrushTool = new TerrainBrushTool(editor, history);
     }
 
     public void Update()
@@ -52,12 +54,18 @@ public class ViewportPanel
         surface.Draw(otkRenderer, size);
         _editor.IsViewportHovered = surface.IsHovered;
 
-        if (surface.IsHovered)
+        // While the terrain brush is armed for the selection it owns the mouse: no picking, no gizmo.
+        bool brushOwnsMouse = _terrainBrushTool.Handle(pos, surface.Size, surface.IsHovered);
+
+        if (surface.IsHovered && !brushOwnsMouse)
         {
             HandleViewportClick(pos, surface.Size);
         }
 
-        _gizmoController.Draw(pos, surface.Size);
+        if (!brushOwnsMouse)
+        {
+            _gizmoController.Draw(pos, surface.Size);
+        }
     }
 
     private void HandleViewportClick(Vector2 viewportPos, Vector2 viewportSize)

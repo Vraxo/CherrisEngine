@@ -1,10 +1,12 @@
 using Overcore.Components;
+using Overcore.Terrain;
 using Overcore.Utils;
 using OvercoreEditor.Undo;
 using ImGuiNET;
 using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using TerrainComponent = Overcore.Components.Terrain;
 
 namespace OvercoreEditor.Inspectors;
 
@@ -52,6 +54,10 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
         else if (component is NavMeshSurface navMeshSurface)
         {
             DrawNavMeshSurfaceControls(navMeshSurface);
+        }
+        else if (component is TerrainComponent terrain)
+        {
+            dirty |= DrawTerrainControls(terrain);
         }
         return dirty;
     }
@@ -101,6 +107,117 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             ImGui.SameLine();
             ImGui.TextDisabled($"Polys: {data.Polygons.Count}, Verts: {data.Vertices.Length}");
         }
+    }
+
+    /// <summary>
+    /// The terrain's brush and layers: arming the brush hands the viewport mouse to
+    /// <see cref="UI.Viewport.TerrainBrushTool"/> for as long as it stays armed, and the layer list is
+    /// where ground gets its faces. Returns true when the ground itself changed (a layer added, a tint
+    /// edited), which is a scene edit; brush settings are editor state and never dirty the scene.
+    /// </summary>
+    private bool DrawTerrainControls(TerrainComponent terrain)
+    {
+        bool dirty = false;
+        TerrainData data = terrain.TerrainData;
+        UI.Viewport.TerrainBrushSettings brush = _editor.TerrainBrush;
+
+        ImGui.Spacing();
+        ImGui.TextDisabled($"Heightmap {data.HeightmapResolution}×{data.HeightmapResolution}"
+            + $" · {data.Size.X:0}×{data.Size.Z:0} m · heights {data.MinHeight:0.0}…{data.MaxHeight:0.0} m");
+
+        bool armed = brush.Enabled;
+        if (ImGui.Checkbox("Sculpt in Viewport", ref armed))
+        {
+            brush.Enabled = armed;
+        }
+
+        if (!brush.Enabled)
+        {
+            ImGui.TextDisabled("Arm the brush, then drag on the ground in the viewport. One stroke is one undo step.");
+            return DrawTerrainLayers(terrain);
+        }
+
+        ImGui.Spacing();
+        foreach (TerrainBrushMode mode in Enum.GetValues<TerrainBrushMode>())
+        {
+            if (mode != TerrainBrushMode.Raise)
+            {
+                ImGui.SameLine();
+            }
+
+            if (ImGui.RadioButton(mode.ToString(), brush.Mode == mode))
+            {
+                brush.Mode = mode;
+            }
+        }
+
+        float radius = brush.RadiusMetres;
+        if (ImGui.SliderFloat("Brush Size (m)", ref radius, 0.5f, MathF.Max(10f, data.Size.X)))
+        {
+            brush.RadiusMetres = radius;
+        }
+
+        float strength = brush.Strength;
+        if (ImGui.SliderFloat("Brush Strength", ref strength, 0.1f, 20f))
+        {
+            brush.Strength = strength;
+        }
+
+        if (brush.Mode == TerrainBrushMode.Flatten)
+        {
+            float flattenHeight = brush.FlattenHeight;
+            if (ImGui.DragFloat("Flatten Height (m)", ref flattenHeight, 0.1f))
+            {
+                brush.FlattenHeight = flattenHeight;
+            }
+        }
+
+        if (brush.Mode == TerrainBrushMode.Paint)
+        {
+            ImGui.Spacing();
+            ImGui.Text("Paint Layer");
+            for (int layer = 0; layer < data.Layers.Count; layer++)
+            {
+                if (ImGui.RadioButton($"{data.Layers[layer].Name}##PaintLayer{layer}", brush.LayerIndex == layer))
+                {
+                    brush.LayerIndex = layer;
+                }
+            }
+        }
+
+        dirty |= DrawTerrainLayers(terrain);
+        return dirty;
+    }
+
+    /// <summary>The layer list, shared by the armed and unarmed inspector: tints to edit, a layer to add.</summary>
+    private bool DrawTerrainLayers(TerrainComponent terrain)
+    {
+        bool dirty = false;
+        TerrainData data = terrain.TerrainData;
+
+        ImGui.Spacing();
+        ImGui.Text("Layers");
+        for (int layer = 0; layer < data.Layers.Count; layer++)
+        {
+            TerrainLayer current = data.Layers[layer];
+            Vector3 tint = current.Tint;
+            if (ImGui.ColorEdit3($"{current.Name}##LayerTint{layer}", ref tint))
+            {
+                current.Tint = tint;
+                terrain.Rebuild();
+                dirty = true;
+            }
+        }
+
+        if (ImGui.Button("Add Layer"))
+        {
+            data.AddLayer(new TerrainLayer(
+                $"Layer {data.Layers.Count}", string.Empty, Vector3.One));
+            terrain.Rebuild();
+            dirty = true;
+        }
+
+        return dirty;
     }
 
     private bool DrawPropertyRow(Component component, PropertyInfo prop)
