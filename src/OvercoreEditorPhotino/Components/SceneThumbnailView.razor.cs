@@ -11,8 +11,6 @@ using OvercoreEditorPhotino.Components;
 using OvercoreEditorPhotino.Shared;
 using OvercoreEditorPhotino.Services;
 using OvercoreEditorSession;
-using using System.Globalization;
-using using System.Numerics;
 
 namespace OvercoreEditorPhotino.Components;
 
