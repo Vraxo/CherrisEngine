@@ -1,0 +1,155 @@
+/* ---- shared widgets ---- */
+
+/* NormalEditableTextBox: Input fill, InputOutline border, Foreground text. */
+.imgui-input {
+    width: 100%;
+    height: var(--theme-control-height);
+    padding: 3px 8px 4px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+/* HoveredBackgroundBrush keeps the fill and paints the outline Hover. */
+.imgui-input:hover {
+    border-color: var(--theme-hover);
+}
+
+/* FocusedBackgroundBrush paints the outline Primary and the text White. */
+.imgui-input:focus {
+    outline: none;
+    border-color: var(--theme-primary);
+    color: var(--theme-white);
+}
+
+/* Read-only inputs are filled with Header and outlined with InputOutline. */
+.imgui-input[readonly] {
+    background: var(--theme-header);
+    border-color: var(--theme-input-outline);
+    cursor: default;
+}
+
+.imgui-input[readonly]:hover,
+.imgui-input[readonly]:focus {
+    border-color: var(--theme-input-outline);
+}
+
+/* FButtonStyle: Secondary -> Hover -> Header, Input outline, ForegroundHover text. */
+.imgui-button {
+    /* ButtonMargins = FMargin(12, 1.5, 12, 1.5), rounded to whole pixels. */
+    padding: 2px 12px;
+    border: var(--theme-border-width) solid var(--theme-input);
+    border-radius: var(--theme-radius);
+    background: var(--theme-secondary);
+    color: var(--theme-foreground-hover);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    cursor: default;
+}
+
+.imgui-button:hover:not(:disabled) {
+    background: var(--theme-hover);
+}
+
+/* PressedButtonMargins pushes the label one pixel down without changing the button's height. */
+.imgui-button:active:not(:disabled) {
+    padding: 3px 12px 1px;
+    background: var(--theme-header);
+}
+
+.imgui-button:disabled {
+    border-color: var(--theme-recessed);
+    background: var(--theme-dropdown);
+    color: var(--theme-foreground);
+    cursor: default;
+}
+
+/* Separator is painted with DropdownOutline, the same hairline the ImGui editor uses. */
+.imgui-separator {
+    height: 1px;
+    margin: 6px 0;
+    background: var(--theme-dropdown-outline);
+}
+
+.imgui-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--theme-foreground);
+    font-size: calc(var(--theme-font-size) - 1px);
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Unity-style checkbox: dark rounded well with a light tick, not the browser's accent-filled box.
+   The input remains native for keyboard interaction and accessibility. */
+.inspector-section-toggle,
+.imgui-check,
+.imgui-checkbox input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    display: inline-block;
+    flex: none;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border: 1px solid var(--theme-window-border);
+    border-radius: 4px;
+    background: var(--theme-recessed);
+    cursor: pointer;
+}
+
+.inspector-section-toggle:checked::after,
+.imgui-check:checked::after,
+.imgui-checkbox input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 3px;
+    width: 9px;
+    height: 6px;
+    border: solid var(--theme-foreground);
+    border-width: 0 0 2px 2px;
+    transform: rotate(-45deg);
+}
+
+.inspector-section-toggle:hover:not(:disabled),
+.imgui-check:hover:not(:disabled),
+.imgui-checkbox input[type="checkbox"]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--theme-recessed) 80%, var(--theme-foreground));
+}
+
+.inspector-section-toggle:focus-visible,
+.imgui-check:focus-visible,
+.imgui-checkbox input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+}
+
+.inspector-section-toggle:disabled,
+.imgui-check:disabled,
+.imgui-checkbox input[type="checkbox"]:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* Let the operating system draw the control in high-contrast mode. */
+@media (forced-colors: active) {
+    .inspector-section-toggle,
+    .imgui-check,
+    .imgui-checkbox input[type="checkbox"] {
+        appearance: auto;
+        -webkit-appearance: auto;
+    }
+
+    .inspector-section-toggle::after,
+    .imgui-check::after,
+    .imgui-checkbox input[type="checkbox"]::after {
+        content: none;
+    }
+}

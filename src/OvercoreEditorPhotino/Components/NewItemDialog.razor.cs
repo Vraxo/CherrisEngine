@@ -1,0 +1,160 @@
+using System.Globalization;
+using System.Numerics;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Routing;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.Extensions.Logging;
+using Microsoft.JSInterop;
+using Overcore.Projects;
+using OvercoreEditorPhotino;
+using OvercoreEditorPhotino.Components;
+using OvercoreEditorPhotino.Shared;
+using OvercoreEditorPhotino.Services;
+using OvercoreEditorSession;
+
+namespace OvercoreEditorPhotino.Components;
+
+/// <summary>
+/// Code-behind for <see cref="NewItemDialog"/>: the typed name, the kind of item and the create command.
+/// The markup lives in <c>NewItemDialog.razor</c>; this file holds the state and handlers.
+/// </summary>
+public partial class NewItemDialog
+{
+    private readonly string _id = "dialog-" + Guid.NewGuid().ToString("N")[..8];
+
+    private string _name = string.Empty;
+    private string? _error;
+    private bool _focus;
+    private bool _wasVisible;
+    private ElementReference _input;
+
+    /// <summary>Whether the dialog is on screen. The parent owns it: this component only reports that it closed.</summary>
+    [Parameter]
+    public bool Visible { get; set; }
+
+    /// <summary>The heading, for example <c>New Scene</c>.</summary>
+    [Parameter]
+    public string Title { get; set; } = "New";
+
+    /// <summary>A line under the heading saying what will be made and where it goes.</summary>
+    [Parameter]
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>The label over the name field, for example <c>Scene name</c>.</summary>
+    [Parameter]
+    public string Label { get; set; } = "Name";
+
+    /// <summary>The name the dialog opens on, normally one the folder does not already use.</summary>
+    [Parameter]
+    public string DefaultName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The ways to make the thing, when there is more than one — a script can be Lua or C#. Null hides the row.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<string>? Choices { get; set; }
+
+    /// <summary>Which of <see cref="Choices"/> is chosen. The parent owns it.</summary>
+    [Parameter]
+    public string? Choice { get; set; }
+
+    /// <summary>Raised with the choice the user pressed.</summary>
+    [Parameter]
+    public EventCallback<string> ChoiceChanged { get; set; }
+
+    /// <summary>
+    /// The path the typed name becomes, shown before anything is written so a name that lands somewhere
+    /// surprising is seen rather than discovered.
+    /// </summary>
+    [Parameter]
+    public Func<string, string>? Hint { get; set; }
+
+    /// <summary>
+    /// Creates the thing, or explains why it could not be: null means it was made. The dialog stays open on an
+    /// error, with the reason shown, so a refused name costs a keystroke rather than the whole dialog.
+    /// </summary>
+    [Parameter]
+    public Func<string, string?>? OnCreate { get; set; }
+
+    /// <summary>Raised when the dialog is dismissed — by Cancel, Escape, the scrim, or a successful create.</summary>
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string TitleId => _id + "-title";
+
+    private bool IsChosen(string choice) => String.Equals(choice, Choice, StringComparison.Ordinal);
+
+    private async Task Choose(string choice) => await ChoiceChanged.InvokeAsync(choice);
+
+    private string InputId => _id + "-name";
+
+    protected override void OnParametersSet()
+    {
+        // Opening starts from a clean field; every other render leaves what the user typed alone.
+        if (Visible && !_wasVisible)
+        {
+            _name = DefaultName;
+            _error = null;
+            _focus = true;
+        }
+
+        _wasVisible = Visible;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focus)
+        {
+            return;
+        }
+
+        _focus = false;
+
+        try
+        {
+            // The field only exists once the dialog has rendered, so focus is taken here rather than where the
+            // dialog was opened. The keyboard is a nicety: a webview that will not take focus still types fine.
+            await _input.FocusAsync();
+        }
+        catch (Exception exception) when (exception is JSDisconnectedException or InvalidOperationException)
+        {
+            // No interop to focus with (the window is closing, or the element has gone); nothing to recover.
+        }
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+
+        if (OnCreate is null)
+        {
+            return;
+        }
+
+        string? error = OnCreate(_name);
+
+        if (error is not null)
+        {
+            _error = error;
+            return;
+        }
+
+        await Close();
+    }
+
+    private async Task Close() => await OnClose.InvokeAsync();
+
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "Enter":
+                await Submit();
+                break;
+
+            case "Escape":
+                await Close();
+                break;
+        }
+    }
+}

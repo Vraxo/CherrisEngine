@@ -6,7 +6,19 @@
     <base href="/" />
     <!-- Font Awesome is bundled locally so component glyphs render in both the webview and browser host. -->
     <link href="vendor/fontawesome/css/all.min.css?v=7.1.0" rel="stylesheet" />
-    <link href="css/app.css?v=14" rel="stylesheet" />
+    <!-- The former app.css, split by concern. Order matters: later sheets win ties, as the single file did. -->
+    <link href="css/theme.css?v=15" rel="stylesheet" />
+    <link href="css/launcher.css?v=15" rel="stylesheet" />
+    <link href="css/editor-chrome.css?v=15" rel="stylesheet" />
+    <link href="css/widgets.css?v=15" rel="stylesheet" />
+    <link href="css/hierarchy.css?v=15" rel="stylesheet" />
+    <link href="css/inspector.css?v=15" rel="stylesheet" />
+    <link href="css/console.css?v=15" rel="stylesheet" />
+    <link href="css/content-browser.css?v=15" rel="stylesheet" />
+    <link href="css/viewport.css?v=15" rel="stylesheet" />
+    <link href="css/status.css?v=15" rel="stylesheet" />
+    <link href="css/states.css?v=15" rel="stylesheet" />
+    <link href="css/scrollbars.css?v=15" rel="stylesheet" />
     <script>
         // Replay the last theme before the first paint, so a window that opens on a non-default theme does
         // not flash the stylesheet's default for a frame. js/theme.js replaces this set when Blazor starts.

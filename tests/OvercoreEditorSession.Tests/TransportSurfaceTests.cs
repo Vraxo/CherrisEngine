@@ -74,14 +74,27 @@ public class TransportSurfaceTests
 
         return bodies.Count > 0
             ? string.Join("\n", bodies)
-            : throw new InvalidOperationException($"No {selector} rule in app.css.");
+            : throw new InvalidOperationException($"No {selector} rule in the stylesheets.");
     }
 
     private static string ReadToolBar() =>
-        Read("src", "OvercoreEditorPhotino", "Components", "ToolBar.razor");
+        Read("src", "OvercoreEditorPhotino", "Components", "ToolBar.razor") +
+        Read("src", "OvercoreEditorPhotino", "Components", "ToolBar.razor.cs");
 
     private static string Stylesheet() =>
-        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "app.css");
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "theme.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "launcher.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "editor-chrome.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "widgets.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "hierarchy.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "inspector.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "console.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "content-browser.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "viewport.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "status.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "states.css") +
+        Read("src", "OvercoreEditorPhotino", "wwwroot", "css", "scrollbars.css");
+
 
     private static string Read(params string[] parts)
     {

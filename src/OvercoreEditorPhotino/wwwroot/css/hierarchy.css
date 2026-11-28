@@ -1,0 +1,338 @@
+/* ---- hierarchy (Unity's scene list: toolbar, toggle columns, zebra rows) ---- */
+
+/* The list is Unity's: a create button and search over two fixed toggle columns, the scene's name as a header
+   row, and zebra rows that keep striping into the empty space below the last object (#282828/#323232 sampled
+   from Unity's dark hierarchy). The rows sit directly on the panel — no inset list box — the way the content
+   browser's grid sits on it. */
+.hier-body {
+    /* Unity's row stripes: the Recessed well and the same well lifted halfway to Panel. */
+    --hier-stripe-dark: var(--theme-recessed);
+    --hier-stripe-light: color-mix(in srgb, var(--theme-recessed) 50%, var(--theme-panel));
+    /* One stripe per row: rows and stripes share the height, so they cannot drift apart. */
+    --hier-row-height: var(--theme-control-height);
+    --hier-eye-column: 28px;
+    --hier-pick-column: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.hier-notice {
+    padding: 6px 8px 0;
+}
+
+/* Unity's toolbar: the create button, the search box, and the multi-scene glyph, on the lifted stripe
+   (#323232 sampled; the search field inside it is the Input well). */
+.hier-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    background: var(--hier-stripe-light);
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+}
+
+.hier-create {
+    position: relative;
+    flex: none;
+}
+
+/* Unity's create button is a flat + with its dropdown arrow: no button box until it is hovered. */
+.hier-create-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: var(--theme-control-height);
+    padding: 0 5px;
+    border: none;
+    border-radius: var(--theme-radius);
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    cursor: default;
+}
+
+.hier-create-button:hover,
+.hier-create-button[aria-expanded="true"] {
+    background: var(--theme-hover);
+    color: var(--theme-foreground-hover);
+}
+
+.hier-create-chevron {
+    font-size: 7px;
+}
+
+.hier-create-menu {
+    min-width: 190px;
+}
+
+.hier-search {
+    flex: 1;
+    min-width: 0;
+}
+
+.hier-search .imgui-input {
+    padding-right: 22px;
+}
+
+/* The arrow of Unity's search-options menu, drawn in the field's right padding. It opens nothing yet, so it
+   is chrome and takes no clicks. */
+.search-options {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    width: 8px;
+    height: 5px;
+    transform: translateY(-50%);
+    color: var(--theme-accent-gray);
+    pointer-events: none;
+}
+
+/* The multi-scene glyph that ends Unity's toolbar, decorative like the search arrow. */
+.hier-toolbar-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: var(--theme-control-height);
+    color: var(--theme-accent-gray);
+    font-size: 12px;
+}
+
+/* The column strip: visibility, scene picking, Name — chrome over the rows, on the same Recessed surface as
+   the dark stripe (#282828 sampled), with Panel hairlines where the columns meet (#383838 sampled). */
+.hier-columns {
+    display: flex;
+    align-items: center;
+    height: calc(var(--hier-row-height) + 2px);
+    background: var(--hier-stripe-dark);
+    color: var(--theme-foreground-header);
+    font-size: var(--theme-font-size);
+    user-select: none;
+}
+
+.hier-col {
+    display: inline-flex;
+    align-items: center;
+    height: 100%;
+    padding: 0;
+}
+
+.hier-col-eye,
+.hier-cell-eye {
+    flex: none;
+    width: var(--hier-eye-column);
+}
+
+.hier-col-pick,
+.hier-cell-pick {
+    flex: none;
+    width: var(--hier-pick-column);
+}
+
+.hier-col-eye,
+.hier-col-pick {
+    justify-content: center;
+    border-right: var(--theme-border-width) solid var(--theme-panel);
+}
+
+.hier-col-name {
+    flex: 1;
+    min-width: 0;
+    padding-left: 6px;
+}
+
+.hier-col-menu {
+    flex: none;
+    justify-content: center;
+    width: 24px;
+}
+
+/* The list well: rows stripe between the two wells, and the striping keeps going through the empty space
+   below the last row, the way Unity's list does. The gradient rides with the scroll (background-attachment:
+   local), so a stripe and its row never come apart. */
+.hier-tree {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background:
+        repeating-linear-gradient(
+            to bottom,
+            var(--hier-stripe-light) 0,
+            var(--hier-stripe-light) var(--hier-row-height),
+            var(--hier-stripe-dark) var(--hier-row-height),
+            var(--hier-stripe-dark) calc(var(--hier-row-height) * 2));
+    /* After the shorthand above, which would reset it to scroll. */
+    background-attachment: local;
+}
+
+/* Rows sit on the stripes with no box of their own: hovered rows become SelectHover (Panel), selected rows
+   Select. */
+.tree {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+}
+
+.tree-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    height: var(--hier-row-height);
+    padding: 0;
+    border-radius: 0;
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-size);
+    cursor: default;
+    user-select: none;
+}
+
+.tree-row:hover {
+    background: var(--theme-select-hover);
+}
+
+.tree-row.selected,
+.tree-row.selected:hover {
+    background: var(--theme-select);
+    color: var(--theme-foreground-hover);
+}
+
+/* The scene header row sits in the same well the search field uses (#232323 for both in the reference), a
+   step darker than the rows. */
+.tree-scene {
+    background: var(--theme-input);
+}
+
+/* Unity titles the scene row; its name is the one bold label in the list. */
+.hier-scene-name {
+    font-weight: var(--theme-font-weight-bold);
+}
+
+.hier-scene-icon {
+    color: var(--theme-foreground-header);
+}
+
+/* Unity's two toggle columns are fixed-width; the name column takes the rest and indents one step per depth
+   (the inline padding on .hier-name carries the depth). */
+.hier-cell {
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hier-name {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    padding-left: 6px;
+}
+
+.hier-icon {
+    flex: none;
+    width: 14px;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+}
+
+/* An empty object's cube: no component claimed the row's icon. */
+.hier-icon-plain {
+    color: var(--theme-accent-gray);
+}
+
+/* Unity's visibility toggle. It appears on the rows that draw — the eye cell stays empty on the rest, as in
+   the reference — and it switches the object's renderer off and back on. */
+.hier-eye {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: var(--theme-radius);
+    background: transparent;
+    color: var(--theme-foreground);
+    font-size: 11px;
+    line-height: 1;
+    cursor: default;
+}
+
+.hier-eye:hover {
+    background: var(--theme-hover);
+    color: var(--theme-foreground-hover);
+}
+
+/* Off reads dimmer than on; the eye-slash glyph says which way the object is. */
+.hier-eye.off {
+    color: var(--theme-accent-gray);
+}
+
+/* The foldout is Unity's solid triangle, pointing right shut and turning to point down when open. */
+.tree-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--theme-foreground);
+    line-height: 1;
+    cursor: default;
+}
+
+.tree-row.selected .tree-arrow {
+    color: var(--theme-foreground-hover);
+}
+
+.tree-arrow.empty {
+    cursor: default;
+    visibility: hidden;
+}
+
+.tree-chevron {
+    width: 8px;
+    height: 8px;
+    transition: transform 90ms ease-out;
+}
+
+.tree-chevron.expanded {
+    transform: rotate(90deg);
+}
+
+.tree-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The context menu's Rename turns the label into a field: the row's own height, taking the label's place
+   and the rest of the row's width. */
+.hier-rename {
+    flex: 1;
+    min-width: 0;
+    height: calc(var(--hier-row-height) - 4px);
+}
+
+/* Unity marks a prefab instance's objects with its blue cube. Ours is a small stack-of-cubes mark in the
+   theme's primary role, tucked against the name and never squeezed by it. */
+.hier-prefab-mark {
+    flex-shrink: 0;
+    margin-left: 4px;
+    font-size: 10px;
+    color: var(--theme-primary);
+}
+
+.hier-empty {
+    padding: 8px;
+    margin: 0;
+}
+

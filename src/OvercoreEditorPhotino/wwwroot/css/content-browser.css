@@ -1,0 +1,149 @@
+/* ---- content browser ---- */
+
+.content-browser {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: 5px 7px;
+}
+
+/* Something the session had to say about the scene it opened — an empty file, a camera it had to add, a file
+   that is not a scene. It sits above the hierarchy's search field, because that is where the question "why does
+   the tree look like this?" is asked. */
+.panel-notice {
+    margin: 0 0 6px;
+    padding: 4px 8px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-left: 2px solid var(--theme-warning);
+    border-radius: var(--theme-radius);
+    background: var(--theme-recessed);
+    color: var(--theme-foreground-header);
+    font-size: var(--theme-font-small);
+    line-height: 1.45;
+}
+
+.cb-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.cb-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-foreground);
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+.cb-count {
+    color: var(--theme-accent-gray);
+    font-size: var(--theme-font-small);
+    flex: none;
+}
+
+/* The tiles sit on the panel itself. An inset list box here would only draw a second frame inside the panel's
+   own, which is the noise the console's log region earns and the browser's grid does not. */
+.cb-grid {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 2px;
+    overflow: auto;
+}
+
+.cb-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 84px;
+    padding: 8px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--theme-radius);
+    background: transparent;
+    color: var(--theme-foreground);
+    font: inherit;
+    cursor: default;
+    user-select: none;
+}
+
+.cb-item:hover {
+    background: var(--theme-select-hover);
+}
+
+/* Selected tiles: the engine outlines tiles with the selection blue over SelectParent. */
+.cb-item.selected {
+    border-color: var(--theme-primary);
+    background: var(--theme-select-parent);
+    color: var(--theme-foreground-hover);
+}
+
+.cb-glyph {
+    width: 28px;
+    height: 28px;
+    color: var(--theme-foreground);
+    flex: none;
+}
+
+/* A scene's preview in the content browser: a top-down map of the scene's objects, read from the scene file's
+   YAML. The box matches the component's viewBox (76x46) so nothing is letterboxed or stretched. */
+.cb-thumb {
+    display: block;
+    width: 76px;
+    height: 46px;
+    flex: none;
+}
+
+.cb-thumb-floor {
+    fill: var(--theme-input);
+    stroke: var(--theme-input-outline);
+    stroke-width: 1;
+}
+
+.cb-thumb-empty {
+    fill: none;
+    stroke: var(--theme-input-outline);
+    stroke-dasharray: 3 3;
+}
+
+.cb-thumb-mesh {
+    fill: var(--theme-accent-gray);
+    fill-opacity: 0.5;
+    stroke: var(--theme-foreground);
+    stroke-width: 0.6;
+}
+
+.cb-thumb-other {
+    fill: none;
+    stroke: var(--theme-hover-2);
+    stroke-width: 0.8;
+}
+
+.cb-thumb-camera {
+    fill: var(--theme-accent-blue);
+}
+
+.cb-thumb-light {
+    fill: var(--theme-accent-yellow);
+}
+
+.cb-thumb-light-glow {
+    fill: var(--theme-accent-yellow);
+    fill-opacity: 0.18;
+}
+
+.cb-name {
+    max-width: 76px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+

@@ -1,0 +1,395 @@
+/* ---- launcher ---- */
+
+.launcher {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+}
+
+.launcher-nav {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 20px 16px;
+    background: var(--surface-raised);
+    border-right: 1px solid var(--border);
+}
+
+.launcher-brand {
+    font-size: 20px;
+    font-weight: var(--theme-font-weight-bold);
+    letter-spacing: 0.14em;
+    color: var(--accent);
+}
+
+.launcher-caption {
+    margin-top: 4px;
+    font-size: var(--theme-font-small);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+
+.launcher-nav-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.launcher-nav-item {
+    min-height: var(--theme-control-height);
+    padding: 9px 12px;
+    border: var(--theme-border-width) solid transparent;
+    border-radius: var(--theme-radius);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.launcher-nav-item:hover {
+    background: var(--theme-hover);
+    color: var(--theme-foreground-hover);
+}
+
+.launcher-nav-item.active {
+    border-color: var(--border);
+    background: var(--theme-select-inactive);
+    box-shadow: inset 3px 0 0 var(--accent);
+    color: var(--theme-foreground-hover);
+}
+
+.launcher-nav-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: var(--theme-font-small);
+}
+
+.launcher-main {
+    min-width: 0;
+    overflow: auto;
+    padding: 32px 24px 48px;
+}
+
+.launcher-column {
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+.launcher-headline {
+    margin: 6px 0 4px;
+    font-size: 26px;
+    font-weight: var(--theme-font-weight-bold);
+}
+
+.launcher-muted {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.launcher-path {
+    overflow-wrap: anywhere;
+}
+
+.launcher-card {
+    margin-top: 18px;
+    padding: 16px;
+    background: var(--theme-panel);
+    border: var(--theme-border-width) solid var(--border);
+    border-radius: var(--theme-radius);
+}
+
+.launcher-card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: var(--theme-font-weight-bold);
+    font-size: calc(var(--theme-font-size) - 1px);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.launcher-label {
+    display: block;
+    margin: 12px 0 4px;
+    font-size: calc(var(--theme-font-size) - 1px);
+    color: var(--text-muted);
+}
+
+.launcher-input {
+    width: 100%;
+    min-height: var(--theme-control-height);
+    margin: 6px 0;
+    padding: 5px 10px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    color: var(--text);
+    font: inherit;
+}
+
+.launcher-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.launcher-field {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.launcher-field .launcher-input {
+    margin: 6px 0;
+}
+
+.launcher-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.launcher-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--theme-input);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+}
+
+.launcher-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.launcher-row-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: var(--theme-font-weight-bold);
+}
+
+.launcher-row-path {
+    color: var(--text-muted);
+    font-size: var(--theme-font-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.launcher-row-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.launcher-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: var(--theme-font-small);
+    font-weight: var(--theme-font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.launcher-badge.ready {
+    color: var(--ok);
+    background: rgba(31, 228, 75, 0.12);
+}
+
+.launcher-badge.missing {
+    color: var(--warn);
+    background: rgba(255, 184, 0, 0.14);
+}
+
+.launcher-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.launcher-error {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--bad);
+    border-radius: 8px;
+    background: rgba(239, 53, 53, 0.08);
+    color: var(--theme-error);
+}
+
+.launcher-busy {
+    margin-top: 16px;
+    color: var(--accent);
+}
+
+.launcher-link {
+    padding: 0;
+    margin-top: 10px;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.launcher-link:hover {
+    text-decoration: underline;
+}
+
+.launcher :focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+    .launcher {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .launcher-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px 16px;
+        padding: 12px 14px;
+        border-right: 0;
+        border-bottom: var(--theme-border-width) solid var(--border);
+    }
+
+    .launcher-nav-items {
+        flex-direction: row;
+        gap: 6px;
+    }
+
+    .launcher-nav-item {
+        white-space: nowrap;
+    }
+
+    .launcher-nav-footer {
+        display: none;
+    }
+
+    .launcher-main {
+        padding: 20px 14px 32px;
+    }
+
+    .launcher-row-path {
+        overflow: visible;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (max-width: 520px) {
+    .launcher-nav {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .launcher-nav-items {
+        width: 100%;
+    }
+
+    .launcher-nav-item {
+        flex: 1;
+        text-align: center;
+    }
+
+    .launcher-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .launcher-row-actions {
+        justify-content: flex-end;
+    }
+
+    .launcher-field {
+        flex-wrap: wrap;
+    }
+
+    .launcher-field .launcher-input {
+        flex: 1 1 100%;
+    }
+}
+
+/* FButtonStyle, UE5's default: Secondary fill, Input outline, ForegroundHover text — the same surface .imgui-button
+   paints, because a dialog is not a different product from the panel that opened it. `appearance: none` is the part
+   that carries the weight in a webview: without it a <button> keeps the user agent's bevel, so a dialog opened from
+   a flat menu offered Windows-95 buttons next to flat ones for want of a base rule to modify. */
+.editor-button {
+    appearance: none;
+    /* ButtonMargins = FMargin(12, 1.5, 12, 1.5), rounded to whole pixels, as the panel buttons use. */
+    padding: 2px 12px;
+    border: var(--theme-border-width) solid var(--theme-input);
+    border-radius: var(--theme-radius);
+    background: var(--theme-secondary);
+    color: var(--theme-foreground-hover);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    cursor: default;
+}
+
+.editor-button:hover:not(:disabled) {
+    background: var(--theme-hover);
+}
+
+/* PressedButtonMargins pushes the label one pixel down without changing the button's height. */
+.editor-button:active:not(:disabled) {
+    padding: 3px 12px 1px;
+    background: var(--theme-header);
+}
+
+.editor-button.subtle {
+    color: var(--text-muted);
+}
+
+/* FButtonStyle's disabled state: Dropdown fill, Recessed outline. */
+.editor-button:disabled {
+    border-color: var(--theme-recessed);
+    background: var(--theme-dropdown);
+    color: var(--theme-foreground);
+    opacity: 1;
+    cursor: default;
+}
+
+/* PrimaryButton: Primary fill, PrimaryHover on hover. */
+.editor-button.primary {
+    border-color: var(--theme-input);
+    background: var(--theme-primary);
+    color: var(--theme-foreground-hover);
+}
+
+.editor-button.primary:hover:not(:disabled) {
+    border-color: var(--theme-input);
+    background: var(--theme-primary-hover);
+    color: var(--theme-foreground-hover);
+}
+
+.editor-button.primary:active:not(:disabled) {
+    padding: 3px 12px 1px;
+    background: var(--theme-primary-hover);
+    color: var(--theme-foreground-hover);
+}
+
+

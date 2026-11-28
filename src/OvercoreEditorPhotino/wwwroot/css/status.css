@@ -1,0 +1,65 @@
+/* ---- status strip ---- */
+
+.statusbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 10px;
+    background: var(--theme-header);
+    border-top: var(--theme-border-width) solid var(--theme-window-border);
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-small);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.statusbar-muted {
+    color: var(--theme-accent-gray);
+}
+
+.statusbar-spacer {
+    flex: 1;
+}
+
+.statusbar-sep {
+    width: 1px;
+    height: 11px;
+    background: var(--theme-dropdown-outline);
+}
+
+.statusbar-renderer {
+    max-width: 32%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--theme-accent-gray);
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: var(--theme-font-weight-bold);
+}
+
+.status-pill::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.status-ok {
+    color: var(--theme-success);
+}
+
+.status-pending {
+    color: var(--theme-warning);
+}
+
+.status-bad {
+    color: var(--theme-error);
+}
+

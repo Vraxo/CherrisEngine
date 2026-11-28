@@ -1,0 +1,47 @@
+/* ---- scrollbars (FScrollBarStyle: unpainted track, Hover/Hover2 rounded thumbs) ---- */
+
+::-webkit-scrollbar {
+    width: var(--theme-scrollbar-width);
+    height: var(--theme-scrollbar-width);
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--theme-hover);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: var(--theme-radius);
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+    background: var(--theme-hover-2);
+    background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 14px;
+    background: var(--theme-notifications);
+    border-top: var(--theme-border-width) solid var(--theme-error);
+    color: var(--theme-foreground-hover);
+    z-index: 1000;
+}
+
+#blazor-error-ui .reload,
+#blazor-error-ui .dismiss {
+    color: var(--theme-accent-blue);
+    margin-left: 8px;
+    cursor: pointer;
+}

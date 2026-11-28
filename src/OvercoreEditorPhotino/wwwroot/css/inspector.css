@@ -1,0 +1,623 @@
+/* InspectorPanel styles, extracted from the former app.css so the panel keeps its own sheet. They live here,
+   beside the other global sheets, because the editor links plain stylesheets and ships no scoped-CSS bundle:
+   a .razor.css next to the component would never be served. The shared component glyph and reset-slot rules
+   are at their original place in the cascade, so `.component-icon` and `.prop-reset` resolve as they did. */
+
+/* ---- inspector (details panel sections) ---- */
+
+/* Unity's inspector is one continuous surface: headers and property rows share a background,
+   with thin rules separating components. */
+.inspector-section {
+    /* The foldout is only as wide as its 10px chevron: no extra gutters around the arrow. The slightly
+       wider header gap gives the component icon breathing room on both sides. */
+    --inspector-inset: 4px;
+    --inspector-fold-width: 10px;
+    --inspector-icon-width: 12px;
+    --inspector-header-gap: 4px;
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    background: var(--theme-panel);
+}
+
+/* Foldout and component name on the left; the enable checkbox sits at the right edge. */
+.inspector-section-header {
+    display: flex;
+    align-items: center;
+    gap: var(--inspector-header-gap);
+    width: 100%;
+    min-height: 22px;
+    padding: 3px var(--inspector-inset);
+    background: transparent;
+    color: var(--theme-foreground-header);
+    font-size: var(--theme-font-size);
+    font-weight: var(--theme-font-weight-bold);
+    user-select: none;
+}
+
+/* The chevron and icon form the fold control; the name also toggles the section. */
+.inspector-section-fold {
+    display: flex;
+    align-items: center;
+    gap: var(--inspector-header-gap);
+    flex: none;
+    min-width: 0;
+    min-height: 16px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    appearance: none;
+    box-shadow: none;
+    cursor: default;
+}
+
+.inspector-section-fold:focus-visible,
+.inspector-section-name:focus-visible {
+    outline: var(--theme-border-width) solid var(--theme-primary);
+    outline-offset: 2px;
+}
+
+/* Fix the foldout width so titles and the property labels below stay aligned. The arrow itself has no
+   padding: the 10px slot is the whole 10px glyph. */
+.inspector-section-fold .tree-arrow {
+    flex: 0 0 var(--inspector-fold-width);
+    width: var(--inspector-fold-width);
+    padding: 0;
+}
+
+/* A component the author switched off: Unity dims its header, and leaves the properties editable. */
+.inspector-section.is-disabled .inspector-section-fold,
+.inspector-section.is-disabled .inspector-section-name,
+.inspector-section.is-disabled .inspector-section-fold .tree-arrow,
+.inspector-section.is-disabled .inspector-section-icon {
+    color: var(--theme-accent-gray);
+}
+
+.inspector-section.is-disabled .inspector-section-icon {
+    opacity: 0.55;
+}
+
+/* Component glyphs are Font Awesome icons; the fixed slot keeps the foldout and title aligned. */
+.inspector-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--inspector-icon-width);
+    height: var(--inspector-icon-width);
+    color: var(--theme-foreground-header);
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+}
+
+.inspector-section-icon::before {
+    line-height: 1;
+}
+
+.inspector-section-name {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    appearance: none;
+    box-shadow: none;
+    cursor: default;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Start property labels at the same x-coordinate as the component title. */
+.inspector-section-body {
+    padding: 4px var(--inspector-inset) 5px
+        calc(var(--inspector-inset) + var(--inspector-fold-width) + var(--inspector-icon-width) + var(--inspector-header-gap) + var(--inspector-header-gap));
+}
+
+.inspector-section-body.collapsed {
+    display: none;
+}
+
+.inspector-muted {
+    margin: 0;
+    padding: 3px 2px;
+    color: var(--theme-accent-gray);
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+/* The object header: a bold name beside a cube icon, like Unity's object bar. The name uses the same
+   visible textbox chrome as the property fields, so it is obvious that it can be edited. */
+.inspector-object {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 3px 6px;
+    border-bottom: var(--theme-border-width) solid var(--theme-window-border);
+    background: var(--theme-header);
+}
+
+.inspector-object-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--theme-foreground-header);
+    font-size: 13px;
+    line-height: 1;
+    text-align: center;
+}
+
+/* Each component family gets one of the editor's accent roles. These are roles, not fixed colours, so a
+   theme switch recolours the Font Awesome glyphs along with the rest of the editor. */
+.component-icon-blue {
+    color: var(--theme-accent-blue);
+}
+
+/* The camera asks for a deliberately lighter blue. The first declaration is a fallback for browsers
+   without color-mix(); the second keeps the theme's blue role but tints it toward white. */
+.component-icon-light-blue {
+    color: var(--theme-accent-blue);
+    color: color-mix(in srgb, var(--theme-accent-blue) 55%, var(--theme-white));
+}
+
+.component-icon-green {
+    color: var(--theme-accent-green);
+}
+
+.component-icon-orange {
+    color: var(--theme-accent-orange);
+}
+
+.component-icon-pink {
+    color: var(--theme-accent-pink);
+}
+
+.component-icon-purple {
+    color: var(--theme-accent-purple);
+}
+
+.component-icon-red {
+    color: var(--theme-accent-red);
+}
+
+.component-icon-yellow {
+    color: var(--theme-accent-yellow);
+}
+
+.inspector-name {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    height: var(--theme-control-height);
+    padding: 2px 6px;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    color: var(--theme-foreground);
+    font: inherit;
+    font-size: var(--theme-font-size);
+    font-weight: var(--theme-font-weight-bold);
+    cursor: text;
+}
+
+.inspector-name:hover:not(:disabled) {
+    border-color: var(--theme-hover);
+    background: var(--theme-input);
+}
+
+.inspector-name:focus {
+    outline: none;
+    border-color: var(--theme-primary);
+    background: var(--theme-input);
+    color: var(--theme-white);
+}
+
+.inspector-name:focus-visible {
+    outline: 1px solid var(--theme-primary);
+    outline-offset: -1px;
+}
+
+.inspector-name:disabled {
+    border-color: var(--theme-input-outline);
+    background: var(--theme-recessed);
+    color: var(--theme-accent-gray);
+    cursor: default;
+}
+
+/* ---- prefab overrides ----
+   An overridden value is marked the way Unity marks it: the label goes bold, in place. No color, no badge —
+   the weight is the mark. */
+.overridden {
+    font-weight: 700;
+}
+
+/* Unity's Overrides dropdown hangs off the object row. */
+.inspector-overrides {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+.inspector-overrides-menu {
+    position: absolute;
+    top: 34px;
+    right: 8px;
+    z-index: 40;
+    min-width: 320px;
+    max-width: 460px;
+    padding: 4px 0;
+    box-shadow: 0 6px 16px rgb(0 0 0 / 45%);
+}
+
+.override-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 1.2fr) minmax(60px, 1fr) auto auto;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    min-height: 22px;
+    font-size: 11px;
+}
+
+.override-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-label);
+}
+
+.override-source {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-accent-gray);
+}
+
+.override-button {
+    min-height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--theme-input-outline);
+    border-radius: 3px;
+    background: var(--theme-panel);
+    color: var(--theme-label);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.override-button:hover:not(:disabled) {
+    background: var(--theme-hover);
+}
+
+.override-button:focus-visible {
+    outline: 2px solid var(--theme-highlight-border);
+    outline-offset: -1px;
+}
+
+.override-button:disabled {
+    color: var(--theme-label-disabled);
+    cursor: default;
+}
+
+.override-row-actions {
+    grid-template-columns: auto auto;
+    justify-content: end;
+}
+
+.overrides-empty {
+    margin: 0;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--theme-label-disabled);
+}
+
+/* The Add Component button spans the panel, like Unity's; like every other .imgui-button it uses the
+   standard button look — the way the content browser's Back button does. */
+.inspector-add {
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+}
+
+.inspector-add > .imgui-button {
+    align-self: stretch;
+    width: 100%;
+}
+
+/* The search box takes the focus when the menu opens, so it reads as the menu's first row. */
+.add-search {
+    display: block;
+    width: 100%;
+    margin-bottom: 3px;
+    padding: 2px 6px;
+    font-size: calc(var(--theme-font-size) - 1px);
+}
+
+/* "New script: ..." is an offer, not a component in the list, so it is tinted. */
+.add-script span {
+    color: var(--theme-primary);
+    font-style: italic;
+}
+
+.add-script:hover:not(:disabled) span {
+    color: var(--theme-foreground-hover);
+}
+
+/* A number field scrubs when dragged: ImGui shows ResizeEW on its drag widgets, so the cursor says so. */
+.imgui-input.drag-number {
+    cursor: ew-resize;
+}
+
+/* Nothing to drag when the field is disabled; the arrow would promise otherwise. */
+.imgui-input.drag-number:disabled {
+    cursor: default;
+}
+
+/* While dragging, the field must not try to select its own text. */
+.imgui-input.drag-number.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* One editable property. The same grid serves the Transform's vector rows and every component's scalar
+   rows, so the label column and the value column line up down the whole inspector instead of jumping
+   between the two old 25% and 38% columns. */
+.prop-row,
+.vec-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 16px;
+    column-gap: 6px;
+    align-items: center;
+    margin-bottom: 1px;
+}
+
+.prop-label,
+.vec-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--theme-foreground);
+    font-size: var(--theme-font-size);
+}
+
+.prop-value,
+.vec-fields {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+}
+
+.prop-value .imgui-input {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 5px;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--theme-font-size);
+}
+
+/* Unity puts a checkbox at the far end of its row. */
+.prop-value-check {
+    justify-content: flex-end;
+}
+
+.prop-vec {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* [Range] properties get a slider next to the number, the way the ImGui inspector draws them. */
+.prop-value .imgui-slider {
+    flex: 2;
+    min-width: 0;
+    height: 14px;
+    accent-color: var(--theme-primary);
+}
+
+/* The reset slot ends every value row. The icon alone is the button — Unity keeps it out of sight until
+   the value is modified, so the right column is not a repeating column of arrows. No background anywhere,
+   and hover never dims it: hover in this app makes things more prominent, so grey-out is the opposite.
+   There is no transition anywhere on the button, so it appears and disappears instantly. */
+.prop-reset {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--theme-accent-gray);
+    opacity: 0;
+    cursor: default;
+    appearance: none;
+}
+
+.prop-reset svg {
+    width: 11px;
+    height: 11px;
+}
+
+/* Away from the default: the icon at full strength, brighter than the idle shade so you can see the
+   difference without a fill. */
+.prop-reset.modified {
+    color: var(--theme-foreground);
+    opacity: 1;
+    cursor: pointer;
+}
+
+/* The live button brightens while hovered — a slight difference, and it lands instantly, never a fade. */
+.prop-reset.modified:hover {
+    color: var(--theme-foreground-hover);
+}
+
+/* Keyboard users get a ring: the icon alone cannot say "this is focused" for them. */
+.prop-reset.modified:focus-visible {
+    outline: var(--theme-border-width) solid var(--theme-primary);
+    outline-offset: 1px;
+}
+
+.colour-swatch {
+    width: 22px;
+    height: var(--theme-control-height);
+    flex: none;
+    padding: 0;
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: none;
+}
+
+/* The click-away the menubar's menus get from .menu-scrim, for a menu that is inline instead of floating. */
+.add-menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+/* The Add Component list opens inline: the panel body scrolls, so an absolutely positioned menu would be
+   clipped by its own scroll container. Menu colors, so it reads as the same menu either way. It sits above
+   .add-menu-scrim (40) and stays under the menubar's popups (50), so the scrim can take every other click
+   without taking the rows. */
+.add-menu {
+    position: relative;
+    z-index: 41;
+    margin-top: 4px;
+    padding: 2px;
+    background: var(--theme-background);
+    border: var(--theme-border-width) solid var(--theme-dropdown-outline);
+    border-radius: var(--theme-radius);
+}
+
+/* Add Component rows lead with the same coloured Font Awesome glyph as the header they will create. */
+.add-menu .menu-item {
+    justify-content: flex-start;
+    gap: 8px;
+    padding-left: 6px;
+}
+
+.add-menu-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    font-size: 12px;
+    line-height: 1;
+    text-align: center;
+}
+
+.menu-item:disabled .add-menu-icon {
+    color: var(--theme-accent-gray);
+    opacity: 0.6;
+}
+
+/* One vector component: Unity draws the axis letter inside the field on a small tinted chip, rather than
+   in a separate column before it. The cell is the field; the input inside is borderless. */
+.vec-cell {
+    display: flex;
+    align-items: stretch;
+    flex: 1;
+    min-width: 0;
+    height: var(--theme-control-height);
+    border: var(--theme-border-width) solid var(--theme-input-outline);
+    border-radius: var(--theme-radius);
+    background: var(--theme-input);
+    overflow: hidden;
+}
+
+.vec-cell:hover {
+    border-color: var(--theme-hover);
+}
+
+.vec-cell:focus-within {
+    border-color: var(--theme-primary);
+}
+
+.vec-axis {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 15px;
+    font-size: calc(var(--theme-font-size) - 2px);
+    font-weight: var(--theme-font-weight-bold);
+    cursor: default;
+}
+
+.axis-x {
+    color: var(--axis-x);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-x) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-x) 12%, transparent);
+}
+
+.axis-y {
+    color: var(--axis-y);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-y) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-y) 12%, transparent);
+}
+
+.axis-z {
+    color: var(--axis-z);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-z) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-z) 12%, transparent);
+}
+
+.axis-w {
+    color: var(--axis-w);
+    background: transparent;
+    color: color-mix(in srgb, var(--axis-w) 75%, var(--theme-foreground));
+    background: color-mix(in srgb, var(--axis-w) 12%, transparent);
+}
+
+.vec-cell .imgui-input.vec-field {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 1px 5px;
+    line-height: 1.2;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--theme-font-size);
+}
+
+.vec-cell .imgui-input.vec-field:hover {
+    border-color: transparent;
+}
+
+.vec-cell .imgui-input.vec-field:focus {
+    border-color: transparent;
+    color: var(--theme-white);
+}
+
+/* The object header and the section headers run edge to edge; only the rows are inset. */
+.panel-body.inspector-body {
+    padding: 0;
+    /* The Overrides dropdown hangs inside the panel, under the object row. */
+    position: relative;
+}

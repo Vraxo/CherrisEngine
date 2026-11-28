@@ -12,7 +12,7 @@ The palette itself lives in `src/Overcore/UI/Ue5Colors.cs`, mapped onto the them
 `src/Overcore/UI/Themes/Ue5StarshipTheme.cs`, and is also shipped as
 `EditorResources/Themes/ue5-starship.json`. It is the default theme, so the stylesheet's `:root` block holds
 exactly its values; `tests/OvercoreEditorSession.Tests/Ue5PaletteTests.cs` fails if they drift apart. Nothing
-in `app.css` or in the ImGui theme names a color directly any more — both read roles, which is what lets the
+in the stylesheets (`wwwroot/css/*.css`) or in the ImGui theme names a color directly any more — both read roles, which is what lets the
 theme change at runtime.
 
 ## How exact is this?

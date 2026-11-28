@@ -125,5 +125,5 @@ Unity's prefab model is more than a link, and the rest is deliberately not here 
 | What the assets hold, and the diff | `src/OvercoreEditorSession/Scene/PrefabSourceIndex.cs` |
 | The drift a snapshot carries | `src/OvercoreEditorSession/Scene/SceneSnapshot.cs` |
 | The four commands (undoable) | `src/OvercoreEditorSession/Host/PrefabOverrideCommands.cs` |
-| Create / Instantiate commands | `src/OvercoreEditorSession/Host/EditorCommands.cs` |
+| Create / Instantiate commands | `src/OvercoreEditorSession/Host/Commands/PrefabCommands.cs` |
 | Editor wiring | `HierarchyPanel.razor` (Create Prefab), `ContentBrowserPanel.razor` (Instantiate), `InspectorPanel.razor` (Overrides) |
