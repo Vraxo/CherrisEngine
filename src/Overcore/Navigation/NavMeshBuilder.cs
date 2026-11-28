@@ -1,5 +1,6 @@
 using Overcore.Components;
 using Overcore.Core;
+using Overcore.Terrain;
 using System.Numerics;
 
 namespace Overcore.Navigation;
@@ -80,6 +81,16 @@ public static class NavMeshBuilder
                 if (go.GetComponent<MeshRenderer>() is { Enabled: true, Mesh: { } mesh })
                 {
                     AppendMeshTriangles(mesh, go.Transform.GetModelMatrix(), defaultArea, volumeBounds, triangles);
+                }
+
+                // A chunked terrain's ground lives on its chunk children, and this object's renderer is
+                // silent, so bake the data's own mesh: the full-detail ground, whatever the chunks are
+                // currently showing.
+                if (go.GetComponent<Overcore.Components.Terrain>() is { UsesChunks: true } chunkedTerrain)
+                {
+                    AppendMeshTriangles(
+                        TerrainMesher.Build(chunkedTerrain.TerrainData),
+                        go.Transform.GetModelMatrix(), defaultArea, volumeBounds, triangles);
                 }
             }
 

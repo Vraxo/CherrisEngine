@@ -100,6 +100,22 @@ There is no wind yet — the field stands still, which the shader will fix when 
 day. Detail has no distance fade: a very large terrain should keep its alphamap resolution (and so its
 detail pixels) modest, or grow detail only where players walk.
 
+## Chunks and level of detail
+
+A terrain draws as one mesh by default. Set `ChunksPerSide` (1–8, on the component, saved with the
+scene) and the ground splits into that many chunks per side, each on its own terrain-owned child —
+which frustum-culls and shadow-draws like any object, and is rebuilt from the data on load like the
+other owned children. Each chunk carries a **level of detail**: full detail within `LodDistance`
+metres of the camera (80 by default), one step coarser per doubling of distance after that, a step
+meaning half the vertices per side and a quarter of the triangles. The scene re-aims levels every
+frame from its camera (`Terrain.UpdateLod`), remeshing only chunks whose level changed. Chunk borders
+share heightmap points, so neighbours meet crack-free at the same level; adjacent chunks at different
+levels can show hairline seams on close inspection — the classic LOD trade, accepted at distance.
+
+Chunks are a drawing decision only: the physics mesh, the analytic queries and NavMesh bakes (which
+read the data's own full-detail mesh for a chunked terrain) never simplify. A hole at coarse level
+drops any quad covering it, so distant holes read slightly larger, never as ground that isn't there.
+
 ## Neighbours
 
 Big ground is tiled from several terrains placed corner to corner. Two abutting grounds crack along
@@ -207,5 +223,5 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 ## Not yet
 
 Detail wind and distance fade, continuous (Unity-style) neighbour stitching that re-sews itself as
-you sculpt, heightmap LOD beyond chunking, and layers past the eighth in the shaders' blend are
-future increments. The data model does not need to change for any of them.
+you sculpt, chunk skirts to hide mixed-level seams entirely, and layers past the eighth in the
+shaders' blend are future increments. The data model does not need to change for any of them.

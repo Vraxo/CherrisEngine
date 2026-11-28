@@ -48,24 +48,34 @@ public static class TerrainMesher
             throw new ArgumentOutOfRangeException(nameof(chunksPerSide), chunksPerSide, "A terrain has at least one chunk.");
         }
 
-        int resolution = data.HeightmapResolution;
         List<Mesh> meshes = [];
         for (int chunkZ = 0; chunkZ < chunksPerSide; chunkZ++)
         {
             for (int chunkX = 0; chunkX < chunksPerSide; chunkX++)
             {
-                // Grid points are shared between chunks, so chunk boundaries fall on points, not between
-                // them: chunk c covers points [c * (resolution - 1) / chunks, (c + 1) * (resolution - 1) /
-                // chunks] inclusive, which covers the ground exactly even when the division is uneven.
-                int startX = (chunkX * (resolution - 1)) / chunksPerSide;
-                int startZ = (chunkZ * (resolution - 1)) / chunksPerSide;
-                int endX = ((chunkX + 1) * (resolution - 1)) / chunksPerSide;
-                int endZ = ((chunkZ + 1) * (resolution - 1)) / chunksPerSide;
-                meshes.Add(BuildChunk(data, startX, startZ, endX - startX + 1, endZ - startZ + 1));
+                (int startX, int startZ, int pointsX, int pointsZ) = ChunkRect(
+                    data.HeightmapResolution, chunksPerSide, chunkX, chunkZ);
+                meshes.Add(BuildChunk(data, startX, startZ, pointsX, pointsZ));
             }
         }
 
         return meshes;
+    }
+
+    /// <summary>
+    /// The grid rectangle one chunk of a <see cref="BuildChunks"/> split covers, in grid points. Grid
+    /// points are shared between chunks, so chunk boundaries fall on points, not between them: chunk c
+    /// covers points [c · (resolution − 1) / chunks, (c + 1) · (resolution − 1) / chunks] inclusive,
+    /// which covers the ground exactly even when the division is uneven.
+    /// </summary>
+    public static (int StartX, int StartZ, int PointsX, int PointsZ) ChunkRect(
+        int resolution, int chunksPerSide, int chunkX, int chunkZ)
+    {
+        int startX = (chunkX * (resolution - 1)) / chunksPerSide;
+        int startZ = (chunkZ * (resolution - 1)) / chunksPerSide;
+        int endX = ((chunkX + 1) * (resolution - 1)) / chunksPerSide;
+        int endZ = ((chunkZ + 1) * (resolution - 1)) / chunksPerSide;
+        return (startX, startZ, endX - startX + 1, endZ - startZ + 1);
     }
 
     /// <summary>Builds one rectangular patch of the heightfield, from a grid corner, in grid points.</summary>
@@ -74,7 +84,24 @@ public static class TerrainMesher
     /// <param name="startZ">First grid row of the patch.</param>
     /// <param name="pointsX">Grid points across the patch, at least 1.</param>
     /// <param name="pointsZ">Grid points along the patch, at least 1.</param>
-    public static Mesh BuildChunk(TerrainData data, int startX, int startZ, int pointsX, int pointsZ)
+    public static Mesh BuildChunk(TerrainData data, int startX, int startZ, int pointsX, int pointsZ) =>
+        BuildChunk(data, startX, startZ, pointsX, pointsZ, step: 1);
+
+    /// <summary>
+    /// Builds one rectangular patch of the heightfield at a level of detail: vertices land every
+    /// <paramref name="step"/> grid points, so a step of 2 is a quarter of the triangles, 4 a sixteenth.
+    /// The patch's spans must divide by the step exactly (they do for power-of-two splits of a 2ⁿ+1
+    /// heightmap). A coarse quad is dropped when any heightfield cell it covers is a hole — at a
+    /// distance, a hole reads a little larger rather than a little smaller, and never as ground that
+    /// is not there at full detail.
+    /// </summary>
+    /// <param name="data">The ground to mesh.</param>
+    /// <param name="startX">First grid column of the patch.</param>
+    /// <param name="startZ">First grid row of the patch.</param>
+    /// <param name="pointsX">Grid points across the patch, at least 1.</param>
+    /// <param name="pointsZ">Grid points along the patch, at least 1.</param>
+    /// <param name="step">Grid points between vertices: 1 is full detail, doubling per level of detail.</param>
+    public static Mesh BuildChunk(TerrainData data, int startX, int startZ, int pointsX, int pointsZ, int step)
     {
         ArgumentNullException.ThrowIfNull(data);
         int resolution = data.HeightmapResolution;
@@ -86,13 +113,23 @@ public static class TerrainMesher
                 $"The patch ({startX}, {startZ}) + {pointsX}×{pointsZ} leaves the {resolution}² heightmap.");
         }
 
-        Vertex[] vertices = new Vertex[pointsX * pointsZ];
-        for (int z = 0; z < pointsZ; z++)
+        if (step < 1 || (pointsX - 1) % step != 0 || (pointsZ - 1) % step != 0)
         {
-            for (int x = 0; x < pointsX; x++)
+            throw new ArgumentOutOfRangeException(
+                nameof(step), step,
+                $"A step must divide the patch's spans ({pointsX - 1}×{pointsZ - 1} cells) exactly.");
+        }
+
+        int vertsX = ((pointsX - 1) / step) + 1;
+        int vertsZ = ((pointsZ - 1) / step) + 1;
+
+        Vertex[] vertices = new Vertex[vertsX * vertsZ];
+        for (int z = 0; z < vertsZ; z++)
+        {
+            for (int x = 0; x < vertsX; x++)
             {
-                int gridX = startX + x;
-                int gridZ = startZ + z;
+                int gridX = startX + (x * step);
+                int gridZ = startZ + (z * step);
                 float u = (float)gridX / (resolution - 1);
                 float v = (float)gridZ / (resolution - 1);
 
@@ -101,26 +138,40 @@ public static class TerrainMesher
                 Vector3 tint = data.GetBlendedTint(u, v);
                 RgbaFloat color = new(tint.X, tint.Y, tint.Z, 1f);
 
-                vertices[(z * pointsX) + x] = new Vertex(position, normal, color, new Vector2(u, v));
+                vertices[(z * vertsX) + x] = new Vertex(position, normal, color, new Vector2(u, v));
             }
         }
 
         List<uint> indices = [];
-        for (int z = 0; z < pointsZ - 1; z++)
+        for (int z = 0; z < vertsZ - 1; z++)
         {
-            for (int x = 0; x < pointsX - 1; x++)
+            for (int x = 0; x < vertsX - 1; x++)
             {
-                // A hole cell has no ground in it: no quad, and therefore nothing to collide with or bake.
-                if (data.IsHole(startX + x, startZ + z))
+                // A hole cell has no ground in it: no quad, and therefore nothing to collide with or
+                // bake. At a step, the quad covers step² cells and any hole among them drops it.
+                bool holed = false;
+                for (int hz = 0; hz < step && !holed; hz++)
+                {
+                    for (int hx = 0; hx < step; hx++)
+                    {
+                        if (data.IsHole(startX + (x * step) + hx, startZ + (z * step) + hz))
+                        {
+                            holed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (holed)
                 {
                     continue;
                 }
 
                 // The CreatePlane winding: a is the far corner of the quad, and the triangles run a-c-b, a-d-c.
-                uint a = (uint)(((z + 1) * pointsX) + x);
-                uint b = (uint)(((z + 1) * pointsX) + x + 1);
-                uint c = (uint)((z * pointsX) + x + 1);
-                uint d = (uint)((z * pointsX) + x);
+                uint a = (uint)(((z + 1) * vertsX) + x);
+                uint b = (uint)(((z + 1) * vertsX) + x + 1);
+                uint c = (uint)((z * vertsX) + x + 1);
+                uint d = (uint)((z * vertsX) + x);
 
                 indices.Add(a);
                 indices.Add(c);

@@ -443,6 +443,7 @@ public class Scene : IDisposable
                 try
                 {
                     terrain.RefreshIfDirty();
+                    terrain.UpdateLod(MainCamera?.GameObject?.Transform.WorldPosition);
                 }
                 catch (Exception ex)
                 {

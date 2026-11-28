@@ -34,6 +34,9 @@ public class Terrain : Component
     /// <summary>The mesh name the detail's renderer goes by, recognised the same way.</summary>
     internal const string DetailMeshName = "TerrainDetail";
 
+    /// <summary>The mesh name a chunk's renderer goes by, recognised the same way.</summary>
+    internal const string ChunkMeshName = "TerrainChunk";
+
     private static readonly Mesh EmptyMesh = new([], []);
 
     private TerrainData _data = new();
@@ -47,6 +50,12 @@ public class Terrain : Component
     private Material? _treeMaterial;
     private Material? _detailMaterial;
     private string _detailMaterialTextureName = string.Empty;
+    private int _chunksPerSide = 1;
+    private float _lodDistance = 80f;
+    private Mesh?[] _chunkMeshes = [];
+    private int[] _chunkLevels = [];
+    private readonly List<MeshRenderer> _chunkRenderers = [];
+    private Material? _chunkMaterial;
 
     /// <summary>The ground's heights and paint. Replacing it rebuilds the mesh at once.</summary>
     [HideInInspector]
@@ -135,6 +144,62 @@ public class Terrain : Component
         && gameObject.GetComponent<MeshRenderer>() is { MeshName: DetailMeshName }
         && gameObject.Transform.Parent?.GameObject.GetComponent<Terrain>() is not null;
 
+    /// <summary>
+    /// True when an object is one of a chunked terrain's ground chunks. Unlike the forest and detail
+    /// children this one is ground, not scenery: a NavMesh bake includes it (through the terrain's data,
+    /// at full detail), while the scene file still leaves it out.
+    /// </summary>
+    public static bool IsChunkObject(GameObject? gameObject) =>
+        gameObject is not null
+        && gameObject.GetComponent<MeshRenderer>() is { MeshName: ChunkMeshName }
+        && gameObject.Transform.Parent?.GameObject.GetComponent<Terrain>() is not null;
+
+    /// <summary>
+    /// How many chunks the ground is split into along each side. One (the default) draws the terrain as
+    /// a single mesh on its own object, as it always has. More gives each chunk its own owned child
+    /// renderer and a level of detail by distance (see <see cref="LodDistance"/>): the way big ground
+    /// stays cheap. Physics and NavMesh bakes always work from the full-resolution data, whatever this
+    /// says — chunks are a drawing decision.
+    /// </summary>
+    public int ChunksPerSide
+    {
+        get => _chunksPerSide;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 8);
+            if (clamped == _chunksPerSide)
+            {
+                return;
+            }
+
+            _chunksPerSide = clamped;
+            _chunkLevels = [];
+            Rebuild();
+        }
+    }
+
+    /// <summary>
+    /// The distance in metres at which a chunk drops its first level of detail, doubling per level
+    /// after that: a chunk twice this far draws a quarter of its triangles.
+    /// </summary>
+    public float LodDistance
+    {
+        get => _lodDistance;
+        set => _lodDistance = MathF.Max(value, 1f);
+    }
+
+    /// <summary>True when the ground draws as chunks. See <see cref="ChunksPerSide"/>.</summary>
+    [HideInInspector]
+    public bool UsesChunks => _chunksPerSide > 1;
+
+    /// <summary>The chunk meshes currently drawn, row-major, or empty when the ground is one mesh.</summary>
+    [HideInInspector]
+    public IReadOnlyList<Mesh?> ChunkMeshes => _chunkMeshes;
+
+    /// <summary>The level of detail each chunk currently draws at, row-major: 0 is full detail.</summary>
+    [HideInInspector]
+    public IReadOnlyList<int> ChunkLevels => _chunkLevels;
+
     /// <summary>The merged mesh of every detail tuft, or null when nothing grows.</summary>
     [HideInInspector]
     public Mesh? DetailMesh { get; private set; }
@@ -208,27 +273,45 @@ public class Terrain : Component
             return;
         }
 
-        Mesh = TerrainMesher.Build(_data);
         _builtHeightVersion = _data.Version;
         _builtAlphamapVersion = _data.AlphamapVersion;
         _builtHolesVersion = _data.HolesVersion;
 
-        MeshRenderer renderer = GameObject.GetComponent<MeshRenderer>()
-            ?? GameObject.AddComponent(new MeshRenderer
-            {
-                Mesh = Mesh,
-                MeshName = "Terrain",
-                Material = Material ?? new Material(null!, "White")
-            });
+        if (_chunksPerSide <= 1)
+        {
+            Mesh = TerrainMesher.Build(_data);
+            SetChunkChildrenActive(false);
 
-        renderer.Mesh = Mesh;
-        if (Material is not null)
-        {
-            renderer.Material = Material;
+            MeshRenderer renderer = GameObject.GetComponent<MeshRenderer>()
+                ?? GameObject.AddComponent(new MeshRenderer
+                {
+                    Mesh = Mesh,
+                    MeshName = "Terrain",
+                    Material = Material ?? new Material(null!, "White")
+                });
+
+            renderer.Mesh = Mesh;
+            renderer.Enabled = true;
+            if (Material is not null)
+            {
+                renderer.Material = Material;
+            }
+            else if (renderer.Material is null)
+            {
+                renderer.Material = new Material(null!, "White");
+            }
         }
-        else if (renderer.Material is null)
+        else
         {
-            renderer.Material = new Material(null!, "White");
+            // The ground moves onto its chunk children; this object's own renderer falls silent so no
+            // path — bakes included — can mistake it for the ground.
+            Mesh = null;
+            if (GameObject.GetComponent<MeshRenderer>() is { } groundRenderer)
+            {
+                groundRenderer.Enabled = false;
+            }
+
+            EnsureChunkRenderers();
         }
 
         TreeMesh = _treeMeshResolver is null ? null : TerrainForestMesher.Build(_data, _treeMeshResolver);
@@ -317,6 +400,150 @@ public class Terrain : Component
         renderer.Mesh = DetailMesh ?? EmptyMesh;
         renderer.Enabled = DetailMesh is not null;
         renderer.Material = DetailMaterial();
+    }
+
+    /// <summary>
+    /// Keeps the chunk children in step with <see cref="ChunksPerSide"/>: one owned child per chunk,
+    /// created on first need, each wearing the ground's material so the splat branch paints it exactly
+    /// as it would the single mesh. Chunks rebuild at their standing levels of detail.
+    /// </summary>
+    private void EnsureChunkRenderers()
+    {
+        int chunks = _chunksPerSide;
+        int count = chunks * chunks;
+
+        _chunkRenderers.Clear();
+        foreach (Transform child in GameObject.Transform.Children)
+        {
+            if (child.GameObject.GetComponent<MeshRenderer>() is { } found && found.MeshName == ChunkMeshName)
+            {
+                _chunkRenderers.Add(found);
+            }
+        }
+
+        _chunkMaterial ??= Material ?? new Material(null!, "White");
+        while (_chunkRenderers.Count < count)
+        {
+            int index = _chunkRenderers.Count;
+            GameObject chunkObject = new($"Chunk {index % chunks},{index / chunks}");
+            chunkObject.Transform.SetParent(GameObject.Transform, worldPositionStays: false);
+            _chunkRenderers.Add(chunkObject.AddComponent(new MeshRenderer
+            {
+                Mesh = EmptyMesh,
+                MeshName = ChunkMeshName,
+                Material = _chunkMaterial
+            }));
+        }
+
+        if (_chunkMeshes.Length != count)
+        {
+            _chunkMeshes = new Mesh?[count];
+            _chunkLevels = new int[count];
+        }
+
+        for (int index = 0; index < _chunkRenderers.Count; index++)
+        {
+            MeshRenderer renderer = _chunkRenderers[index];
+            if (index >= count)
+            {
+                renderer.Enabled = false;
+                continue;
+            }
+
+            int level = Math.Min(_chunkLevels[index], MaxChunkLevel(index));
+            _chunkLevels[index] = level;
+            _chunkMeshes[index] = BuildChunkAtLevel(index, level);
+            renderer.Mesh = _chunkMeshes[index]!;
+            renderer.Enabled = true;
+            if (Material is not null)
+            {
+                renderer.Material = Material;
+            }
+        }
+    }
+
+    private void SetChunkChildrenActive(bool active)
+    {
+        foreach (Transform child in GameObject.Transform.Children)
+        {
+            if (child.GameObject.GetComponent<MeshRenderer>() is { MeshName: ChunkMeshName } renderer)
+            {
+                renderer.Enabled = active;
+            }
+        }
+    }
+
+    private Mesh BuildChunkAtLevel(int index, int level)
+    {
+        (int startX, int startZ, int pointsX, int pointsZ) = TerrainMesher.ChunkRect(
+            _data.HeightmapResolution, _chunksPerSide, index % _chunksPerSide, index / _chunksPerSide);
+        return TerrainMesher.BuildChunk(_data, startX, startZ, pointsX, pointsZ, 1 << level);
+    }
+
+    /// <summary>The highest level of detail a chunk's spans divide into exactly.</summary>
+    private int MaxChunkLevel(int index)
+    {
+        (_, _, int pointsX, int pointsZ) = TerrainMesher.ChunkRect(
+            _data.HeightmapResolution, _chunksPerSide, index % _chunksPerSide, index / _chunksPerSide);
+
+        int level = 0;
+        while ((pointsX - 1) % (1 << (level + 1)) == 0 && (pointsZ - 1) % (1 << (level + 1)) == 0
+            && (1 << (level + 1)) <= Math.Min(pointsX, pointsZ) - 1)
+        {
+            level++;
+        }
+
+        return level;
+    }
+
+    /// <summary>
+    /// Re-aims each chunk's level of detail at where the camera stands: full detail within
+    /// <see cref="LodDistance"/>, one level coarser per doubling beyond it. Only a chunk whose level
+    /// actually changes is remeshed. The scene calls this once a frame with its camera's place.
+    /// </summary>
+    /// <param name="cameraPosition">The camera's world position, or null when the scene has none.</param>
+    public void UpdateLod(Vector3? cameraPosition)
+    {
+        if (_chunksPerSide <= 1 || cameraPosition is null || GameObject is null || IsDestroyed)
+        {
+            return;
+        }
+
+        Matrix4x4 world = Transform.GetModelMatrix();
+        int resolution = _data.HeightmapResolution;
+
+        for (int index = 0; index < _chunkLevels.Length && index < _chunkRenderers.Count; index++)
+        {
+            (int startX, int startZ, int pointsX, int pointsZ) = TerrainMesher.ChunkRect(
+                resolution, _chunksPerSide, index % _chunksPerSide, index / _chunksPerSide);
+
+            float centerU = (startX + ((pointsX - 1) * 0.5f)) / (resolution - 1);
+            float centerV = (startZ + ((pointsZ - 1) * 0.5f)) / (resolution - 1);
+            Vector3 localCentre = new(
+                centerU * _data.Size.X,
+                _data.SampleHeight(centerU, centerV),
+                centerV * _data.Size.Z);
+            float distance = Vector3.Distance(
+                Vector3.Transform(localCentre, world), cameraPosition.Value);
+
+            int level = 0;
+            float threshold = MathF.Max(_lodDistance, 1f);
+            int maxLevel = MaxChunkLevel(index);
+            while (level < maxLevel && distance > threshold)
+            {
+                level++;
+                threshold *= 2f;
+            }
+
+            if (level == _chunkLevels[index])
+            {
+                continue;
+            }
+
+            _chunkLevels[index] = level;
+            _chunkMeshes[index] = BuildChunkAtLevel(index, level);
+            _chunkRenderers[index].Mesh = _chunkMeshes[index]!;
+        }
     }
 
     /// <summary>The detail material, remade only when the texture it should carry changes its name.</summary>

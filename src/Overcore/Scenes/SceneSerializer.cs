@@ -458,11 +458,12 @@ public class SceneSerializer
 
         foreach (Transform child in go.Transform.Children)
         {
-            // A terrain's forest and detail children are terrain property, not scene content: they
-            // travel in the terrain's own data and are rebuilt from it, so writing one would plant a
-            // second, frozen copy on load.
+            // A terrain's forest, detail and chunk children are terrain property, not scene content:
+            // they travel in the terrain's own data and are rebuilt from it, so writing one would plant
+            // a second, frozen copy on load.
             if (TerrainComponent.IsTreeObject(child.GameObject)
-                || TerrainComponent.IsDetailObject(child.GameObject))
+                || TerrainComponent.IsDetailObject(child.GameObject)
+                || TerrainComponent.IsChunkObject(child.GameObject))
             {
                 continue;
             }
