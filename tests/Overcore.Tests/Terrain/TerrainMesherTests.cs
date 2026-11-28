@@ -22,7 +22,10 @@ public class TerrainMesherTests
         mesh.Indices.Should().HaveCount(4 * 4 * 6);
         mesh.Vertices[0].Position.Should().Be(Vector3.Zero, "the terrain's origin is its corner");
         mesh.Vertices[24].Position.Should().Be(new Vector3(4f, 0f, 4f));
-        mesh.Vertices.AllSatisfy(vertex => vertex.Normal.Should().Be(Vector3.UnitY));
+        foreach (Vertex vertex in mesh.Vertices)
+        {
+            vertex.Normal.Should().Be(Vector3.UnitY);
+        }
     }
 
     [Fact]
@@ -48,11 +51,13 @@ public class TerrainMesherTests
         List<Mesh> chunks = TerrainMesher.BuildChunks(data, 2);
 
         chunks.Should().HaveCount(4);
-        chunks.AllSatisfy(chunk => chunk.Vertices.Length.Should().Be(25), "each chunk spans 5×5 shared points");
+        foreach (Mesh chunk in chunks)
+        {
+            chunk.Vertices.Length.Should().Be(25, "each chunk spans 5×5 shared points");
 
-        // The peak is the shared corner of all four chunks: every chunk must carry it, or the ground cracks.
-        chunks.AllSatisfy(chunk =>
-            chunk.Vertices.Max(vertex => vertex.Position.Y).Should().Be(3f));
+            // The peak is the shared corner of all four chunks: every chunk must carry it, or the ground cracks.
+            chunk.Vertices.Max(vertex => vertex.Position.Y).Should().Be(3f);
+        }
     }
 
     [Fact]
