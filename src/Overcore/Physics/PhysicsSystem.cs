@@ -383,7 +383,7 @@ public partial class PhysicsSystem : IDisposable
     private void AddStaticShape(Collider collider)
     {
         collider.GetWorldPose(out Vector3 center, out Quaternion rotation, out Vector3 scale);
-        TypedIndex shape = collider.AddBepuShape(Simulation.Shapes, scale);
+        TypedIndex shape = collider.AddBepuShape(Simulation.Shapes, scale, _bufferPool);
         StaticHandle handle = Simulation.Statics.Add(new StaticDescription(new RigidPose(center, rotation), shape));
 
         collider.StaticBody = handle;

@@ -3,6 +3,7 @@ using Overcore.Core;
 using Overcore.Core.Logging;
 using Overcore.Rendering;
 using Overcore.Rendering.Shadows;
+using Overcore.Terrain;
 using Overcore.Utils;
 using System.Globalization;
 using System.Numerics;
@@ -47,6 +48,8 @@ public static class ComponentDeserializer
         sceneLoader.RegisterComponentFactory("AudioSource", props => CreateAudioSourceComponent(props, resourceManager));
         sceneLoader.RegisterComponentFactory("AudioListener", CreateAndPopulateComponent<AudioListener>);
         sceneLoader.RegisterComponentFactory("ParticleSystem", props => CreateParticleSystemComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("Terrain", props => CreateTerrainComponent(props, resourceManager));
+        sceneLoader.RegisterComponentFactory("TerrainCollider", CreateAndPopulateComponent<TerrainCollider>);
         sceneLoader.RegisterComponentFactory("NavMeshSurface", CreateAndPopulateComponent<NavMeshSurface>);
         sceneLoader.RegisterComponentFactory("NavMeshAgent", CreateAndPopulateComponent<NavMeshAgent>);
         sceneLoader.RegisterComponentFactory("NavMeshObstacle", CreateAndPopulateComponent<NavMeshObstacle>);
@@ -152,6 +155,113 @@ public static class ComponentDeserializer
         }
 
         return ps;
+    }
+
+    /// <summary>
+    /// A <see cref="Terrain"/> from its scene block: the scalar settings through the generic path, then the
+    /// layers, heights and alphamap, which are bulk data the generic path cannot express. Heights and
+    /// alphamap travel as base64 <see cref="float"/> bytes — the ground is a binary thing wearing a YAML
+    /// coat, and spelling 16,000 heights as decimal text would make the file neither readable nor honest.
+    /// </summary>
+    private static Terrain CreateTerrainComponent(object properties, IResourceManager resourceManager)
+    {
+        Terrain terrain = new();
+
+        if (properties is not Dictionary<object, object> propsDict)
+        {
+            return terrain;
+        }
+
+        PopulateComponentProperties(terrain, propsDict);
+
+        int resolution = propsDict.TryGetValue("HeightmapResolution", out var resolutionObj)
+            ? Convert.ToInt32(resolutionObj, CultureInfo.InvariantCulture)
+            : terrain.TerrainData.HeightmapResolution;
+        int alphamapResolution = propsDict.TryGetValue("AlphamapResolution", out var alphaObj)
+            ? Convert.ToInt32(alphaObj, CultureInfo.InvariantCulture)
+            : resolution;
+
+        TerrainData data = new(
+            Math.Clamp(resolution, TerrainData.MinimumResolution, TerrainData.MaximumResolution),
+            terrain.Size,
+            Math.Clamp(alphamapResolution, TerrainData.MinimumResolution, TerrainData.MaximumResolution));
+
+        if (propsDict.TryGetValue("Layers", out var layersObj) && layersObj is List<object> layerList && layerList.Count > 0)
+        {
+            bool first = true;
+            foreach (object item in layerList)
+            {
+                if (item is not Dictionary<object, object> layerDict)
+                {
+                    continue;
+                }
+
+                TerrainLayer layer = new()
+                {
+                    Name = layerDict.TryGetValue("Name", out var nameObj) ? nameObj as string ?? "Layer" : "Layer",
+                    TextureName = layerDict.TryGetValue("TextureName", out var textureObj) ? textureObj as string ?? string.Empty : string.Empty,
+                    Tint = GetVector3(layerDict, "Tint", Vector3.One),
+                    TileSize = GetVector2(layerDict, "TileSize", new Vector2(10f, 10f))
+                };
+
+                // The data is born with its base layer; the file's first layer replaces it, the rest append.
+                if (first)
+                {
+                    data.Layers[0] = layer;
+                    first = false;
+                }
+                else
+                {
+                    data.AddLayer(layer);
+                }
+            }
+        }
+
+        if (propsDict.TryGetValue("Heights", out var heightsObj) && heightsObj is string heightsText)
+        {
+            float[] heights = DecodeFloats(heightsText);
+            if (heights.Length == data.HeightmapResolution * data.HeightmapResolution)
+            {
+                data.SetHeightmap(heights);
+            }
+        }
+
+        if (propsDict.TryGetValue("Alphamap", out var alphamapObj) && alphamapObj is string alphamapText)
+        {
+            float[] alphamap = DecodeFloats(alphamapText);
+            if (alphamap.Length == data.AlphamapResolution * data.AlphamapResolution * data.Layers.Count)
+            {
+                data.SetAlphamap(alphamap);
+            }
+        }
+
+        terrain.TerrainData = data;
+
+        string textureName = data.Layers.Count > 0 && !string.IsNullOrWhiteSpace(data.Layers[0].TextureName)
+            ? data.Layers[0].TextureName
+            : "White";
+        if (resourceManager is not null)
+        {
+            terrain.Material = new Material(resourceManager.GetTexture(textureName), textureName);
+        }
+
+        return terrain;
+    }
+
+    /// <summary>The floats a base64 block of little-endian bytes holds, or none when the block is unreadable.</summary>
+    private static float[] DecodeFloats(string text)
+    {
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(text);
+            float[] floats = new float[bytes.Length / sizeof(float)];
+            Buffer.BlockCopy(bytes, 0, floats, 0, floats.Length * sizeof(float));
+            return floats;
+        }
+        catch (FormatException)
+        {
+            return [];
+        }
     }
 
     private static Material CreateMaterialFromProperties(IReadOnlyDictionary<object, object> componentProps, IResourceManager resourceManager)

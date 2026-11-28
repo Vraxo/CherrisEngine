@@ -1,14 +1,16 @@
 using Overcore.Components;
+using Overcore.Terrain;
 using System.Numerics;
 
 namespace Overcore.Core.Physics;
 
-/// <summary>Which of the three shapes a collider is.</summary>
+/// <summary>Which shape a collider is.</summary>
 internal enum ShapeKind
 {
     Box,
     Sphere,
-    Capsule
+    Capsule,
+    Terrain
 }
 
 /// <summary>
@@ -35,6 +37,15 @@ internal readonly struct ShapeInstance
 
     /// <summary>The other end of the capsule's line.</summary>
     public Vector3 SegmentB { get; init; }
+
+    /// <summary>The heightfield behind a terrain shape, or null for every other kind.</summary>
+    public TerrainData? Terrain { get; init; }
+
+    /// <summary>Where a terrain's corner sits in the world. Its centre is the middle of its bounds; this is its origin.</summary>
+    public Vector3 TerrainOrigin { get; init; }
+
+    /// <summary>The world scale a terrain's own metres are stretched by.</summary>
+    public Vector3 TerrainScale { get; init; }
 
     /// <summary>The box's own X axis in world space.</summary>
     public Vector3 AxisX => Vector3.Transform(Vector3.UnitX, Rotation);
@@ -124,6 +135,32 @@ internal static class ColliderGeometry
                 };
             }
 
+            case TerrainCollider terrainCollider when terrainCollider.Data is { } terrainData:
+            {
+                // The terrain pose is its corner, so the bounds are built from the footprint and the stored
+                // height range rather than from the centred pose the other shapes describe themselves by.
+                Vector3 terrainScale = Vector3.Max(absoluteScale, new Vector3(Epsilon));
+                float low = terrainData.MinHeight * terrainScale.Y;
+                float high = terrainData.MaxHeight * terrainScale.Y;
+                Vector3 halfFootprint = new(
+                    terrainData.Size.X * terrainScale.X * 0.5f,
+                    MathF.Max((high - low) * 0.5f, Epsilon),
+                    terrainData.Size.Z * terrainScale.Z * 0.5f);
+                Vector3 boundsCenter = position + Vector3.Transform(
+                    new Vector3(halfFootprint.X, (low + high) * 0.5f, halfFootprint.Z), rotation);
+
+                return new ShapeInstance
+                {
+                    Kind = ShapeKind.Terrain,
+                    Center = boundsCenter,
+                    Rotation = rotation,
+                    HalfExtents = halfFootprint,
+                    Terrain = terrainData,
+                    TerrainOrigin = position,
+                    TerrainScale = terrainScale
+                };
+            }
+
             default:
                 return new ShapeInstance
                 {
@@ -142,6 +179,7 @@ internal static class ColliderGeometry
         switch (shape.Kind)
         {
             case ShapeKind.Box:
+            case ShapeKind.Terrain:
             {
                 Vector3 x = shape.AxisX * shape.HalfExtents.X;
                 Vector3 y = shape.AxisY * shape.HalfExtents.Y;
@@ -187,6 +225,20 @@ internal static class ColliderGeometry
             case ShapeKind.Capsule:
                 return DistanceToSegment(shape.SegmentA, shape.SegmentB, point) <= shape.Radius + Epsilon;
 
+            case ShapeKind.Terrain:
+            {
+                // A heightfield is solid below its surface: inside means over the footprint and under the ground.
+                if (shape.Terrain is not { } terrain)
+                {
+                    return false;
+                }
+
+                Vector3 local = TerrainToLocal(shape, point);
+                return local.X is >= 0f && local.X <= terrain.Size.X
+                    && local.Z is >= 0f && local.Z <= terrain.Size.Z
+                    && local.Y <= terrain.SampleHeightLocal(local) + Epsilon;
+            }
+
             default:
                 return Vector3.Distance(point, shape.Center) <= shape.Radius + Epsilon;
         }
@@ -216,6 +268,7 @@ internal static class ColliderGeometry
         {
             ShapeKind.Box => RaycastBox(shape, origin, direction, maxDistance, out distance, out point, out normal),
             ShapeKind.Capsule => RaycastCapsule(shape, origin, direction, maxDistance, out distance, out point, out normal),
+            ShapeKind.Terrain => RaycastTerrain(shape, origin, direction, maxDistance, out distance, out point, out normal),
             _ => RaycastSphere(shape.Center, shape.Radius, origin, direction, maxDistance, out distance, out point, out normal)
         };
     }
@@ -311,6 +364,12 @@ internal static class ColliderGeometry
                     center) <= sum * sum;
             }
 
+            case ShapeKind.Terrain:
+            {
+                Vector3 closest = ClosestPoint(shape, center);
+                return Vector3.DistanceSquared(closest, center) <= radius * radius;
+            }
+
             default:
             {
                 float sum = radius + shape.Radius;
@@ -371,6 +430,18 @@ internal static class ColliderGeometry
                 Vector3.DistanceSquared(
                     ClosestPointOnSegment(shape.SegmentA, shape.SegmentB, other.Center),
                     other.Center) <= MathF.Pow(shape.Radius + other.Radius, 2),
+            // A heightfield against the analytic shapes: the surface point under the other shape's centre is
+            // the test, which is exact for a sphere resting on the ground and approximate for a wide shape
+            // straddling a ridge — the solver's triangle mesh is the authority for dynamic bodies.
+            (ShapeKind.Terrain, ShapeKind.Sphere) => OverlapsSphere(shape, other.Center, other.Radius),
+            (ShapeKind.Sphere, ShapeKind.Terrain) => OverlapsSphere(other, shape.Center, shape.Radius),
+            (ShapeKind.Terrain, ShapeKind.Box) => OverlapsBoxShape(shape, other),
+            (ShapeKind.Box, ShapeKind.Terrain) => OverlapsBoxShape(shape, other),
+            (ShapeKind.Terrain, ShapeKind.Capsule) =>
+                DistanceSegmentToBox(other.SegmentA, other.SegmentB, shape) <= other.Radius,
+            (ShapeKind.Capsule, ShapeKind.Terrain) =>
+                DistanceSegmentToBox(shape.SegmentA, shape.SegmentB, other) <= shape.Radius,
+            (ShapeKind.Terrain, ShapeKind.Terrain) => true,
             _ => DistanceSegmentToSegment(shape.SegmentA, shape.SegmentB, other.SegmentA, other.SegmentB)
                 <= shape.Radius + other.Radius
         };
@@ -388,6 +459,22 @@ internal static class ColliderGeometry
                 Vector3 local = ToLocal(shape, point);
                 Vector3 clamped = Vector3.Clamp(local, -shape.HalfExtents, shape.HalfExtents);
                 return shape.Center + Vector3.Transform(clamped, shape.Rotation);
+            }
+
+            case ShapeKind.Terrain:
+            {
+                if (shape.Terrain is not { } terrain)
+                {
+                    return shape.Center;
+                }
+
+                Vector3 local = TerrainToLocal(shape, point);
+                Vector3 clamped = new(
+                    Math.Clamp(local.X, 0f, terrain.Size.X),
+                    0f,
+                    Math.Clamp(local.Z, 0f, terrain.Size.Z));
+                clamped.Y = terrain.SampleHeightLocal(clamped);
+                return TerrainToWorld(shape, clamped);
             }
 
             case ShapeKind.Capsule:
@@ -786,6 +873,43 @@ internal static class ColliderGeometry
                 return;
             }
 
+            case ShapeKind.Terrain:
+            {
+                // The separation between a capsule and a heightfield: the closest of a few samples along the
+                // capsule's axis to the surface beneath them. A capsule is narrow and a heightfield is smooth
+                // at capsule scale, so five samples put the answer well inside the skin width the controller
+                // keeps; a capsule spanning a sharp ridge is the case this approximates.
+                if (target.Terrain is not { } terrain)
+                {
+                    separation = float.PositiveInfinity;
+                    contactPoint = point1;
+                    normal = Vector3.UnitY;
+                    return;
+                }
+
+                separation = float.PositiveInfinity;
+                contactPoint = point1;
+                normal = Vector3.UnitY;
+                for (int sample = 0; sample <= 4; sample++)
+                {
+                    Vector3 axisPoint = Vector3.Lerp(point1, point2, sample / 4f);
+                    Vector3 surface = ClosestPoint(target, axisPoint);
+                    float distance = Vector3.Distance(axisPoint, surface);
+                    if (distance < separation + radius)
+                    {
+                        separation = distance - radius;
+                        contactPoint = surface;
+                        Vector3 local = TerrainToLocal(target, surface);
+                        normal = Vector3.Normalize(Vector3.Transform(
+                            terrain.GetNormal(
+                                local.X / terrain.Size.X, local.Z / terrain.Size.Z),
+                            target.Rotation));
+                    }
+                }
+
+                return;
+            }
+
             default:
             {
                 ClosestSegmentSegment(point1, point2, target.SegmentA, target.SegmentB,
@@ -955,6 +1079,211 @@ internal static class ColliderGeometry
         alongSegment = Math.Clamp(alongSegment, 0.0f, 1.0f);
         alongRay = MathF.Max(-Vector3.Dot(origin - (start + (segment * alongSegment)), direction), 0.0f);
     }
+
+    /// <summary>A world point in a terrain shape's own metres: un-translated, un-turned, un-scaled.</summary>
+    private static Vector3 TerrainToLocal(in ShapeInstance shape, Vector3 point)
+    {
+        Vector3 unscaled = Vector3.Transform(point - shape.TerrainOrigin, Quaternion.Inverse(shape.Rotation));
+        return unscaled / shape.TerrainScale;
+    }
+
+    /// <summary>A terrain-local point back in the world.</summary>
+    private static Vector3 TerrainToWorld(in ShapeInstance shape, Vector3 local) =>
+        shape.TerrainOrigin + Vector3.Transform(local * shape.TerrainScale, shape.Rotation);
+
+    /// <summary>
+    /// Casts a ray at a heightfield: walk the height grid along the ray's ground track (a 2D DDA over the
+    /// cells it crosses) and test the two triangles of each cell exactly, so a hit is the surface, not a
+    /// sampling of it.
+    /// </summary>
+    private static bool RaycastTerrain(
+        in ShapeInstance shape,
+        Vector3 origin,
+        Vector3 direction,
+        float maxDistance,
+        out float distance,
+        out Vector3 point,
+        out Vector3 normal)
+    {
+        distance = 0f;
+        point = origin;
+        normal = -direction;
+
+        if (shape.Terrain is not { } terrain)
+        {
+            return false;
+        }
+
+        // In the terrain's own metres the ray is no longer unit length when the object is scaled, so its
+        // parameter is not a distance; the hit is converted back to the world before it is measured.
+        Vector3 localOrigin = TerrainToLocal(shape, origin);
+        Vector3 localDirection = Vector3.Transform(direction, Quaternion.Inverse(shape.Rotation)) / shape.TerrainScale;
+
+        int resolution = terrain.HeightmapResolution;
+        float cellX = terrain.Size.X / (resolution - 1);
+        float cellZ = terrain.Size.Z / (resolution - 1);
+
+        // The cells the ray's ground track crosses, from where it enters the footprint. A ray that never
+        // crosses the footprint, or points away from it, cannot meet the ground.
+        float enter = 0f;
+        float exit = float.PositiveInfinity;
+        if (!Slab(localOrigin.X, localDirection.X, 0f, terrain.Size.X, ref enter, ref exit)
+            || !Slab(localOrigin.Z, localDirection.Z, 0f, terrain.Size.Z, ref enter, ref exit))
+        {
+            return false;
+        }
+
+        Vector3 start = localOrigin + (localDirection * MathF.Max(enter, 0f));
+        int cellStartX = Math.Clamp((int)MathF.Floor(start.X / cellX), 0, resolution - 2);
+        int cellStartZ = Math.Clamp((int)MathF.Floor(start.Z / cellZ), 0, resolution - 2);
+
+        int stepX = localDirection.X > 0f ? 1 : -1;
+        int stepZ = localDirection.Z > 0f ? 1 : -1;
+        float nextX = Boundary(start.X, cellX, stepX);
+        float nextZ = Boundary(start.Z, cellZ, stepZ);
+        float tMaxX = MathF.Abs(localDirection.X) < Epsilon ? float.PositiveInfinity
+            : MathF.Abs((nextX - start.X) / localDirection.X);
+        float tMaxZ = MathF.Abs(localDirection.Z) < Epsilon ? float.PositiveInfinity
+            : MathF.Abs((nextZ - start.Z) / localDirection.Z);
+        float tDeltaX = MathF.Abs(localDirection.X) < Epsilon ? float.PositiveInfinity
+            : MathF.Abs(cellX / localDirection.X);
+        float tDeltaZ = MathF.Abs(localDirection.Z) < Epsilon ? float.PositiveInfinity
+            : MathF.Abs(cellZ / localDirection.Z);
+
+        float bestT = float.PositiveInfinity;
+        int cellCount = (resolution - 1) * 2 + 2;
+        int cx = cellStartX;
+        int cz = cellStartZ;
+        for (int visited = 0; visited < cellCount; visited++)
+        {
+            if (cx >= 0 && cx < resolution - 1 && cz >= 0 && cz < resolution - 1)
+            {
+                TestCell(terrain, cx, cz, localOrigin, localDirection, ref bestT);
+            }
+
+            // Past the cell the ray leaves the footprint through, there is no more ground to meet.
+            if (tMaxX < tMaxZ)
+            {
+                if (tMaxX > exit - MathF.Max(enter, 0f))
+                {
+                    break;
+                }
+
+                cx += stepX;
+                tMaxX += tDeltaX;
+            }
+            else
+            {
+                if (tMaxZ > exit - MathF.Max(enter, 0f))
+                {
+                    break;
+                }
+
+                cz += stepZ;
+                tMaxZ += tDeltaZ;
+            }
+        }
+
+        if (float.IsPositiveInfinity(bestT))
+        {
+            return false;
+        }
+
+        Vector3 localHit = localOrigin + (localDirection * bestT);
+        point = TerrainToWorld(shape, localHit);
+        distance = Vector3.Dot(point - origin, direction);
+        if (distance < 0f || distance > maxDistance)
+        {
+            return false;
+        }
+
+        normal = Vector3.Normalize(Vector3.Transform(
+            terrain.GetNormal(localHit.X / terrain.Size.X, localHit.Z / terrain.Size.Z), shape.Rotation));
+        return true;
+    }
+
+    /// <summary>Tests both triangles of one heightfield cell against the local ray, keeping the nearest hit.</summary>
+    private static void TestCell(
+        TerrainData terrain, int cellX, int cellZ, Vector3 origin, Vector3 direction, ref float bestT)
+    {
+        float spacingX = terrain.Size.X / (terrain.HeightmapResolution - 1);
+        float spacingZ = terrain.Size.Z / (terrain.HeightmapResolution - 1);
+
+        Vector3 Corner(int x, int z) => new(x * spacingX, terrain.GetHeight(x, z), z * spacingZ);
+
+        Vector3 a = Corner(cellX, cellZ);
+        Vector3 b = Corner(cellX + 1, cellZ);
+        Vector3 c = Corner(cellX + 1, cellZ + 1);
+        Vector3 d = Corner(cellX, cellZ + 1);
+
+        // The mesher's triangles (far corner first), so the ray meets the surface that is drawn.
+        if (RaycastTriangle(d, c, b, origin, direction, out float first) && first < bestT)
+        {
+            bestT = first;
+        }
+
+        if (RaycastTriangle(d, a, c, origin, direction, out float second) && second < bestT)
+        {
+            bestT = second;
+        }
+    }
+
+    /// <summary>Möller–Trumbore: true when the ray meets the triangle, with the ray parameter of the meeting.</summary>
+    private static bool RaycastTriangle(
+        Vector3 a, Vector3 b, Vector3 c, Vector3 origin, Vector3 direction, out float t)
+    {
+        t = 0f;
+        Vector3 edge1 = b - a;
+        Vector3 edge2 = c - a;
+        Vector3 p = Vector3.Cross(direction, edge2);
+        float determinant = Vector3.Dot(edge1, p);
+        if (MathF.Abs(determinant) < Epsilon)
+        {
+            return false;
+        }
+
+        float inverse = 1f / determinant;
+        Vector3 fromA = origin - a;
+        float u = Vector3.Dot(fromA, p) * inverse;
+        if (u < -Epsilon || u > 1f + Epsilon)
+        {
+            return false;
+        }
+
+        Vector3 q = Vector3.Cross(fromA, edge1);
+        float v = Vector3.Dot(direction, q) * inverse;
+        if (v < -Epsilon || u + v > 1f + Epsilon)
+        {
+            return false;
+        }
+
+        t = Vector3.Dot(edge2, q) * inverse;
+        return t >= 0f;
+    }
+
+    /// <summary>Clips a ray against one axis of a slab, narrowing the entry/exit parameters.</summary>
+    private static bool Slab(float origin, float direction, float low, float high, ref float enter, ref float exit)
+    {
+        if (MathF.Abs(direction) < Epsilon)
+        {
+            return origin >= low && origin <= high;
+        }
+
+        float near = (low - origin) / direction;
+        float far = (high - origin) / direction;
+        if (near > far)
+        {
+            (near, far) = (far, near);
+        }
+
+        enter = MathF.Max(enter, near);
+        exit = MathF.Min(exit, far);
+        return enter <= exit;
+    }
+
+    /// <summary>The next grid line past a coordinate, in the direction of travel.</summary>
+    private static float Boundary(float value, float cell, int step) =>
+        step > 0 ? (MathF.Floor(value / cell) + 1f) * cell : MathF.Floor(value / cell) * cell;
 
     private static float MaxComponent(Vector3 value) => MathF.Max(value.X, MathF.Max(value.Y, value.Z));
 

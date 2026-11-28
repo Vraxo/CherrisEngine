@@ -565,14 +565,17 @@ internal class OpenGLSceneRenderer : IDisposable
     {
         Material material = renderer.Material;
 
-        // Texture binding. The material's diffuse owns unit 0; the bone palette owns unit 1.
+        // Texture binding. The material's diffuse owns unit 0; the bone palette owns unit 1. A material with
+        // no texture resolved yet (a terrain added in the editor, say) binds a white pixel instead of the
+        // default texture, whose sampling is black: no texture should mean "show the vertex colours", not
+        // "show nothing".
         if (material.Texture is OpenTKTexture glTexture)
         {
             glTexture.Bind(TextureUnit.Texture0);
         }
         else
         {
-            GL.BindTexture(TextureTarget.Texture2D, 0);
+            WhiteTexture.Bind(TextureUnit.Texture0);
         }
 
         program.UploadMaterial(material, ToOpenTKMatrix(go.Transform.GetModelMatrix()));
@@ -635,10 +638,27 @@ internal class OpenGLSceneRenderer : IDisposable
         }
     }
 
+    /// <summary>The one white pixel a textureless material samples, created on first need inside a GL context.</summary>
+    private OpenTKTexture? _whiteTexture;
+
+    private OpenTKTexture WhiteTexture => _whiteTexture ??= CreateWhiteTexture();
+
+    private static OpenTKTexture CreateWhiteTexture()
+    {
+        int handle = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, handle);
+        byte[] pixel = { 255, 255, 255, 255 };
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, 1, 1, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixel);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        return new OpenTKTexture(handle);
+    }
+
     public void Dispose()
     {
         _static.Dispose();
         _skinned.Dispose();
+        _whiteTexture?.Dispose();
     }
 }
 

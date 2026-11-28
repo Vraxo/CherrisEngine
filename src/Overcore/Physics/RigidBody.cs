@@ -524,7 +524,7 @@ public class RigidBody : Script
         {
             collider.GetWorldPose(out bodyPosition, out bodyRotation, out Vector3 scale);
             _bodyOffset = bodyPosition - gameObject.Transform.WorldPosition;
-            shapeIndex = collider.AddBepuShape(simulation.Shapes, scale);
+            shapeIndex = collider.AddBepuShape(simulation.Shapes, scale, _physicsSystem.BufferPool);
             inertia = collider.ComputeInertia(Mass, scale);
         }
         else if (gameObject.GetComponent<MeshRenderer>() is { Mesh: { } mesh })

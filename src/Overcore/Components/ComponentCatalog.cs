@@ -56,7 +56,9 @@ public static class ComponentCatalog
         new Entry("Particle System", typeof(ParticleSystem)),
         new Entry("Nav Mesh Surface", typeof(NavMeshSurface)),
         new Entry("Nav Mesh Agent", typeof(NavMeshAgent)),
-        new Entry("Nav Mesh Obstacle", typeof(NavMeshObstacle))
+        new Entry("Nav Mesh Obstacle", typeof(NavMeshObstacle)),
+        new Entry("Terrain", typeof(Terrain)),
+        new Entry("Terrain Collider", typeof(TerrainCollider))
     ];
 
     /// <summary>

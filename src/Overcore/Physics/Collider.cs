@@ -1,5 +1,6 @@
 using BepuPhysics;
 using BepuPhysics.Collidables;
+using BepuUtilities.Memory;
 using Overcore.Core;
 using Overcore.Core.Physics;
 using Overcore.Utils;
@@ -145,6 +146,17 @@ public abstract class Collider : Component
     /// <param name="shapes">The simulation's shape set, which takes ownership of the shape.</param>
     /// <param name="scale">The object's world scale.</param>
     internal abstract TypedIndex AddBepuShape(Shapes shapes, Vector3 scale);
+
+    /// <summary>
+    /// The shape as the physics world wants it, with the simulation's pool to build it from. Only a shape
+    /// that allocates — a terrain's triangle mesh — needs the pool; every other shape answers with the
+    /// pool-less overload above.
+    /// </summary>
+    /// <param name="shapes">The simulation's shape set, which takes ownership of the shape.</param>
+    /// <param name="scale">The object's world scale.</param>
+    /// <param name="pool">The simulation's pool, which the shape's buffers must come from so they can be returned to it.</param>
+    internal virtual TypedIndex AddBepuShape(Shapes shapes, Vector3 scale, BufferPool pool) =>
+        AddBepuShape(shapes, scale);
 
     /// <summary>The shape's rotational inertia at a mass, which is what makes a long body harder to spin.</summary>
     /// <param name="mass">The body's mass.</param>

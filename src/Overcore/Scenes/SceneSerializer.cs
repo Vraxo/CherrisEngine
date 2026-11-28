@@ -1,6 +1,7 @@
 using Overcore.Components;
 using Overcore.Core;
 using Overcore.Rendering.Shadows;
+using Overcore.Terrain;
 using Overcore.Utils;
 using System.Numerics;
 using System.Reflection;
@@ -183,6 +184,14 @@ public class SceneSerializer
                 continue;
             }
 
+            // A terrain's mesh renderer is the terrain's own doing, rebuilt from its data on load; writing
+            // it would add a block naming a mesh no resource manager holds, for the loader to drop.
+            if (component is MeshRenderer { MeshName: "Terrain" }
+                && gameObject.GetComponent<Terrain>() is not null)
+            {
+                continue;
+            }
+
             Dictionary<string, object> data = component switch
             {
                 // MeshRenderer requires special handling for its nested Material object.
@@ -203,6 +212,10 @@ public class SceneSerializer
                 Overcore.Rendering.Shadows.Shadows shadows => SerializeShadows(shadows, prefabLocalIds),
 
                 ParticleSystem particleSystem => SerializeParticleSystem(particleSystem, prefabLocalIds),
+
+                // Bulk ground data (heights, alphamap, layers) travels as base64 float bytes beside the
+                // scalar settings, which the generic path cannot express.
+                Terrain terrain => SerializeTerrain(terrain, prefabLocalIds),
 
                 // All other components can be serialized generically using reflection.
                 _ => SerializeComponentProperties(component, prefabLocalIds)
@@ -282,6 +295,48 @@ public class SceneSerializer
         }
 
         return data;
+    }
+
+    private static Dictionary<string, object> SerializeTerrain(
+        Terrain terrain,
+        IReadOnlyDictionary<GameObject, int>? prefabLocalIds = null)
+    {
+        Dictionary<string, object> data = SerializeComponentProperties(terrain, prefabLocalIds);
+
+        // The material is resolved from the first layer's texture on load; writing the object itself would
+        // hand the YAML writer a texture handle to spell.
+        data.Remove(nameof(Terrain.Material));
+
+        TerrainData terrainData = terrain.TerrainData;
+        data["HeightmapResolution"] = terrainData.HeightmapResolution;
+        data["AlphamapResolution"] = terrainData.AlphamapResolution;
+        data[nameof(Terrain.Size)] = terrainData.Size;
+
+        List<Dictionary<string, object>> layersData = [];
+        foreach (TerrainLayer layer in terrainData.Layers)
+        {
+            layersData.Add(new Dictionary<string, object>
+            {
+                ["Name"] = layer.Name,
+                ["TextureName"] = layer.TextureName,
+                ["Tint"] = layer.Tint,
+                ["TileSize"] = layer.TileSize
+            });
+        }
+
+        data["Layers"] = layersData;
+        data["Heights"] = EncodeFloats(terrainData.GetHeightmap());
+        data["Alphamap"] = EncodeFloats(terrainData.GetAlphamap());
+
+        return data;
+    }
+
+    /// <summary>A float array as base64 little-endian bytes: the compact coat bulk ground data wears in YAML.</summary>
+    private static string EncodeFloats(float[] floats)
+    {
+        byte[] bytes = new byte[floats.Length * sizeof(float)];
+        Buffer.BlockCopy(floats, 0, bytes, 0, bytes.Length);
+        return Convert.ToBase64String(bytes);
     }
 
     private static Dictionary<string, object> SerializeMeshRenderer(MeshRenderer mr)

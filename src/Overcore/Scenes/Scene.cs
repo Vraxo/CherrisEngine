@@ -291,6 +291,7 @@ public class Scene : IDisposable
         AdvanceNavigation(deltaTime);
         AdvanceAnimation(deltaTime);
         AdvanceParticles(deltaTime);
+        AdvanceTerrains();
         AdvanceLateUpdate();
         AdvanceCoroutines(CoroutinePhase.EndOfFrame, 0.0f);
 
@@ -411,6 +412,40 @@ public class Scene : IDisposable
                 catch (Exception ex)
                 {
                     Logger.Error($"[Scene] Exception in ParticleSystem.Step() on '{go.Name}': {ex.Message}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the mesh of any terrain whose data was edited straight — a script raising ground, a brush
+    /// stroke that went to the data — so the drawn ground follows the data within a frame.
+    /// </summary>
+    private void AdvanceTerrains()
+    {
+        int count = GameObjects.Count;
+        for (int index = 0; index < count && index < GameObjects.Count; index++)
+        {
+            GameObject go = GameObjects[index];
+            if (!go.ActiveInHierarchy)
+            {
+                continue;
+            }
+
+            foreach (Terrain terrain in go.GetComponents<Terrain>().ToList())
+            {
+                if (terrain.IsDestroyed || !terrain.Enabled)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    terrain.RefreshIfDirty();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"[Scene] Exception in Terrain.RefreshIfDirty() on '{go.Name}': {ex.Message}");
                 }
             }
         }
