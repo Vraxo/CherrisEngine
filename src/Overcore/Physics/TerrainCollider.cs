@@ -86,6 +86,11 @@ public sealed class TerrainCollider : Collider
         }
 
         List<(Vector3 A, Vector3 B, Vector3 C)> triangles = TerrainMesher.BuildTriangles(data);
+
+        // The forest's trunks stand in the same mesh: one shape, one static, and a body cannot fall
+        // between the ground it rests on and the tree it leans against.
+        triangles.AddRange(TerrainForestMesher.BuildTrunkTriangles(data));
+
         pool.Take(triangles.Count, out BepuUtilities.Memory.Buffer<BepuTriangle> bepuTriangles);
         for (int index = 0; index < triangles.Count; index++)
         {

@@ -69,8 +69,12 @@ block, and the child is rebuilt from that on load. Consequences worth knowing:
 
 - **NavMesh bakes walk under trees, not over them** — the forest child is excluded from bakes; agents
   still walk around a wood only where the ground itself leads them.
-- **Trees have no colliders.** Bodies meet the ground, not the trunks. (Unity makes trunk colliders
-  opt-in too; here they are a future increment, like grass detail.)
+- **Trunks are solid; canopies are not.** Each prototype names a trunk radius and height (a quarter
+  metre by two metres, say; zero radius grows a ghost). The terrain's physics mesh grows an
+  eight-sided prism per trunk, and the analytic queries — rays, sphere overlaps, capsule separation —
+  test the same trunk as a cylinder, so a dropped ball rests on a trunk top and a character controller
+  shoulders off bark, while walking under the canopy meets nothing. A sculpt that moves the ground
+  moves the trunks with it, since both meshes rebuild together.
 - A prototype's mesh resolves by name through the resource manager when the scene loads
   (`Terrain.TreeMeshResolver` is the wire); an unresolved mesh grows invisible trees — plant a
   different prototype or fix the name in the inspector.
@@ -169,6 +173,6 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 
 ## Not yet
 
-Grass detail, tree colliders, neighbour stitching between separate terrains, heightmap LOD beyond
-chunking, splat blending on the Veldrid backend, and layers past the eighth in the shader's blend are
-future increments. The data model does not need to change for any of them.
+Grass detail, neighbour stitching between separate terrains, heightmap LOD beyond chunking, splat
+blending on the Veldrid backend, and layers past the eighth in the shader's blend are future
+increments. The data model does not need to change for any of them.

@@ -234,6 +234,19 @@ internal static class ColliderGeometry
                 }
 
                 Vector3 local = TerrainToLocal(shape, point);
+
+                // Inside a trunk is inside the terrain, though it is above the ground.
+                foreach (TerrainTrunk trunk in TerrainForestMesher.EnumerateTrunks(terrain))
+                {
+                    float dx = local.X - trunk.Base.X;
+                    float dz = local.Z - trunk.Base.Z;
+                    if ((dx * dx) + (dz * dz) <= trunk.Radius * trunk.Radius
+                        && local.Y >= trunk.Base.Y && local.Y <= trunk.Top.Y)
+                    {
+                        return true;
+                    }
+                }
+
                 return local.X is >= 0f && local.X <= terrain.Size.X
                     && local.Z is >= 0f && local.Z <= terrain.Size.Z
                     && !terrain.IsHoleAt(local.X / terrain.Size.X, local.Z / terrain.Size.Z)
@@ -367,6 +380,23 @@ internal static class ColliderGeometry
 
             case ShapeKind.Terrain:
             {
+                // A trunk is solid where the ground under it is not the question: the sphere meets bark
+                // first, heightfield second.
+                if (shape.Terrain is { } trunkData)
+                {
+                    foreach (TerrainTrunk trunk in TerrainForestMesher.EnumerateTrunks(trunkData))
+                    {
+                        Vector3 trunkBase = TerrainToWorld(shape, trunk.Base);
+                        Vector3 trunkTop = TerrainToWorld(shape, trunk.Top);
+                        float sum = radius + trunk.Radius;
+                        if (Vector3.DistanceSquared(
+                                ClosestPointOnSegment(trunkBase, trunkTop, center), center) <= sum * sum)
+                        {
+                            return true;
+                        }
+                    }
+                }
+
                 Vector3 closest = ClosestPoint(shape, center);
                 if (shape.Terrain is { } terrainData
                     && terrainData.IsHoleAt(
@@ -923,6 +953,26 @@ internal static class ColliderGeometry
                     }
                 }
 
+                // The trunks: a capsule meets one as capsule meets capsule — a trunk is a fat, still
+                // capsule from its base to its top — and the nearer of the ground and the bark answers.
+                foreach (TerrainTrunk trunk in TerrainForestMesher.EnumerateTrunks(terrain))
+                {
+                    Vector3 trunkBase = TerrainToWorld(target, trunk.Base);
+                    Vector3 trunkTop = TerrainToWorld(target, trunk.Top);
+                    ClosestSegmentSegment(point1, point2, trunkBase, trunkTop,
+                        out Vector3 capsulePoint, out Vector3 trunkPoint);
+
+                    Vector3 difference = capsulePoint - trunkPoint;
+                    float trunkDistance = difference.Length();
+                    float candidate = trunkDistance - radius - trunk.Radius;
+                    if (candidate < separation)
+                    {
+                        separation = candidate;
+                        normal = trunkDistance > Epsilon ? difference / trunkDistance : -movementDirection;
+                        contactPoint = trunkPoint + (normal * trunk.Radius);
+                    }
+                }
+
                 return;
             }
 
@@ -1135,20 +1185,114 @@ internal static class ColliderGeometry
         Vector3 localOrigin = TerrainToLocal(shape, origin);
         Vector3 localDirection = Vector3.Transform(direction, Quaternion.Inverse(shape.Rotation)) / shape.TerrainScale;
 
-        if (!TerrainRaycast.TryHitLocal(terrain, localOrigin, localDirection, out Vector3 localHit, out float _))
+        bool found = false;
+        float bestDistance = maxDistance;
+
+        if (TerrainRaycast.TryHitLocal(terrain, localOrigin, localDirection, out Vector3 localHit, out float _))
+        {
+            Vector3 groundPoint = TerrainToWorld(shape, localHit);
+            float groundDistance = Vector3.Dot(groundPoint - origin, direction);
+            if (groundDistance >= 0f && groundDistance <= bestDistance)
+            {
+                found = true;
+                bestDistance = groundDistance;
+                point = groundPoint;
+                normal = Vector3.Normalize(Vector3.Transform(
+                    terrain.GetNormal(localHit.X / terrain.Size.X, localHit.Z / terrain.Size.Z), shape.Rotation));
+            }
+        }
+
+        // The trunks stand between a ray and the ground often enough that the ground cannot be the only
+        // answer: each is a cylinder in the same local metres, and the nearer hit wins.
+        foreach (TerrainTrunk trunk in TerrainForestMesher.EnumerateTrunks(terrain))
+        {
+            if (!RaycastTrunk(localOrigin, localDirection, trunk, out Vector3 trunkHit, out Vector3 trunkNormal))
+            {
+                continue;
+            }
+
+            Vector3 worldHit = TerrainToWorld(shape, trunkHit);
+            float trunkDistance = Vector3.Dot(worldHit - origin, direction);
+            if (trunkDistance < 0f || trunkDistance > bestDistance)
+            {
+                continue;
+            }
+
+            found = true;
+            bestDistance = trunkDistance;
+            point = worldHit;
+            normal = Vector3.Normalize(Vector3.Transform(trunkNormal, shape.Rotation));
+        }
+
+        distance = found ? bestDistance : 0f;
+        return found;
+    }
+
+    /// <summary>
+    /// A ray against one trunk cylinder in terrain-local metres: the curved side, then the flat top. The
+    /// bottom is underground and never the first thing a ray meets.
+    /// </summary>
+    private static bool RaycastTrunk(
+        Vector3 origin,
+        Vector3 direction,
+        in TerrainTrunk trunk,
+        out Vector3 point,
+        out Vector3 normal)
+    {
+        point = origin;
+        normal = Vector3.UnitY;
+
+        float bestT = float.PositiveInfinity;
+        Vector3 bestNormal = Vector3.UnitY;
+
+        // The side: a quadratic in the ground plane, kept only where the height is the trunk's.
+        float a = (direction.X * direction.X) + (direction.Z * direction.Z);
+        if (a > Epsilon)
+        {
+            float offsetX = origin.X - trunk.Base.X;
+            float offsetZ = origin.Z - trunk.Base.Z;
+            float b = 2f * ((offsetX * direction.X) + (offsetZ * direction.Z));
+            float c = (offsetX * offsetX) + (offsetZ * offsetZ) - (trunk.Radius * trunk.Radius);
+            float discriminant = (b * b) - (4f * a * c);
+            if (discriminant >= 0f)
+            {
+                float t = (-b - MathF.Sqrt(discriminant)) / (2f * a);
+                if (t > 0f)
+                {
+                    Vector3 hit = origin + (direction * t);
+                    if (hit.Y >= trunk.Base.Y && hit.Y <= trunk.Top.Y)
+                    {
+                        bestT = t;
+                        bestNormal = Vector3.Normalize(new Vector3(hit.X - trunk.Base.X, 0f, hit.Z - trunk.Base.Z));
+                    }
+                }
+            }
+        }
+
+        // The top: a disc at the trunk's height.
+        if (MathF.Abs(direction.Y) > Epsilon)
+        {
+            float t = (trunk.Top.Y - origin.Y) / direction.Y;
+            if (t > 0f && t < bestT)
+            {
+                Vector3 hit = origin + (direction * t);
+                float dx = hit.X - trunk.Top.X;
+                float dz = hit.Z - trunk.Top.Z;
+                if ((dx * dx) + (dz * dz) <= trunk.Radius * trunk.Radius)
+                {
+                    bestT = t;
+                    bestNormal = Vector3.UnitY;
+                }
+            }
+        }
+
+        if (float.IsPositiveInfinity(bestT))
         {
             return false;
         }
 
-        point = TerrainToWorld(shape, localHit);
-        distance = Vector3.Dot(point - origin, direction);
-        if (distance < 0f || distance > maxDistance)
-        {
-            return false;
-        }
-
-        normal = Vector3.Normalize(Vector3.Transform(
-            terrain.GetNormal(localHit.X / terrain.Size.X, localHit.Z / terrain.Size.Z), shape.Rotation));
+        point = origin + (direction * bestT);
+        normal = bestNormal;
         return true;
     }
 

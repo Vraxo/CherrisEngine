@@ -247,6 +247,22 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
                 terrain.Rebuild();
                 dirty = true;
             }
+
+            float trunkRadius = current.TrunkRadius;
+            if (ImGui.DragFloat($"Trunk Radius (m)##TreeTrunkRadius{prototype}", ref trunkRadius, 0.02f))
+            {
+                current.TrunkRadius = MathF.Max(trunkRadius, 0f);
+                terrain.Rebuild();
+                dirty = true;
+            }
+
+            float trunkHeight = current.TrunkHeight;
+            if (ImGui.DragFloat($"Trunk Height (m)##TreeTrunkHeight{prototype}", ref trunkHeight, 0.05f))
+            {
+                current.TrunkHeight = MathF.Max(trunkHeight, 0f);
+                terrain.Rebuild();
+                dirty = true;
+            }
         }
 
         if (ImGui.Button("Add Tree Prototype"))

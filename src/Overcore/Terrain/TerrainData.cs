@@ -54,6 +54,16 @@ public sealed class TerrainTreePrototype
     /// <summary>The colour the mesh's own vertex colours are multiplied by.</summary>
     public Vector3 Tint { get; set; } = Vector3.One;
 
+    /// <summary>
+    /// The radius of the solid trunk at the prototype mesh's base, in metres — what bodies meet when they
+    /// walk into the tree. The trunk is a cylinder, not the mesh: bark-deep accuracy no game can feel.
+    /// Zero grows a ghost tree nothing collides with.
+    /// </summary>
+    public float TrunkRadius { get; set; } = 0.25f;
+
+    /// <summary>How tall the solid trunk is, in metres, before the canopy begins and solidity ends.</summary>
+    public float TrunkHeight { get; set; } = 2f;
+
     public TerrainTreePrototype()
     {
     }

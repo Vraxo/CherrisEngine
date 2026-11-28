@@ -265,7 +265,11 @@ public static class ComponentDeserializer
                 {
                     Name = prototypeDict.TryGetValue("Name", out var protoName) ? protoName as string ?? "Tree" : "Tree",
                     MeshName = prototypeDict.TryGetValue("MeshName", out var meshObj) ? meshObj as string ?? string.Empty : string.Empty,
-                    Tint = GetVector3(prototypeDict, "Tint", Vector3.One)
+                    Tint = GetVector3(prototypeDict, "Tint", Vector3.One),
+                    TrunkRadius = prototypeDict.TryGetValue("TrunkRadius", out var radiusObj)
+                        ? Convert.ToSingle(radiusObj, CultureInfo.InvariantCulture) : 0.25f,
+                    TrunkHeight = prototypeDict.TryGetValue("TrunkHeight", out var heightObj)
+                        ? Convert.ToSingle(heightObj, CultureInfo.InvariantCulture) : 2f
                 });
             }
         }

@@ -5,6 +5,14 @@ using Veldrid;
 namespace Overcore.Terrain;
 
 /// <summary>
+/// One tree's solid trunk in terrain-local metres: a vertical cylinder from <see cref="Base"/> (sunk a
+/// root's depth into the ground) to <see cref="Top"/>. The physics mesh wears it as a prism and the
+/// analytic queries as a cylinder, and the two agree closely enough that a body meets the same tree
+/// whichever asks.
+/// </summary>
+public readonly record struct TerrainTrunk(Vector3 Base, Vector3 Top, float Radius);
+
+/// <summary>
 /// The forest as one mesh: every planted tree's prototype mesh, stood on the ground at the tree's place,
 /// turned to its facing, grown to its scale, and tinted by its prototype, all merged into a single
 /// <see cref="Mesh"/> the terrain draws beside its ground.
@@ -19,8 +27,9 @@ namespace Overcore.Terrain;
 /// <para>
 /// A tree's height is read from the ground when the forest is built, never stored, so sculpting a hill
 /// lifts the trees standing on it the next time either mesh is rebuilt. A tree planted in a hole has no
-/// ground to stand on and is not drawn. Trees carry no collider of their own: the ground is what bodies
-/// meet, exactly as a character walks through a wood in most games until somebody models trunks.
+/// ground to stand on and is not drawn. What bodies meet is the trunk (see
+/// <see cref="EnumerateTrunks"/>): a prototype-sized cylinder at each tree's base, solid to the solver,
+/// to rays and to character controllers, while the canopy stays scenery.
 /// </para>
 /// </remarks>
 public static class TerrainForestMesher
@@ -108,5 +117,70 @@ public static class TerrainForestMesher
         }
 
         return vertices.Count == 0 ? null : new Mesh([.. vertices], [.. indices]);
+    }
+
+    /// <summary>
+    /// Every solid trunk on the terrain, in terrain-local metres. A tree in a hole, or of a prototype
+    /// with no trunk, contributes none.
+    /// </summary>
+    public static IEnumerable<TerrainTrunk> EnumerateTrunks(TerrainData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        foreach (TreeInstance tree in data.Trees)
+        {
+            if (tree.PrototypeIndex < 0 || tree.PrototypeIndex >= data.TreePrototypes.Count
+                || data.IsHoleAt(tree.Position.X, tree.Position.Y))
+            {
+                continue;
+            }
+
+            TerrainTreePrototype kind = data.TreePrototypes[tree.PrototypeIndex];
+            float radius = kind.TrunkRadius * tree.WidthScale;
+            float height = kind.TrunkHeight * tree.HeightScale;
+            if (radius <= 0f || height <= 0f)
+            {
+                continue;
+            }
+
+            Vector3 basePoint = new(
+                tree.Position.X * data.Size.X,
+                data.SampleHeight(tree.Position.X, tree.Position.Y) - RootSink,
+                tree.Position.Y * data.Size.Z);
+            yield return new TerrainTrunk(basePoint, basePoint + (Vector3.UnitY * height), radius);
+        }
+    }
+
+    /// <summary>
+    /// The trunks as triangles — eight-sided prisms with a capped top — for the physics mesh a
+    /// <see cref="Overcore.Components.TerrainCollider"/> builds. Wound outward, like the ground's own
+    /// triangles, so contact normals point away from the bark.
+    /// </summary>
+    public static List<(Vector3 A, Vector3 B, Vector3 C)> BuildTrunkTriangles(TerrainData data)
+    {
+        const int sides = 8;
+        List<(Vector3 A, Vector3 B, Vector3 C)> triangles = [];
+
+        foreach (TerrainTrunk trunk in EnumerateTrunks(data))
+        {
+            Vector3[] bottom = new Vector3[sides];
+            Vector3[] top = new Vector3[sides];
+            for (int side = 0; side < sides; side++)
+            {
+                float angle = side * MathF.Tau / sides;
+                Vector3 rim = new(MathF.Cos(angle) * trunk.Radius, 0f, MathF.Sin(angle) * trunk.Radius);
+                bottom[side] = trunk.Base + rim;
+                top[side] = trunk.Top + rim;
+            }
+
+            for (int side = 0; side < sides; side++)
+            {
+                int next = (side + 1) % sides;
+                triangles.Add((bottom[side], top[next], bottom[next]));
+                triangles.Add((bottom[side], top[side], top[next]));
+                triangles.Add((trunk.Top, top[next], top[side]));
+            }
+        }
+
+        return triangles;
     }
 }

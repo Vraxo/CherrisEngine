@@ -347,7 +347,9 @@ public class SceneSerializer
                 {
                     ["Name"] = prototype.Name,
                     ["MeshName"] = prototype.MeshName,
-                    ["Tint"] = prototype.Tint
+                    ["Tint"] = prototype.Tint,
+                    ["TrunkRadius"] = prototype.TrunkRadius,
+                    ["TrunkHeight"] = prototype.TrunkHeight
                 });
             }
 
