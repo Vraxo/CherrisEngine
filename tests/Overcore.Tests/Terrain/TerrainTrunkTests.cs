@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Overcore.Components;
 using Overcore.Core;
 using Overcore.Core.Physics;
 using Overcore.Terrain;
