@@ -21,7 +21,10 @@ public enum TerrainBrushMode
     Paint,
 
     /// <summary>Cuts holes in the ground — cells with no ground in them — or fills them back in.</summary>
-    Holes
+    Holes,
+
+    /// <summary>Plants trees on the ground, or uproots them.</summary>
+    Trees
 }
 
 /// <summary>
@@ -54,7 +57,7 @@ public static class TerrainBrush
         float flattenHeight = 0f)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (mode is TerrainBrushMode.Paint or TerrainBrushMode.Holes || radius <= 0f)
+        if (mode is TerrainBrushMode.Paint or TerrainBrushMode.Holes or TerrainBrushMode.Trees || radius <= 0f)
         {
             return 0;
         }
@@ -229,6 +232,80 @@ public static class TerrainBrush
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// Scatters trees through a disc: each attempt drops a seed at a random place in the disc, and the
+    /// seed takes root only where there is ground to stand on (not in a hole) and room to grow (no other
+    /// tree within <paramref name="minSpacing"/>). A planted tree faces a random way and varies a little in
+    /// size, because a forest of identical soldiers reads as a fence. Returns how many took root.
+    /// </summary>
+    /// <param name="data">The ground to plant on.</param>
+    /// <param name="center">The disc's centre, normalised across the terrain.</param>
+    /// <param name="radius">The disc's radius, normalised.</param>
+    /// <param name="prototypeIndex">Which prototype to plant, an index into <see cref="TerrainData.TreePrototypes"/>.</param>
+    /// <param name="attempts">How many seeds to drop. Thick ground takes fewer than this.</param>
+    /// <param name="minSpacing">The closest two trees may stand, normalised. Zero packs them shoulder to shoulder.</param>
+    /// <param name="random">The scatter's dice. An editor passes its own; a test passes a seeded one.</param>
+    public static int PlantTrees(
+        TerrainData data,
+        Vector2 center,
+        float radius,
+        int prototypeIndex,
+        int attempts,
+        float minSpacing,
+        Random random)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(random);
+        if (radius <= 0f || attempts <= 0 || prototypeIndex < 0 || prototypeIndex >= data.TreePrototypes.Count)
+        {
+            return 0;
+        }
+
+        int planted = 0;
+        for (int attempt = 0; attempt < attempts; attempt++)
+        {
+            // The square root spreads seeds evenly over the disc instead of crowding its centre.
+            float distance = radius * MathF.Sqrt(random.NextSingle());
+            float angle = random.NextSingle() * MathF.Tau;
+            Vector2 place = center + (new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * distance);
+            if (place.X is < 0f or > 1f || place.Y is < 0f or > 1f || data.IsHoleAt(place.X, place.Y))
+            {
+                continue;
+            }
+
+            bool crowded = false;
+            foreach (TreeInstance tree in data.Trees)
+            {
+                if (Vector2.Distance(tree.Position, place) < minSpacing)
+                {
+                    crowded = true;
+                    break;
+                }
+            }
+
+            if (crowded)
+            {
+                continue;
+            }
+
+            float scale = 0.85f + (random.NextSingle() * 0.3f);
+            data.AddTree(prototypeIndex, place, random.NextSingle() * MathF.Tau, scale, scale);
+            planted++;
+        }
+
+        return planted;
+    }
+
+    /// <summary>Uproots every tree in a disc. Returns how many came up.</summary>
+    /// <param name="data">The ground to clear.</param>
+    /// <param name="center">The disc's centre, normalised across the terrain.</param>
+    /// <param name="radius">The disc's radius, normalised.</param>
+    public static int EraseTrees(TerrainData data, Vector2 center, float radius)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return radius <= 0f ? 0 : data.RemoveTreesNear(center, radius);
     }
 
     /// <summary>The brush's edge: one at the centre, zero at and past the rim, a cosine between.</summary>

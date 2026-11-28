@@ -39,6 +39,46 @@ public sealed class TerrainLayer
 }
 
 /// <summary>
+/// One kind of tree a terrain can grow, Unity's tree prototype reduced to what this engine draws: the
+/// mesh a tree wears and the colour it is tinted by. The mesh is named rather than held, like a layer's
+/// texture, so a prototype survives in a scene file as text and resolves when the terrain is built.
+/// </summary>
+public sealed class TerrainTreePrototype
+{
+    /// <summary>The prototype's name, as an editor would list it.</summary>
+    public string Name { get; set; } = "Tree";
+
+    /// <summary>The project-relative mesh each tree of this kind wears, or empty to grow nothing.</summary>
+    public string MeshName { get; set; } = string.Empty;
+
+    /// <summary>The colour the mesh's own vertex colours are multiplied by.</summary>
+    public Vector3 Tint { get; set; } = Vector3.One;
+
+    public TerrainTreePrototype()
+    {
+    }
+
+    public TerrainTreePrototype(string name, string meshName, Vector3 tint)
+    {
+        Name = name;
+        MeshName = meshName;
+        Tint = tint;
+    }
+}
+
+/// <summary>
+/// One planted tree: which prototype it grows from, where it stands (normalised across the terrain, so a
+/// tree keeps its place when the ground is resized), which way it faces, and how it is scaled. Its height
+/// is not stored — the ground decides that, so a tree follows the sculpting under it.
+/// </summary>
+public readonly record struct TreeInstance(
+    int PrototypeIndex,
+    Vector2 Position,
+    float Rotation,
+    float WidthScale,
+    float HeightScale);
+
+/// <summary>
 /// The ground itself as data, Unity's <c>TerrainData</c>: a grid of heights over a rectangle of world, plus
 /// the per-pixel blend of <see cref="TerrainLayer"/>s painted over it.
 /// </summary>
@@ -73,6 +113,7 @@ public sealed class TerrainData
     private float[] _alphamap;
     private bool[] _holes;
     private int _holeCount;
+    private readonly List<TreeInstance> _trees = [];
 
     /// <summary>Grid points along one side of the heightmap. The grid is square, as Unity's is.</summary>
     public int HeightmapResolution { get; }
@@ -106,6 +147,15 @@ public sealed class TerrainData
 
     /// <summary>How many cells are holes. Zero is the ordinary ground.</summary>
     public int HoleCount => _holeCount;
+
+    /// <summary>The kinds of tree this terrain can grow. Add through <see cref="AddTreePrototype"/>; a prototype is never removed, so a tree's index into this list stays true for the life of the data.</summary>
+    public List<TerrainTreePrototype> TreePrototypes { get; } = [];
+
+    /// <summary>Every planted tree, in planting order.</summary>
+    public IReadOnlyList<TreeInstance> Trees => _trees;
+
+    /// <summary>Raised by every tree or prototype write.</summary>
+    public int TreesVersion { get; private set; }
 
     /// <summary>The highest stored height, in metres. Kept by scanning, so it is exact rather than tracked.</summary>
     public float MaxHeight
@@ -510,6 +560,132 @@ public sealed class TerrainData
         }
 
         HolesVersion++;
+    }
+
+    /// <summary>Adds a kind of tree this terrain can grow.</summary>
+    public TerrainTreePrototype AddTreePrototype(TerrainTreePrototype prototype)
+    {
+        ArgumentNullException.ThrowIfNull(prototype);
+        TreePrototypes.Add(prototype);
+        TreesVersion++;
+        return prototype;
+    }
+
+    /// <summary>
+    /// Plants one tree. Its standing place is clamped onto the ground; its height is not stored, because
+    /// the ground decides that when the forest is meshed.
+    /// </summary>
+    /// <param name="prototypeIndex">Which prototype grows here, an index into <see cref="TreePrototypes"/>.</param>
+    /// <param name="position">Where it stands, normalised across the terrain.</param>
+    /// <param name="rotation">Which way it faces, in radians around the vertical.</param>
+    /// <param name="widthScale">Its girth relative to the prototype mesh. At least a sliver.</param>
+    /// <param name="heightScale">Its height relative to the prototype mesh. At least a sliver.</param>
+    /// <returns>The planted tree's index in <see cref="Trees"/>.</returns>
+    public int AddTree(int prototypeIndex, Vector2 position, float rotation = 0f, float widthScale = 1f, float heightScale = 1f)
+    {
+        if (prototypeIndex < 0 || prototypeIndex >= TreePrototypes.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(prototypeIndex), prototypeIndex,
+                $"A tree grows from one of the {TreePrototypes.Count} prototypes.");
+        }
+
+        _trees.Add(new TreeInstance(
+            prototypeIndex,
+            new Vector2(Math.Clamp(position.X, 0f, 1f), Math.Clamp(position.Y, 0f, 1f)),
+            rotation,
+            MathF.Max(widthScale, 0.01f),
+            MathF.Max(heightScale, 0.01f)));
+        TreesVersion++;
+        return _trees.Count - 1;
+    }
+
+    /// <summary>
+    /// Uproots every tree standing in a disc. Returns how many came up, which is how a caller knows the
+    /// forest is stale (the data's <see cref="TreesVersion"/> says the same thing).
+    /// </summary>
+    /// <param name="center">The disc's centre, normalised across the terrain.</param>
+    /// <param name="radius">The disc's radius, normalised.</param>
+    public int RemoveTreesNear(Vector2 center, float radius)
+    {
+        int removed = _trees.RemoveAll(tree => Vector2.Distance(tree.Position, center) <= radius);
+        if (removed > 0)
+        {
+            TreesVersion++;
+        }
+
+        return removed;
+    }
+
+    /// <summary>Uproots every tree on the terrain.</summary>
+    public void ClearTrees()
+    {
+        if (_trees.Count == 0)
+        {
+            return;
+        }
+
+        _trees.Clear();
+        TreesVersion++;
+    }
+
+    /// <summary>
+    /// The forest packed six floats per tree — prototype, place, facing, girth, height: the scene file's
+    /// coat for it, the same base64-over-floats dress the heightmap wears.
+    /// </summary>
+    public byte[] GetTreesPacked()
+    {
+        float[] flat = new float[_trees.Count * 6];
+        for (int index = 0; index < _trees.Count; index++)
+        {
+            TreeInstance tree = _trees[index];
+            flat[(index * 6) + 0] = tree.PrototypeIndex;
+            flat[(index * 6) + 1] = tree.Position.X;
+            flat[(index * 6) + 2] = tree.Position.Y;
+            flat[(index * 6) + 3] = tree.Rotation;
+            flat[(index * 6) + 4] = tree.WidthScale;
+            flat[(index * 6) + 5] = tree.HeightScale;
+        }
+
+        byte[] packed = new byte[flat.Length * sizeof(float)];
+        Buffer.BlockCopy(flat, 0, packed, 0, packed.Length);
+        return packed;
+    }
+
+    /// <summary>Replaces the forest from its packed form. See <see cref="GetTreesPacked"/>.</summary>
+    public void SetTreesPacked(ReadOnlySpan<byte> packed)
+    {
+        if (packed.Length % (6 * sizeof(float)) != 0)
+        {
+            throw new ArgumentException(
+                $"A packed forest is a whole number of trees, six floats each; {packed.Length} bytes is not.",
+                nameof(packed));
+        }
+
+        float[] flat = new float[packed.Length / sizeof(float)];
+        Buffer.BlockCopy(packed.ToArray(), 0, flat, 0, packed.Length);
+
+        _trees.Clear();
+        for (int index = 0; index < flat.Length; index += 6)
+        {
+            int prototypeIndex = (int)flat[index];
+            if (prototypeIndex < 0 || prototypeIndex >= TreePrototypes.Count)
+            {
+                _trees.Clear();
+                throw new ArgumentException(
+                    $"A packed tree grows from prototype {prototypeIndex}, which this terrain does not have.",
+                    nameof(packed));
+            }
+
+            _trees.Add(new TreeInstance(
+                prototypeIndex,
+                new Vector2(Math.Clamp(flat[index + 1], 0f, 1f), Math.Clamp(flat[index + 2], 0f, 1f)),
+                flat[index + 3],
+                MathF.Max(flat[index + 4], 0.01f),
+                MathF.Max(flat[index + 5], 0.01f)));
+        }
+
+        TreesVersion++;
     }
 
     private void ValidateCell(int cellX, int cellZ)

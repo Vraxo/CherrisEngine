@@ -52,6 +52,31 @@ a texture.
 weight toward one at the stroke's centre and scale the others down, keeping every pixel summing to one.
 `GetDominantLayer(u, v)` answers which layer a place wears.
 
+## Trees
+
+A terrain grows trees from **prototypes** (`TerrainTreePrototype`: a mesh name and a tint — add them
+from the inspector's Tree Prototypes list, or `data.AddTreePrototype(...)`) and **instances**
+(`data.AddTree(prototype, place, facing, girth, height)`; `TerrainBrush.PlantTrees` scatters them with
+room to grow, `EraseTrees` uproots a disc). The editor's **Trees** brush plants on drag and uproots on
+Shift-drag, as one undo step per stroke.
+
+An instance stores no height: the forest is meshed standing on the ground as it is when the mesh is
+built, so sculpting a hill lifts its trees, and a tree whose cell becomes a hole stops drawing. The
+whole forest is one merged mesh on a child object the terrain owns (`Trees`), drawn and shadowed
+through the ordinary mesh path; it is terrain property, not scene content, so the scene file writes
+prototypes as text and the planted trees as one packed `Trees: <base64>` blob inside the terrain's own
+block, and the child is rebuilt from that on load. Consequences worth knowing:
+
+- **NavMesh bakes walk under trees, not over them** — the forest child is excluded from bakes; agents
+  still walk around a wood only where the ground itself leads them.
+- **Trees have no colliders.** Bodies meet the ground, not the trunks. (Unity makes trunk colliders
+  opt-in too; here they are a future increment, like grass detail.)
+- A prototype's mesh resolves by name through the resource manager when the scene loads
+  (`Terrain.TreeMeshResolver` is the wire); an unresolved mesh grows invisible trees — plant a
+  different prototype or fix the name in the inspector.
+- Merging is one draw for the whole forest at any size, paid for in memory per tree; GPU instancing is
+  the known upgrade path and needs no data change when it lands.
+
 ## Holes
 
 A hole is a whole **cell** — the quad between four grid points — with no ground in it (`IsHole`,
@@ -144,6 +169,6 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 
 ## Not yet
 
-Trees and grass detail, neighbour stitching between separate terrains, heightmap LOD beyond
+Grass detail, tree colliders, neighbour stitching between separate terrains, heightmap LOD beyond
 chunking, splat blending on the Veldrid backend, and layers past the fourth in the shader's blend are
 future increments. The data model does not need to change for any of them.

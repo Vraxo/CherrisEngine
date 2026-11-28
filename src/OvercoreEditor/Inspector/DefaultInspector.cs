@@ -134,7 +134,9 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
         if (!brush.Enabled)
         {
             ImGui.TextDisabled("Arm the brush, then drag on the ground in the viewport. One stroke is one undo step.");
-            return DrawTerrainLayers(terrain);
+            dirty |= DrawTerrainLayers(terrain);
+            dirty |= DrawTerrainTrees(terrain);
+            return dirty;
         }
 
         ImGui.Spacing();
@@ -190,7 +192,78 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             }
         }
 
+        if (brush.Mode == TerrainBrushMode.Trees)
+        {
+            ImGui.Spacing();
+            if (data.TreePrototypes.Count == 0)
+            {
+                ImGui.TextDisabled("Add a tree prototype below, then drag on the ground to plant it.");
+            }
+            else
+            {
+                ImGui.Text("Plant");
+                for (int prototype = 0; prototype < data.TreePrototypes.Count; prototype++)
+                {
+                    if (ImGui.RadioButton(
+                        $"{data.TreePrototypes[prototype].Name}##PlantTree{prototype}",
+                        brush.TreePrototypeIndex == prototype))
+                    {
+                        brush.TreePrototypeIndex = prototype;
+                    }
+                }
+
+                ImGui.TextDisabled("Drag to plant; hold Shift to uproot. Trees stand on the ground and follow its sculpting.");
+            }
+        }
+
         dirty |= DrawTerrainLayers(terrain);
+        dirty |= DrawTerrainTrees(terrain);
+        return dirty;
+    }
+
+    /// <summary>The tree prototypes: the kinds of tree this ground can grow, each wearing a named mesh.</summary>
+    private bool DrawTerrainTrees(TerrainComponent terrain)
+    {
+        bool dirty = false;
+        TerrainData data = terrain.TerrainData;
+
+        ImGui.Spacing();
+        ImGui.Text($"Tree Prototypes · {data.Trees.Count} planted");
+        for (int prototype = 0; prototype < data.TreePrototypes.Count; prototype++)
+        {
+            TerrainTreePrototype current = data.TreePrototypes[prototype];
+            string meshName = current.MeshName;
+            if (ImGui.InputText($"{current.Name} Mesh##TreeMesh{prototype}", ref meshName, 256))
+            {
+                current.MeshName = meshName;
+                terrain.Rebuild();
+                dirty = true;
+            }
+
+            Vector3 tint = current.Tint;
+            if (ImGui.ColorEdit3($"Tint##TreeTint{prototype}", ref tint))
+            {
+                current.Tint = tint;
+                terrain.Rebuild();
+                dirty = true;
+            }
+        }
+
+        if (ImGui.Button("Add Tree Prototype"))
+        {
+            data.AddTreePrototype(new TerrainTreePrototype(
+                $"Tree {data.TreePrototypes.Count}", "Cube", Vector3.One));
+            terrain.Rebuild();
+            dirty = true;
+        }
+
+        if (data.Trees.Count > 0 && ImGui.Button("Clear All Trees"))
+        {
+            data.ClearTrees();
+            terrain.Rebuild();
+            dirty = true;
+        }
+
         return dirty;
     }
 

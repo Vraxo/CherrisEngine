@@ -35,6 +35,9 @@ public sealed class TerrainBrushSettings
     /// <summary>The layer a Paint stroke paints with, clamped to the terrain's layers when stroked.</summary>
     public int LayerIndex { get; set; }
 
+    /// <summary>The tree prototype a Trees stroke plants, clamped to the terrain's prototypes when stroked.</summary>
+    public int TreePrototypeIndex { get; set; }
+
     /// <summary>
     /// The strength one frame's worth of a held stroke applies: continuous modes are rates, so the frame's
     /// slice of a second is the unit. Flatten, Smooth and Paint pull toward a target, so their slice is a

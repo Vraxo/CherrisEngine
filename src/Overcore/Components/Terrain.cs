@@ -16,7 +16,9 @@ namespace Overcore.Components;
 /// <see cref="TerrainMesher"/> from the data, so the ground draws, casts and receives shadows, and bakes
 /// into a NavMesh through exactly the paths every other mesh in the scene uses. Add a
 /// <see cref="TerrainCollider"/> beside it and the same ground is solid to bodies, rays and character
-/// controllers.
+/// controllers. Its forest, when it has one, rides on a child object the component owns outright (named
+/// <c>Trees</c>, recognised by <see cref="IsTreeObject"/>): terrain property, never scene content, so the
+/// scene file writes the forest into the terrain's own data and the child is rebuilt from it on load.
 /// </para>
 /// <para>
 /// The mesh is rebuilt when the data changes: eagerly by <see cref="Sculpt"/> and <see cref="Paint"/>, and
@@ -26,10 +28,18 @@ namespace Overcore.Components;
 /// </remarks>
 public class Terrain : Component
 {
+    /// <summary>The mesh name the forest's renderer goes by, which is how it is recognised as terrain property.</summary>
+    internal const string TreeMeshName = "TerrainTrees";
+
+    private static readonly Mesh EmptyMesh = new([], []);
+
     private TerrainData _data = new();
     private int _builtHeightVersion = -1;
     private int _builtAlphamapVersion = -1;
     private int _builtHolesVersion = -1;
+    private int _builtTreesVersion = -1;
+    private Func<string, Mesh?>? _treeMeshResolver;
+    private Material? _treeMaterial;
 
     /// <summary>The ground's heights and paint. Replacing it rebuilds the mesh at once.</summary>
     [HideInInspector]
@@ -42,6 +52,7 @@ public class Terrain : Component
             _builtHeightVersion = -1;
             _builtAlphamapVersion = -1;
             _builtHolesVersion = -1;
+            _builtTreesVersion = -1;
             Rebuild();
         }
     }
@@ -74,6 +85,41 @@ public class Terrain : Component
     /// <summary>The mesh the ground currently draws with, or null before its first build.</summary>
     [HideInInspector]
     public Mesh? Mesh { get; private set; }
+
+    /// <summary>The merged mesh of every standing tree, or null when the forest draws nothing.</summary>
+    [HideInInspector]
+    public Mesh? TreeMesh { get; private set; }
+
+    /// <summary>
+    /// Turns a tree prototype's mesh name into the mesh itself. Prototypes name their meshes, like layers
+    /// name their textures, and resolution is a loading concern: the scene factory wires this to the
+    /// resource manager, and code that grows a terrain by hand wires its own. Setting it once trees stand
+    /// rebuilds the forest with it.
+    /// </summary>
+    [HideInInspector]
+    public Func<string, Mesh?>? TreeMeshResolver
+    {
+        get => _treeMeshResolver;
+        set
+        {
+            _treeMeshResolver = value;
+            if (_data.Trees.Count > 0)
+            {
+                _builtTreesVersion = -1;
+                Rebuild();
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when an object is a terrain's forest child: terrain property riding on a scene object, not
+    /// scene content. The scene file leaves it out (the forest is in the terrain's data) and a NavMesh
+    /// bake walks under the trees rather than over them.
+    /// </summary>
+    public static bool IsTreeObject(GameObject? gameObject) =>
+        gameObject is not null
+        && gameObject.GetComponent<MeshRenderer>() is { MeshName: TreeMeshName }
+        && gameObject.Transform.Parent?.GameObject.GetComponent<Terrain>() is not null;
 
     private readonly List<ITexture?> _layerTextures = [];
 
@@ -147,8 +193,51 @@ public class Terrain : Component
             renderer.Material = new Material(null!, "White");
         }
 
+        TreeMesh = _treeMeshResolver is null ? null : TerrainForestMesher.Build(_data, _treeMeshResolver);
+        _builtTreesVersion = _data.TreesVersion;
+        EnsureTreeRenderer();
+
         // The collider beside this terrain holds a physics copy of the same ground; it is told to remake it.
         GameObject.GetComponent<TerrainCollider>()?.RefreshShape();
+    }
+
+    /// <summary>
+    /// Keeps the forest's child object in step with <see cref="TreeMesh"/>: created on first need, emptied
+    /// (and silenced) when the forest is gone. The child wears its own plain material, so the ground's
+    /// texture never smears across the trees and the trees never take the ground's splat branch.
+    /// </summary>
+    private void EnsureTreeRenderer()
+    {
+        MeshRenderer? renderer = null;
+        foreach (Transform child in GameObject.Transform.Children)
+        {
+            if (child.GameObject.GetComponent<MeshRenderer>() is { MeshName: TreeMeshName } found)
+            {
+                renderer = found;
+                break;
+            }
+        }
+
+        if (renderer is null)
+        {
+            if (TreeMesh is null)
+            {
+                return;
+            }
+
+            GameObject treesObject = new("Trees");
+            treesObject.Transform.SetParent(GameObject.Transform, worldPositionStays: false);
+            _treeMaterial ??= new Material(null!, "White");
+            renderer = treesObject.AddComponent(new MeshRenderer
+            {
+                Mesh = TreeMesh,
+                MeshName = TreeMeshName,
+                Material = _treeMaterial
+            });
+        }
+
+        renderer.Mesh = TreeMesh ?? EmptyMesh;
+        renderer.Enabled = TreeMesh is not null;
     }
 
     /// <summary>Rebuilds the mesh if the data has been edited since the last build. The scene calls this once a frame.</summary>
@@ -156,10 +245,45 @@ public class Terrain : Component
     {
         if (_builtHeightVersion != _data.Version
             || _builtAlphamapVersion != _data.AlphamapVersion
-            || _builtHolesVersion != _data.HolesVersion)
+            || _builtHolesVersion != _data.HolesVersion
+            || _builtTreesVersion != _data.TreesVersion)
         {
             Rebuild();
         }
+    }
+
+    /// <summary>One planting stroke against the ground, forest rebuilt after it. See <see cref="TerrainBrush.PlantTrees"/>.</summary>
+    /// <param name="center">The stroke's centre, normalised across the terrain.</param>
+    /// <param name="radius">The stroke's radius, normalised.</param>
+    /// <param name="prototypeIndex">Which prototype to plant.</param>
+    /// <param name="attempts">How many seeds the stroke drops.</param>
+    /// <param name="minSpacing">The closest two trees may stand, normalised.</param>
+    /// <param name="random">The scatter's dice.</param>
+    /// <returns>How many trees took root.</returns>
+    public int PlantTrees(Vector2 center, float radius, int prototypeIndex, int attempts, float minSpacing, Random random)
+    {
+        int planted = TerrainBrush.PlantTrees(_data, center, radius, prototypeIndex, attempts, minSpacing, random);
+        if (planted > 0)
+        {
+            Rebuild();
+        }
+
+        return planted;
+    }
+
+    /// <summary>One clearing stroke against the ground, forest rebuilt after it. See <see cref="TerrainBrush.EraseTrees"/>.</summary>
+    /// <param name="center">The stroke's centre, normalised across the terrain.</param>
+    /// <param name="radius">The stroke's radius, normalised.</param>
+    /// <returns>How many trees came up.</returns>
+    public int EraseTrees(Vector2 center, float radius)
+    {
+        int removed = TerrainBrush.EraseTrees(_data, center, radius);
+        if (removed > 0)
+        {
+            Rebuild();
+        }
+
+        return removed;
     }
 
     /// <summary>

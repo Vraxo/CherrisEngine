@@ -20,33 +20,39 @@ public sealed class TerrainStrokeCommand : ICommand
     private readonly float[] _heightsBefore;
     private readonly float[] _alphamapBefore;
     private readonly byte[] _holesBefore;
+    private readonly byte[] _treesBefore;
     private readonly float[] _heightsAfter;
     private readonly float[] _alphamapAfter;
     private readonly byte[] _holesAfter;
+    private readonly byte[] _treesAfter;
 
     public TerrainStrokeCommand(
         TerrainComponent terrain,
         float[] heightsBefore,
         float[] alphamapBefore,
         byte[] holesBefore,
+        byte[] treesBefore,
         float[] heightsAfter,
         float[] alphamapAfter,
-        byte[] holesAfter)
+        byte[] holesAfter,
+        byte[] treesAfter)
     {
         _terrain = terrain;
         _heightsBefore = heightsBefore;
         _alphamapBefore = alphamapBefore;
         _holesBefore = holesBefore;
+        _treesBefore = treesBefore;
         _heightsAfter = heightsAfter;
         _alphamapAfter = alphamapAfter;
         _holesAfter = holesAfter;
+        _treesAfter = treesAfter;
     }
 
-    public void Execute() => Apply(_heightsAfter, _alphamapAfter, _holesAfter);
+    public void Execute() => Apply(_heightsAfter, _alphamapAfter, _holesAfter, _treesAfter);
 
-    public void Undo() => Apply(_heightsBefore, _alphamapBefore, _holesBefore);
+    public void Undo() => Apply(_heightsBefore, _alphamapBefore, _holesBefore, _treesBefore);
 
-    private void Apply(float[] heights, float[] alphamap, byte[] holes)
+    private void Apply(float[] heights, float[] alphamap, byte[] holes, byte[] trees)
     {
         TerrainData data = _terrain.TerrainData;
 
@@ -63,6 +69,18 @@ public sealed class TerrainStrokeCommand : ICommand
         if (holes.Length == (data.HolesResolution * data.HolesResolution + 7) / 8)
         {
             data.SetHolesPacked(holes);
+        }
+
+        // A forest snapshot is trusted only while every tree in it still names a prototype the terrain
+        // has: prototypes are never removed, so this is a formality, but a stale one is skipped rather
+        // than half-applied.
+        try
+        {
+            data.SetTreesPacked(trees);
+        }
+        catch (ArgumentException)
+        {
+            // The packed form no longer fits this data (see the class remarks on stale snapshots).
         }
 
         _terrain.Rebuild();

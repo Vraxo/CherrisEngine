@@ -252,7 +252,41 @@ public static class ComponentDeserializer
             }
         }
 
+        if (propsDict.TryGetValue("TreePrototypes", out var prototypesObj) && prototypesObj is List<object> prototypeList)
+        {
+            foreach (object item in prototypeList)
+            {
+                if (item is not Dictionary<object, object> prototypeDict)
+                {
+                    continue;
+                }
+
+                data.AddTreePrototype(new TerrainTreePrototype
+                {
+                    Name = prototypeDict.TryGetValue("Name", out var protoName) ? protoName as string ?? "Tree" : "Tree",
+                    MeshName = prototypeDict.TryGetValue("MeshName", out var meshObj) ? meshObj as string ?? string.Empty : string.Empty,
+                    Tint = GetVector3(prototypeDict, "Tint", Vector3.One)
+                });
+            }
+        }
+
+        if (propsDict.TryGetValue("Trees", out var treesObj) && treesObj is string treesText)
+        {
+            try
+            {
+                // Prototypes first, trees after: a packed tree names its prototype by index.
+                data.SetTreesPacked(Convert.FromBase64String(treesText));
+            }
+            catch (Exception ex) when (ex is FormatException or ArgumentException)
+            {
+                // An unreadable forest block is bare ground, not a scene that fails to load.
+            }
+        }
+
         terrain.TerrainData = data;
+
+        // The forest's meshes resolve by name when the terrain builds it, through the same manager.
+        terrain.TreeMeshResolver = name => resourceManager?.GetMesh(name);
 
         string textureName = data.Layers.Count > 0 && !string.IsNullOrWhiteSpace(data.Layers[0].TextureName)
             ? data.Layers[0].TextureName

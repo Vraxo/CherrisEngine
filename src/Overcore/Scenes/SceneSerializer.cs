@@ -335,6 +335,30 @@ public class SceneSerializer
             data["Holes"] = Convert.ToBase64String(terrainData.GetHolesPacked());
         }
 
+        // The forest likewise: prototypes as text, the planted trees as one packed blob, and nothing at
+        // all for bare ground. The forest's child object is never written (see GetHierarchy): it is
+        // terrain property, rebuilt from this data on load.
+        if (terrainData.TreePrototypes.Count > 0)
+        {
+            List<Dictionary<string, object>> prototypesData = [];
+            foreach (TerrainTreePrototype prototype in terrainData.TreePrototypes)
+            {
+                prototypesData.Add(new Dictionary<string, object>
+                {
+                    ["Name"] = prototype.Name,
+                    ["MeshName"] = prototype.MeshName,
+                    ["Tint"] = prototype.Tint
+                });
+            }
+
+            data["TreePrototypes"] = prototypesData;
+        }
+
+        if (terrainData.Trees.Count > 0)
+        {
+            data["Trees"] = Convert.ToBase64String(terrainData.GetTreesPacked());
+        }
+
         return data;
     }
 
@@ -402,6 +426,14 @@ public class SceneSerializer
 
         foreach (Transform child in go.Transform.Children)
         {
+            // A terrain's forest child is terrain property, not scene content: the forest travels in the
+            // terrain's own data and the child is rebuilt from it, so writing it would plant a second,
+            // frozen forest on load.
+            if (TerrainComponent.IsTreeObject(child.GameObject))
+            {
+                continue;
+            }
+
             GetHierarchy(child.GameObject, list);
         }
     }

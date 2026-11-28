@@ -33,10 +33,13 @@ public sealed class TerrainBrushTool
     private readonly Editor _editor;
     private readonly HistoryManager _history;
 
+    private readonly Random _random = new();
+
     private bool _stroking;
     private float[]? _heightsBefore;
     private float[]? _alphamapBefore;
     private byte[]? _holesBefore;
+    private byte[]? _treesBefore;
 
     public TerrainBrushTool(Editor editor, HistoryManager history)
     {
@@ -76,6 +79,7 @@ public sealed class TerrainBrushTool
             _heightsBefore = null;
             _alphamapBefore = null;
             _holesBefore = null;
+            _treesBefore = null;
             return false;
         }
 
@@ -99,6 +103,7 @@ public sealed class TerrainBrushTool
             _heightsBefore = terrain.TerrainData.GetHeightmap();
             _alphamapBefore = terrain.TerrainData.GetAlphamap();
             _holesBefore = terrain.TerrainData.GetHolesPacked();
+            _treesBefore = terrain.TerrainData.GetTreesPacked();
             ApplyStroke(terrain, uv, 1f / 60f);
         }
         else if (_stroking && ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -119,7 +124,21 @@ public sealed class TerrainBrushTool
         float radius = settings.RadiusMetres / MathF.Max(data.Size.X, 0.01f);
         float strength = settings.StrokeStrength(deltaTime);
 
-        if (settings.Mode == TerrainBrushMode.Holes)
+        if (settings.Mode == TerrainBrushMode.Trees)
+        {
+            // Shift uproots instead of planting. Planting is a scatter, not a rate: each frame drops a
+            // handful of seeds, and holding the brush walks a wood into being.
+            if (ImGui.GetIO().KeyShift)
+            {
+                terrain.EraseTrees(uv, radius);
+            }
+            else if (data.TreePrototypes.Count > 0)
+            {
+                int prototype = Math.Clamp(settings.TreePrototypeIndex, 0, data.TreePrototypes.Count - 1);
+                terrain.PlantTrees(uv, radius, prototype, attempts: 5, minSpacing: radius * 0.4f, _random);
+            }
+        }
+        else if (settings.Mode == TerrainBrushMode.Holes)
         {
             // Shift is the brush running backwards: fill the holes back in.
             terrain.ApplyHoles(uv, radius, hole: !ImGui.GetIO().KeyShift);
@@ -139,33 +158,38 @@ public sealed class TerrainBrushTool
     {
         _stroking = false;
 
-        if (_heightsBefore is null || _alphamapBefore is null || _holesBefore is null
+        if (_heightsBefore is null || _alphamapBefore is null || _holesBefore is null || _treesBefore is null
             || _editor.GetSelectedGameObject()?.GetComponent<TerrainComponent>() is not { } terrain)
         {
             _heightsBefore = null;
             _alphamapBefore = null;
             _holesBefore = null;
+            _treesBefore = null;
             return;
         }
 
         float[] heightsAfter = terrain.TerrainData.GetHeightmap();
         float[] alphamapAfter = terrain.TerrainData.GetAlphamap();
         byte[] holesAfter = terrain.TerrainData.GetHolesPacked();
+        byte[] treesAfter = terrain.TerrainData.GetTreesPacked();
         bool changed = !_heightsBefore.SequenceEqual(heightsAfter)
             || !_alphamapBefore.SequenceEqual(alphamapAfter)
-            || !_holesBefore.SequenceEqual(holesAfter);
+            || !_holesBefore.SequenceEqual(holesAfter)
+            || !_treesBefore.SequenceEqual(treesAfter);
 
         if (changed)
         {
             // Execute re-applies the after state the stroke already left, which is the point: history
             // records it, and the dirty flag follows through OnHistoryChanged.
             _history.Execute(new TerrainStrokeCommand(
-                terrain, _heightsBefore, _alphamapBefore, _holesBefore, heightsAfter, alphamapAfter, holesAfter));
+                terrain, _heightsBefore, _alphamapBefore, _holesBefore, _treesBefore,
+                heightsAfter, alphamapAfter, holesAfter, treesAfter));
         }
 
         _heightsBefore = null;
         _alphamapBefore = null;
         _holesBefore = null;
+        _treesBefore = null;
     }
 
     private void DrawBrushRing(TerrainComponent terrain, Vector3 point, Vector2 viewportPos, Vector2 viewportSize)

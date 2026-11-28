@@ -67,6 +67,12 @@ public static class NavMeshBuilder
                 continue;
             }
 
+            // A terrain's forest is scenery agents walk under, not ground they walk over.
+            if (Terrain.IsTreeObject(go))
+            {
+                continue;
+            }
+
             if (collectGeometry is NavMeshCollectGeometry.RenderMeshes or NavMeshCollectGeometry.Both)
             {
                 if (go.GetComponent<MeshRenderer>() is { Enabled: true, Mesh: { } mesh })
