@@ -1,8 +1,11 @@
 using Overcore.Components;
 using Overcore.Core.Logging;
 using Overcore.Rendering;
+using Overcore.Terrain;
+using System.Linq;
 using System.Numerics;
 using Veldrid;
+using TerrainComponent = Overcore.Components.Terrain;
 namespace Overcore.Core;
 // This class now acts as the Veldrid implementation of IRenderer
 public partial class VeldridRenderer : IRenderer
@@ -127,7 +130,7 @@ public partial class VeldridRenderer : IRenderer
             _skyboxRenderer.Render(cl, skybox, view, projection);
         }
 
-        _sceneRenderer.Render(cl, view, projection, sceneObjects, GetOrCreateBackendData);
+        _sceneRenderer.Render(cl, view, projection, sceneObjects, GetOrCreateBackendData, GetTerrainResourceSet);
         if (selectedObject?.GetComponent<MeshRenderer>() is not null)
         {
             _sceneRenderer.RenderOutline(cl, view, projection, selectedObject, GetOrCreateBackendData(selectedObject.GetComponent<MeshRenderer>()));
@@ -166,8 +169,130 @@ public partial class VeldridRenderer : IRenderer
         _uiRenderer.SetFramebuffer(_graphicsManager.SwapchainFramebuffer);
         _bloomRenderer.OnWindowResized(_graphicsManager.BloomFramebuffer, _graphicsManager.BloomTempFramebuffer);
     }
+    /// <summary>One terrain's set-3 bundle, rebuilt when its paint or its layer textures change.</summary>
+    private sealed class TerrainRenderEntry : IDisposable
+    {
+        public required ResourceSet Set { get; init; }
+        public required DeviceBuffer Properties { get; init; }
+        public required Veldrid.Texture Alphamap { get; init; }
+        public required TextureView AlphamapView { get; init; }
+        public required Veldrid.Texture Alphamap2 { get; init; }
+        public required TextureView Alphamap2View { get; init; }
+        public required int Version { get; init; }
+        public required ITexture?[] LayerTextures { get; init; }
+
+        public void Dispose()
+        {
+            Set.Dispose();
+            Properties.Dispose();
+            AlphamapView.Dispose();
+            Alphamap.Dispose();
+            Alphamap2View.Dispose();
+            Alphamap2.Dispose();
+        }
+    }
+
+    private readonly Dictionary<TerrainComponent, TerrainRenderEntry> _terrainSets = [];
+
+    /// <summary>
+    /// The set-3 bundle for one draw: a terrain's alphamaps and layer textures, or the shared
+    /// no-terrain set for everything else. The properties buffer is re-uploaded per draw — 272 bytes —
+    /// so a tint edit shows without waiting for a paint stroke to invalidate the cache.
+    /// </summary>
+    private ResourceSet GetTerrainResourceSet(GameObject gameObject)
+    {
+        if (gameObject.GetComponent<TerrainComponent>() is not { } terrain)
+        {
+            return _sceneRenderer.NoTerrainResourceSet;
+        }
+
+        TerrainData data = terrain.TerrainData;
+        ITexture?[] layerTextures = [.. Enumerable.Range(0, 8).Select(terrain.GetLayerTexture)];
+
+        if (_terrainSets.TryGetValue(terrain, out TerrainRenderEntry? entry)
+            && (entry.Version != data.AlphamapVersion || !entry.LayerTextures.SequenceEqual(layerTextures)))
+        {
+            entry.Dispose();
+            _terrainSets.Remove(terrain);
+            entry = null;
+        }
+
+        entry ??= CreateTerrainEntry(terrain, data, layerTextures);
+        _terrainSets[terrain] = entry;
+
+        _graphicsDevice.UpdateBuffer(entry.Properties, 0, SceneRenderer.PackTerrainProperties(true, data));
+        return entry.Set;
+    }
+
+    private TerrainRenderEntry CreateTerrainEntry(
+        TerrainComponent terrain, TerrainData data, ITexture?[] layerTextures)
+    {
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+
+        (Veldrid.Texture alphamap, TextureView alphamapView) = CreateAlphamapTexture(data, 0);
+        (Veldrid.Texture alphamap2, TextureView alphamap2View) = CreateAlphamapTexture(data, 4);
+
+        DeviceBuffer properties = factory.CreateBuffer(
+            new BufferDescription(SceneRenderer.TerrainPropertiesSize, BufferUsage.UniformBuffer));
+
+        BindableResource[] resources = new BindableResource[12];
+        resources[0] = properties;
+        resources[1] = alphamapView;
+        resources[2] = alphamap2View;
+        for (int layer = 0; layer < 8; layer++)
+        {
+            resources[3 + layer] = (layerTextures[layer]?.GetBackendHandle() as Texture)?.VeldridTextureView
+                ?? _sceneRenderer.WhiteTextureView;
+        }
+
+        resources[11] = _sampler;
+
+        return new TerrainRenderEntry
+        {
+            Set = factory.CreateResourceSet(new ResourceSetDescription(_sceneRenderer.TerrainLayout, resources)),
+            Properties = properties,
+            Alphamap = alphamap,
+            AlphamapView = alphamapView,
+            Alphamap2 = alphamap2,
+            Alphamap2View = alphamap2View,
+            Version = data.AlphamapVersion,
+            LayerTextures = layerTextures
+        };
+    }
+
+    /// <summary>Four alphamap layers as an RGBA texture, the second set riding layers four to seven.</summary>
+    private (Veldrid.Texture, TextureView) CreateAlphamapTexture(TerrainData data, int layerOffset)
+    {
+        int resolution = data.AlphamapResolution;
+        int layers = data.Layers.Count;
+        float[] weights = data.GetAlphamap();
+        byte[] pixels = new byte[resolution * resolution * 4];
+        for (int pixel = 0; pixel < resolution * resolution; pixel++)
+        {
+            for (int channel = 0; channel < 4; channel++)
+            {
+                int layer = layerOffset + channel;
+                float weight = layer < layers ? weights[(pixel * layers) + layer] : 0f;
+                pixels[(pixel * 4) + channel] = (byte)Math.Clamp((int)(weight * 255f), 0, 255);
+            }
+        }
+
+        ResourceFactory factory = _graphicsDevice.ResourceFactory;
+        Veldrid.Texture texture = factory.CreateTexture(new TextureDescription(
+            (uint)resolution, (uint)resolution, 1, 1, 1,
+            PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
+        _graphicsDevice.UpdateTexture(texture, pixels, 0, 0, 0, (uint)resolution, (uint)resolution, 1, 0, 0);
+        return (texture, factory.CreateTextureView(texture));
+    }
+
     public void Dispose()
     {
+        foreach (TerrainRenderEntry entry in _terrainSets.Values)
+        {
+            entry.Dispose();
+        }
+
+        _terrainSets.Clear();
         _sceneRenderer.Dispose();
         _skyboxRenderer.Dispose();
         _resolveRenderer.Dispose();

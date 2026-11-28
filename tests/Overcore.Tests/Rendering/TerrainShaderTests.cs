@@ -66,6 +66,37 @@ public class TerrainShaderTests
     }
 
     [Fact]
+    public void TheVeldridFragmentShaderBlendsTheSameEightLayers()
+    {
+        // The Veldrid pipeline's fragment shader is an inline string in SceneRenderer, not a file; the
+        // terrain branch is the same blend in that backend's dress, and parity is a test, not a hope.
+        string source = ReadSceneRenderer();
+
+        source.Should().Contain("uniform TerrainProperties");
+        source.Should().Contain("uniform texture2D TerrainAlphamap;");
+        source.Should().Contain("uniform texture2D TerrainAlphamap2;");
+        source.Should().Contain("uniform texture2D TerrainLayer7;");
+        source.Should().Contain("vec3 TerrainAlbedo(vec2 uv)");
+        source.Should().Contain("baseColor = vec4(TerrainAlbedo(fsin_TexCoord), 1.0);");
+        source.Should().Contain("PackTerrainProperties",
+            "the C# packer and the GLSL block are one layout stated twice, kept side by side");
+    }
+
+    private static string ReadSceneRenderer()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            string candidate = Path.Combine(directory.FullName, "src", "Overcore", "Rendering", "SceneRenderer.cs");
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+        }
+
+        throw new DirectoryNotFoundException("Could not find src/Overcore/Rendering/SceneRenderer.cs from the test binary.");
+    }
+
+    [Fact]
     public void TheTwoFragmentShadersStayOneShaderWrittenTwice()
     {
         // The skinning program's fragment stage is the scene's, copied because GLSL 330 has no include.

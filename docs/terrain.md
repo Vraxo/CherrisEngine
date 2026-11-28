@@ -33,8 +33,9 @@ Each pixel of the alphamap holds one weight per layer, summing to one. `Layers[0
 fresh terrain is fully painted with. A layer is a name, a texture name (project-relative, resolved when
 the terrain loads), a tint, and a tile size.
 
-On the OpenGL path the ground is drawn by a terrain branch of the lit shader (`scene.frag`, and its
-identical copy `skin.frag`): the alphamap is uploaded as two RGBA textures — layers 0–3 in the first,
+The ground is drawn by a terrain branch of the lit shader — `scene.frag` (and its identical copy
+`skin.frag`) on the OpenGL path, and the same blend in the Veldrid fragment shader's set-3 terrain
+bundle, so the ground paints alike on both backends. The alphamap is uploaded as two RGBA textures — layers 0–3 in the first,
 4–7 in the second — whenever the paint changes, each layer's texture is sampled at its own repeat
 (`Size / TileSize` across the whole ground), tinted, and blended by the alphamap weights:
 
@@ -42,11 +43,11 @@ identical copy `skin.frag`): the alphamap is uploaded as two RGBA textures — l
 albedo = Σ texture(layerᵢ, uv · repeatᵢ) · tintᵢ · weightᵢ
 ```
 
-Separate samplers rather than an array, because GLSL 330 indexes a sampler array only by a constant
+Separate samplers rather than an array, because GLSL indexes a sampler array only by a constant
 expression. The mesher also blends the tints into vertex colours, which is the same blend without
-texture detail; that is what layers past the eighth, unresolved textures, and the Veldrid backend
-(which does not take the terrain branch yet) draw with, so no ground is ever black for want of a
-texture.
+texture detail; that is what layers past the eighth and unresolved textures draw with, so no ground
+is ever black for want of a texture. (The Veldrid branch is unlit like the rest of that pipeline; it
+blends the same layers and leaves the lighting to the OpenGL path.)
 
 `Terrain.Paint(center, radius, strength, layerIndex)` and `TerrainBrush.ApplyPaint` raise one layer's
 weight toward one at the stroke's centre and scale the others down, keeping every pixel summing to one.
@@ -192,5 +193,5 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 ## Not yet
 
 Detail wind and distance fade, neighbour stitching between separate terrains, heightmap LOD beyond
-chunking, splat blending on the Veldrid backend, and layers past the eighth in the shader's blend are
-future increments. The data model does not need to change for any of them.
+chunking, and layers past the eighth in the shaders' blend are future increments. The data model does
+not need to change for any of them.

@@ -1,5 +1,6 @@
 ﻿using Overcore.Components;
 using Overcore.Core;
+using System.Linq;
 using System.Numerics;
 using System.Text;
 using Veldrid;
@@ -26,6 +27,22 @@ public class SceneRenderer : IDisposable
     public ResourceLayout TextureLayout { get; }
     public ResourceLayout MaterialLayout { get; }
 
+    /// <summary>The terrain splat-blend's layout (set 3): its properties, two alphamaps and eight layer textures.</summary>
+    public ResourceLayout TerrainLayout { get; }
+
+    private readonly Veldrid.Texture _whiteTexture;
+    private readonly TextureView _whiteTextureView;
+    private readonly DeviceBuffer _noTerrainBuffer;
+
+    /// <summary>
+    /// The resource set a draw with no terrain binds at set 3: blending off, white in every slot, so the
+    /// pipeline's fourth set is never left unbound and never blends a previous object's ground.
+    /// </summary>
+    public ResourceSet NoTerrainResourceSet { get; }
+
+    /// <summary>The white pixel's view, for slots whose texture never resolved: show the tint, not nothing.</summary>
+    public TextureView WhiteTextureView => _whiteTextureView;
+
     public SceneRenderer(GraphicsDevice gd, VertexLayoutDescription vertexLayout)
     {
         _graphicsDevice = gd;
@@ -47,10 +64,82 @@ public class SceneRenderer : IDisposable
             new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("MaterialProperties", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment))); // FIX: Visible to both shaders
 
+        ResourceLayoutElementDescription[] terrainElements =
+        [
+            new("TerrainProperties", ResourceKind.UniformBuffer, ShaderStages.Fragment),
+            new("TerrainAlphamap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+            new("TerrainAlphamap2", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+            .. Enumerable.Range(0, 8).Select(layer =>
+                new ResourceLayoutElementDescription($"TerrainLayer{layer}", ResourceKind.TextureReadOnly, ShaderStages.Fragment)),
+            new("TerrainSampler", ResourceKind.Sampler, ShaderStages.Fragment)
+        ];
+        TerrainLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(terrainElements));
+
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
+
+        _whiteTexture = factory.CreateTexture(new TextureDescription(
+            1, 1, 1, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
+        gd.UpdateTexture(_whiteTexture, new byte[] { 255, 255, 255, 255 }, 0, 0, 0, 1, 1, 1, 0, 0);
+        _whiteTextureView = factory.CreateTextureView(_whiteTexture);
+
+        Sampler terrainSampler = factory.CreateSampler(new SamplerDescription
+        {
+            AddressModeU = SamplerAddressMode.Wrap,
+            AddressModeV = SamplerAddressMode.Wrap,
+            AddressModeW = SamplerAddressMode.Wrap,
+            Filter = SamplerFilter.MinLinear_MagLinear_MipLinear,
+            MinimumLod = 0,
+            MaximumLod = uint.MaxValue
+        });
+        _noTerrainBuffer = factory.CreateBuffer(new BufferDescription(TerrainPropertiesSize, BufferUsage.UniformBuffer));
+        gd.UpdateBuffer(_noTerrainBuffer, 0, new float[TerrainPropertiesSize / sizeof(float)]);
+        NoTerrainResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+            TerrainLayout,
+            _noTerrainBuffer,
+            _whiteTextureView,
+            _whiteTextureView,
+            _whiteTextureView, _whiteTextureView, _whiteTextureView, _whiteTextureView,
+            _whiteTextureView, _whiteTextureView, _whiteTextureView, _whiteTextureView,
+            terrainSampler));
 
         (_vertexShader, _fragmentShader) = LoadShaders(factory);
         (_outlineVertexShader, _outlineFragmentShader) = LoadOutlineShaders(factory);
+    }
+
+    /// <summary>Bytes in a TerrainProperties block: two ints, eight tint vec4s, eight repeat vec4s, std140-laid.</summary>
+    public const uint TerrainPropertiesSize = 272;
+
+    /// <summary>
+    /// Packs a terrain's splat state into the 272 bytes the fragment shader reads: enabled flag and
+    /// layer count, then per layer a tint vec4 and a repeat vec4. Kept here, beside the shader string
+    /// that declares the block, so the two layouts cannot drift apart quietly.
+    /// </summary>
+    public static float[] PackTerrainProperties(bool enabled, Overcore.Terrain.TerrainData? data)
+    {
+        float[] packed = new float[TerrainPropertiesSize / sizeof(float)];
+        packed[0] = BitConverter.Int32BitsToSingle(enabled ? 1 : 0);
+        packed[1] = BitConverter.Int32BitsToSingle(data is null ? 0 : Math.Min(data.Layers.Count, 8));
+
+        if (data is not null)
+        {
+            for (int layer = 0; layer < 8; layer++)
+            {
+                Overcore.Terrain.TerrainLayer current = layer < data.Layers.Count
+                    ? data.Layers[layer]
+                    : new Overcore.Terrain.TerrainLayer();
+                int tintOffset = 4 + (layer * 4);
+                packed[tintOffset] = current.Tint.X;
+                packed[tintOffset + 1] = current.Tint.Y;
+                packed[tintOffset + 2] = current.Tint.Z;
+                packed[tintOffset + 3] = 1f;
+
+                int repeatOffset = 4 + (8 * 4) + (layer * 4);
+                packed[repeatOffset] = data.Size.X / MathF.Max(current.TileSize.X, 0.01f);
+                packed[repeatOffset + 1] = data.Size.Z / MathF.Max(current.TileSize.Y, 0.01f);
+            }
+        }
+
+        return packed;
     }
 
     public void SetFramebuffer(Framebuffer framebuffer)
@@ -83,7 +172,7 @@ public class SceneRenderer : IDisposable
             RasterizerState = new RasterizerStateDescription(
                 FaceCullMode.Back, PolygonFillMode.Solid, FrontFace.Clockwise, true, false),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = new[] { _mvpLayout, TextureLayout, MaterialLayout },
+            ResourceLayouts = new[] { _mvpLayout, TextureLayout, MaterialLayout, TerrainLayout },
             ShaderSet = new ShaderSetDescription(new[] { _vertexLayout }, new[] { _vertexShader, _fragmentShader }),
             Outputs = framebuffer.OutputDescription
         });
@@ -116,7 +205,13 @@ public class SceneRenderer : IDisposable
         });
     }
 
-    public void Render(CommandList commandList, Matrix4x4 view, Matrix4x4 projection, IEnumerable<GameObject> scene, Func<MeshRenderer, object> backendDataProvider)
+    public void Render(
+        CommandList commandList,
+        Matrix4x4 view,
+        Matrix4x4 projection,
+        IEnumerable<GameObject> scene,
+        Func<MeshRenderer, object> backendDataProvider,
+        Func<GameObject, ResourceSet> terrainResourceSetProvider)
     {
         commandList.SetPipeline(_pipeline);
         foreach (var gameObject in scene)
@@ -137,6 +232,7 @@ public class SceneRenderer : IDisposable
             commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
             commandList.SetGraphicsResourceSet(1, backendData.TextureResourceSet);
             commandList.SetGraphicsResourceSet(2, backendData.MaterialResourceSet);
+            commandList.SetGraphicsResourceSet(3, terrainResourceSetProvider(gameObject));
             commandList.DrawIndexed(backendData.IndexCount, 1, 0, 0, 0);
         }
     }
@@ -195,11 +291,53 @@ public class SceneRenderer : IDisposable
                 // EmissiveColor is now read in the fragment shader
                 layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; vec4 EmissiveColor; };
 
+                // The terrain splat blend, the OpenGL shader's branch in this backend's dress: up to
+                // eight layer textures blended by two alphamaps, so a terrain paints the same ground
+                // whichever backend draws it. Separate samplers per layer because the layer's identity
+                // is fixed at compile time, exactly as in scene.frag.
+                layout(set = 3, binding = 0) uniform TerrainProperties
+                {
+                    int Enabled;
+                    int Count;
+                    vec4 Tints[8];
+                    vec4 Repeats[8];
+                };
+                layout(set = 3, binding = 1) uniform texture2D TerrainAlphamap;
+                layout(set = 3, binding = 2) uniform texture2D TerrainAlphamap2;
+                layout(set = 3, binding = 3) uniform texture2D TerrainLayer0;
+                layout(set = 3, binding = 4) uniform texture2D TerrainLayer1;
+                layout(set = 3, binding = 5) uniform texture2D TerrainLayer2;
+                layout(set = 3, binding = 6) uniform texture2D TerrainLayer3;
+                layout(set = 3, binding = 7) uniform texture2D TerrainLayer4;
+                layout(set = 3, binding = 8) uniform texture2D TerrainLayer5;
+                layout(set = 3, binding = 9) uniform texture2D TerrainLayer6;
+                layout(set = 3, binding = 10) uniform texture2D TerrainLayer7;
+                layout(set = 3, binding = 11) uniform sampler TerrainSampler;
+
                 layout(location = 0) out vec4 fsout_Color;
+
+                vec3 TerrainAlbedo(vec2 uv)
+                {
+                    vec4 weights = texture(sampler2D(TerrainAlphamap, TerrainSampler), uv);
+                    vec4 weights2 = texture(sampler2D(TerrainAlphamap2, TerrainSampler), uv);
+                    vec3 blended = texture(sampler2D(TerrainLayer0, TerrainSampler), uv * Repeats[0].xy).rgb * Tints[0].rgb * weights.r;
+                    if (Count > 1) blended += texture(sampler2D(TerrainLayer1, TerrainSampler), uv * Repeats[1].xy).rgb * Tints[1].rgb * weights.g;
+                    if (Count > 2) blended += texture(sampler2D(TerrainLayer2, TerrainSampler), uv * Repeats[2].xy).rgb * Tints[2].rgb * weights.b;
+                    if (Count > 3) blended += texture(sampler2D(TerrainLayer3, TerrainSampler), uv * Repeats[3].xy).rgb * Tints[3].rgb * weights.a;
+                    if (Count > 4) blended += texture(sampler2D(TerrainLayer4, TerrainSampler), uv * Repeats[4].xy).rgb * Tints[4].rgb * weights2.r;
+                    if (Count > 5) blended += texture(sampler2D(TerrainLayer5, TerrainSampler), uv * Repeats[5].xy).rgb * Tints[5].rgb * weights2.g;
+                    if (Count > 6) blended += texture(sampler2D(TerrainLayer6, TerrainSampler), uv * Repeats[6].xy).rgb * Tints[6].rgb * weights2.b;
+                    if (Count > 7) blended += texture(sampler2D(TerrainLayer7, TerrainSampler), uv * Repeats[7].xy).rgb * Tints[7].rgb * weights2.a;
+                    return blended;
+                }
 
                 void main() 
                 { 
                     vec4 baseColor = texture(sampler2D(SourceTexture, SourceSampler), fsin_TexCoord) * fsin_Color;
+                    if (Enabled == 1)
+                    {
+                        baseColor = vec4(TerrainAlbedo(fsin_TexCoord), 1.0);
+                    }
                     fsout_Color = vec4(baseColor.rgb + EmissiveColor.rgb, baseColor.a);
                 }";
 
@@ -255,6 +393,11 @@ public class SceneRenderer : IDisposable
         _outlineFragmentShader.Dispose();
         TextureLayout.Dispose();
         MaterialLayout.Dispose();
+        TerrainLayout.Dispose();
+        NoTerrainResourceSet.Dispose();
+        _noTerrainBuffer.Dispose();
+        _whiteTextureView.Dispose();
+        _whiteTexture.Dispose();
         _mvpLayout.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
