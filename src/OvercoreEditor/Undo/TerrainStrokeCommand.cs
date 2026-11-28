@@ -21,10 +21,12 @@ public sealed class TerrainStrokeCommand : ICommand
     private readonly float[] _alphamapBefore;
     private readonly byte[] _holesBefore;
     private readonly byte[] _treesBefore;
+    private readonly float[] _detailBefore;
     private readonly float[] _heightsAfter;
     private readonly float[] _alphamapAfter;
     private readonly byte[] _holesAfter;
     private readonly byte[] _treesAfter;
+    private readonly float[] _detailAfter;
 
     public TerrainStrokeCommand(
         TerrainComponent terrain,
@@ -32,27 +34,31 @@ public sealed class TerrainStrokeCommand : ICommand
         float[] alphamapBefore,
         byte[] holesBefore,
         byte[] treesBefore,
+        float[] detailBefore,
         float[] heightsAfter,
         float[] alphamapAfter,
         byte[] holesAfter,
-        byte[] treesAfter)
+        byte[] treesAfter,
+        float[] detailAfter)
     {
         _terrain = terrain;
         _heightsBefore = heightsBefore;
         _alphamapBefore = alphamapBefore;
         _holesBefore = holesBefore;
         _treesBefore = treesBefore;
+        _detailBefore = detailBefore;
         _heightsAfter = heightsAfter;
         _alphamapAfter = alphamapAfter;
         _holesAfter = holesAfter;
         _treesAfter = treesAfter;
+        _detailAfter = detailAfter;
     }
 
-    public void Execute() => Apply(_heightsAfter, _alphamapAfter, _holesAfter, _treesAfter);
+    public void Execute() => Apply(_heightsAfter, _alphamapAfter, _holesAfter, _treesAfter, _detailAfter);
 
-    public void Undo() => Apply(_heightsBefore, _alphamapBefore, _holesBefore, _treesBefore);
+    public void Undo() => Apply(_heightsBefore, _alphamapBefore, _holesBefore, _treesBefore, _detailBefore);
 
-    private void Apply(float[] heights, float[] alphamap, byte[] holes, byte[] trees)
+    private void Apply(float[] heights, float[] alphamap, byte[] holes, byte[] trees, float[] detail)
     {
         TerrainData data = _terrain.TerrainData;
 
@@ -81,6 +87,11 @@ public sealed class TerrainStrokeCommand : ICommand
         catch (ArgumentException)
         {
             // The packed form no longer fits this data (see the class remarks on stale snapshots).
+        }
+
+        if (detail.Length == data.AlphamapResolution * data.AlphamapResolution * data.DetailPrototypes.Count)
+        {
+            data.SetDetailMap(detail);
         }
 
         _terrain.Rebuild();

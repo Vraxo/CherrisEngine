@@ -77,6 +77,41 @@ public sealed class TerrainTreePrototype
 }
 
 /// <summary>
+/// One kind of ground detail a terrain can scatter, Unity's detail prototype reduced to what this engine
+/// draws: crossed-quad tufts wearing a tint (and optionally a cutout texture), sized in metres. Where each
+/// prototype grows is painted as density over the ground, like a layer's weight but independent per
+/// prototype — grass over dirt, flowers over grass.
+/// </summary>
+public sealed class TerrainDetailPrototype
+{
+    /// <summary>The prototype's name, as an editor would list it.</summary>
+    public string Name { get; set; } = "Grass";
+
+    /// <summary>The project-relative cutout texture the tufts wear, or empty for bare tinted blades.</summary>
+    public string TextureName { get; set; } = string.Empty;
+
+    /// <summary>The colour the tufts are tinted by, darker at the root and full at the tip.</summary>
+    public Vector3 Tint { get; set; } = new(0.4f, 0.6f, 0.3f);
+
+    /// <summary>How wide one tuft is, in metres.</summary>
+    public float Width { get; set; } = 0.7f;
+
+    /// <summary>How tall one tuft stands, in metres.</summary>
+    public float Height { get; set; } = 1f;
+
+    public TerrainDetailPrototype()
+    {
+    }
+
+    public TerrainDetailPrototype(string name, string textureName, Vector3 tint)
+    {
+        Name = name;
+        TextureName = textureName;
+        Tint = tint;
+    }
+}
+
+/// <summary>
 /// One planted tree: which prototype it grows from, where it stands (normalised across the terrain, so a
 /// tree keeps its place when the ground is resized), which way it faces, and how it is scaled. Its height
 /// is not stored — the ground decides that, so a tree follows the sculpting under it.
@@ -124,6 +159,7 @@ public sealed class TerrainData
     private bool[] _holes;
     private int _holeCount;
     private readonly List<TreeInstance> _trees = [];
+    private float[] _detail = [];
 
     /// <summary>Grid points along one side of the heightmap. The grid is square, as Unity's is.</summary>
     public int HeightmapResolution { get; }
@@ -166,6 +202,12 @@ public sealed class TerrainData
 
     /// <summary>Raised by every tree or prototype write.</summary>
     public int TreesVersion { get; private set; }
+
+    /// <summary>The kinds of detail this terrain can scatter. Add through <see cref="AddDetailPrototype"/>; a prototype is never removed, so a density channel's index stays true.</summary>
+    public List<TerrainDetailPrototype> DetailPrototypes { get; } = [];
+
+    /// <summary>Raised by every detail density or prototype write.</summary>
+    public int DetailVersion { get; private set; }
 
     /// <summary>The highest stored height, in metres. Kept by scanning, so it is exact rather than tracked.</summary>
     public float MaxHeight
@@ -696,6 +738,75 @@ public sealed class TerrainData
         }
 
         TreesVersion++;
+    }
+
+    /// <summary>Adds a kind of detail this terrain can scatter. Existing density keeps its channels; the new kind starts bare everywhere.</summary>
+    public TerrainDetailPrototype AddDetailPrototype(TerrainDetailPrototype prototype)
+    {
+        ArgumentNullException.ThrowIfNull(prototype);
+        DetailPrototypes.Add(prototype);
+
+        float[] expanded = new float[AlphamapResolution * AlphamapResolution * DetailPrototypes.Count];
+        int oldChannels = DetailPrototypes.Count - 1;
+        int pixels = AlphamapResolution * AlphamapResolution;
+        for (int pixel = 0; pixel < pixels; pixel++)
+        {
+            for (int channel = 0; channel < oldChannels; channel++)
+            {
+                expanded[(pixel * DetailPrototypes.Count) + channel] = _detail[(pixel * oldChannels) + channel];
+            }
+        }
+
+        _detail = expanded;
+        DetailVersion++;
+        return prototype;
+    }
+
+    /// <summary>How thickly one detail prototype grows at one alphamap pixel, 0 (bare) to 1 (thickest).</summary>
+    public float GetDetailDensity(int x, int z, int prototypeIndex)
+    {
+        ValidateDetail(x, z, prototypeIndex);
+        return _detail[(((z * AlphamapResolution) + x) * DetailPrototypes.Count) + prototypeIndex];
+    }
+
+    /// <summary>Writes one detail prototype's density at one alphamap pixel, clamped to 0..1.</summary>
+    public void SetDetailDensity(int x, int z, int prototypeIndex, float density)
+    {
+        ValidateDetail(x, z, prototypeIndex);
+        _detail[(((z * AlphamapResolution) + x) * DetailPrototypes.Count) + prototypeIndex] =
+            Math.Clamp(density, 0f, 1f);
+        DetailVersion++;
+    }
+
+    /// <summary>The whole detail density map as a flat copy, pixel-major with the prototype fastest — the alphamap's layout, one channel per prototype.</summary>
+    public float[] GetDetailMap() => [.. _detail];
+
+    /// <summary>Replaces the whole detail density map. Its length must be <c>alphamapResolution² × prototype count</c>.</summary>
+    public void SetDetailMap(ReadOnlySpan<float> detail)
+    {
+        if (detail.Length != _detail.Length)
+        {
+            throw new ArgumentException(
+                $"A detail map for this terrain holds {_detail.Length} densities, not {detail.Length}.", nameof(detail));
+        }
+
+        detail.CopyTo(_detail);
+        DetailVersion++;
+    }
+
+    private void ValidateDetail(int x, int z, int prototypeIndex)
+    {
+        if (x < 0 || x >= AlphamapResolution || z < 0 || z >= AlphamapResolution)
+        {
+            throw new ArgumentOutOfRangeException(nameof(x), $"A detail pixel is inside {AlphamapResolution}².");
+        }
+
+        if (prototypeIndex < 0 || prototypeIndex >= DetailPrototypes.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(prototypeIndex), prototypeIndex,
+                $"A detail channel is one of the {DetailPrototypes.Count} prototypes.");
+        }
     }
 
     private void ValidateCell(int cellX, int cellZ)

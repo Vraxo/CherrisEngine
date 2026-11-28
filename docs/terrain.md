@@ -81,6 +81,24 @@ block, and the child is rebuilt from that on load. Consequences worth knowing:
 - Merging is one draw for the whole forest at any size, paid for in memory per tree; GPU instancing is
   the known upgrade path and needs no data change when it lands.
 
+## Detail (grass)
+
+Detail prototypes (`TerrainDetailPrototype`: a tint, an optional cutout texture name, a tuft size) grow
+where their **density** is painted — one 0..1 channel per prototype over the alphamap's grid
+(`TerrainBrush.ApplyDetail`, signed: a negative stroke thins). The editor's **Detail** brush grows on
+drag and thins on Shift-drag.
+
+The detail mesh is crossed-quad tufts — two quads through each other, dark at the root and full at the
+tip — scattered per pixel by dice seeded from the pixel itself, so the field is identical every rebuild
+and a sculpt slides the ground under a fixed field rather than reshuffling it. Up to four tufts grow
+from a full pixel (`TerrainDetailMesher.MaxTuftsPerPixel`). Like the forest it rides on a terrain-owned
+child (`Detail`), is left out of scene files (density travels as a `Detail: <base64>` blob) and out of
+NavMesh bakes, and it is not solid: grass is walked through. One material serves the whole field, so
+only the first prototype's texture is sampled (with a 0.5 alpha cutout); the rest wear their tints.
+There is no wind yet — the field stands still, which the shader will fix when it learns the time of
+day. Detail has no distance fade: a very large terrain should keep its alphamap resolution (and so its
+detail pixels) modest, or grow detail only where players walk.
+
 ## Holes
 
 A hole is a whole **cell** — the quad between four grid points — with no ground in it (`IsHole`,
@@ -173,6 +191,6 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 
 ## Not yet
 
-Grass detail, neighbour stitching between separate terrains, heightmap LOD beyond chunking, splat
-blending on the Veldrid backend, and layers past the eighth in the shader's blend are future
-increments. The data model does not need to change for any of them.
+Detail wind and distance fade, neighbour stitching between separate terrains, heightmap LOD beyond
+chunking, splat blending on the Veldrid backend, and layers past the eighth in the shader's blend are
+future increments. The data model does not need to change for any of them.

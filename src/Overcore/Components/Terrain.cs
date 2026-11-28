@@ -31,6 +31,9 @@ public class Terrain : Component
     /// <summary>The mesh name the forest's renderer goes by, which is how it is recognised as terrain property.</summary>
     internal const string TreeMeshName = "TerrainTrees";
 
+    /// <summary>The mesh name the detail's renderer goes by, recognised the same way.</summary>
+    internal const string DetailMeshName = "TerrainDetail";
+
     private static readonly Mesh EmptyMesh = new([], []);
 
     private TerrainData _data = new();
@@ -38,8 +41,12 @@ public class Terrain : Component
     private int _builtAlphamapVersion = -1;
     private int _builtHolesVersion = -1;
     private int _builtTreesVersion = -1;
+    private int _builtDetailVersion = -1;
     private Func<string, Mesh?>? _treeMeshResolver;
+    private Func<string, ITexture?>? _detailTextureResolver;
     private Material? _treeMaterial;
+    private Material? _detailMaterial;
+    private string _detailMaterialTextureName = string.Empty;
 
     /// <summary>The ground's heights and paint. Replacing it rebuilds the mesh at once.</summary>
     [HideInInspector]
@@ -53,6 +60,7 @@ public class Terrain : Component
             _builtAlphamapVersion = -1;
             _builtHolesVersion = -1;
             _builtTreesVersion = -1;
+            _builtDetailVersion = -1;
             Rebuild();
         }
     }
@@ -120,6 +128,36 @@ public class Terrain : Component
         gameObject is not null
         && gameObject.GetComponent<MeshRenderer>() is { MeshName: TreeMeshName }
         && gameObject.Transform.Parent?.GameObject.GetComponent<Terrain>() is not null;
+
+    /// <summary>True when an object is a terrain's detail child, terrain property like the forest's. See <see cref="IsTreeObject"/>.</summary>
+    public static bool IsDetailObject(GameObject? gameObject) =>
+        gameObject is not null
+        && gameObject.GetComponent<MeshRenderer>() is { MeshName: DetailMeshName }
+        && gameObject.Transform.Parent?.GameObject.GetComponent<Terrain>() is not null;
+
+    /// <summary>The merged mesh of every detail tuft, or null when nothing grows.</summary>
+    [HideInInspector]
+    public Mesh? DetailMesh { get; private set; }
+
+    /// <summary>
+    /// Turns a detail prototype's texture name into the texture itself, wired by the scene factory like
+    /// <see cref="TreeMeshResolver"/>. Only the first prototype's texture can ride the one detail
+    /// material; the rest tint their tufts.
+    /// </summary>
+    [HideInInspector]
+    public Func<string, ITexture?>? DetailTextureResolver
+    {
+        get => _detailTextureResolver;
+        set
+        {
+            _detailTextureResolver = value;
+            if (_data.DetailPrototypes.Count > 0)
+            {
+                _builtDetailVersion = -1;
+                Rebuild();
+            }
+        }
+    }
 
     private readonly List<ITexture?> _layerTextures = [];
 
@@ -197,8 +235,26 @@ public class Terrain : Component
         _builtTreesVersion = _data.TreesVersion;
         EnsureTreeRenderer();
 
+        DetailMesh = TerrainDetailMesher.Build(_data);
+        _builtDetailVersion = _data.DetailVersion;
+        EnsureDetailRenderer();
+
         // The collider beside this terrain holds a physics copy of the same ground; it is told to remake it.
         GameObject.GetComponent<TerrainCollider>()?.RefreshShape();
+    }
+
+    /// <summary>An owned child's renderer by its mesh name, or null when the child has not been grown yet.</summary>
+    private MeshRenderer? FindOwnedRenderer(string meshName)
+    {
+        foreach (Transform child in GameObject.Transform.Children)
+        {
+            if (child.GameObject.GetComponent<MeshRenderer>() is { } found && found.MeshName == meshName)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -208,15 +264,7 @@ public class Terrain : Component
     /// </summary>
     private void EnsureTreeRenderer()
     {
-        MeshRenderer? renderer = null;
-        foreach (Transform child in GameObject.Transform.Children)
-        {
-            if (child.GameObject.GetComponent<MeshRenderer>() is { MeshName: TreeMeshName } found)
-            {
-                renderer = found;
-                break;
-            }
-        }
+        MeshRenderer? renderer = FindOwnedRenderer(TreeMeshName);
 
         if (renderer is null)
         {
@@ -240,16 +288,86 @@ public class Terrain : Component
         renderer.Enabled = TreeMesh is not null;
     }
 
+    /// <summary>
+    /// Keeps the detail's child object in step with <see cref="DetailMesh"/>, the forest child's smaller
+    /// sibling. Its material carries the first prototype's cutout texture when one resolves, and is
+    /// otherwise plain white so the tufts' own colours show.
+    /// </summary>
+    private void EnsureDetailRenderer()
+    {
+        MeshRenderer? renderer = FindOwnedRenderer(DetailMeshName);
+
+        if (renderer is null)
+        {
+            if (DetailMesh is null)
+            {
+                return;
+            }
+
+            GameObject detailObject = new("Detail");
+            detailObject.Transform.SetParent(GameObject.Transform, worldPositionStays: false);
+            renderer = detailObject.AddComponent(new MeshRenderer
+            {
+                Mesh = DetailMesh,
+                MeshName = DetailMeshName,
+                Material = DetailMaterial()
+            });
+        }
+
+        renderer.Mesh = DetailMesh ?? EmptyMesh;
+        renderer.Enabled = DetailMesh is not null;
+        renderer.Material = DetailMaterial();
+    }
+
+    /// <summary>The detail material, remade only when the texture it should carry changes its name.</summary>
+    private Material DetailMaterial()
+    {
+        string textureName = _data.DetailPrototypes.Count > 0
+            ? _data.DetailPrototypes[0].TextureName
+            : string.Empty;
+
+        if (_detailMaterial is null || _detailMaterialTextureName != textureName)
+        {
+            _detailMaterialTextureName = textureName;
+            ITexture? texture = string.IsNullOrWhiteSpace(textureName)
+                ? null
+                : _detailTextureResolver?.Invoke(textureName);
+            _detailMaterial = texture is null
+                ? new Material(null!, "White")
+                : new Material(texture, textureName) { AlphaCutoff = 0.5f };
+        }
+
+        return _detailMaterial;
+    }
+
     /// <summary>Rebuilds the mesh if the data has been edited since the last build. The scene calls this once a frame.</summary>
     internal void RefreshIfDirty()
     {
         if (_builtHeightVersion != _data.Version
             || _builtAlphamapVersion != _data.AlphamapVersion
             || _builtHolesVersion != _data.HolesVersion
-            || _builtTreesVersion != _data.TreesVersion)
+            || _builtTreesVersion != _data.TreesVersion
+            || _builtDetailVersion != _data.DetailVersion)
         {
             Rebuild();
         }
+    }
+
+    /// <summary>One detail stroke against the ground, detail mesh rebuilt after it. See <see cref="TerrainBrush.ApplyDetail"/>.</summary>
+    /// <param name="center">The stroke's centre, normalised across the terrain.</param>
+    /// <param name="radius">The stroke's radius, normalised.</param>
+    /// <param name="strength">Density per stroke at the centre; negative thins.</param>
+    /// <param name="prototypeIndex">Which prototype grows.</param>
+    /// <returns>How many pixels changed.</returns>
+    public int ApplyDetail(Vector2 center, float radius, float strength, int prototypeIndex)
+    {
+        int changed = TerrainBrush.ApplyDetail(_data, center, radius, strength, prototypeIndex);
+        if (changed > 0)
+        {
+            Rebuild();
+        }
+
+        return changed;
     }
 
     /// <summary>One planting stroke against the ground, forest rebuilt after it. See <see cref="TerrainBrush.PlantTrees"/>.</summary>

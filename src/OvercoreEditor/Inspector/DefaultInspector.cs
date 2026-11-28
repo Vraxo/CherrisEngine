@@ -136,6 +136,7 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             ImGui.TextDisabled("Arm the brush, then drag on the ground in the viewport. One stroke is one undo step.");
             dirty |= DrawTerrainLayers(terrain);
             dirty |= DrawTerrainTrees(terrain);
+            dirty |= DrawTerrainDetail(terrain);
             return dirty;
         }
 
@@ -192,6 +193,30 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             }
         }
 
+        if (brush.Mode == TerrainBrushMode.Detail)
+        {
+            ImGui.Spacing();
+            if (data.DetailPrototypes.Count == 0)
+            {
+                ImGui.TextDisabled("Add a detail prototype below, then drag on the ground to grow it.");
+            }
+            else
+            {
+                ImGui.Text("Grow");
+                for (int prototype = 0; prototype < data.DetailPrototypes.Count; prototype++)
+                {
+                    if (ImGui.RadioButton(
+                        $"{data.DetailPrototypes[prototype].Name}##GrowDetail{prototype}",
+                        brush.DetailPrototypeIndex == prototype))
+                    {
+                        brush.DetailPrototypeIndex = prototype;
+                    }
+                }
+
+                ImGui.TextDisabled("Drag to grow thicker; hold Shift to thin back to bare ground.");
+            }
+        }
+
         if (brush.Mode == TerrainBrushMode.Trees)
         {
             ImGui.Spacing();
@@ -218,6 +243,49 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
 
         dirty |= DrawTerrainLayers(terrain);
         dirty |= DrawTerrainTrees(terrain);
+        dirty |= DrawTerrainDetail(terrain);
+        return dirty;
+    }
+
+    /// <summary>
+    /// The detail prototypes: the kinds of tuft this ground can scatter, each a tint and optionally a
+    /// cutout texture, grown by painting density rather than by placing instances.
+    /// </summary>
+    private bool DrawTerrainDetail(TerrainComponent terrain)
+    {
+        bool dirty = false;
+        TerrainData data = terrain.TerrainData;
+
+        ImGui.Spacing();
+        ImGui.Text("Detail Prototypes");
+        for (int prototype = 0; prototype < data.DetailPrototypes.Count; prototype++)
+        {
+            TerrainDetailPrototype current = data.DetailPrototypes[prototype];
+            string textureName = current.TextureName;
+            if (ImGui.InputText($"{current.Name} Texture##DetailTexture{prototype}", ref textureName, 256))
+            {
+                current.TextureName = textureName;
+                terrain.Rebuild();
+                dirty = true;
+            }
+
+            Vector3 tint = current.Tint;
+            if (ImGui.ColorEdit3($"Tint##DetailTint{prototype}", ref tint))
+            {
+                current.Tint = tint;
+                terrain.Rebuild();
+                dirty = true;
+            }
+        }
+
+        if (ImGui.Button("Add Detail Prototype"))
+        {
+            data.AddDetailPrototype(new TerrainDetailPrototype(
+                $"Detail {data.DetailPrototypes.Count}", string.Empty, new Vector3(0.4f, 0.6f, 0.3f)));
+            terrain.Rebuild();
+            dirty = true;
+        }
+
         return dirty;
     }
 

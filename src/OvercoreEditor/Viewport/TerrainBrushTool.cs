@@ -40,6 +40,7 @@ public sealed class TerrainBrushTool
     private float[]? _alphamapBefore;
     private byte[]? _holesBefore;
     private byte[]? _treesBefore;
+    private float[]? _detailBefore;
 
     public TerrainBrushTool(Editor editor, HistoryManager history)
     {
@@ -80,6 +81,7 @@ public sealed class TerrainBrushTool
             _alphamapBefore = null;
             _holesBefore = null;
             _treesBefore = null;
+            _detailBefore = null;
             return false;
         }
 
@@ -104,6 +106,7 @@ public sealed class TerrainBrushTool
             _alphamapBefore = terrain.TerrainData.GetAlphamap();
             _holesBefore = terrain.TerrainData.GetHolesPacked();
             _treesBefore = terrain.TerrainData.GetTreesPacked();
+            _detailBefore = terrain.TerrainData.GetDetailMap();
             ApplyStroke(terrain, uv, 1f / 60f);
         }
         else if (_stroking && ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -124,7 +127,17 @@ public sealed class TerrainBrushTool
         float radius = settings.RadiusMetres / MathF.Max(data.Size.X, 0.01f);
         float strength = settings.StrokeStrength(deltaTime);
 
-        if (settings.Mode == TerrainBrushMode.Trees)
+        if (settings.Mode == TerrainBrushMode.Detail)
+        {
+            // Shift thins back to bare ground; otherwise the stroke grows the chosen prototype thicker.
+            if (data.DetailPrototypes.Count > 0)
+            {
+                int prototype = Math.Clamp(settings.DetailPrototypeIndex, 0, data.DetailPrototypes.Count - 1);
+                float signed = ImGui.GetIO().KeyShift ? -strength : strength;
+                terrain.ApplyDetail(uv, radius, signed, prototype);
+            }
+        }
+        else if (settings.Mode == TerrainBrushMode.Trees)
         {
             // Shift uproots instead of planting. Planting is a scatter, not a rate: each frame drops a
             // handful of seeds, and holding the brush walks a wood into being.
@@ -159,12 +172,14 @@ public sealed class TerrainBrushTool
         _stroking = false;
 
         if (_heightsBefore is null || _alphamapBefore is null || _holesBefore is null || _treesBefore is null
+            || _detailBefore is null
             || _editor.GetSelectedGameObject()?.GetComponent<TerrainComponent>() is not { } terrain)
         {
             _heightsBefore = null;
             _alphamapBefore = null;
             _holesBefore = null;
             _treesBefore = null;
+            _detailBefore = null;
             return;
         }
 
@@ -172,24 +187,27 @@ public sealed class TerrainBrushTool
         float[] alphamapAfter = terrain.TerrainData.GetAlphamap();
         byte[] holesAfter = terrain.TerrainData.GetHolesPacked();
         byte[] treesAfter = terrain.TerrainData.GetTreesPacked();
+        float[] detailAfter = terrain.TerrainData.GetDetailMap();
         bool changed = !_heightsBefore.SequenceEqual(heightsAfter)
             || !_alphamapBefore.SequenceEqual(alphamapAfter)
             || !_holesBefore.SequenceEqual(holesAfter)
-            || !_treesBefore.SequenceEqual(treesAfter);
+            || !_treesBefore.SequenceEqual(treesAfter)
+            || !_detailBefore.SequenceEqual(detailAfter);
 
         if (changed)
         {
             // Execute re-applies the after state the stroke already left, which is the point: history
             // records it, and the dirty flag follows through OnHistoryChanged.
             _history.Execute(new TerrainStrokeCommand(
-                terrain, _heightsBefore, _alphamapBefore, _holesBefore, _treesBefore,
-                heightsAfter, alphamapAfter, holesAfter, treesAfter));
+                terrain, _heightsBefore, _alphamapBefore, _holesBefore, _treesBefore, _detailBefore,
+                heightsAfter, alphamapAfter, holesAfter, treesAfter, detailAfter));
         }
 
         _heightsBefore = null;
         _alphamapBefore = null;
         _holesBefore = null;
         _treesBefore = null;
+        _detailBefore = null;
     }
 
     private void DrawBrushRing(TerrainComponent terrain, Vector3 point, Vector2 viewportPos, Vector2 viewportSize)

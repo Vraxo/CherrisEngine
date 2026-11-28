@@ -24,7 +24,10 @@ public enum TerrainBrushMode
     Holes,
 
     /// <summary>Plants trees on the ground, or uproots them.</summary>
-    Trees
+    Trees,
+
+    /// <summary>Grows ground detail thicker, or thins it back to bare ground.</summary>
+    Detail
 }
 
 /// <summary>
@@ -57,7 +60,8 @@ public static class TerrainBrush
         float flattenHeight = 0f)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (mode is TerrainBrushMode.Paint or TerrainBrushMode.Holes or TerrainBrushMode.Trees || radius <= 0f)
+        if (mode is TerrainBrushMode.Paint or TerrainBrushMode.Holes or TerrainBrushMode.Trees
+            or TerrainBrushMode.Detail || radius <= 0f)
         {
             return 0;
         }
@@ -296,6 +300,60 @@ public static class TerrainBrush
         }
 
         return planted;
+    }
+
+    /// <summary>
+    /// Grows one detail prototype thicker under a stroke, or thins it: density walks by
+    /// <paramref name="strength"/> times the falloff (signed — a thinning stroke passes a negative), and
+    /// stops at bare and at thickest. Returns how many pixels changed.
+    /// </summary>
+    /// <param name="data">The ground to grow on.</param>
+    /// <param name="center">The stroke's centre, normalised across the terrain.</param>
+    /// <param name="radius">The stroke's radius, normalised.</param>
+    /// <param name="strength">Density per stroke at the centre; negative thins.</param>
+    /// <param name="prototypeIndex">Which prototype grows, an index into <see cref="TerrainData.DetailPrototypes"/>.</param>
+    public static int ApplyDetail(TerrainData data, Vector2 center, float radius, float strength, int prototypeIndex)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (radius <= 0f || strength == 0f
+            || prototypeIndex < 0 || prototypeIndex >= data.DetailPrototypes.Count)
+        {
+            return 0;
+        }
+
+        int resolution = data.AlphamapResolution;
+        float centerX = center.X * (resolution - 1);
+        float centerZ = center.Y * (resolution - 1);
+        float radiusPoints = radius * (resolution - 1);
+
+        int xLow = Math.Max((int)MathF.Floor(centerX - radiusPoints), 0);
+        int xHigh = Math.Min((int)MathF.Ceiling(centerX + radiusPoints), resolution - 1);
+        int zLow = Math.Max((int)MathF.Floor(centerZ - radiusPoints), 0);
+        int zHigh = Math.Min((int)MathF.Ceiling(centerZ + radiusPoints), resolution - 1);
+
+        int changed = 0;
+        for (int z = zLow; z <= zHigh; z++)
+        {
+            for (int x = xLow; x <= xHigh; x++)
+            {
+                float distance = MathF.Sqrt(((x - centerX) * (x - centerX)) + ((z - centerZ) * (z - centerZ)));
+                float falloff = Falloff(distance / radiusPoints);
+                if (falloff <= 0f)
+                {
+                    continue;
+                }
+
+                float current = data.GetDetailDensity(x, z, prototypeIndex);
+                float next = Math.Clamp(current + (strength * falloff), 0f, 1f);
+                if (next != current)
+                {
+                    data.SetDetailDensity(x, z, prototypeIndex, next);
+                    changed++;
+                }
+            }
+        }
+
+        return changed;
     }
 
     /// <summary>Uproots every tree in a disc. Returns how many came up.</summary>

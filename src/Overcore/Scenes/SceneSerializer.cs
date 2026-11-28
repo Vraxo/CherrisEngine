@@ -361,6 +361,36 @@ public class SceneSerializer
             data["Trees"] = Convert.ToBase64String(terrainData.GetTreesPacked());
         }
 
+        if (terrainData.DetailPrototypes.Count > 0)
+        {
+            List<Dictionary<string, object>> detailData = [];
+            foreach (TerrainDetailPrototype prototype in terrainData.DetailPrototypes)
+            {
+                detailData.Add(new Dictionary<string, object>
+                {
+                    ["Name"] = prototype.Name,
+                    ["TextureName"] = prototype.TextureName,
+                    ["Tint"] = prototype.Tint,
+                    ["Width"] = prototype.Width,
+                    ["Height"] = prototype.Height
+                });
+            }
+
+            data["DetailPrototypes"] = detailData;
+
+            float[] detailMap = terrainData.GetDetailMap();
+            bool anyDensity = false;
+            foreach (float density in detailMap)
+            {
+                anyDensity |= density > 0f;
+            }
+
+            if (anyDensity)
+            {
+                data["Detail"] = EncodeFloats(detailMap);
+            }
+        }
+
         return data;
     }
 
@@ -428,10 +458,11 @@ public class SceneSerializer
 
         foreach (Transform child in go.Transform.Children)
         {
-            // A terrain's forest child is terrain property, not scene content: the forest travels in the
-            // terrain's own data and the child is rebuilt from it, so writing it would plant a second,
-            // frozen forest on load.
-            if (TerrainComponent.IsTreeObject(child.GameObject))
+            // A terrain's forest and detail children are terrain property, not scene content: they
+            // travel in the terrain's own data and are rebuilt from it, so writing one would plant a
+            // second, frozen copy on load.
+            if (TerrainComponent.IsTreeObject(child.GameObject)
+                || TerrainComponent.IsDetailObject(child.GameObject))
             {
                 continue;
             }

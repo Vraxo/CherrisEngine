@@ -26,15 +26,17 @@ public class TerrainBrushTests
         float[] alphamapBefore = terrain.TerrainData.GetAlphamap();
         byte[] holesBefore = terrain.TerrainData.GetHolesPacked();
         byte[] treesBefore = terrain.TerrainData.GetTreesPacked();
+        float[] detailBefore = terrain.TerrainData.GetDetailMap();
 
         terrain.Sculpt(new Vector2(0.5f, 0.5f), 0.3f, 2f, TerrainBrushMode.Raise);
         terrain.TerrainData.GetHeight(5, 5).Should().BeApproximately(2f, 1e-3f);
 
         TerrainStrokeCommand stroke = new(
             terrain,
-            heightsBefore, alphamapBefore, holesBefore, treesBefore,
+            heightsBefore, alphamapBefore, holesBefore, treesBefore, detailBefore,
             terrain.TerrainData.GetHeightmap(), terrain.TerrainData.GetAlphamap(),
-            terrain.TerrainData.GetHolesPacked(), terrain.TerrainData.GetTreesPacked());
+            terrain.TerrainData.GetHolesPacked(), terrain.TerrainData.GetTreesPacked(),
+            terrain.TerrainData.GetDetailMap());
 
         stroke.Undo();
         terrain.TerrainData.GetHeight(5, 5).Should().Be(0f);
@@ -56,7 +58,7 @@ public class TerrainBrushTests
 
         // A one-float alphamap is the wrong size for this data: undo must not throw over it.
         TerrainStrokeCommand stroke = new(
-            terrain, heightsBefore, [1f], [0], [], terrain.TerrainData.GetHeightmap(), [1f], [0], []);
+            terrain, heightsBefore, [1f], [0], [], [], terrain.TerrainData.GetHeightmap(), [1f], [0], [], []);
 
         Action undo = () => stroke.Undo();
         undo.Should().NotThrow();
@@ -79,8 +81,8 @@ public class TerrainBrushTests
 
         TerrainStrokeCommand stroke = new(
             terrain,
-            data.GetHeightmap(), data.GetAlphamap(), data.GetHolesPacked(), treesBefore,
-            data.GetHeightmap(), data.GetAlphamap(), data.GetHolesPacked(), data.GetTreesPacked());
+            data.GetHeightmap(), data.GetAlphamap(), data.GetHolesPacked(), treesBefore, data.GetDetailMap(),
+            data.GetHeightmap(), data.GetAlphamap(), data.GetHolesPacked(), data.GetTreesPacked(), data.GetDetailMap());
 
         stroke.Undo();
         data.Trees.Should().BeEmpty("undoing the planting stroke uproots what it planted");

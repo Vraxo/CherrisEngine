@@ -287,10 +287,42 @@ public static class ComponentDeserializer
             }
         }
 
+        if (propsDict.TryGetValue("DetailPrototypes", out var detailObj) && detailObj is List<object> detailList)
+        {
+            foreach (object item in detailList)
+            {
+                if (item is not Dictionary<object, object> detailDict)
+                {
+                    continue;
+                }
+
+                data.AddDetailPrototype(new TerrainDetailPrototype
+                {
+                    Name = detailDict.TryGetValue("Name", out var detailName) ? detailName as string ?? "Grass" : "Grass",
+                    TextureName = detailDict.TryGetValue("TextureName", out var detailTexture) ? detailTexture as string ?? string.Empty : string.Empty,
+                    Tint = GetVector3(detailDict, "Tint", new Vector3(0.4f, 0.6f, 0.3f)),
+                    Width = detailDict.TryGetValue("Width", out var widthObj)
+                        ? Convert.ToSingle(widthObj, CultureInfo.InvariantCulture) : 0.7f,
+                    Height = detailDict.TryGetValue("Height", out var detailHeightObj)
+                        ? Convert.ToSingle(detailHeightObj, CultureInfo.InvariantCulture) : 1f
+                });
+            }
+        }
+
+        if (propsDict.TryGetValue("Detail", out var detailMapObj) && detailMapObj is string detailText)
+        {
+            float[] detailMap = DecodeFloats(detailText);
+            if (detailMap.Length == data.AlphamapResolution * data.AlphamapResolution * data.DetailPrototypes.Count)
+            {
+                data.SetDetailMap(detailMap);
+            }
+        }
+
         terrain.TerrainData = data;
 
         // The forest's meshes resolve by name when the terrain builds it, through the same manager.
         terrain.TreeMeshResolver = name => resourceManager?.GetMesh(name);
+        terrain.DetailTextureResolver = name => resourceManager?.GetTexture(name);
 
         string textureName = data.Layers.Count > 0 && !string.IsNullOrWhiteSpace(data.Layers[0].TextureName)
             ? data.Layers[0].TextureName

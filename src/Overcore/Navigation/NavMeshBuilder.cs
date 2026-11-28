@@ -67,8 +67,10 @@ public static class NavMeshBuilder
                 continue;
             }
 
-            // A terrain's forest is scenery agents walk under, not ground they walk over.
-            if (Overcore.Components.Terrain.IsTreeObject(go))
+            // A terrain's forest and detail are scenery agents walk under and through, not ground they
+            // walk over.
+            if (Overcore.Components.Terrain.IsTreeObject(go)
+                || Overcore.Components.Terrain.IsDetailObject(go))
             {
                 continue;
             }
