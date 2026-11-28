@@ -86,7 +86,7 @@ public sealed class TerrainCollider : Collider
         }
 
         List<(Vector3 A, Vector3 B, Vector3 C)> triangles = TerrainMesher.BuildTriangles(data);
-        BepuTriangle[] bepuTriangles = new BepuTriangle[triangles.Count];
+        pool.Take(triangles.Count, out BepuUtilities.Memory.Buffer<BepuTriangle> bepuTriangles);
         for (int index = 0; index < triangles.Count; index++)
         {
             (Vector3 a, Vector3 b, Vector3 c) = triangles[index];

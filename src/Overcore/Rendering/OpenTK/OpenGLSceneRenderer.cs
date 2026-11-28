@@ -639,9 +639,9 @@ internal class OpenGLSceneRenderer : IDisposable
     }
 
     /// <summary>The one white pixel a textureless material samples, created on first need inside a GL context.</summary>
-    private OpenTKTexture? _whiteTexture;
+    private static OpenTKTexture? _whiteTexture;
 
-    private OpenTKTexture WhiteTexture => _whiteTexture ??= CreateWhiteTexture();
+    private static OpenTKTexture WhiteTexture => _whiteTexture ??= CreateWhiteTexture();
 
     private static OpenTKTexture CreateWhiteTexture()
     {
@@ -658,7 +658,10 @@ internal class OpenGLSceneRenderer : IDisposable
     {
         _static.Dispose();
         _skinned.Dispose();
+
+        // The white pixel is shared between renderers; it is deleted with this one and recreated on next use.
         _whiteTexture?.Dispose();
+        _whiteTexture = null;
     }
 }
 

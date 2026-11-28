@@ -1,6 +1,7 @@
 using Overcore.Animation;
 using Overcore.Components;
 using Overcore.Core.Logging;
+using TerrainComponent = Overcore.Components.Terrain;
 using Overcore.Core.Physics;
 using System.Numerics;
 
@@ -432,7 +433,7 @@ public class Scene : IDisposable
                 continue;
             }
 
-            foreach (Terrain terrain in go.GetComponents<Terrain>().ToList())
+            foreach (TerrainComponent terrain in go.GetComponents<TerrainComponent>().ToList())
             {
                 if (terrain.IsDestroyed || !terrain.Enabled)
                 {
