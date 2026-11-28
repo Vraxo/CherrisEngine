@@ -71,6 +71,8 @@ public sealed class TerrainData
 
     private float[] _heights;
     private float[] _alphamap;
+    private bool[] _holes;
+    private int _holeCount;
 
     /// <summary>Grid points along one side of the heightmap. The grid is square, as Unity's is.</summary>
     public int HeightmapResolution { get; }
@@ -89,6 +91,21 @@ public sealed class TerrainData
 
     /// <summary>Raised by every alphamap write and by adding a layer.</summary>
     public int AlphamapVersion { get; private set; }
+
+    /// <summary>Raised by every hole write.</summary>
+    public int HolesVersion { get; private set; }
+
+    /// <summary>
+    /// Cells along one side of the hole grid. A hole belongs to a cell — the quad between four grid
+    /// points — rather than to a point or a pixel, because a hole is a piece of ground that is not there:
+    /// the mesher drops the cell's quad, the raycast skips it, and the physics mesh, being built from the
+    /// mesher's triangles, has the same hole in it. Unity paints holes into a texture and clips fragments;
+    /// a cell grid is coarser and exactly as honest, and everything downstream agrees about it for free.
+    /// </summary>
+    public int HolesResolution => HeightmapResolution - 1;
+
+    /// <summary>How many cells are holes. Zero is the ordinary ground.</summary>
+    public int HoleCount => _holeCount;
 
     /// <summary>The highest stored height, in metres. Kept by scanning, so it is exact rather than tracked.</summary>
     public float MaxHeight
@@ -142,6 +159,7 @@ public sealed class TerrainData
         Size = size ?? new Vector3(100f, 20f, 100f);
         _heights = new float[heightmapResolution * heightmapResolution];
         _alphamap = new float[alphaResolution * alphaResolution];
+        _holes = new bool[(heightmapResolution - 1) * (heightmapResolution - 1)];
 
         Layers.Add(new TerrainLayer("Grass", string.Empty, new Vector3(0.35f, 0.55f, 0.25f)));
         ResetAlphamap();
@@ -404,6 +422,103 @@ public sealed class TerrainData
         }
 
         AlphamapVersion++;
+    }
+
+    /// <summary>True when the cell whose near corner is a grid point is a hole: no ground there.</summary>
+    /// <param name="cellX">The cell's column, 0..<see cref="HolesResolution"/>.</param>
+    /// <param name="cellZ">The cell's row, 0..<see cref="HolesResolution"/>.</param>
+    public bool IsHole(int cellX, int cellZ)
+    {
+        ValidateCell(cellX, cellZ);
+        return _holes[(cellZ * HolesResolution) + cellX];
+    }
+
+    /// <summary>Cuts a hole in one cell, or fills it back in. Writing the state it already has changes nothing.</summary>
+    public void SetHole(int cellX, int cellZ, bool hole)
+    {
+        ValidateCell(cellX, cellZ);
+        int index = (cellZ * HolesResolution) + cellX;
+        if (_holes[index] == hole)
+        {
+            return;
+        }
+
+        _holes[index] = hole;
+        _holeCount += hole ? 1 : -1;
+        HolesVersion++;
+    }
+
+    /// <summary>True when the cell under a normalised place is a hole.</summary>
+    public bool IsHoleAt(float u, float v)
+    {
+        int cellX = Math.Clamp((int)MathF.Floor(Math.Clamp(u, 0f, 1f) * HolesResolution), 0, HolesResolution - 1);
+        int cellZ = Math.Clamp((int)MathF.Floor(Math.Clamp(v, 0f, 1f) * HolesResolution), 0, HolesResolution - 1);
+        return _holes[(cellZ * HolesResolution) + cellX];
+    }
+
+    /// <summary>The whole hole grid as a flat copy, row-major with X fastest, one entry per cell.</summary>
+    public bool[] GetHoles() => [.. _holes];
+
+    /// <summary>Replaces the whole hole grid from a flat row-major array of <c>HolesResolution²</c> entries.</summary>
+    public void SetHoles(ReadOnlySpan<bool> holes)
+    {
+        if (holes.Length != _holes.Length)
+        {
+            throw new ArgumentException(
+                $"A hole grid for this terrain holds {_holes.Length} cells, not {holes.Length}.", nameof(holes));
+        }
+
+        holes.CopyTo(_holes);
+        _holeCount = 0;
+        foreach (bool hole in _holes)
+        {
+            _holeCount += hole ? 1 : 0;
+        }
+
+        HolesVersion++;
+    }
+
+    /// <summary>The hole grid packed eight cells to a byte, first cell in the lowest bit: the scene file's coat for it.</summary>
+    public byte[] GetHolesPacked()
+    {
+        byte[] packed = new byte[(_holes.Length + 7) / 8];
+        for (int index = 0; index < _holes.Length; index++)
+        {
+            if (_holes[index])
+            {
+                packed[index / 8] |= (byte)(1 << (index % 8));
+            }
+        }
+
+        return packed;
+    }
+
+    /// <summary>Replaces the hole grid from its packed form. See <see cref="GetHolesPacked"/>.</summary>
+    public void SetHolesPacked(ReadOnlySpan<byte> packed)
+    {
+        if (packed.Length != (_holes.Length + 7) / 8)
+        {
+            throw new ArgumentException(
+                $"A packed hole grid for this terrain is {(_holes.Length + 7) / 8} bytes, not {packed.Length}.", nameof(packed));
+        }
+
+        _holeCount = 0;
+        for (int index = 0; index < _holes.Length; index++)
+        {
+            _holes[index] = (packed[index / 8] & (1 << (index % 8))) != 0;
+            _holeCount += _holes[index] ? 1 : 0;
+        }
+
+        HolesVersion++;
+    }
+
+    private void ValidateCell(int cellX, int cellZ)
+    {
+        if (cellX < 0 || cellX >= HolesResolution || cellZ < 0 || cellZ >= HolesResolution)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(cellX), $"A cell is inside the {HolesResolution}² hole grid.");
+        }
     }
 
     private float Weight(int x, int z, int layer) =>

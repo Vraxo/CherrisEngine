@@ -329,6 +329,12 @@ public class SceneSerializer
         data["Heights"] = EncodeFloats(terrainData.GetHeightmap());
         data["Alphamap"] = EncodeFloats(terrainData.GetAlphamap());
 
+        // Holes only when there are any: an uncut ground's file says nothing about them.
+        if (terrainData.HoleCount > 0)
+        {
+            data["Holes"] = Convert.ToBase64String(terrainData.GetHolesPacked());
+        }
+
         return data;
     }
 

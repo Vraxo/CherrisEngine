@@ -24,14 +24,15 @@ public class TerrainBrushTests
 
         float[] heightsBefore = terrain.TerrainData.GetHeightmap();
         float[] alphamapBefore = terrain.TerrainData.GetAlphamap();
+        byte[] holesBefore = terrain.TerrainData.GetHolesPacked();
 
         terrain.Sculpt(new Vector2(0.5f, 0.5f), 0.3f, 2f, TerrainBrushMode.Raise);
         terrain.TerrainData.GetHeight(5, 5).Should().BeApproximately(2f, 1e-3f);
 
         TerrainStrokeCommand stroke = new(
             terrain,
-            heightsBefore, alphamapBefore,
-            terrain.TerrainData.GetHeightmap(), terrain.TerrainData.GetAlphamap());
+            heightsBefore, alphamapBefore, holesBefore,
+            terrain.TerrainData.GetHeightmap(), terrain.TerrainData.GetAlphamap(), terrain.TerrainData.GetHolesPacked());
 
         stroke.Undo();
         terrain.TerrainData.GetHeight(5, 5).Should().Be(0f);
@@ -53,7 +54,7 @@ public class TerrainBrushTests
 
         // A one-float alphamap is the wrong size for this data: undo must not throw over it.
         TerrainStrokeCommand stroke = new(
-            terrain, heightsBefore, [1f], terrain.TerrainData.GetHeightmap(), [1f]);
+            terrain, heightsBefore, [1f], [0], terrain.TerrainData.GetHeightmap(), [1f], [0]);
 
         Action undo = () => stroke.Undo();
         undo.Should().NotThrow();

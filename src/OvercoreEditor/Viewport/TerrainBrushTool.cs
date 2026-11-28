@@ -36,6 +36,7 @@ public sealed class TerrainBrushTool
     private bool _stroking;
     private float[]? _heightsBefore;
     private float[]? _alphamapBefore;
+    private byte[]? _holesBefore;
 
     public TerrainBrushTool(Editor editor, HistoryManager history)
     {
@@ -74,6 +75,7 @@ public sealed class TerrainBrushTool
             _stroking = false;
             _heightsBefore = null;
             _alphamapBefore = null;
+            _holesBefore = null;
             return false;
         }
 
@@ -96,6 +98,7 @@ public sealed class TerrainBrushTool
             _stroking = true;
             _heightsBefore = terrain.TerrainData.GetHeightmap();
             _alphamapBefore = terrain.TerrainData.GetAlphamap();
+            _holesBefore = terrain.TerrainData.GetHolesPacked();
             ApplyStroke(terrain, uv, 1f / 60f);
         }
         else if (_stroking && ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -116,7 +119,12 @@ public sealed class TerrainBrushTool
         float radius = settings.RadiusMetres / MathF.Max(data.Size.X, 0.01f);
         float strength = settings.StrokeStrength(deltaTime);
 
-        if (settings.Mode == TerrainBrushMode.Paint)
+        if (settings.Mode == TerrainBrushMode.Holes)
+        {
+            // Shift is the brush running backwards: fill the holes back in.
+            terrain.ApplyHoles(uv, radius, hole: !ImGui.GetIO().KeyShift);
+        }
+        else if (settings.Mode == TerrainBrushMode.Paint)
         {
             int layer = Math.Clamp(settings.LayerIndex, 0, Math.Max(data.Layers.Count - 1, 0));
             terrain.Paint(uv, radius, strength, layer);
@@ -131,28 +139,33 @@ public sealed class TerrainBrushTool
     {
         _stroking = false;
 
-        if (_heightsBefore is null || _alphamapBefore is null
+        if (_heightsBefore is null || _alphamapBefore is null || _holesBefore is null
             || _editor.GetSelectedGameObject()?.GetComponent<TerrainComponent>() is not { } terrain)
         {
             _heightsBefore = null;
             _alphamapBefore = null;
+            _holesBefore = null;
             return;
         }
 
         float[] heightsAfter = terrain.TerrainData.GetHeightmap();
         float[] alphamapAfter = terrain.TerrainData.GetAlphamap();
-        bool changed = !_heightsBefore.SequenceEqual(heightsAfter) || !_alphamapBefore.SequenceEqual(alphamapAfter);
+        byte[] holesAfter = terrain.TerrainData.GetHolesPacked();
+        bool changed = !_heightsBefore.SequenceEqual(heightsAfter)
+            || !_alphamapBefore.SequenceEqual(alphamapAfter)
+            || !_holesBefore.SequenceEqual(holesAfter);
 
         if (changed)
         {
             // Execute re-applies the after state the stroke already left, which is the point: history
             // records it, and the dirty flag follows through OnHistoryChanged.
             _history.Execute(new TerrainStrokeCommand(
-                terrain, _heightsBefore, _alphamapBefore, heightsAfter, alphamapAfter));
+                terrain, _heightsBefore, _alphamapBefore, _holesBefore, heightsAfter, alphamapAfter, holesAfter));
         }
 
         _heightsBefore = null;
         _alphamapBefore = null;
+        _holesBefore = null;
     }
 
     private void DrawBrushRing(TerrainComponent terrain, Vector3 point, Vector2 viewportPos, Vector2 viewportSize)

@@ -236,6 +236,7 @@ internal static class ColliderGeometry
                 Vector3 local = TerrainToLocal(shape, point);
                 return local.X is >= 0f && local.X <= terrain.Size.X
                     && local.Z is >= 0f && local.Z <= terrain.Size.Z
+                    && !terrain.IsHoleAt(local.X / terrain.Size.X, local.Z / terrain.Size.Z)
                     && local.Y <= terrain.SampleHeightLocal(local) + Epsilon;
             }
 
@@ -367,6 +368,14 @@ internal static class ColliderGeometry
             case ShapeKind.Terrain:
             {
                 Vector3 closest = ClosestPoint(shape, center);
+                if (shape.Terrain is { } terrainData
+                    && terrainData.IsHoleAt(
+                        TerrainToLocal(shape, closest).X / terrainData.Size.X,
+                        TerrainToLocal(shape, closest).Z / terrainData.Size.Z))
+                {
+                    return false;
+                }
+
                 return Vector3.DistanceSquared(closest, center) <= radius * radius;
             }
 
@@ -894,12 +903,19 @@ internal static class ColliderGeometry
                 {
                     Vector3 axisPoint = Vector3.Lerp(point1, point2, sample / 4f);
                     Vector3 surface = ClosestPoint(target, axisPoint);
+                    Vector3 local = TerrainToLocal(target, surface);
+
+                    // Over a hole there is no surface to separate from: the capsule falls through it.
+                    if (terrain.IsHoleAt(local.X / terrain.Size.X, local.Z / terrain.Size.Z))
+                    {
+                        continue;
+                    }
+
                     float distance = Vector3.Distance(axisPoint, surface);
                     if (distance < separation + radius)
                     {
                         separation = distance - radius;
                         contactPoint = surface;
-                        Vector3 local = TerrainToLocal(target, surface);
                         normal = Vector3.Normalize(Vector3.Transform(
                             terrain.GetNormal(
                                 local.X / terrain.Size.X, local.Z / terrain.Size.Z),

@@ -29,6 +29,7 @@ public class Terrain : Component
     private TerrainData _data = new();
     private int _builtHeightVersion = -1;
     private int _builtAlphamapVersion = -1;
+    private int _builtHolesVersion = -1;
 
     /// <summary>The ground's heights and paint. Replacing it rebuilds the mesh at once.</summary>
     [HideInInspector]
@@ -40,6 +41,7 @@ public class Terrain : Component
             _data = value ?? throw new ArgumentNullException(nameof(value));
             _builtHeightVersion = -1;
             _builtAlphamapVersion = -1;
+            _builtHolesVersion = -1;
             Rebuild();
         }
     }
@@ -57,6 +59,7 @@ public class Terrain : Component
 
             _data.Size = value;
             _builtHeightVersion = -1;
+            _builtHolesVersion = -1;
             Rebuild();
         }
     }
@@ -124,6 +127,7 @@ public class Terrain : Component
         Mesh = TerrainMesher.Build(_data);
         _builtHeightVersion = _data.Version;
         _builtAlphamapVersion = _data.AlphamapVersion;
+        _builtHolesVersion = _data.HolesVersion;
 
         MeshRenderer renderer = GameObject.GetComponent<MeshRenderer>()
             ?? GameObject.AddComponent(new MeshRenderer
@@ -150,10 +154,31 @@ public class Terrain : Component
     /// <summary>Rebuilds the mesh if the data has been edited since the last build. The scene calls this once a frame.</summary>
     internal void RefreshIfDirty()
     {
-        if (_builtHeightVersion != _data.Version || _builtAlphamapVersion != _data.AlphamapVersion)
+        if (_builtHeightVersion != _data.Version
+            || _builtAlphamapVersion != _data.AlphamapVersion
+            || _builtHolesVersion != _data.HolesVersion)
         {
             Rebuild();
         }
+    }
+
+    /// <summary>
+    /// One hole stroke against the ground, mesh (and physics mesh) rebuilt after it: cells are cut out of
+    /// the ground, or filled back in. See <see cref="TerrainBrush.ApplyHoles"/>.
+    /// </summary>
+    /// <param name="center">The stroke's centre, normalised across the terrain.</param>
+    /// <param name="radius">The stroke's radius, normalised.</param>
+    /// <param name="hole">True to cut holes, false to fill them back in.</param>
+    /// <returns>How many cells changed state.</returns>
+    public int ApplyHoles(Vector2 center, float radius, bool hole)
+    {
+        int changed = TerrainBrush.ApplyHoles(_data, center, radius, hole);
+        if (changed > 0)
+        {
+            Rebuild();
+        }
+
+        return changed;
     }
 
     /// <summary>

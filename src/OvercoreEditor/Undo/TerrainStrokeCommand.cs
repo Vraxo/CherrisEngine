@@ -19,28 +19,34 @@ public sealed class TerrainStrokeCommand : ICommand
     private readonly TerrainComponent _terrain;
     private readonly float[] _heightsBefore;
     private readonly float[] _alphamapBefore;
+    private readonly byte[] _holesBefore;
     private readonly float[] _heightsAfter;
     private readonly float[] _alphamapAfter;
+    private readonly byte[] _holesAfter;
 
     public TerrainStrokeCommand(
         TerrainComponent terrain,
         float[] heightsBefore,
         float[] alphamapBefore,
+        byte[] holesBefore,
         float[] heightsAfter,
-        float[] alphamapAfter)
+        float[] alphamapAfter,
+        byte[] holesAfter)
     {
         _terrain = terrain;
         _heightsBefore = heightsBefore;
         _alphamapBefore = alphamapBefore;
+        _holesBefore = holesBefore;
         _heightsAfter = heightsAfter;
         _alphamapAfter = alphamapAfter;
+        _holesAfter = holesAfter;
     }
 
-    public void Execute() => Apply(_heightsAfter, _alphamapAfter);
+    public void Execute() => Apply(_heightsAfter, _alphamapAfter, _holesAfter);
 
-    public void Undo() => Apply(_heightsBefore, _alphamapBefore);
+    public void Undo() => Apply(_heightsBefore, _alphamapBefore, _holesBefore);
 
-    private void Apply(float[] heights, float[] alphamap)
+    private void Apply(float[] heights, float[] alphamap, byte[] holes)
     {
         TerrainData data = _terrain.TerrainData;
 
@@ -52,6 +58,11 @@ public sealed class TerrainStrokeCommand : ICommand
         if (alphamap.Length == data.AlphamapResolution * data.AlphamapResolution * data.Layers.Count)
         {
             data.SetAlphamap(alphamap);
+        }
+
+        if (holes.Length == (data.HolesResolution * data.HolesResolution + 7) / 8)
+        {
+            data.SetHolesPacked(holes);
         }
 
         _terrain.Rebuild();

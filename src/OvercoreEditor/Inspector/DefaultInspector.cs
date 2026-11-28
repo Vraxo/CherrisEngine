@@ -163,6 +163,11 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             brush.Strength = strength;
         }
 
+        if (brush.Mode == TerrainBrushMode.Holes)
+        {
+            ImGui.TextDisabled("Drag to cut holes in the ground; hold Shift to fill them back in.");
+        }
+
         if (brush.Mode == TerrainBrushMode.Flatten)
         {
             float flattenHeight = brush.FlattenHeight;

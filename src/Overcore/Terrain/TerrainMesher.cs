@@ -110,6 +110,12 @@ public static class TerrainMesher
         {
             for (int x = 0; x < pointsX - 1; x++)
             {
+                // A hole cell has no ground in it: no quad, and therefore nothing to collide with or bake.
+                if (data.IsHole(startX + x, startZ + z))
+                {
+                    continue;
+                }
+
                 // The CreatePlane winding: a is the far corner of the quad, and the triangles run a-c-b, a-d-c.
                 uint a = (uint)(((z + 1) * pointsX) + x);
                 uint b = (uint)(((z + 1) * pointsX) + x + 1);

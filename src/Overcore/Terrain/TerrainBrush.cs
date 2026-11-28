@@ -18,7 +18,10 @@ public enum TerrainBrushMode
     Smooth,
 
     /// <summary>Paints one layer's weight up and the others down, at a normalised place.</summary>
-    Paint
+    Paint,
+
+    /// <summary>Cuts holes in the ground — cells with no ground in them — or fills them back in.</summary>
+    Holes
 }
 
 /// <summary>
@@ -51,7 +54,7 @@ public static class TerrainBrush
         float flattenHeight = 0f)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (mode == TerrainBrushMode.Paint || radius <= 0f)
+        if (mode is TerrainBrushMode.Paint or TerrainBrushMode.Holes || radius <= 0f)
         {
             return 0;
         }
@@ -177,6 +180,55 @@ public static class TerrainBrush
         }
 
         return painted;
+    }
+
+    /// <summary>
+    /// Cuts holes in the cells under a stroke, or fills them back in. A hole is a whole cell or it is
+    /// nothing, so the stroke's edge is where its falloff passes one half: inside, the cell goes; outside,
+    /// it stays. Returns how many cells changed state.
+    /// </summary>
+    /// <param name="data">The ground to cut.</param>
+    /// <param name="center">The stroke's centre, normalised across the terrain.</param>
+    /// <param name="radius">The stroke's radius, normalised.</param>
+    /// <param name="hole">True to cut holes, false to fill them back in.</param>
+    public static int ApplyHoles(TerrainData data, Vector2 center, float radius, bool hole)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (radius <= 0f)
+        {
+            return 0;
+        }
+
+        int cells = data.HolesResolution;
+        float centerX = center.X * cells;
+        float centerZ = center.Y * cells;
+        float radiusCells = radius * cells;
+
+        int xLow = Math.Max((int)MathF.Floor(centerX - radiusCells), 0);
+        int xHigh = Math.Min((int)MathF.Ceiling(centerX + radiusCells), cells - 1);
+        int zLow = Math.Max((int)MathF.Floor(centerZ - radiusCells), 0);
+        int zHigh = Math.Min((int)MathF.Ceiling(centerZ + radiusCells), cells - 1);
+
+        int changed = 0;
+        for (int z = zLow; z <= zHigh; z++)
+        {
+            for (int x = xLow; x <= xHigh; x++)
+            {
+                // The cell's own centre is the place the stroke is measured to.
+                float dx = (x + 0.5f) - centerX;
+                float dz = (z + 0.5f) - centerZ;
+                float distance = MathF.Sqrt((dx * dx) + (dz * dz));
+                if (Falloff(distance / radiusCells) <= 0.5f || data.IsHole(x, z) == hole)
+                {
+                    continue;
+                }
+
+                data.SetHole(x, z, hole);
+                changed++;
+            }
+        }
+
+        return changed;
     }
 
     /// <summary>The brush's edge: one at the centre, zero at and past the rim, a cosine between.</summary>

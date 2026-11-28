@@ -112,6 +112,12 @@ public static class TerrainRaycast
     private static void TestCell(
         TerrainData data, int cellX, int cellZ, Vector3 origin, Vector3 direction, ref float bestT)
     {
+        // A hole cell is not ground: the ray passes through it and may meet the ground behind or below.
+        if (data.IsHole(cellX, cellZ))
+        {
+            return;
+        }
+
         float spacingX = data.Size.X / (data.HeightmapResolution - 1);
         float spacingZ = data.Size.Z / (data.HeightmapResolution - 1);
 

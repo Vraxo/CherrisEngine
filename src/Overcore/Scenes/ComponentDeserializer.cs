@@ -236,6 +236,22 @@ public static class ComponentDeserializer
             }
         }
 
+        if (propsDict.TryGetValue("Holes", out var holesObj) && holesObj is string holesText)
+        {
+            try
+            {
+                byte[] packed = Convert.FromBase64String(holesText);
+                if (packed.Length == (data.HolesResolution * data.HolesResolution + 7) / 8)
+                {
+                    data.SetHolesPacked(packed);
+                }
+            }
+            catch (FormatException)
+            {
+                // An unreadable hole block is a ground without holes, not a scene that fails to load.
+            }
+        }
+
         terrain.TerrainData = data;
 
         string textureName = data.Layers.Count > 0 && !string.IsNullOrWhiteSpace(data.Layers[0].TextureName)

@@ -52,6 +52,24 @@ a texture.
 weight toward one at the stroke's centre and scale the others down, keeping every pixel summing to one.
 `GetDominantLayer(u, v)` answers which layer a place wears.
 
+## Holes
+
+A hole is a whole **cell** — the quad between four grid points — with no ground in it (`IsHole`,
+`SetHole`, `IsHoleAt`, `HolesResolution = HeightmapResolution − 1`). Unity paints holes into a texture
+and clips fragments; a cell grid is coarser and exactly as honest, and because a hole is an absence in
+the geometry itself, everything downstream agrees about it for free:
+
+- the mesher drops the cell's quad, so there is nothing to draw;
+- the raycast's cell walk skips it, so rays fall through and may meet ground behind or below;
+- the collider's Bepu mesh is built from the mesher's triangles, so dynamic bodies fall through too,
+  and the capsule separation treats a hole as no surface, so a character controller drops in;
+- a NavMesh bake, which collects `MeshRenderer` triangles, walks around it.
+
+Cut them with `Terrain.ApplyHoles(center, radius, hole: true)` or the editor brush's **Holes** mode
+(hold Shift to fill them back in). In the scene file the hole grid travels bit-packed (eight cells to a
+byte) as `Holes: <base64>`, written only when at least one hole exists. Sphere/box overlap queries
+approximate around holes, as they do around ridges; rays, casts and the solver are exact.
+
 ## Sculpting in the editor
 
 Select the terrain, open its inspector, and tick **Sculpt in Viewport**. The viewport mouse now belongs
@@ -126,6 +144,6 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 
 ## Not yet
 
-Terrain holes, trees and grass detail, neighbour stitching between separate terrains, heightmap LOD
-beyond chunking, splat blending on the Veldrid backend, and layers past the fourth in the shader's
-blend are future increments. The data model does not need to change for any of them.
+Trees and grass detail, neighbour stitching between separate terrains, heightmap LOD beyond
+chunking, splat blending on the Veldrid backend, and layers past the fourth in the shader's blend are
+future increments. The data model does not need to change for any of them.
