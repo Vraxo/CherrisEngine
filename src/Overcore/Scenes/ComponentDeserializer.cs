@@ -5,6 +5,7 @@ using Overcore.Rendering;
 using Overcore.Rendering.Shadows;
 using Overcore.Terrain;
 using Overcore.Utils;
+using TerrainComponent = Overcore.Components.Terrain;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
@@ -163,9 +164,9 @@ public static class ComponentDeserializer
     /// alphamap travel as base64 <see cref="float"/> bytes — the ground is a binary thing wearing a YAML
     /// coat, and spelling 16,000 heights as decimal text would make the file neither readable nor honest.
     /// </summary>
-    private static Terrain CreateTerrainComponent(object properties, IResourceManager resourceManager)
+    private static TerrainComponent CreateTerrainComponent(object properties, IResourceManager resourceManager)
     {
-        Terrain terrain = new();
+        TerrainComponent terrain = new();
 
         if (properties is not Dictionary<object, object> propsDict)
         {

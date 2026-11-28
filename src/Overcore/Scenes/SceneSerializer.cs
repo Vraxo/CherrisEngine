@@ -3,6 +3,7 @@ using Overcore.Core;
 using Overcore.Rendering.Shadows;
 using Overcore.Terrain;
 using Overcore.Utils;
+using TerrainComponent = Overcore.Components.Terrain;
 using System.Numerics;
 using System.Reflection;
 using YamlDotNet.Serialization;
@@ -187,7 +188,7 @@ public class SceneSerializer
             // A terrain's mesh renderer is the terrain's own doing, rebuilt from its data on load; writing
             // it would add a block naming a mesh no resource manager holds, for the loader to drop.
             if (component is MeshRenderer { MeshName: "Terrain" }
-                && gameObject.GetComponent<Terrain>() is not null)
+                && gameObject.GetComponent<TerrainComponent>() is not null)
             {
                 continue;
             }
@@ -215,7 +216,7 @@ public class SceneSerializer
 
                 // Bulk ground data (heights, alphamap, layers) travels as base64 float bytes beside the
                 // scalar settings, which the generic path cannot express.
-                Terrain terrain => SerializeTerrain(terrain, prefabLocalIds),
+                TerrainComponent terrain => SerializeTerrain(terrain, prefabLocalIds),
 
                 // All other components can be serialized generically using reflection.
                 _ => SerializeComponentProperties(component, prefabLocalIds)
@@ -298,19 +299,19 @@ public class SceneSerializer
     }
 
     private static Dictionary<string, object> SerializeTerrain(
-        Terrain terrain,
+        TerrainComponent terrain,
         IReadOnlyDictionary<GameObject, int>? prefabLocalIds = null)
     {
         Dictionary<string, object> data = SerializeComponentProperties(terrain, prefabLocalIds);
 
         // The material is resolved from the first layer's texture on load; writing the object itself would
         // hand the YAML writer a texture handle to spell.
-        data.Remove(nameof(Terrain.Material));
+        data.Remove(nameof(TerrainComponent.Material));
 
         TerrainData terrainData = terrain.TerrainData;
         data["HeightmapResolution"] = terrainData.HeightmapResolution;
         data["AlphamapResolution"] = terrainData.AlphamapResolution;
-        data[nameof(Terrain.Size)] = terrainData.Size;
+        data[nameof(TerrainComponent.Size)] = terrainData.Size;
 
         List<Dictionary<string, object>> layersData = [];
         foreach (TerrainLayer layer in terrainData.Layers)
