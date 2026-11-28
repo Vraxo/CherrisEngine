@@ -11,6 +11,10 @@ namespace Overcore;
 public class SceneRenderer : IDisposable
 {
     private readonly DeviceBuffer _mvpBuffer;
+    private readonly DeviceBuffer _timeBuffer;
+
+    /// <summary>The wind's clock: seconds since this renderer was built, which is all the sway needs.</summary>
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     private Pipeline _pipeline;
     private readonly ResourceSet _mvpResourceSet;
     private readonly GraphicsDevice _graphicsDevice;
@@ -50,10 +54,12 @@ public class SceneRenderer : IDisposable
         ResourceFactory factory = gd.ResourceFactory;
 
         _mvpBuffer = factory.CreateBuffer(new BufferDescription(64, BufferUsage.UniformBuffer));
+        _timeBuffer = factory.CreateBuffer(new BufferDescription(16, BufferUsage.UniformBuffer));
 
         _mvpLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
+                new ResourceLayoutElementDescription("MvpBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex),
+                new ResourceLayoutElementDescription("TimeBuffer", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
         TextureLayout = factory.CreateResourceLayout(
             new ResourceLayoutDescription(
@@ -75,7 +81,7 @@ public class SceneRenderer : IDisposable
         ];
         TerrainLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(terrainElements));
 
-        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
+        _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer, _timeBuffer));
 
         _whiteTexture = factory.CreateTexture(TextureDescription.Texture2D(
             1, 1, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
@@ -227,6 +233,13 @@ public class SceneRenderer : IDisposable
             Matrix4x4 mvp = gameObject.Transform.GetModelMatrix() * view * projection;
             commandList.UpdateBuffer(_mvpBuffer, 0, ref mvp);
 
+            // The wind bends only the terrain's detail cards; every other draw is told to stand still.
+            float windStrength = Overcore.Components.Terrain.IsDetailObject(gameObject)
+                ? gameObject.Transform.Parent!.GameObject.GetComponent<Overcore.Components.Terrain>()!.DetailWindStrength
+                : 0f;
+            float[] timeData = [(float)_clock.Elapsed.TotalSeconds, windStrength, 0f, 0f];
+            commandList.UpdateBuffer(_timeBuffer, 0, timeData);
+
             commandList.SetVertexBuffer(0, backendData.VertexBuffer);
             commandList.SetIndexBuffer(backendData.IndexBuffer, IndexFormat.UInt32);
             commandList.SetGraphicsResourceSet(0, _mvpResourceSet);
@@ -267,6 +280,9 @@ public class SceneRenderer : IDisposable
                 layout(location = 2) in vec2 TexCoord;
 
                 layout(set = 0, binding = 0) uniform MvpBuffer { mat4 mvp; };
+                // The wind's clock and this draw's strength: zero for everything but the terrain's
+                // detail cards, which bend by the square of their height up the card (TexCoord.y).
+                layout(set = 0, binding = 1) uniform TimeBuffer { float Time; float WindStrength; };
                 // The Tiling component is still needed by the vertex shader
                 layout(set = 2, binding = 0) uniform MaterialProperties { vec4 TextureTiling; vec4 EmissiveColor; };
 
@@ -275,7 +291,17 @@ public class SceneRenderer : IDisposable
 
                 void main() 
                 { 
-                    gl_Position = mvp * vec4(Position, 1); 
+                    vec3 bent = Position;
+                    float bendWeight = TexCoord.y * TexCoord.y;
+                    if (WindStrength > 0.0 && bendWeight > 0.0)
+                    {
+                        float phase = Position.x * 0.35 + Position.z * 0.27;
+                        float sway = sin(Time * 1.6 + phase) + (0.5 * sin(Time * 2.7 + (phase * 1.7)));
+                        bent.x += sway * WindStrength * bendWeight;
+                        bent.z += sway * WindStrength * bendWeight * 0.6;
+                    }
+
+                    gl_Position = mvp * vec4(bent, 1); 
                     fsin_Color = Color; 
                     fsin_TexCoord = TexCoord * TextureTiling.xy;
                 }";
@@ -401,5 +427,6 @@ public class SceneRenderer : IDisposable
         _mvpLayout.Dispose();
         _mvpResourceSet.Dispose();
         _mvpBuffer.Dispose();
+        _timeBuffer.Dispose();
     }
 }

@@ -97,6 +97,20 @@ public class TerrainShaderTests
     }
 
     [Fact]
+    public void TheVertexShadersBendDetailInTheWind()
+    {
+        // The OpenGL static vertex shader and the Veldrid one bend the same way: by the square of the
+        // height up the card, and only when the draw names a wind strength.
+        string gl = Read("scene.vert");
+        gl.Should().Contain("uniform float uWindStrength;");
+        gl.Should().Contain("aTexCoord.y * aTexCoord.y");
+
+        string veldrid = ReadSceneRenderer();
+        veldrid.Should().Contain("uniform TimeBuffer { float Time; float WindStrength; }");
+        veldrid.Should().Contain("TexCoord.y * TexCoord.y");
+    }
+
+    [Fact]
     public void TheTwoFragmentShadersStayOneShaderWrittenTwice()
     {
         // The skinning program's fragment stage is the scene's, copied because GLSL 330 has no include.

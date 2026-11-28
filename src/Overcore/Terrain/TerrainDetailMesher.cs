@@ -13,8 +13,9 @@ namespace Overcore.Terrain;
 /// <remarks>
 /// Crossed quads are the classic grass card: two quads through each other at right angles, drawn from
 /// both sides (each quad is emitted twice, once per facing), tinted dark at the root and full at the
-/// tip. There is no wind in the shader yet, so the field stands still; the tufts' texture, when a
-/// prototype names one, is the detail material's cutout texture.
+/// tip. The v coordinate runs root to tip because the wind reads it: the vertex shaders bend a vertex
+/// by the square of its v, so roots hold fast and tips sway. The tufts' texture, when a prototype
+/// names one, is the detail material's cutout texture.
 /// </remarks>
 public static class TerrainDetailMesher
 {

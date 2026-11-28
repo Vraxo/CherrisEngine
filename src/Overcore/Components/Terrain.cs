@@ -205,6 +205,13 @@ public class Terrain : Component
     public Mesh? DetailMesh { get; private set; }
 
     /// <summary>
+    /// How far the wind bends a detail tuft's tip, in metres at full sway. The vertex shaders bend by
+    /// the square of a vertex's height up its card, so roots hold and tips travel; zero is a still day.
+    /// Only the detail child is ever bent — the ground itself would look seasick.
+    /// </summary>
+    public float DetailWindStrength { get; set; } = 0.12f;
+
+    /// <summary>
     /// Turns a detail prototype's texture name into the texture itself, wired by the scene factory like
     /// <see cref="TreeMeshResolver"/>. Only the first prototype's texture can ride the one detail
     /// material; the rest tint their tufts.

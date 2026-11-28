@@ -219,6 +219,9 @@ internal class OpenGLSceneRenderer : IDisposable
                 Repeats = [.. Enumerable.Range(0, 8).Select(layer => Location($"uTerrainRepeats[{layer}]"))]
             };
 
+            _timeLocation = Location("uTime");
+            _windLocation = Location("uWindStrength");
+
             _numSpotLights = Location("uNumSpotLights");
             for (int i = 0; i < MaxSpotLights; i++)
             {
@@ -242,8 +245,29 @@ internal class OpenGLSceneRenderer : IDisposable
 
         public void Use() => _shader.Use();
 
+        private int _timeLocation = -1;
+        private int _windLocation = -1;
+        private float _timeSeconds;
+
+        /// <summary>The frame's clock, written into uTime by the next UploadGlobals.</summary>
+        public void SetTime(float seconds) => _timeSeconds = seconds;
+
+        /// <summary>How hard the wind bends this draw's cards. Only the terrain's detail asks for any.</summary>
+        public void UploadWind(float strength)
+        {
+            if (_windLocation >= 0)
+            {
+                GL.Uniform1(_windLocation, strength);
+            }
+        }
+
         public void UploadGlobals(Matrix4 view, Matrix4 projection)
         {
+            if (_timeLocation >= 0)
+            {
+                GL.Uniform1(_timeLocation, _timeSeconds);
+            }
+
             GL.Uniform1(_material.Texture, 0);
             GL.UniformMatrix4(_matrices.View, false, ref view);
             GL.UniformMatrix4(_matrices.Projection, false, ref projection);
@@ -467,6 +491,9 @@ internal class OpenGLSceneRenderer : IDisposable
         public void Dispose() => _shader.Dispose();
     }
 
+    /// <summary>The wind's clock: seconds since this renderer first drew, which is all the sway needs.</summary>
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+
     private readonly Program _static;
     private readonly Program _skinned;
     private readonly int _boneTextureLocation;
@@ -535,12 +562,15 @@ internal class OpenGLSceneRenderer : IDisposable
         // One program per pass. A program's uniforms belong to it, so each is given the frame's matrices and lights
         // itself; the alternative is uploading the view matrix into whatever the other program keeps at that index.
         _static.Use();
+        float timeSeconds = (float)_clock.Elapsed.TotalSeconds;
+        _static.SetTime(timeSeconds);
         _static.UploadGlobals(view, projection);
         _static.UploadLights(lit);
 
         DrawObjects(objects, shadows, shadowTexture, cameraForward);
 
         _skinned.Use();
+        _skinned.SetTime(timeSeconds);
         _skinned.UploadGlobals(view, projection);
         _skinned.UploadLights(lit);
 
@@ -659,6 +689,12 @@ internal class OpenGLSceneRenderer : IDisposable
         // branch, because the program outlives the draw and would otherwise keep the last terrain's ground.
         TerrainComponent? terrain = go.GetComponent<TerrainComponent>();
         program.UploadTerrain(terrain?.TerrainData);
+
+        // The terrain's detail card is the one draw the wind touches: its strength is the terrain's,
+        // and every other draw through this program is told to stand still.
+        program.UploadWind(TerrainComponent.IsDetailObject(go)
+            ? go.Transform.Parent!.GameObject.GetComponent<TerrainComponent>()!.DetailWindStrength
+            : 0f);
         if (terrain is not null)
         {
             GL.ActiveTexture(TextureUnit.Texture3);

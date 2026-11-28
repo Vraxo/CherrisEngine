@@ -96,8 +96,10 @@ from a full pixel (`TerrainDetailMesher.MaxTuftsPerPixel`). Like the forest it r
 child (`Detail`), is left out of scene files (density travels as a `Detail: <base64>` blob) and out of
 NavMesh bakes, and it is not solid: grass is walked through. One material serves the whole field, so
 only the first prototype's texture is sampled (with a 0.5 alpha cutout); the rest wear their tints.
-There is no wind yet — the field stands still, which the shader will fix when it learns the time of
-day. Detail has no distance fade: a very large terrain should keep its alphamap resolution (and so its
+The field moves: both backends' vertex shaders bend each tuft by the square of its height up the
+card, phased by where it stands, under `Terrain.DetailWindStrength` (metres of tip travel, 0.12 by
+default; 0 for a still day) — only the detail child is ever bent, never the ground or the trees.
+Detail has no distance fade: a very large terrain should keep its alphamap resolution (and so its
 detail pixels) modest, or grow detail only where players walk.
 
 ## Chunks and level of detail
@@ -222,6 +224,6 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 
 ## Not yet
 
-Detail wind and distance fade, continuous (Unity-style) neighbour stitching that re-sews itself as
-you sculpt, chunk skirts to hide mixed-level seams entirely, and layers past the eighth in the
-shaders' blend are future increments. The data model does not need to change for any of them.
+Detail distance fade, continuous (Unity-style) neighbour stitching that re-sews itself as you
+sculpt, chunk skirts to hide mixed-level seams entirely, and layers past the eighth in the shaders'
+blend are future increments. The data model does not need to change for any of them.
