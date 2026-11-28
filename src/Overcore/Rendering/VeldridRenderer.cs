@@ -278,8 +278,8 @@ public partial class VeldridRenderer : IRenderer
         }
 
         ResourceFactory factory = _graphicsDevice.ResourceFactory;
-        Veldrid.Texture texture = factory.CreateTexture(new TextureDescription(
-            (uint)resolution, (uint)resolution, 1, 1, 1,
+        Veldrid.Texture texture = factory.CreateTexture(TextureDescription.Texture2D(
+            (uint)resolution, (uint)resolution, 1, 1,
             PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
         _graphicsDevice.UpdateTexture(texture, pixels, 0, 0, 0, (uint)resolution, (uint)resolution, 1, 0, 0);
         return (texture, factory.CreateTextureView(texture));

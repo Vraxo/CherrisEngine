@@ -77,8 +77,8 @@ public class SceneRenderer : IDisposable
 
         _mvpResourceSet = factory.CreateResourceSet(new ResourceSetDescription(_mvpLayout, _mvpBuffer));
 
-        _whiteTexture = factory.CreateTexture(new TextureDescription(
-            1, 1, 1, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
+        _whiteTexture = factory.CreateTexture(TextureDescription.Texture2D(
+            1, 1, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
         gd.UpdateTexture(_whiteTexture, new byte[] { 255, 255, 255, 255 }, 0, 0, 0, 1, 1, 1, 0, 0);
         _whiteTextureView = factory.CreateTextureView(_whiteTexture);
 
