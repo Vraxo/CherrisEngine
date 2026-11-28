@@ -137,6 +137,7 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
             dirty |= DrawTerrainLayers(terrain);
             dirty |= DrawTerrainTrees(terrain);
             dirty |= DrawTerrainDetail(terrain);
+            dirty |= DrawTerrainNeighbours(terrain);
             return dirty;
         }
 
@@ -244,7 +245,75 @@ public sealed class DefaultInspector(Editor editor, EditorTextureManager texture
         dirty |= DrawTerrainLayers(terrain);
         dirty |= DrawTerrainTrees(terrain);
         dirty |= DrawTerrainDetail(terrain);
+        dirty |= DrawTerrainNeighbours(terrain);
         return dirty;
+    }
+
+    /// <summary>
+    /// The neighbour stitches: one button per edge, sewing this ground to whichever terrain stands
+    /// across it. A stitch is a bake — sculpting an edge afterwards reopens the seam until it is
+    /// stitched again — so the buttons stay here where a finished edge can be sewn up.
+    /// </summary>
+    private bool DrawTerrainNeighbours(TerrainComponent terrain)
+    {
+        List<TerrainComponent> terrains = [];
+        foreach (GameObject root in _editor.SceneManager.GameObjects)
+        {
+            CollectTerrains(root, terrains);
+        }
+
+        if (terrains.Count < 2)
+        {
+            return false;
+        }
+
+        bool dirty = false;
+        ImGui.Spacing();
+        ImGui.Text("Stitch Neighbour Edge");
+        (TerrainEdge Edge, string Label)[] edges =
+        [
+            (TerrainEdge.Left, "← West"),
+            (TerrainEdge.Right, "East →"),
+            (TerrainEdge.Bottom, "↓ South"),
+            (TerrainEdge.Top, "North ↑")
+        ];
+
+        bool anyNeighbour = false;
+        foreach ((TerrainEdge edge, string label) in edges)
+        {
+            TerrainComponent? neighbour = terrain.FindNeighbour(terrains, edge);
+            if (neighbour is null)
+            {
+                continue;
+            }
+
+            anyNeighbour = true;
+            if (ImGui.Button($"{label} ({neighbour.GameObject.Name})##Stitch{edge}"))
+            {
+                terrain.StitchTo(neighbour, edge);
+                dirty = true;
+            }
+        }
+
+        if (!anyNeighbour)
+        {
+            ImGui.TextDisabled("No terrain abuts this one. Place another edge to edge, then sew the seam.");
+        }
+
+        return dirty;
+    }
+
+    private static void CollectTerrains(GameObject gameObject, List<TerrainComponent> terrains)
+    {
+        if (gameObject.GetComponent<TerrainComponent>() is { } terrain)
+        {
+            terrains.Add(terrain);
+        }
+
+        foreach (Transform child in gameObject.Transform.Children)
+        {
+            CollectTerrains(child.GameObject, terrains);
+        }
     }
 
     /// <summary>

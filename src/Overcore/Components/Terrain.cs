@@ -461,6 +461,91 @@ public class Terrain : Component
         return true;
     }
 
+    /// <summary>
+    /// Sews one of this terrain's edges to the neighbour across it: both grounds take the averaged edge
+    /// and both meshes rebuild. See <see cref="TerrainData.StitchEdge"/>. Nothing is remembered — move a
+    /// terrain or sculpt an edge and the seam is whatever the heights say until it is stitched again.
+    /// </summary>
+    /// <param name="other">The terrain across the edge.</param>
+    /// <param name="edge">Which of this terrain's edges faces it.</param>
+    public void StitchTo(Terrain other, TerrainEdge edge)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        _data.StitchEdge(other._data, edge);
+        Rebuild();
+        other.Rebuild();
+    }
+
+    /// <summary>
+    /// The terrain standing across one of this terrain's edges, found geometrically: the candidate whose
+    /// facing edge lies within a metre of this one's, overlapping along it. Terrains are compared by
+    /// their corners and sizes, so both are assumed unturned — the ordinary way ground is tiled.
+    /// </summary>
+    /// <param name="candidates">Every terrain that might neighbour this one (this one may be among them).</param>
+    /// <param name="edge">Which edge to look across.</param>
+    /// <returns>The nearest abutting terrain, or null when the edge is the world's end.</returns>
+    public Terrain? FindNeighbour(IEnumerable<Terrain> candidates, TerrainEdge edge)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        if (GameObject is null)
+        {
+            return null;
+        }
+
+        const float tolerance = 1f;
+        Vector3 origin = GameObject.Transform.WorldPosition;
+        float myMinX = origin.X;
+        float myMaxX = origin.X + _data.Size.X;
+        float myMinZ = origin.Z;
+        float myMaxZ = origin.Z + _data.Size.Z;
+
+        Terrain? best = null;
+        float bestGap = tolerance;
+        foreach (Terrain candidate in candidates)
+        {
+            if (ReferenceEquals(candidate, this) || candidate.GameObject is null)
+            {
+                continue;
+            }
+
+            Vector3 otherOrigin = candidate.GameObject.Transform.WorldPosition;
+            float otherMinX = otherOrigin.X;
+            float otherMaxX = otherOrigin.X + candidate._data.Size.X;
+            float otherMinZ = otherOrigin.Z;
+            float otherMaxZ = otherOrigin.Z + candidate._data.Size.Z;
+
+            float gap;
+            bool overlaps;
+            switch (edge)
+            {
+                case TerrainEdge.Left:
+                    gap = MathF.Abs(otherMaxX - myMinX);
+                    overlaps = MathF.Min(myMaxZ, otherMaxZ) > MathF.Max(myMinZ, otherMinZ);
+                    break;
+                case TerrainEdge.Right:
+                    gap = MathF.Abs(otherMinX - myMaxX);
+                    overlaps = MathF.Min(myMaxZ, otherMaxZ) > MathF.Max(myMinZ, otherMinZ);
+                    break;
+                case TerrainEdge.Bottom:
+                    gap = MathF.Abs(otherMaxZ - myMinZ);
+                    overlaps = MathF.Min(myMaxX, otherMaxX) > MathF.Max(myMinX, otherMinX);
+                    break;
+                default:
+                    gap = MathF.Abs(otherMinZ - myMaxZ);
+                    overlaps = MathF.Min(myMaxX, otherMaxX) > MathF.Max(myMinX, otherMinX);
+                    break;
+            }
+
+            if (overlaps && gap < bestGap)
+            {
+                bestGap = gap;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
     /// <summary>One sculpting stroke against the ground, mesh rebuilt after it. See <see cref="TerrainBrush"/>.</summary>
     /// <param name="center">The stroke's centre, normalised across the terrain.</param>
     /// <param name="radius">The stroke's radius, normalised.</param>

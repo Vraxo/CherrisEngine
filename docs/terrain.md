@@ -100,6 +100,20 @@ There is no wind yet — the field stands still, which the shader will fix when 
 day. Detail has no distance fade: a very large terrain should keep its alphamap resolution (and so its
 detail pixels) modest, or grow detail only where players walk.
 
+## Neighbours
+
+Big ground is tiled from several terrains placed corner to corner. Two abutting grounds crack along
+their seam whenever their edge heights differ, so an edge can be **stitched**: both sides take the
+point-for-point average of the two edge profiles (`data.StitchEdge(neighbour, TerrainEdge.Right)`, or
+`terrain.StitchTo(neighbour, edge)`, or the inspector's Stitch Neighbour Edge buttons, which find the
+terrain standing across each edge geometrically — nothing about the pairing is stored, so there is
+nothing to serialize and nothing to go stale when a terrain moves).
+
+Equal resolutions meet exactly; unequal ones meet as closely as their grids allow, which is why tiled
+ground wants matching resolutions. A stitch is a bake, not a weld: sculpt either edge afterwards and
+the seam reopens until it is stitched again. Neighbours are found by their corners, so tiled terrains
+are assumed unturned, the ordinary way ground is laid.
+
 ## Holes
 
 A hole is a whole **cell** — the quad between four grid points — with no ground in it (`IsHole`,
@@ -192,6 +206,6 @@ The owned `MeshRenderer` is not written; it is rebuilt from the data on load.
 
 ## Not yet
 
-Detail wind and distance fade, neighbour stitching between separate terrains, heightmap LOD beyond
-chunking, and layers past the eighth in the shaders' blend are future increments. The data model does
-not need to change for any of them.
+Detail wind and distance fade, continuous (Unity-style) neighbour stitching that re-sews itself as
+you sculpt, heightmap LOD beyond chunking, and layers past the eighth in the shaders' blend are
+future increments. The data model does not need to change for any of them.

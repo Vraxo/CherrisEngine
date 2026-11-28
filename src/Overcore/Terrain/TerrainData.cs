@@ -123,6 +123,22 @@ public readonly record struct TreeInstance(
     float WidthScale,
     float HeightScale);
 
+/// <summary>One side of a terrain, named by the compass it faces in the terrain's own frame: Left is −X, Top is +Z.</summary>
+public enum TerrainEdge
+{
+    /// <summary>The −X side: the column of grid points at x = 0.</summary>
+    Left,
+
+    /// <summary>The +X side: the column at x = resolution − 1.</summary>
+    Right,
+
+    /// <summary>The −Z side: the row at z = 0.</summary>
+    Bottom,
+
+    /// <summary>The +Z side: the row at z = resolution − 1.</summary>
+    Top
+}
+
 /// <summary>
 /// The ground itself as data, Unity's <c>TerrainData</c>: a grid of heights over a rectangle of world, plus
 /// the per-pixel blend of <see cref="TerrainLayer"/>s painted over it.
@@ -807,6 +823,98 @@ public sealed class TerrainData
                 nameof(prototypeIndex), prototypeIndex,
                 $"A detail channel is one of the {DetailPrototypes.Count} prototypes.");
         }
+    }
+
+    /// <summary>
+    /// Sews this terrain's edge to the facing edge of a neighbour: both edges become their average, point
+    /// for point, so the two meshes share an identical border and no crack can open between them. The
+    /// profiles are snapshotted before either side is written, and each side is written at its own
+    /// resolution — equal resolutions meet exactly; unequal ones meet as closely as their grids allow,
+    /// which is why matching resolutions are the way to tile ground. Sculpting either edge afterwards
+    /// reopens the seam until it is stitched again: the stitch is a bake, not a weld.
+    /// </summary>
+    /// <param name="other">The terrain across the edge.</param>
+    /// <param name="edge">Which of this terrain's edges faces it.</param>
+    public void StitchEdge(TerrainData other, TerrainEdge edge)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (ReferenceEquals(this, other))
+        {
+            return;
+        }
+
+        TerrainEdge opposite = edge switch
+        {
+            TerrainEdge.Left => TerrainEdge.Right,
+            TerrainEdge.Right => TerrainEdge.Left,
+            TerrainEdge.Bottom => TerrainEdge.Top,
+            _ => TerrainEdge.Bottom
+        };
+
+        float[] mine = EdgeProfile(edge);
+        float[] theirs = other.EdgeProfile(opposite);
+
+        for (int index = 0; index < HeightmapResolution; index++)
+        {
+            float t = HeightmapResolution == 1 ? 0f : (float)index / (HeightmapResolution - 1);
+            SetHeightAtEdge(edge, index, (mine[index] + SampleProfile(theirs, t)) * 0.5f);
+        }
+
+        for (int index = 0; index < other.HeightmapResolution; index++)
+        {
+            float t = other.HeightmapResolution == 1 ? 0f : (float)index / (other.HeightmapResolution - 1);
+            other.SetHeightAtEdge(opposite, index, (theirs[index] + SampleProfile(mine, t)) * 0.5f);
+        }
+    }
+
+    /// <summary>The heights along one edge, in the edge's own running order (along Z for Left/Right, along X for Bottom/Top).</summary>
+    private float[] EdgeProfile(TerrainEdge edge)
+    {
+        float[] profile = new float[HeightmapResolution];
+        for (int index = 0; index < HeightmapResolution; index++)
+        {
+            profile[index] = edge switch
+            {
+                TerrainEdge.Left => GetHeight(0, index),
+                TerrainEdge.Right => GetHeight(HeightmapResolution - 1, index),
+                TerrainEdge.Bottom => GetHeight(index, 0),
+                _ => GetHeight(index, HeightmapResolution - 1)
+            };
+        }
+
+        return profile;
+    }
+
+    private void SetHeightAtEdge(TerrainEdge edge, int index, float height)
+    {
+        switch (edge)
+        {
+            case TerrainEdge.Left:
+                SetHeight(0, index, height);
+                break;
+            case TerrainEdge.Right:
+                SetHeight(HeightmapResolution - 1, index, height);
+                break;
+            case TerrainEdge.Bottom:
+                SetHeight(index, 0, height);
+                break;
+            default:
+                SetHeight(index, HeightmapResolution - 1, height);
+                break;
+        }
+    }
+
+    private static float SampleProfile(float[] profile, float t)
+    {
+        if (profile.Length == 1)
+        {
+            return profile[0];
+        }
+
+        float position = Math.Clamp(t, 0f, 1f) * (profile.Length - 1);
+        int low = (int)MathF.Floor(position);
+        int high = Math.Min(low + 1, profile.Length - 1);
+        return float.Lerp(profile[low], profile[high], position - low);
     }
 
     private void ValidateCell(int cellX, int cellZ)
